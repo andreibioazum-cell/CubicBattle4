@@ -4,7 +4,7 @@ cat > game.c << 'EOF'
 #include "runtime.h"
 #include <math.h>
 
-Table* L = NULL;
+// L объявлен в runtime.c, НЕ объявляем здесь!
 
 void init(AAssetManager* assets) {
     G = T_new();
