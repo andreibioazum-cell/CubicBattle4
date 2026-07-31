@@ -1,523 +1,139 @@
-name: GigLang Real Build
+name: Build DS Game
 
 on:
   push:
-    branches: [main]
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  # ============================================================
-  #  WINDOWS (x86_64)
-  # ============================================================
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install NASM
-        run: choco install nasm -y
-      - name: Create main.gig
-        shell: bash
-        run: |
-          cat << 'EOF' > main.gig
-          let x = 10
-          let y = 20
-          let z = x + y
-          print("Hello from Windows!")
-          print("x = ")
-          print(x)
-          print("y = ")
-          print(y)
-          print("z = ")
-          print(z)
-          EOF
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.asm
-          section .data
-              fmt_int db '%d', 10, 0
-              fmt_str db '%s', 10, 0
-          section .bss
-              x: resd 1
-              y: resd 1
-              z: resd 1
-          section .text
-              global _start
-              extern printf
-          _start:
-              call main
-              mov rax, 60
-              xor rdi, rdi
-              syscall
-          main:
-              push rbp
-              mov rbp, rsp
-              mov qword [x], 10
-              mov qword [y], 20
-              mov rax, [x]
-              add rax, [y]
-              mov [z], rax
-              mov rdi, fmt_str
-              mov rsi, hello_str
-              call printf
-              mov rdi, fmt_str
-              mov rsi, x_str
-              call printf
-              mov rdi, fmt_int
-              mov rsi, [x]
-              call printf
-              mov rdi, fmt_str
-              mov rsi, y_str
-              call printf
-              mov rdi, fmt_int
-              mov rsi, [y]
-              call printf
-              mov rdi, fmt_str
-              mov rsi, z_str
-              call printf
-              mov rdi, fmt_int
-              mov rsi, [z]
-              call printf
-              pop rbp
-              ret
-          section .data
-              hello_str db 'Hello from Windows!', 0
-              x_str db 'x = ', 0
-              y_str db 'y = ', 0
-              z_str db 'z = ', 0
-          EOF
-          nasm -f win64 program.asm -o program.obj
-          gcc -no-pie program.obj -o GigLang.exe -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-Windows
-          path: GigLang.exe
-
-  # ============================================================
-  #  LINUX (x86_64)
-  # ============================================================
-  build-linux:
+  build:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - name: Install
-        run: sudo apt-get update && sudo apt-get install -y nasm gcc
-      - name: Create main.gig
-        shell: bash
-        run: |
-          cat << 'EOF' > main.gig
-          let x = 10
-          let y = 20
-          let z = x + y
-          print("Hello from Linux!")
-          print("x = ")
-          print(x)
-          print("y = ")
-          print(y)
-          print("z = ")
-          print(z)
-          EOF
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.asm
-          section .data
-              fmt_int db '%d', 10, 0
-              fmt_str db '%s', 10, 0
-          section .bss
-              x: resd 1
-              y: resd 1
-              z: resd 1
-          section .text
-              global _start
-              extern printf
-          _start:
-              call main
-              mov rax, 60
-              xor rdi, rdi
-              syscall
-          main:
-              push rbp
-              mov rbp, rsp
-              mov qword [x], 10
-              mov qword [y], 20
-              mov rax, [x]
-              add rax, [y]
-              mov [z], rax
-              mov rdi, fmt_str
-              mov rsi, hello_str
-              call printf
-              mov rdi, fmt_str
-              mov rsi, x_str
-              call printf
-              mov rdi, fmt_int
-              mov rsi, [x]
-              call printf
-              mov rdi, fmt_str
-              mov rsi, y_str
-              call printf
-              mov rdi, fmt_int
-              mov rsi, [y]
-              call printf
-              mov rdi, fmt_str
-              mov rsi, z_str
-              call printf
-              mov rdi, fmt_int
-              mov rsi, [z]
-              call printf
-              pop rbp
-              ret
-          section .data
-              hello_str db 'Hello from Linux!', 0
-              x_str db 'x = ', 0
-              y_str db 'y = ', 0
-              z_str db 'z = ', 0
-          EOF
-          nasm -f elf64 program.asm -o program.o
-          gcc -no-pie program.o -o GigLang -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-Linux
-          path: GigLang
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-  # ============================================================
-  #  macOS (Intel + Apple Silicon)
-  # ============================================================
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install
-        run: |
-          brew update
-          brew install nasm gcc
-      - name: Create main.gig
-        shell: bash
-        run: |
-          cat << 'EOF' > main.gig
-          let x = 10
-          let y = 20
-          let z = x + y
-          print("Hello from macOS!")
-          print("x = ")
-          print(x)
-          print("y = ")
-          print(y)
-          print("z = ")
-          print(z)
-          EOF
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.asm
-          section .data
-              fmt_int db '%d', 10, 0
-              fmt_str db '%s', 10, 0
-          section .bss
-              x: resd 1
-              y: resd 1
-              z: resd 1
-          section .text
-              global _main
-              extern _printf
-          _main:
-              call main
-              mov rax, 0x2000001
-              xor rdi, rdi
-              syscall
-          main:
-              push rbp
-              mov rbp, rsp
-              mov qword [x], 10
-              mov qword [y], 20
-              mov rax, [x]
-              add rax, [y]
-              mov [z], rax
-              mov rdi, fmt_str
-              mov rsi, hello_str
-              call _printf
-              mov rdi, fmt_str
-              mov rsi, x_str
-              call _printf
-              mov rdi, fmt_int
-              mov rsi, [x]
-              call _printf
-              mov rdi, fmt_str
-              mov rsi, y_str
-              call _printf
-              mov rdi, fmt_int
-              mov rsi, [y]
-              call _printf
-              mov rdi, fmt_str
-              mov rsi, z_str
-              call _printf
-              mov rdi, fmt_int
-              mov rsi, [z]
-              call _printf
-              pop rbp
-              ret
-          section .data
-              hello_str db 'Hello from macOS!', 0
-              x_str db 'x = ', 0
-              y_str db 'y = ', 0
-              z_str db 'z = ', 0
-          EOF
-          nasm -f macho64 program.asm -o program.o
-          gcc -no-pie program.o -o GigLang -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-macOS
-          path: GigLang
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        api-level: 34
+        build-tools: 34.0.0
 
-  # ============================================================
-  #  ANDROID ARMv7 (32-bit)
-  # ============================================================
-  build-android-armv7:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install NDK
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "ndk;26.3.11579264" "build-tools;34.0.0"
-      - name: Install ARM GCC
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
-      - name: Create main.gig
-        shell: bash
-        run: |
-          cat << 'EOF' > main.gig
-          let x = 10
-          let y = 20
-          let z = x + y
-          print("Hello from Android ARMv7!")
-          EOF
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.s
-          .data
-              .global main
-              fmt_int: .asciz "%d\n"
-              fmt_str: .asciz "%s\n"
-          .bss
-              x: .space 4
-              y: .space 4
-              z: .space 4
-          .text
-              .global main
-          main:
-              push {lr}
-              ldr r0, =10
-              ldr r1, =x
-              str r0, [r1]
-              ldr r0, =20
-              ldr r1, =y
-              str r0, [r1]
-              ldr r0, =x
-              ldr r0, [r0]
-              ldr r1, =y
-              ldr r1, [r1]
-              add r0, r0, r1
-              ldr r1, =z
-              str r0, [r1]
-              ldr r0, =hello_str
-              bl puts
-              ldr r0, =x_str
-              bl puts
-              ldr r0, =x
-              ldr r0, [r0]
-              bl print_int
-              pop {pc}
-          print_int:
-              push {lr}
-              mov r1, r0
-              ldr r0, =fmt_int
-              bl printf
-              pop {pc}
-          .data
-              hello_str: .asciz "Hello from Android ARMv7!"
-              x_str: .asciz "x = "
-          EOF
-          arm-linux-gnueabihf-gcc -static -march=armv7-a program.s -o GigLang_Android_ARMv7 -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-Android-ARMv7
-          path: GigLang_Android_ARMv7
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25c
 
-  # ============================================================
-  #  ANDROID ARM64 (64-bit)
-  # ============================================================
-  build-android-arm64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install NDK
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "ndk;26.3.11579264" "build-tools;34.0.0"
-      - name: Install ARM64 GCC
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
-      - name: Create main.gig
-        shell: bash
-        run: |
-          cat << 'EOF' > main.gig
-          let x = 10
-          let y = 20
-          let z = x + y
-          print("Hello from Android ARM64!")
-          EOF
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.s
-          .data
-              .global main
-              fmt_int: .asciz "%d\n"
-              fmt_str: .asciz "%s\n"
-          .bss
-              x: .space 4
-              y: .space 4
-              z: .space 4
-          .text
-              .global main
-          main:
-              stp x29, x30, [sp, -16]!
-              mov x29, sp
-              adrp x0, x
-              add x0, x0, :lo12:x
-              mov w1, 10
-              str w1, [x0]
-              adrp x0, y
-              add x0, x0, :lo12:y
-              mov w1, 20
-              str w1, [x0]
-              adrp x0, x
-              add x0, x0, :lo12:x
-              ldr w0, [x0]
-              adrp x1, y
-              add x1, x1, :lo12:y
-              ldr w1, [x1]
-              add w0, w0, w1
-              adrp x1, z
-              add x1, x1, :lo12:z
-              str w0, [x1]
-              adrp x0, hello_str
-              add x0, x0, :lo12:hello_str
-              bl puts
-              ldp x29, x30, [sp], 16
-              ret
-          .data
-              hello_str: .asciz "Hello from Android ARM64!"
-          EOF
-          aarch64-linux-gnu-gcc -static program.s -o GigLang_Android_ARM64 -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-Android-ARM64
-          path: GigLang_Android_ARM64
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          gcc \
+          make \
+          wget \
+          unzip
 
-  # ============================================================
-  #  AURORA OS
-  # ============================================================
-  build-aurora:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ARM GCC
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.s
-          .data
-              .global main
-              fmt_str: .asciz "%s\n"
-          .text
-              .global main
-          main:
-              push {lr}
-              ldr r0, =hello_str
-              bl puts
-              pop {pc}
-          .data
-              hello_str: .asciz "Hello from Aurora OS!"
-          EOF
-          arm-linux-gnueabihf-gcc -static program.s -o GigLang_Aurora -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-Aurora
-          path: GigLang_Aurora
+    - name: Setup TCC (Tiny C Compiler)
+      run: |
+        wget https://download.savannah.gnu.org/releases/tinycc/tcc-0.9.27.tar.bz2
+        tar -xjf tcc-0.9.27.tar.bz2
+        cd tcc-0.9.27
+        ./configure --prefix=/usr/local
+        make
+        sudo make install
+        cd ..
 
-  # ============================================================
-  #  PYCRASH
-  # ============================================================
-  build-pycrash:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ARM GCC
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
-      - name: Compile
-        shell: bash
-        run: |
-          cat << 'EOF' > program.s
-          .data
-              .global main
-              fmt_str: .asciz "%s\n"
-          .text
-              .global main
-          main:
-              push {lr}
-              ldr r0, =hello_str
-              bl puts
-              pop {pc}
-          .data
-              hello_str: .asciz "Hello from PyCrash!"
-          EOF
-          arm-linux-gnueabihf-gcc -static program.s -o GigLang_PyCrash -lc
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-PyCrash
-          path: GigLang_PyCrash
+    - name: Create directories
+      run: |
+        mkdir -p staging/lib/arm64-v8a
+        mkdir -p staging/lib/armeabi-v7a
+        mkdir -p staging/assets
 
-  # ============================================================
-  #  УНИВЕРСАЛЬНЫЙ ПАКЕТ
-  # ============================================================
-  create-release:
-    needs: [build-windows, build-linux, build-macos, build-android-armv7, build-android-arm64, build-aurora, build-pycrash]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Package
-        run: |
-          mkdir -p GigLang-Universal
-          find artifacts -type f -exec cp {} GigLang-Universal/ \;
-          ls -la GigLang-Universal/
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: GigLang-Universal
-          path: GigLang-Universal
+    - name: Compile DS compiler
+      run: |
+        gcc -O3 ds_compiler.c -o ds_compiler
+
+    - name: Compile game.ds to C
+      run: |
+        ./ds_compiler game.ds game.c
+
+    - name: Build for ARM64
+      run: |
+        NDK_ROOT=$ANDROID_NDK_ROOT
+        TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        
+        CC="$TOOLCHAIN/aarch64-linux-android21-clang"
+        $CC -O3 -s -fPIC -shared \
+          game.c runtime.c main.c \
+          -I. \
+          -I$NDK_ROOT/sources/android/native_app_glue \
+          -landroid -llog -lm \
+          -o staging/lib/arm64-v8a/libds_game.so
+
+    - name: Build for ARMv7
+      run: |
+        NDK_ROOT=$ANDROID_NDK_ROOT
+        TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        
+        CC="$TOOLCHAIN/armv7a-linux-androideabi21-clang"
+        $CC -O3 -s -fPIC -shared \
+          game.c runtime.c main.c \
+          -I. \
+          -I$NDK_ROOT/sources/android/native_app_glue \
+          -landroid -llog -lm \
+          -mfpu=neon \
+          -o staging/lib/armeabi-v7a/libds_game.so
+
+    - name: Copy assets
+      run: |
+        # Копируем assets если есть
+        if [ -d "assets" ]; then
+          cp -r assets/* staging/assets/
+        fi
+        
+        # Создаём тестовый файл если assets нет
+        if [ ! -f "staging/assets/cube.png" ]; then
+          echo "No assets found, creating placeholder"
+        fi
+
+    - name: Package APK
+      run: |
+        SDK_ROOT=$ANDROID_HOME
+        BT="$SDK_ROOT/build-tools/34.0.0"
+        
+        # Создаём APK
+        "$BT/aapt" package -f -M ./AndroidManifest.xml \
+          -I "$SDK_ROOT/platforms/android-34/android.jar" \
+          -F unsigned.apk \
+          ./staging/
+        
+        # Выравниваем
+        "$BT/zipalign" -v 4 unsigned.apk aligned.apk
+        
+        # Создаём ключ
+        keytool -genkey -v -keystore debug.keystore -storepass android \
+          -alias debug -keypass android -keyalg RSA -keysize 2048 \
+          -validity 10000 -dname "CN=Debug" || true
+        
+        # Подписываем
+        "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
+          --out Game.apk aligned.apk
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: DS-Game-APK
+        path: Game.apk
+
+    - name: Upload debug info
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          game.c
+          ds_compiler
+          *.so
