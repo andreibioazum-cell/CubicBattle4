@@ -4,8 +4,6 @@ cat > game.c << 'EOF'
 #include "runtime.h"
 #include <math.h>
 
-// L объявлен в runtime.c, НЕ объявляем здесь!
-
 void init(AAssetManager* assets) {
     G = T_new();
     T_set(G, "COLOR_BG", &(Val){.type=1,.num=0xFFCCCCCC}, 1);
