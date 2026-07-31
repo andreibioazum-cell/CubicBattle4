@@ -7,61 +7,38 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <jni.h>
 
 static Buffer current_buffer = {0};
 static int frame_count = 0;
-static char log_buffer[65536] = {0};
-static int log_pos = 0;
 static int init_done = 0;
-static int copied = 0;
+static FILE* log_file = NULL;
 
-// === ЛОГ В БУФЕР ===
+// === ЛОГ В ФАЙЛ В ПАПКЕ ПРИЛОЖЕНИЯ (ВСЕГДА РАБОТАЕТ) ===
 void ds_log(const char* fmt, ...) {
-    if (log_pos >= sizeof(log_buffer) - 1024) return;
+    if (!log_file) return;
     
     va_list args;
     va_start(args, fmt);
-    int written = vsnprintf(log_buffer + log_pos, sizeof(log_buffer) - log_pos - 1, fmt, args);
+    vfprintf(log_file, fmt, args);
     va_end(args);
+    fflush(log_file);
+}
+
+void ds_init_log() {
+    // Папка приложения - всегда доступна без разрешений!
+    mkdir("/data/data/com.ds.game2d/ds_logs", 0777);
     
-    if (written > 0) {
-        log_pos += written;
+    log_file = fopen("/data/data/com.ds.game2d/ds_logs/log.txt", "a");
+    
+    if (log_file) {
+        time_t now = time(NULL);
+        fprintf(log_file, "\n=== DS GAME STARTED === %s", ctime(&now));
+        fprintf(log_file, "PID: %d\n", getpid());
+        fflush(log_file);
     }
 }
 
-// === КОПИРОВАНИЕ В БУФЕР ОБМЕНА ===
-void ds_copy_to_clipboard(struct android_app* app) {
-    if (!app || !app->activity || log_pos == 0) return;
-    if (copied) return;
-    
-    JNIEnv* env = NULL;
-    app->activity->vm->AttachCurrentThread(&env, NULL);
-    if (!env) return;
-    
-    // Получаем ClipboardManager
-    jclass context_class = env->GetObjectClass(app->activity->clazz);
-    jmethodID get_system_service = env->GetMethodID(context_class, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
-    
-    jstring clipboard_service = env->NewStringUTF("clipboard");
-    jobject clipboard_manager = env->CallObjectMethod(app->activity->clazz, get_system_service, clipboard_service);
-    env->DeleteLocalRef(clipboard_service);
-    
-    if (clipboard_manager) {
-        jclass clipboard_class = env->GetObjectClass(clipboard_manager);
-        jmethodID set_text = env->GetMethodID(clipboard_class, "setText", "(Ljava/lang/CharSequence;)V");
-        
-        jstring log_text = env->NewStringUTF(log_buffer);
-        env->CallVoidMethod(clipboard_manager, set_text, log_text);
-        env->DeleteLocalRef(log_text);
-        
-        copied = 1;
-    }
-    
-    app->activity->vm->DetachCurrentThread();
-}
-
-// === ГРАФИКА (БЕЗ ВЫЛЕТОВ) ===
+// === ГРАФИКА ===
 
 void cls(uint32_t color) {
     if (!current_buffer.pixels) return;
@@ -157,6 +134,8 @@ struct engine { struct android_app* app; };
 static void handle_cmd(struct android_app* app, int32_t cmd) {
     struct engine* e = (struct engine*)app->userData;
     
+    ds_log("CMD: %d\n", cmd);
+    
     switch(cmd) {
         case APP_CMD_INIT_WINDOW: {
             ds_log("APP_CMD_INIT_WINDOW\n");
@@ -170,20 +149,14 @@ static void handle_cmd(struct android_app* app, int32_t cmd) {
             init(app->activity->assetManager);
             ds_log("init() completed!\n");
             init_done = 1;
-            
-            // СРАЗУ КОПИРУЕМ ЛОГ В БУФЕР ОБМЕНА
-            ds_copy_to_clipboard(app);
             break;
         }
         case APP_CMD_TERM_WINDOW: {
             ds_log("APP_CMD_TERM_WINDOW\n");
-            // Копируем лог при закрытии
-            if (log_pos > 0) {
-                ds_copy_to_clipboard(app);
-            }
             break;
         }
         default: {
+            ds_log("Unknown cmd: %d\n", cmd);
             break;
         }
     }
@@ -195,13 +168,6 @@ static int32_t handle_input(struct android_app* app, AInputEvent* event) {
         float y = AMotionEvent_getY(event, 0);
         int action = AMotionEvent_getAction(event);
         
-        // ЛЮБОЕ КАСАНИЕ = КОПИРОВАТЬ ЛОГ
-        if (action == 0 || action == 1) { // DOWN или UP
-            if (log_pos > 0) {
-                ds_copy_to_clipboard(app);
-            }
-        }
-        
         touch(x, y, action);
         return 1;
     }
@@ -209,8 +175,8 @@ static int32_t handle_input(struct android_app* app, AInputEvent* event) {
 }
 
 void android_main(struct android_app* app) {
+    ds_init_log();
     ds_log("=== ANDROID_MAIN STARTED ===\n");
-    ds_log("LOG BUFFER SIZE: %d bytes\n", sizeof(log_buffer));
     
     struct engine e = {0};
     e.app = app;
@@ -229,9 +195,10 @@ void android_main(struct android_app* app) {
                 source->process(app, source);
             }
             if (app->destroyRequested) {
-                ds_log("Destroy requested, copying log...\n");
-                if (log_pos > 0) {
-                    ds_copy_to_clipboard(app);
+                ds_log("Destroy requested, exiting...\n");
+                if (log_file) {
+                    fclose(log_file);
+                    log_file = NULL;
                 }
                 return;
             }
@@ -240,12 +207,10 @@ void android_main(struct android_app* app) {
         if (app->window && !app->destroyRequested && init_done) {
             frame_count++;
             
-            // Обновляем игру (каждый 2-й кадр)
             if (frame_count % 2 == 0) {
                 update();
             }
             
-            // Рисуем
             ANativeWindow_Buffer buf;
             if (ANativeWindow_lock(app->window, &buf, NULL) == 0) {
                 current_buffer.pixels = (uint32_t*)buf.bits;
