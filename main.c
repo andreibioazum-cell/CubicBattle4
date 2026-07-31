@@ -2,35 +2,46 @@
 #include "runtime.h"
 #include <string.h>
 #include <math.h>
-#include <arm_neon.h>
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 static Buffer current_buffer = {0};
-static FILE* log_file = NULL;
 static int frame_count = 0;
+static FILE* log_file = NULL;
 
-// === ЛОГГИНГ ===
+// === ЛОГГИНГ В ФАЙЛ ===
 void ds_log(const char* fmt, ...) {
     if (!log_file) return;
+    
     va_list args;
     va_start(args, fmt);
     vfprintf(log_file, fmt, args);
     va_end(args);
     fflush(log_file);
+    
+    // Сразу пишем в лог
+    fsync(fileno(log_file));
 }
 
 void ds_init_log() {
     // Создаём папку
     mkdir("/storage/emulated/0/ds_logs", 0777);
     
-    // Открываем лог файл
-    log_file = fopen("/storage/emulated/0/ds_logs/log.txt", "a");
+    // Открываем лог файл (создаём новый каждый раз)
+    log_file = fopen("/storage/emulated/0/ds_logs/log.txt", "w");
+    if (!log_file) {
+        // Пробуем другую папку
+        mkdir("/data/local/tmp/ds_logs", 0777);
+        log_file = fopen("/data/local/tmp/ds_logs/log.txt", "w");
+    }
+    
     if (log_file) {
         time_t now = time(NULL);
-        fprintf(log_file, "\n=== DS GAME STARTED === %s", ctime(&now));
+        fprintf(log_file, "=== DS GAME STARTED === %s", ctime(&now));
+        fprintf(log_file, "PID: %d\n", getpid());
         fflush(log_file);
     }
 }
@@ -48,17 +59,15 @@ void cls(uint32_t color) {
         return;
     }
     
-    // Безопасная очистка (без NEON для стабильности)
+    ds_log("cls: total=%d\n", total);
+    
     for (int i = 0; i < total; i++) {
         current_buffer.pixels[i] = color;
     }
 }
 
 void rect(float x, float y, float w, float h, uint32_t color) {
-    if (!current_buffer.pixels) {
-        ds_log("ERROR: rect() - no pixels!\n");
-        return;
-    }
+    if (!current_buffer.pixels) return;
     
     int x1 = (int)(x + 0.5f);
     int y1 = (int)(y + 0.5f);
@@ -132,12 +141,12 @@ void ring(float cx, float cy, float r, float t, uint32_t color) {
 }
 
 void tex(float x, float y, const char* name, float angle, float scale) {
-    // TODO: загрузка текстур
+    // TODO
 }
 
 void text(const char* str, float x, float y, uint32_t color) {
     if (!current_buffer.pixels || !str) return;
-    // TODO: рендеринг шрифта
+    // TODO
 }
 
 // === ДВИЖОК ===
@@ -146,6 +155,8 @@ struct engine { struct android_app* app; };
 
 static void handle_cmd(struct android_app* app, int32_t cmd) {
     struct engine* e = (struct engine*)app->userData;
+    
+    ds_log("CMD: %d\n", cmd);
     
     switch(cmd) {
         case APP_CMD_INIT_WINDOW: {
@@ -156,22 +167,13 @@ static void handle_cmd(struct android_app* app, int32_t cmd) {
             
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
             
-            // Инициализация игры
             ds_log("Calling init()...\n");
             init(app->activity->assetManager);
-            ds_log("init() completed\n");
+            ds_log("init() completed!\n");
             break;
         }
         case APP_CMD_TERM_WINDOW: {
             ds_log("APP_CMD_TERM_WINDOW\n");
-            break;
-        }
-        case APP_CMD_GAINED_FOCUS: {
-            ds_log("APP_CMD_GAINED_FOCUS\n");
-            break;
-        }
-        case APP_CMD_LOST_FOCUS: {
-            ds_log("APP_CMD_LOST_FOCUS\n");
             break;
         }
         default: {
@@ -187,12 +189,6 @@ static int32_t handle_input(struct android_app* app, AInputEvent* event) {
         float y = AMotionEvent_getY(event, 0);
         int action = AMotionEvent_getAction(event);
         
-        // Логируем касания (только каждые 100 кадров, чтобы не забивать лог)
-        static int touch_count = 0;
-        if (++touch_count % 100 == 0) {
-            ds_log("Touch: x=%.1f y=%.1f action=%d\n", x, y, action);
-        }
-        
         touch(x, y, action);
         return 1;
     }
@@ -203,6 +199,7 @@ void android_main(struct android_app* app) {
     // Инициализируем лог
     ds_init_log();
     ds_log("=== ANDROID_MAIN STARTED ===\n");
+    ds_log("Log file opened!\n");
     
     struct engine e = {0};
     app->userData = &e;
@@ -215,7 +212,6 @@ void android_main(struct android_app* app) {
         struct android_poll_source* source;
         int ident;
         
-        // Обработка событий с таймаутом 0 (не блокируем)
         while ((ident = ALooper_pollOnce(0, NULL, NULL, (void**)&source)) >= 0) {
             if (source) {
                 source->process(app, source);
@@ -230,11 +226,10 @@ void android_main(struct android_app* app) {
             }
         }
         
-        // Рендеринг
         if (app->window && !app->destroyRequested) {
             frame_count++;
             
-            // Обновляем игру (безопасно)
+            // Обновляем игру
             update();
             
             // Рисуем
@@ -245,23 +240,12 @@ void android_main(struct android_app* app) {
                 current_buffer.height = buf.height;
                 current_buffer.stride = buf.stride;
                 
-                // Проверка буфера
                 if (current_buffer.pixels && current_buffer.width > 0 && current_buffer.height > 0) {
                     draw(&current_buffer);
-                } else {
-                    ds_log("ERROR: Invalid buffer in draw!\n");
                 }
                 
                 ANativeWindow_unlockAndPost(app->window);
-            } else {
-                static int lock_errors = 0;
-                if (++lock_errors % 60 == 0) {
-                    ds_log("ERROR: ANativeWindow_lock failed (%d times)\n", lock_errors);
-                }
             }
-        } else {
-            // Нет окна - ждём
-            usleep(10000);
         }
     }
 }
