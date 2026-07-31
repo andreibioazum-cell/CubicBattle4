@@ -36,7 +36,6 @@ void android_main(struct android_app* app) {
             if (source) source->process(app, source);
             if (app->destroyRequested) return;
         }
-        
         if (app->window) {
             update();
             ANativeWindow_Buffer buf;
