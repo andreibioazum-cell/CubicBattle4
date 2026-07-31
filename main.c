@@ -4,10 +4,9 @@
 #include <math.h>
 #include <arm_neon.h>
 
-// Глобальный буфер для рисования
 static Buffer current_buffer = {0};
 
-// === РЕАЛИЗАЦИЯ ГРАФИКИ ===
+// === ГРАФИКА ===
 
 void cls(uint32_t color) {
     if (!current_buffer.pixels) return;
@@ -84,22 +83,22 @@ void ring(float cx, float cy, float r, float t, uint32_t color) {
 }
 
 void tex(float x, float y, const char* name, float angle, float scale) {
-    // Загрузка текстуры из ассетов через stb_image
+    // TODO: загрузка текстур из ассетов
 }
 
 void text(const char* str, float x, float y, uint32_t color) {
     if (!current_buffer.pixels || !str) return;
-    // Простой рендеринг через символы
     int px = (int)x;
     int py = (int)y;
-    for (const char* p = str; *p; p++) {
-        // Рисуем простые пиксели как заглушку для текста
-        // В реальном проекте используем stb_truetype
+    while (*str) {
+        // Простой вывод текста точками (заглушка)
         px += 8;
+        str++;
     }
 }
 
-// === СТРУКТУРА ДВИЖКА ===
+// === ДВИЖОК ===
+
 struct engine { struct android_app* app; };
 
 static void handle_cmd(struct android_app* app, int32_t cmd) {
