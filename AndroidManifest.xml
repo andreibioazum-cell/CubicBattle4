@@ -4,14 +4,10 @@
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-
     <application
         android:label="DS Game"
         android:hasCode="false"
-        android:extractNativeLibs="true"
-        android:requestLegacyExternalStorage="true">
+        android:extractNativeLibs="true">
 
         <activity
             android:name="android.app.NativeActivity"
