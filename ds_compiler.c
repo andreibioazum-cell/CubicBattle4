@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 typedef struct {
     FILE* out;
@@ -10,13 +11,12 @@ typedef struct {
     int in_fn;
     char fn_name[64];
     int has_return;
+    int line_num;
 } Compiler;
 
-// === Глобальные переменные для компилятора ===
 static Compiler C = {0};
-static int line_num = 0;
 
-// === Стриппинг пробелов (минимальный код) ===
+// === Вспомогательные функции ===
 static void strip_spaces(char* s) {
     char* dst = s;
     int in_string = 0;
@@ -28,13 +28,13 @@ static void strip_spaces(char* s) {
     *dst = 0;
 }
 
-// === Компиляция выражений (максимально оптимизировано) ===
+// === Компиляция выражений ===
 static void compile_expr(const char* expr) {
     char e[1024];
     strcpy(e, expr);
     strip_spaces(e);
     
-    // === Векторы: V2(x,y) ===
+    // V2(x,y)
     if (strncmp(e, "V2(", 3) == 0) {
         char* p = e + 3;
         char* comma = strchr(p, ',');
@@ -48,7 +48,7 @@ static void compile_expr(const char* expr) {
         }
     }
     
-    // === Векторы: V3(x,y,z) ===
+    // V3(x,y,z)
     if (strncmp(e, "V3(", 3) == 0) {
         char* p = e + 3;
         char* c1 = strchr(p, ',');
@@ -66,17 +66,21 @@ static void compile_expr(const char* expr) {
         }
     }
     
-    // === Числа ===
+    // Числа
     char* end;
     double n = strtod(e, &end);
     if (*end == 0) { fprintf(C.out, "%f", n); return; }
     
-    // === Строки ===
+    // Строки
     if (e[0] == '"') { fprintf(C.out, "%s", e); return; }
     
-    // === Переменные (оптимизированный доступ) ===
-    // Проверяем локальные переменные
-    fprintf(C.out, "(*(Val*)T_get(L?L:G,\"%s\",NULL))", e);
+    // Переменные
+    if (strcmp(e, "nil") == 0) { fprintf(C.out, "(Val){0}"); return; }
+    if (strcmp(e, "true") == 0) { fprintf(C.out, "(Val){1,.num=1}"); return; }
+    if (strcmp(e, "false") == 0) { fprintf(C.out, "(Val){0}"); return; }
+    
+    // Доступ к переменной
+    fprintf(C.out, "*(Val*)T_get(L?L:G,\"%s\",NULL)", e);
 }
 
 // === Компиляция условий ===
@@ -85,7 +89,6 @@ static void compile_cond(const char* cond) {
     strcpy(c, cond);
     strip_spaces(c);
     
-    // Операторы сравнения
     char* op = NULL;
     char* p = c;
     while (*p) {
@@ -107,7 +110,6 @@ static void compile_cond(const char* cond) {
         return;
     }
     
-    // Простое условие (переменная)
     fprintf(C.out, "((Val*)T_get(L?L:G,\"%s\",NULL))->num != 0", c);
 }
 
@@ -128,7 +130,6 @@ static void compile_call(const char* call) {
     
     // Встроенные функции
     if (strcmp(name, "print") == 0) {
-        Val v;
         if (args[0] == '"') {
             fprintf(C.out, "prints(%s)", args);
         } else {
@@ -147,6 +148,21 @@ static void compile_call(const char* call) {
         return;
     }
     
+    if (strcmp(name, "atan2") == 0) {
+        fprintf(C.out, "atan2(%s)", args);
+        return;
+    }
+    
+    if (strcmp(name, "sqrt") == 0) {
+        fprintf(C.out, "sqrt(%s)", args);
+        return;
+    }
+    
+    if (strcmp(name, "sin") == 0 || strcmp(name, "cos") == 0) {
+        fprintf(C.out, "%s(%s)", name, args);
+        return;
+    }
+    
     // Обычный вызов
     fprintf(C.out, "%s(", name);
     if (*args) {
@@ -156,13 +172,13 @@ static void compile_call(const char* call) {
             if (*arg == ',') { arg++; continue; }
             if (!first) fprintf(C.out, ",");
             first = 0;
-            // Определяем тип аргумента
+            
             if (*arg == '"') {
                 fprintf(C.out, "%s", arg);
                 arg = strchr(arg, '"') + 1;
             } else {
                 char* end2 = arg;
-                while (*end2 && *end2 != ',') end2++;
+                while (*end2 && *end2 != ',' && *end2 != ')') end2++;
                 char save = *end2;
                 *end2 = 0;
                 compile_expr(arg);
@@ -176,7 +192,6 @@ static void compile_call(const char* call) {
 
 // === Компиляция строки .ds ===
 static void compile_line(char* line) {
-    // Убираем пробелы в начале/конце
     while (*line == ' ' || *line == '\t') line++;
     if (*line == '\n' || *line == '\r' || *line == 0) {
         fprintf(C.out, "\n");
@@ -189,7 +204,7 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === function ===
+    // function
     if (strncmp(line, "function", 8) == 0) {
         char* name = line + 8;
         while (*name == ' ') name++;
@@ -203,7 +218,6 @@ static void compile_line(char* line) {
         C.has_return = 0;
         fprintf(C.out, "void %s(", C.fn_name);
         
-        // Параметры
         if (paren) {
             char* p = paren + 1;
             char* end = strchr(p, ')');
@@ -229,7 +243,7 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === end ===
+    // end
     if (strcmp(line, "end") == 0 || strcmp(line, "end\n") == 0) {
         if (C.in_fn && !C.has_return) {
             fprintf(C.out, "return (Val){0};");
@@ -239,7 +253,7 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === return / ret ===
+    // return / ret
     if (strncmp(line, "return", 6) == 0 || strncmp(line, "ret", 3) == 0) {
         char* val = line + (line[0]=='r' && line[1]=='e' && line[2]=='t' ? 3 : 6);
         while (*val == ' ') val++;
@@ -254,7 +268,7 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === if ===
+    // if
     if (strncmp(line, "if ", 3) == 0) {
         char* cond = line + 3;
         char* then_pos = strstr(cond, " then");
@@ -265,7 +279,7 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === elseif ===
+    // elseif
     if (strncmp(line, "elseif", 6) == 0) {
         char* cond = line + 6;
         while (*cond == ' ') cond++;
@@ -277,13 +291,13 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === else ===
+    // else
     if (strcmp(line, "else") == 0) {
         fprintf(C.out, "}else{");
         return;
     }
     
-    // === while ===
+    // while
     if (strncmp(line, "while ", 6) == 0) {
         char* cond = line + 6;
         char* do_pos = strstr(cond, " do");
@@ -294,7 +308,7 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === for (оптимизированный) ===
+    // for
     if (strncmp(line, "for ", 4) == 0) {
         char* p = line + 4;
         char* eq = strchr(p, '=');
@@ -307,22 +321,22 @@ static void compile_line(char* line) {
             if (comma) {
                 *comma = 0;
                 char* start = rest;
-                char* end = comma + 1;
-                char* step = strchr(end, ',');
+                char* end_val = comma + 1;
+                char* step = strchr(end_val, ',');
                 if (step) {
                     *step = 0;
                     char* step_val = step + 1;
                     while (*step_val == ' ') step_val++;
-                    fprintf(C.out, "for(double %s=%s; %s<=%s; %s+=%s){", var, start, var, end, var, step_val);
+                    fprintf(C.out, "for(double %s=%s; %s<=%s; %s+=%s){", var, start, var, end_val, var, step_val);
                 } else {
-                    fprintf(C.out, "for(double %s=%s; %s<=%s; %s+=1){", var, start, var, end, var);
+                    fprintf(C.out, "for(double %s=%s; %s<=%s; %s+=1){", var, start, var, end_val, var);
                 }
             }
         }
         return;
     }
     
-    // === local (объявление локальной переменной) ===
+    // local
     if (strncmp(line, "local ", 6) == 0) {
         char* var = line + 6;
         while (*var == ' ') var++;
@@ -333,11 +347,9 @@ static void compile_line(char* line) {
             while (*name == ' ') name++;
             char* val = eq + 1;
             while (*val == ' ') val++;
-            if (!L) fprintf(C.out, "L=T_new();");
+            fprintf(C.out, "if(!L)L=T_new();");
             fprintf(C.out, "T_set(L,\"%s\",", name);
-            // Создаём Val
             fprintf(C.out, "&(Val){");
-            // Определяем тип
             if (*val == '"') {
                 fprintf(C.out, "2,.str=%s", val);
             } else if (strncmp(val, "V2(", 3) == 0) {
@@ -346,16 +358,20 @@ static void compile_line(char* line) {
             } else if (strncmp(val, "V3(", 3) == 0) {
                 fprintf(C.out, "6,.v3=");
                 compile_expr(val);
+            } else if (strncmp(val, "true", 4) == 0) {
+                fprintf(C.out, "1,.num=1");
+            } else if (strncmp(val, "false", 5) == 0 || strncmp(val, "nil", 3) == 0) {
+                fprintf(C.out, "0");
             } else {
                 fprintf(C.out, "1,.num=");
                 compile_expr(val);
             }
-            fprintf(C.out, "},2);");
+            fprintf(C.out, "},1);");
         }
         return;
     }
     
-    // === Присваивание (оптимизированное) ===
+    // Присваивание
     char* eq = strchr(line, '=');
     if (eq && *(eq-1) != '=' && *(eq-1) != '>' && *(eq-1) != ':') {
         *eq = 0;
@@ -364,9 +380,7 @@ static void compile_line(char* line) {
         char* val = eq + 1;
         while (*val == ' ') val++;
         
-        // Проверяем, есть ли в локальных
         fprintf(C.out, "T_set(L?L:G,\"%s\",", var);
-        // Создаём Val
         fprintf(C.out, "&(Val){");
         if (*val == '"') {
             fprintf(C.out, "2,.str=%s", val);
@@ -376,6 +390,10 @@ static void compile_line(char* line) {
         } else if (strncmp(val, "V3(", 3) == 0) {
             fprintf(C.out, "6,.v3=");
             compile_expr(val);
+        } else if (strncmp(val, "true", 4) == 0) {
+            fprintf(C.out, "1,.num=1");
+        } else if (strncmp(val, "false", 5) == 0 || strncmp(val, "nil", 3) == 0) {
+            fprintf(C.out, "0");
         } else {
             fprintf(C.out, "1,.num=");
             compile_expr(val);
@@ -384,16 +402,12 @@ static void compile_line(char* line) {
         return;
     }
     
-    // === Вызов функции ===
+    // Вызов функции
     if (strchr(line, '(') && strchr(line, ')')) {
-        fprintf(C.out, "");
         compile_call(line);
         fprintf(C.out, ";");
         return;
     }
-    
-    // === Остальное ===
-    fprintf(C.out, "%s", line);
 }
 
 // === Основной компилятор ===
@@ -404,45 +418,20 @@ void compile_ds(const char* src, const char* dst) {
     C.out = fopen(dst, "w");
     if (!C.out) { fprintf(stderr, "Error: Cannot create %s\n", dst); fclose(in); return; }
     
-    // Заголовок
     fprintf(C.out, "#include \"runtime.h\"\n");
     fprintf(C.out, "Table* L=NULL;\n");
     fprintf(C.out, "void init(AAssetManager* assets){G=T_new();");
     
     char line[4096];
-    int in_multiline = 0;
-    char multiline[4096] = {0};
-    
     while (fgets(line, sizeof(line), in)) {
-        line_num++;
-        
-        // Убираем \n в конце
         char* nl = strchr(line, '\n');
         if (nl) *nl = 0;
         char* cr = strchr(line, '\r');
         if (cr) *cr = 0;
-        
-        // Многострочные строки (упрощённо)
-        if (in_multiline) {
-            strcat(multiline, line);
-            if (strstr(line, "]]")) {
-                in_multiline = 0;
-                compile_line(multiline);
-                multiline[0] = 0;
-            }
-            continue;
-        }
-        if (strstr(line, "[[")) {
-            in_multiline = 1;
-            strcpy(multiline, line);
-            continue;
-        }
-        
         compile_line(line);
         fprintf(C.out, "\n");
     }
     
-    // Закрываем init
     fprintf(C.out, "}");
     fprintf(C.out, "void update(){");
     fprintf(C.out, "}");
