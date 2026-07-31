@@ -1,160 +1,63 @@
 name: Build DS Game
 
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      with:
-        api-level: 34
-        build-tools: 34.0.0
-
-    - name: Setup Android NDK
-      uses: nttld/setup-ndk@v1
+    - uses: actions/checkout@v4
+    - uses: android-actions/setup-android@v3
+    - uses: nttld/setup-ndk@v1
       with:
         ndk-version: r25c
 
-    - name: Install build dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          gcc \
-          make \
-          wget \
-          unzip \
-          tcc \
-          libtcc-dev
+        sudo apt-get install -y build-essential
 
-    - name: Check TCC version
-      run: tcc -v || echo "TCC installed via apt"
-
-    - name: Create directories
+    - name: Build DS compiler
       run: |
-        mkdir -p staging/lib/arm64-v8a
-        mkdir -p staging/lib/armeabi-v7a
-        mkdir -p staging/assets
-
-    - name: Compile DS compiler
-      run: |
-        gcc -O3 ds_compiler.c -o ds_compiler -lm
+        gcc -O3 ds_compiler.c -o ds_compiler
 
     - name: Compile game.ds to C
       run: |
         ./ds_compiler game.ds game.c
 
-    - name: Build for ARM64
+    - name: Build for Android
       run: |
         NDK_ROOT=$ANDROID_NDK_ROOT
         TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        GLUE="$NDK_ROOT/sources/android/native_app_glue"
         
-        CC="$TOOLCHAIN/aarch64-linux-android21-clang"
-        $CC -O3 -s -fPIC -shared \
-          game.c runtime.c main.c \
-          -I. \
-          -I$NDK_ROOT/sources/android/native_app_glue \
-          -landroid -llog -lm \
+        mkdir -p staging/lib/arm64-v8a staging/assets
+        
+        "$TOOLCHAIN/aarch64-linux-android21-clang" -O3 -s -fPIC -shared \
+          game.c runtime.c main.c $GLUE/android_native_app_glue.c \
+          -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/arm64-v8a/libds_game.so
-
-    - name: Build for ARMv7
-      run: |
-        NDK_ROOT=$ANDROID_NDK_ROOT
-        TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-        
-        CC="$TOOLCHAIN/armv7a-linux-androideabi21-clang"
-        $CC -O3 -s -fPIC -shared \
-          game.c runtime.c main.c \
-          -I. \
-          -I$NDK_ROOT/sources/android/native_app_glue \
-          -landroid -llog -lm \
-          -mfpu=neon \
-          -o staging/lib/armeabi-v7a/libds_game.so
-
-    - name: Copy assets
-      run: |
-        if [ -d "assets" ]; then
-          cp -r assets/* staging/assets/
-        fi
-        
-        # Создаём тестовые asset если их нет
-        if [ ! -f "staging/assets/cube.png" ]; then
-          echo "Creating placeholder assets..."
-          echo "Placeholder" > staging/assets/cube.png
-        fi
-        
-        if [ ! -f "staging/assets/Roboto-Regular.ttf" ]; then
-          echo "Placeholder" > staging/assets/Roboto-Regular.ttf
-        fi
 
     - name: Package APK
       run: |
         SDK_ROOT=$ANDROID_HOME
         BT="$SDK_ROOT/build-tools/34.0.0"
         
-        # Создаём APK
         "$BT/aapt" package -f -M ./AndroidManifest.xml \
           -I "$SDK_ROOT/platforms/android-34/android.jar" \
-          -F unsigned.apk \
-          ./staging/
+          -F unsigned.apk ./staging/
         
-        # Проверяем создание APK
-        if [ ! -f "unsigned.apk" ]; then
-          echo "Failed to create unsigned.apk"
-          exit 1
-        fi
-        
-        # Выравниваем
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
         
-        # Создаём ключ (если не существует)
-        if [ ! -f "debug.keystore" ]; then
-          keytool -genkey -v -keystore debug.keystore -storepass android \
-            -alias debug -keypass android -keyalg RSA -keysize 2048 \
-            -validity 10000 -dname "CN=Debug"
-        fi
+        keytool -genkey -v -keystore debug.keystore -storepass android \
+          -alias debug -keypass android -keyalg RSA -keysize 2048 \
+          -validity 10000 -dname "CN=Debug" 2>/dev/null || true
         
-        # Подписываем
         "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
           --out Game.apk aligned.apk
 
-    - name: Verify APK
-      run: |
-        if [ -f "Game.apk" ]; then
-          echo "APK created successfully!"
-          ls -lh Game.apk
-          file Game.apk
-        else
-          echo "APK not found!"
-          exit 1
-        fi
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: DS-Game-APK
+        name: Game-APK
         path: Game.apk
-
-    - name: Upload build artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: |
-          game.c
-          staging/lib/arm64-v8a/libds_game.so
-          staging/lib/armeabi-v7a/libds_game.so
-          unsigned.apk
-          aligned.apk
-        retention-days: 7
