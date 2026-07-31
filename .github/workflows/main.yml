@@ -1,4 +1,4 @@
-name: Build DS Game
+name: Build DS Game (Fast)
 
 on: [push, workflow_dispatch]
 
@@ -13,33 +13,25 @@ jobs:
       with:
         ndk-version: r25c
 
-    - name: Install dependencies
+    - name: Generate game.c (0.01s)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential
+        chmod +x gen.sh
+        ./gen.sh
 
-    - name: Build DS compiler
-      run: |
-        gcc -O3 ds_compiler.c -o ds_compiler
-
-    - name: Compile game.ds to C
-      run: |
-        ./ds_compiler game.ds game.c
-
-    - name: Build for Android
+    - name: Build NDK (30s)
       run: |
         NDK_ROOT=$ANDROID_NDK_ROOT
         TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
         GLUE="$NDK_ROOT/sources/android/native_app_glue"
         
-        mkdir -p staging/lib/arm64-v8a staging/assets
+        mkdir -p staging/lib/arm64-v8a
         
         "$TOOLCHAIN/aarch64-linux-android21-clang" -O3 -s -fPIC -shared \
           game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/arm64-v8a/libds_game.so
 
-    - name: Package APK
+    - name: Package APK (10s)
       run: |
         SDK_ROOT=$ANDROID_HOME
         BT="$SDK_ROOT/build-tools/34.0.0"
@@ -49,11 +41,9 @@ jobs:
           -F unsigned.apk ./staging/
         
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
-        
         keytool -genkey -v -keystore debug.keystore -storepass android \
           -alias debug -keypass android -keyalg RSA -keysize 2048 \
           -validity 10000 -dname "CN=Debug" 2>/dev/null || true
-        
         "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
           --out Game.apk aligned.apk
 
