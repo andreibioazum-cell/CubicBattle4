@@ -7,8 +7,7 @@
     <application
         android:label="DS Game"
         android:hasCode="false"
-        android:extractNativeLibs="true"
-        android:allowBackup="true">
+        android:extractNativeLibs="true">
 
         <activity
             android:name="android.app.NativeActivity"
