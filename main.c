@@ -12,37 +12,35 @@ static Buffer current_buffer = {0};
 static int frame_count = 0;
 static FILE* log_file = NULL;
 
-// === ЛОГГИНГ В ФАЙЛ ===
+// === ЛОГГИНГ В /storage/emulated/0/ ===
 void ds_log(const char* fmt, ...) {
-    if (!log_file) return;
+    if (!log_file) {
+        // Пробуем открыть лог
+        log_file = fopen("/storage/emulated/0/ds_logs/log.txt", "a");
+        if (!log_file) return;
+    }
     
     va_list args;
     va_start(args, fmt);
     vfprintf(log_file, fmt, args);
     va_end(args);
     fflush(log_file);
-    
-    // Сразу пишем в лог
-    fsync(fileno(log_file));
 }
 
 void ds_init_log() {
     // Создаём папку
     mkdir("/storage/emulated/0/ds_logs", 0777);
     
-    // Открываем лог файл (создаём новый каждый раз)
     log_file = fopen("/storage/emulated/0/ds_logs/log.txt", "w");
-    if (!log_file) {
-        // Пробуем другую папку
-        mkdir("/data/local/tmp/ds_logs", 0777);
-        log_file = fopen("/data/local/tmp/ds_logs/log.txt", "w");
-    }
     
     if (log_file) {
         time_t now = time(NULL);
         fprintf(log_file, "=== DS GAME STARTED === %s", ctime(&now));
         fprintf(log_file, "PID: %d\n", getpid());
         fflush(log_file);
+    } else {
+        // Если нет разрешения - пишем в лог что нет разрешения
+        // Но файл не создастся
     }
 }
 
@@ -58,8 +56,6 @@ void cls(uint32_t color) {
         ds_log("ERROR: cls() - invalid buffer size: %d\n", total);
         return;
     }
-    
-    ds_log("cls: total=%d\n", total);
     
     for (int i = 0; i < total; i++) {
         current_buffer.pixels[i] = color;
@@ -140,14 +136,8 @@ void ring(float cx, float cy, float r, float t, uint32_t color) {
     }
 }
 
-void tex(float x, float y, const char* name, float angle, float scale) {
-    // TODO
-}
-
-void text(const char* str, float x, float y, uint32_t color) {
-    if (!current_buffer.pixels || !str) return;
-    // TODO
-}
+void tex(float x, float y, const char* name, float angle, float scale) {}
+void text(const char* str, float x, float y, uint32_t color) {}
 
 // === ДВИЖОК ===
 
@@ -199,7 +189,6 @@ void android_main(struct android_app* app) {
     // Инициализируем лог
     ds_init_log();
     ds_log("=== ANDROID_MAIN STARTED ===\n");
-    ds_log("Log file opened!\n");
     
     struct engine e = {0};
     app->userData = &e;
@@ -229,10 +218,8 @@ void android_main(struct android_app* app) {
         if (app->window && !app->destroyRequested) {
             frame_count++;
             
-            // Обновляем игру
             update();
             
-            // Рисуем
             ANativeWindow_Buffer buf;
             if (ANativeWindow_lock(app->window, &buf, NULL) == 0) {
                 current_buffer.pixels = (uint32_t*)buf.bits;
