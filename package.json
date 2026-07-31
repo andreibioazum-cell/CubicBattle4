@@ -1,0 +1,16 @@
+{
+  "name": "dimscript-language",
+  "version": "1.0.0",
+  "description": "DimScript language support for .ds files",
+  "language": "DimScript",
+  "extensions": [".ds"],
+  "aliases": ["dimscript", "ds"],
+  "aceMode": "text",
+  "codemirrorMode": "plaintext",
+  "codemirrorMimeType": "text/x-dimscript",
+  "filenames": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-repo"
+  }
+}
