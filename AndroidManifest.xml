@@ -4,15 +4,10 @@
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
     <application
         android:label="DS Game"
         android:hasCode="false"
-        android:extractNativeLibs="true"
-        android:allowBackup="true"
-        android:icon="@drawable/ic_launcher">
+        android:extractNativeLibs="true">
 
         <activity
             android:name="android.app.NativeActivity"
