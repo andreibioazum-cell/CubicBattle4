@@ -8,8 +8,10 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arm_neon.h>
 
 typedef struct { uint32_t* pixels; int width, height, stride; } Buffer;
+
 typedef struct { float x, y; } Vec2;
 typedef struct { float x, y, z; } Vec3;
 
@@ -17,12 +19,24 @@ typedef struct { float x, y, z; } Vec3;
 #define V2A(a,b) (Vec2){a.x+b.x, a.y+b.y}
 #define V2S(a,b) (Vec2){a.x-b.x, a.y-b.y}
 #define V2M(a,s) (Vec2){a.x*s, a.y*s}
+#define V2D(a,b) (a.x*b.x + a.y*b.y)
 #define V2L(a) sqrtf(a.x*a.x + a.y*a.y)
+#define V2N(a) ({float l=sqrtf(a.x*a.x+a.y*a.y); l>0?V2(a.x/l,a.y/l):V2(0,0);})
 
 typedef struct Entry { struct Entry* next; uint32_t hash; char* key; void* val; int type; } Entry;
 typedef struct { Entry* buckets[128]; int count; } Table;
 
-typedef struct { int type; union { double num; char* str; Table* table; void* func; Vec2 v2; Vec3 v3; }; } Val;
+typedef struct Val {
+    int type;
+    union {
+        double num;
+        char* str;
+        Table* table;
+        void* func;
+        Vec2 v2;
+        Vec3 v3;
+    };
+} Val;
 
 extern Table* G;
 extern Table* L;
@@ -39,8 +53,6 @@ void* T_get(Table* t, const char* key, int* type);
 void print(Val v);
 void printn(double n);
 void prints(const char* s);
-double tonumber(Val v);
-const char* tostring(Val v);
 
 void cls(uint32_t color);
 void rect(float x, float y, float w, float h, uint32_t color);
