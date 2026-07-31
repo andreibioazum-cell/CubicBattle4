@@ -34,17 +34,12 @@ jobs:
           gcc \
           make \
           wget \
-          unzip
+          unzip \
+          tcc \
+          libtcc-dev
 
-    - name: Setup TCC (Tiny C Compiler)
-      run: |
-        wget https://download.savannah.gnu.org/releases/tinycc/tcc-0.9.27.tar.bz2
-        tar -xjf tcc-0.9.27.tar.bz2
-        cd tcc-0.9.27
-        ./configure --prefix=/usr/local
-        make
-        sudo make install
-        cd ..
+    - name: Check TCC version
+      run: tcc -v || echo "TCC installed via apt"
 
     - name: Create directories
       run: |
@@ -54,7 +49,7 @@ jobs:
 
     - name: Compile DS compiler
       run: |
-        gcc -O3 ds_compiler.c -o ds_compiler
+        gcc -O3 ds_compiler.c -o ds_compiler -lm
 
     - name: Compile game.ds to C
       run: |
@@ -89,14 +84,18 @@ jobs:
 
     - name: Copy assets
       run: |
-        # Копируем assets если есть
         if [ -d "assets" ]; then
           cp -r assets/* staging/assets/
         fi
         
-        # Создаём тестовый файл если assets нет
+        # Создаём тестовые asset если их нет
         if [ ! -f "staging/assets/cube.png" ]; then
-          echo "No assets found, creating placeholder"
+          echo "Creating placeholder assets..."
+          echo "Placeholder" > staging/assets/cube.png
+        fi
+        
+        if [ ! -f "staging/assets/Roboto-Regular.ttf" ]; then
+          echo "Placeholder" > staging/assets/Roboto-Regular.ttf
         fi
 
     - name: Package APK
@@ -110,17 +109,36 @@ jobs:
           -F unsigned.apk \
           ./staging/
         
+        # Проверяем создание APK
+        if [ ! -f "unsigned.apk" ]; then
+          echo "Failed to create unsigned.apk"
+          exit 1
+        fi
+        
         # Выравниваем
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
         
-        # Создаём ключ
-        keytool -genkey -v -keystore debug.keystore -storepass android \
-          -alias debug -keypass android -keyalg RSA -keysize 2048 \
-          -validity 10000 -dname "CN=Debug" || true
+        # Создаём ключ (если не существует)
+        if [ ! -f "debug.keystore" ]; then
+          keytool -genkey -v -keystore debug.keystore -storepass android \
+            -alias debug -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Debug"
+        fi
         
         # Подписываем
         "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
           --out Game.apk aligned.apk
+
+    - name: Verify APK
+      run: |
+        if [ -f "Game.apk" ]; then
+          echo "APK created successfully!"
+          ls -lh Game.apk
+          file Game.apk
+        else
+          echo "APK not found!"
+          exit 1
+        fi
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -128,12 +146,15 @@ jobs:
         name: DS-Game-APK
         path: Game.apk
 
-    - name: Upload debug info
+    - name: Upload build artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: build-logs
+        name: build-artifacts
         path: |
           game.c
-          ds_compiler
-          *.so
+          staging/lib/arm64-v8a/libds_game.so
+          staging/lib/armeabi-v7a/libds_game.so
+          unsigned.apk
+          aligned.apk
+        retention-days: 7
