@@ -3,35 +3,74 @@
 #include <string.h>
 #include <math.h>
 #include <arm_neon.h>
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 static Buffer current_buffer = {0};
+static FILE* log_file = NULL;
+static int frame_count = 0;
+
+// === ЛОГГИНГ ===
+void ds_log(const char* fmt, ...) {
+    if (!log_file) return;
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(log_file, fmt, args);
+    va_end(args);
+    fflush(log_file);
+}
+
+void ds_init_log() {
+    // Создаём папку
+    mkdir("/storage/emulated/0/ds_logs", 0777);
+    
+    // Открываем лог файл
+    log_file = fopen("/storage/emulated/0/ds_logs/log.txt", "a");
+    if (log_file) {
+        time_t now = time(NULL);
+        fprintf(log_file, "\n=== DS GAME STARTED === %s", ctime(&now));
+        fflush(log_file);
+    }
+}
 
 // === ГРАФИКА ===
 
 void cls(uint32_t color) {
-    if (!current_buffer.pixels) return;
-    uint32x4_t v_color = vdupq_n_u32(color);
-    int total = current_buffer.stride * current_buffer.height;
-    int i = 0;
-    for (; i <= total - 4; i += 4) {
-        vst1q_u32(&current_buffer.pixels[i], v_color);
+    if (!current_buffer.pixels) {
+        ds_log("ERROR: cls() - no pixels!\n");
+        return;
     }
-    for (; i < total; i++) {
+    int total = current_buffer.stride * current_buffer.height;
+    if (total <= 0) {
+        ds_log("ERROR: cls() - invalid buffer size: %d\n", total);
+        return;
+    }
+    
+    // Безопасная очистка (без NEON для стабильности)
+    for (int i = 0; i < total; i++) {
         current_buffer.pixels[i] = color;
     }
 }
 
 void rect(float x, float y, float w, float h, uint32_t color) {
-    if (!current_buffer.pixels) return;
-    int x1 = (int)x;
-    int y1 = (int)y;
-    int x2 = (int)(x + w);
-    int y2 = (int)(y + h);
+    if (!current_buffer.pixels) {
+        ds_log("ERROR: rect() - no pixels!\n");
+        return;
+    }
+    
+    int x1 = (int)(x + 0.5f);
+    int y1 = (int)(y + 0.5f);
+    int x2 = (int)(x + w + 0.5f);
+    int y2 = (int)(y + h + 0.5f);
     
     if (x1 < 0) x1 = 0;
     if (y1 < 0) y1 = 0;
     if (x2 > current_buffer.width) x2 = current_buffer.width;
     if (y2 > current_buffer.height) y2 = current_buffer.height;
+    
+    if (x1 >= x2 || y1 >= y2) return;
     
     for (int row = y1; row < y2; row++) {
         uint32_t* line = current_buffer.pixels + row * current_buffer.stride;
@@ -42,16 +81,20 @@ void rect(float x, float y, float w, float h, uint32_t color) {
 }
 
 void circle(float cx, float cy, float r, uint32_t color) {
-    if (!current_buffer.pixels) return;
-    int rad = (int)r;
+    if (!current_buffer.pixels || r <= 0) return;
+    
+    int rad = (int)(r + 0.5f);
+    int cx_int = (int)(cx + 0.5f);
+    int cy_int = (int)(cy + 0.5f);
     int r2 = rad * rad;
+    
     for (int y = -rad; y <= rad; y++) {
-        int sy = (int)cy + y;
+        int sy = cy_int + y;
         if (sy < 0 || sy >= current_buffer.height) continue;
         uint32_t* line = current_buffer.pixels + sy * current_buffer.stride;
         int y2 = y * y;
         for (int x = -rad; x <= rad; x++) {
-            int sx = (int)cx + x;
+            int sx = cx_int + x;
             if (sx < 0 || sx >= current_buffer.width) continue;
             if (x*x + y2 <= r2) {
                 line[sx] = color;
@@ -61,18 +104,24 @@ void circle(float cx, float cy, float r, uint32_t color) {
 }
 
 void ring(float cx, float cy, float r, float t, uint32_t color) {
-    if (!current_buffer.pixels) return;
-    int rad = (int)r;
-    int thick = (int)t;
+    if (!current_buffer.pixels || r <= 0 || t <= 0) return;
+    
+    int rad = (int)(r + 0.5f);
+    int thick = (int)(t + 0.5f);
+    int cx_int = (int)(cx + 0.5f);
+    int cy_int = (int)(cy + 0.5f);
     int r_out2 = rad * rad;
     int r_in2 = (rad - thick) * (rad - thick);
+    
+    if (r_in2 < 0) r_in2 = 0;
+    
     for (int y = -rad; y <= rad; y++) {
-        int sy = (int)cy + y;
+        int sy = cy_int + y;
         if (sy < 0 || sy >= current_buffer.height) continue;
         uint32_t* line = current_buffer.pixels + sy * current_buffer.stride;
         int y2 = y * y;
         for (int x = -rad; x <= rad; x++) {
-            int sx = (int)cx + x;
+            int sx = cx_int + x;
             if (sx < 0 || sx >= current_buffer.width) continue;
             int d2 = x*x + y2;
             if (d2 <= r_out2 && d2 >= r_in2) {
@@ -83,18 +132,12 @@ void ring(float cx, float cy, float r, float t, uint32_t color) {
 }
 
 void tex(float x, float y, const char* name, float angle, float scale) {
-    // TODO: загрузка текстур из ассетов
+    // TODO: загрузка текстур
 }
 
 void text(const char* str, float x, float y, uint32_t color) {
     if (!current_buffer.pixels || !str) return;
-    int px = (int)x;
-    int py = (int)y;
-    while (*str) {
-        // Простой вывод текста точками (заглушка)
-        px += 8;
-        str++;
-    }
+    // TODO: рендеринг шрифта
 }
 
 // === ДВИЖОК ===
@@ -103,11 +146,38 @@ struct engine { struct android_app* app; };
 
 static void handle_cmd(struct android_app* app, int32_t cmd) {
     struct engine* e = (struct engine*)app->userData;
-    if (cmd == APP_CMD_INIT_WINDOW) {
-        screen_w = ANativeWindow_getWidth(app->window);
-        screen_h = ANativeWindow_getHeight(app->window);
-        ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
-        init(app->activity->assetManager);
+    
+    switch(cmd) {
+        case APP_CMD_INIT_WINDOW: {
+            ds_log("APP_CMD_INIT_WINDOW\n");
+            screen_w = ANativeWindow_getWidth(app->window);
+            screen_h = ANativeWindow_getHeight(app->window);
+            ds_log("Window size: %dx%d\n", screen_w, screen_h);
+            
+            ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
+            
+            // Инициализация игры
+            ds_log("Calling init()...\n");
+            init(app->activity->assetManager);
+            ds_log("init() completed\n");
+            break;
+        }
+        case APP_CMD_TERM_WINDOW: {
+            ds_log("APP_CMD_TERM_WINDOW\n");
+            break;
+        }
+        case APP_CMD_GAINED_FOCUS: {
+            ds_log("APP_CMD_GAINED_FOCUS\n");
+            break;
+        }
+        case APP_CMD_LOST_FOCUS: {
+            ds_log("APP_CMD_LOST_FOCUS\n");
+            break;
+        }
+        default: {
+            ds_log("Unknown cmd: %d\n", cmd);
+            break;
+        }
     }
 }
 
@@ -116,6 +186,13 @@ static int32_t handle_input(struct android_app* app, AInputEvent* event) {
         float x = AMotionEvent_getX(event, 0);
         float y = AMotionEvent_getY(event, 0);
         int action = AMotionEvent_getAction(event);
+        
+        // Логируем касания (только каждые 100 кадров, чтобы не забивать лог)
+        static int touch_count = 0;
+        if (++touch_count % 100 == 0) {
+            ds_log("Touch: x=%.1f y=%.1f action=%d\n", x, y, action);
+        }
+        
         touch(x, y, action);
         return 1;
     }
@@ -123,30 +200,68 @@ static int32_t handle_input(struct android_app* app, AInputEvent* event) {
 }
 
 void android_main(struct android_app* app) {
+    // Инициализируем лог
+    ds_init_log();
+    ds_log("=== ANDROID_MAIN STARTED ===\n");
+    
     struct engine e = {0};
     app->userData = &e;
     app->onAppCmd = handle_cmd;
     app->onInputEvent = handle_input;
     
+    ds_log("Main loop starting...\n");
+    
     while (1) {
         struct android_poll_source* source;
-        while (ALooper_pollOnce(0, 0, 0, (void**)&source) >= 0) {
-            if (source) source->process(app, source);
-            if (app->destroyRequested) return;
+        int ident;
+        
+        // Обработка событий с таймаутом 0 (не блокируем)
+        while ((ident = ALooper_pollOnce(0, NULL, NULL, (void**)&source)) >= 0) {
+            if (source) {
+                source->process(app, source);
+            }
+            if (app->destroyRequested) {
+                ds_log("Destroy requested, exiting...\n");
+                if (log_file) {
+                    fclose(log_file);
+                    log_file = NULL;
+                }
+                return;
+            }
         }
         
-        if (app->window) {
+        // Рендеринг
+        if (app->window && !app->destroyRequested) {
+            frame_count++;
+            
+            // Обновляем игру (безопасно)
             update();
+            
+            // Рисуем
             ANativeWindow_Buffer buf;
-            if (ANativeWindow_lock(app->window, &buf, 0) == 0) {
+            if (ANativeWindow_lock(app->window, &buf, NULL) == 0) {
                 current_buffer.pixels = (uint32_t*)buf.bits;
                 current_buffer.width = buf.width;
                 current_buffer.height = buf.height;
                 current_buffer.stride = buf.stride;
                 
-                draw(&current_buffer);
+                // Проверка буфера
+                if (current_buffer.pixels && current_buffer.width > 0 && current_buffer.height > 0) {
+                    draw(&current_buffer);
+                } else {
+                    ds_log("ERROR: Invalid buffer in draw!\n");
+                }
+                
                 ANativeWindow_unlockAndPost(app->window);
+            } else {
+                static int lock_errors = 0;
+                if (++lock_errors % 60 == 0) {
+                    ds_log("ERROR: ANativeWindow_lock failed (%d times)\n", lock_errors);
+                }
             }
+        } else {
+            // Нет окна - ждём
+            usleep(10000);
         }
     }
 }
