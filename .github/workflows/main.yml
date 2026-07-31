@@ -13,7 +13,7 @@ jobs:
       with:
         ndk-version: r25c
 
-    - name: Generate game.c (0.01s)
+    - name: Generate game.c
       run: |
         chmod +x gen.sh
         ./gen.sh
@@ -27,7 +27,7 @@ jobs:
         mkdir -p staging/lib/arm64-v8a staging/assets
         
         "$TOOLCHAIN/aarch64-linux-android21-clang" -O3 -s -fPIC -shared \
-          game.c runtime.c graphics.c main.c $GLUE/android_native_app_glue.c \
+          game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/arm64-v8a/libds_game.so
 
