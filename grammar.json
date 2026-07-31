@@ -1,0 +1,51 @@
+{
+  "scopeName": "source.dimscript",
+  "name": "DimScript",
+  "fileTypes": ["ds"],
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.dimscript",
+      "match": "//.*$"
+    },
+    {
+      "name": "comment.line.double-dash.dimscript",
+      "match": "--.*$"
+    },
+    {
+      "name": "keyword.control.dimscript",
+      "match": "\\b(if|else|while|for|function|return|local|end|elseif)\\b"
+    },
+    {
+      "name": "constant.language.dimscript",
+      "match": "\\b(true|false|nil)\\b"
+    },
+    {
+      "name": "string.quoted.double.dimscript",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.dimscript",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric.dimscript",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    {
+      "name": "entity.name.function.dimscript",
+      "match": "\\bfunction\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.dimscript"
+        }
+      }
+    },
+    {
+      "name": "variable.other.dimscript",
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+    }
+  ]
+}
