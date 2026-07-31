@@ -59,8 +59,3 @@ void print(Val v) {
 
 void printn(double n) { __android_log_print(ANDROID_LOG_INFO, "DS", "%f", n); }
 void prints(const char* s) { __android_log_print(ANDROID_LOG_INFO, "DS", "%s", s); }
-
-void init(AAssetManager* assets) { G = T_new(); }
-void update() {}
-void draw(Buffer* rb) {}
-void touch(float x, float y, int action) {}
