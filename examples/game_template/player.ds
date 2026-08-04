@@ -1,55 +1,26 @@
--- Gameplay code can live in a separate DimScript file.
-
-player = {x = 0, y = 0, speed = 5, size = 40}
-
+player={x=0,y=0,speed=5,size=40}
 function player_init()
-    player.x = screen_w / 2
-    player.y = screen_h / 2
-    joy.x = 150
-    joy.y = screen_h - 150
-    joy.r = 80
+ player.x=screen_w/2;player.y=screen_h/2;joy.x=150;joy.y=screen_h-150;joy.r=80
 end
-
 function player_update()
-    player.x = player.x + joy.dx * player.speed
-    player.y = player.y + joy.dy * player.speed
+ player.x=player.x+joy.dx*player.speed;player.y=player.y+joy.dy*player.speed
 end
-
 function player_draw()
-    rect(player.x - player.size / 2, player.y - player.size / 2, player.size, player.size, COLOR_PLAYER)
-    ring(joy.x, joy.y, joy.r, 4, COLOR_JOY)
-    circle(joy.x + joy.ox, joy.y + joy.oy, 35, COLOR_JOY)
+ rect(player.x-player.size/2,player.y-player.size/2,player.size,player.size,COLOR_PLAYER);ring(joy.x,joy.y,joy.r,4,COLOR_JOY);circle(joy.x+joy.ox,joy.y+joy.oy,35,COLOR_JOY)
 end
-
-function player_touch(x, y, action)
-    if action == 1 or action == 3 then
-        joy.dx = 0
-        joy.dy = 0
-        joy.ox = 0
-        joy.oy = 0
-    else
-        local dx = x - joy.x
-        local dy = y - joy.y
-        local distance = sqrt(dx * dx + dy * dy)
-        if distance > joy.r + 30 then
-            joy.dx = 0
-            joy.dy = 0
-            joy.ox = 0
-            joy.oy = 0
-        elseif distance < 15 then
-            joy.dx = 0
-            joy.dy = 0
-            joy.ox = 0
-            joy.oy = 0
-        else
-            local knob_distance = distance
-            if knob_distance > joy.r then
-                knob_distance = joy.r
-            end
-            joy.dx = dx / distance
-            joy.dy = dy / distance
-            joy.ox = joy.dx * knob_distance
-            joy.oy = joy.dy * knob_distance
-        end
-    end
+function player_touch(x,y,action)
+ if action==1||action==3 then
+  joy.dx=0;joy.dy=0;joy.ox=0;joy.oy=0
+ else
+  local dx=x-joy.x;local dy=y-joy.y;local distance=sqrt(dx*dx+dy*dy)
+  if distance>joy.r+30||distance<15 then
+   joy.dx=0;joy.dy=0;joy.ox=0;joy.oy=0
+  else
+   local knob_distance=distance
+   if knob_distance>joy.r then
+    knob_distance=joy.r
+   end
+   joy.dx=dx/distance;joy.dy=dy/distance;joy.ox=joy.dx*knob_distance;joy.oy=joy.dy*knob_distance
+  end
+ end
 end

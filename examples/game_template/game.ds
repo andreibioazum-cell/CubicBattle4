@@ -1,23 +1,13 @@
--- Main entry points for the example project.
--- The implementation is split into player.ds on purpose.
-
-COLOR_BG = 0xFF20242B
-COLOR_PLAYER = 0xFFEE7722
-COLOR_JOY = 0xFFFFFFFF
-
+COLOR_BG=0xFF20242B;COLOR_PLAYER=0xFFEE7722;COLOR_JOY=0xFFFFFFFF
 function init()
-    player_init()
+ player_init()
 end
-
 function update()
-    player_update()
+ player_update()
 end
-
 function draw()
-    cls(COLOR_BG)
-    player_draw()
+ cls(COLOR_BG);player_draw()
 end
-
-function touch(x, y, action)
-    player_touch(x, y, action)
+function touch(x,y,action)
+ player_touch(x,y,action)
 end

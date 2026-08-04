@@ -1007,6 +1007,46 @@ static void compile_statement(const char *raw_line, int *block_depth) {
     emit_assignment(line);
 }
 
+/* A semicolon is a statement separator.  It keeps .ds files compact without
+ * changing the block syntax: function/if/else/while/end still stay on their
+ * own lines, while assignments and calls can share a line. */
+static void compile_statement_list(const char *raw_line, int *block_depth) {
+    char statement[DS_MAX_LINE];
+    int in_string = 0;
+    int escaped = 0;
+    int nesting = 0;
+    size_t start = 0;
+    size_t i;
+
+    for (i = 0; ; ++i) {
+        char current = raw_line[i];
+        if (in_string) {
+            if (escaped) escaped = 0;
+            else if (current == '\\') escaped = 1;
+            else if (current == '"') in_string = 0;
+        } else if (current == '"') {
+            in_string = 1;
+        } else if (current == '(' || current == '{' || current == '[') {
+            ++nesting;
+        } else if (current == ')' || current == '}' || current == ']') {
+            if (nesting > 0) --nesting;
+        }
+
+        if ((current == ';' && !in_string && nesting == 0) || current == '\0') {
+            size_t length = i - start;
+            if (length >= sizeof(statement)) {
+                compiler_error("statement is too long");
+                return;
+            }
+            memcpy(statement, raw_line + start, length);
+            statement[length] = '\0';
+            compile_statement(statement, block_depth);
+            start = i + 1;
+        }
+        if (current == '\0') break;
+    }
+}
+
 static void emit_runtime_helpers(void) {
     fprintf(C.out,
         "#if defined(__GNUC__)\n"
@@ -1110,7 +1150,7 @@ static void emit_function(const Function *function) {
     for (i = function->body_start; i < function->body_end; ++i) {
         C.source_name = C.source->lines[i].source_name;
         C.line_number = C.source->lines[i].source_line;
-        compile_statement(C.source->lines[i].text, &block_depth);
+        compile_statement_list(C.source->lines[i].text, &block_depth);
     }
     if (block_depth != 0) {
         C.source_name = C.source->lines[function->body_end].source_name;
@@ -1140,7 +1180,7 @@ static void emit_hooks(void) {
         if (line_is_inside_function(i)) continue;
         C.source_name = C.source->lines[i].source_name;
         C.line_number = C.source->lines[i].source_line;
-        compile_statement(C.source->lines[i].text, &block_depth);
+        compile_statement_list(C.source->lines[i].text, &block_depth);
     }
     if (block_depth != 0) compiler_error("unclosed top-level control block");
     if (init_function) {
