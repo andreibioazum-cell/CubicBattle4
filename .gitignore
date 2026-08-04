@@ -1,5 +1,7 @@
 # Generated build output
-game.c
+/game.c
+**/game.c
+/AndroidManifest.xml
 staging/
 unsigned.apk
 aligned.apk

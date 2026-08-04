@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -eu
 
-# A game is a directory of DimScript files.  Every .ds file in that directory
+# A game is a directory of DimScript files. Every .ds file in that directory
 # is compiled together, so functions and globals can be split between files.
 GAME_DIR="${GAME_DIR:-game}"
 SOURCES=()
+COMPAT_BUILD=0
 
 if [ "$#" -eq 0 ]; then
     INPUT="$GAME_DIR"
     OUTPUT="$GAME_DIR/game.c"
+    COMPAT_BUILD=1
 elif [ -d "$1" ]; then
     INPUT="$1"
     OUTPUT="${2:-$INPUT/game.c}"
@@ -51,5 +53,22 @@ trap 'rm -f "$compiler"' EXIT
 "${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
     ds_compiler.c -o "$compiler"
 "$compiler" --output "$OUTPUT" "${SOURCES[@]}"
+
+# The original Android workflow expects generated files at the repository
+# root. Keep those files as ignored compatibility artifacts; the real project
+# files remain inside game/.
+if [ "$COMPAT_BUILD" -eq 1 ]; then
+    cp "$OUTPUT" game.c
+    if [ -f "$INPUT/AndroidManifest.xml" ]; then
+        cp "$INPUT/AndroidManifest.xml" AndroidManifest.xml
+    else
+        echo "error: $INPUT/AndroidManifest.xml is missing" >&2
+        exit 1
+    fi
+    if [ -d "$INPUT/assets" ]; then
+        mkdir -p staging/assets
+        cp -R "$INPUT/assets/." staging/assets/
+    fi
+fi
 
 echo "$OUTPUT generated from ${#SOURCES[@]} DimScript file(s)"
