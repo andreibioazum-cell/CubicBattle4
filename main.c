@@ -1,219 +1,320 @@
 #include <android_native_app_glue.h>
 #include "runtime.h"
-#include <string.h>
-#include <math.h>
+
+#include <stdarg.h>
 #include <stdio.h>
-#include <time.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <errno.h>
 
 static Buffer current_buffer = {0};
 static int frame_count = 0;
 static int init_done = 0;
 static char log_text[16384] = {0};
-static int log_len = 0;
+static size_t log_len = 0;
 
-// === ЛОГ В БУФЕР ===
-void ds_log(const char* fmt, ...) {
-    if (log_len >= sizeof(log_text) - 256) return;
-    
+/* Keep a copy for diagnostics, but also send every message straight to
+ * logcat.  The old implementation only appended to an in-memory buffer and
+ * could advance log_len past the end when vsnprintf truncated a message;
+ * startup failures then appeared to be silently swallowed. */
+void ds_log(const char *format, ...) {
     va_list args;
-    va_start(args, fmt);
-    int written = vsnprintf(log_text + log_len, sizeof(log_text) - log_len - 1, fmt, args);
-    va_end(args);
-    
-    if (written > 0) {
-        log_len += written;
+    va_list buffer_args;
+
+    va_start(args, format);
+    va_copy(buffer_args, args);
+    __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, args);
+
+    if (log_len < sizeof(log_text) - 1) {
+        int available = (int)(sizeof(log_text) - log_len);
+        int written = vsnprintf(log_text + log_len, (size_t)available, format, buffer_args);
+
+        if (written < 0) {
+            log_len = sizeof(log_text) - 1;
+            log_text[log_len] = '\0';
+        } else if (written >= available) {
+            log_len = sizeof(log_text) - 1;
+            log_text[log_len] = '\0';
+        } else {
+            log_len += (size_t)written;
+        }
     }
+
+    va_end(buffer_args);
+    va_end(args);
 }
 
-// === ПОКАЗАТЬ ЛОГ НА ЭКРАНЕ (временная заглушка) ===
-void ds_show_log() {
-    // Просто копируем в переменную, потом можно вывести на экран
-    ds_log("Log len: %d\n", log_len);
+void ds_show_log(void) {
+    __android_log_print(ANDROID_LOG_INFO, "DimScript", "%s", log_text);
 }
 
-// === ГРАФИКА ===
+static void clear_current_buffer(void) {
+    current_buffer.pixels = NULL;
+    current_buffer.width = 0;
+    current_buffer.height = 0;
+    current_buffer.stride = 0;
+}
+
+/* === Graphics === */
 
 void cls(uint32_t color) {
-    if (!current_buffer.pixels) return;
-    int total = current_buffer.stride * current_buffer.height;
-    if (total <= 0) return;
-    
-    for (int i = 0; i < total && i < current_buffer.stride * current_buffer.height; i++) {
-        current_buffer.pixels[i] = color;
+    int row;
+
+    if (!current_buffer.pixels || current_buffer.width <= 0 ||
+        current_buffer.height <= 0 || current_buffer.stride <= 0) {
+        return;
+    }
+
+    for (row = 0; row < current_buffer.height; ++row) {
+        uint32_t *line = current_buffer.pixels + row * current_buffer.stride;
+        int column;
+        for (column = 0; column < current_buffer.stride; ++column) {
+            line[column] = color;
+        }
     }
 }
 
 void rect(float x, float y, float w, float h, uint32_t color) {
-    if (!current_buffer.pixels) return;
-    
-    int x1 = (int)(x + 0.5f);
-    int y1 = (int)(y + 0.5f);
-    int x2 = (int)(x + w + 0.5f);
-    int y2 = (int)(y + h + 0.5f);
-    
+    int x1;
+    int y1;
+    int x2;
+    int y2;
+    int row;
+
+    if (!current_buffer.pixels || current_buffer.width <= 0 ||
+        current_buffer.height <= 0 || w <= 0.0f || h <= 0.0f) {
+        return;
+    }
+
+    x1 = (int)(x + 0.5f);
+    y1 = (int)(y + 0.5f);
+    x2 = (int)(x + w + 0.5f);
+    y2 = (int)(y + h + 0.5f);
+
     if (x1 < 0) x1 = 0;
     if (y1 < 0) y1 = 0;
     if (x2 > current_buffer.width) x2 = current_buffer.width;
     if (y2 > current_buffer.height) y2 = current_buffer.height;
-    
     if (x1 >= x2 || y1 >= y2) return;
-    
-    for (int row = y1; row < y2 && row < current_buffer.height; row++) {
-        uint32_t* line = current_buffer.pixels + row * current_buffer.stride;
-        for (int col = x1; col < x2 && col < current_buffer.width; col++) {
-            line[col] = color;
+
+    for (row = y1; row < y2; ++row) {
+        uint32_t *line = current_buffer.pixels + row * current_buffer.stride;
+        int column;
+        for (column = x1; column < x2; ++column) {
+            line[column] = color;
         }
     }
 }
 
 void circle(float cx, float cy, float r, uint32_t color) {
-    if (!current_buffer.pixels || r <= 0) return;
-    
-    int rad = (int)(r + 0.5f);
-    int cx_int = (int)(cx + 0.5f);
-    int cy_int = (int)(cy + 0.5f);
-    int r2 = rad * rad;
-    
-    for (int y = -rad; y <= rad; y++) {
-        int sy = cy_int + y;
-        if (sy < 0 || sy >= current_buffer.height) continue;
-        uint32_t* line = current_buffer.pixels + sy * current_buffer.stride;
-        int y2 = y * y;
-        for (int x = -rad; x <= rad; x++) {
-            int sx = cx_int + x;
-            if (sx < 0 || sx >= current_buffer.width) continue;
-            if (x*x + y2 <= r2) {
-                line[sx] = color;
+    int radius;
+    int cx_int;
+    int cy_int;
+    int radius_squared;
+    int y;
+
+    if (!current_buffer.pixels || r <= 0.0f || current_buffer.width <= 0 ||
+        current_buffer.height <= 0) {
+        return;
+    }
+
+    radius = (int)(r + 0.5f);
+    cx_int = (int)(cx + 0.5f);
+    cy_int = (int)(cy + 0.5f);
+    radius_squared = radius * radius;
+
+    for (y = -radius; y <= radius; ++y) {
+        int screen_y = cy_int + y;
+        int x;
+        int y_squared = y * y;
+
+        if (screen_y < 0 || screen_y >= current_buffer.height) continue;
+
+        for (x = -radius; x <= radius; ++x) {
+            int screen_x = cx_int + x;
+            if (screen_x < 0 || screen_x >= current_buffer.width) continue;
+            if (x * x + y_squared <= radius_squared) {
+                current_buffer.pixels[screen_y * current_buffer.stride + screen_x] = color;
             }
         }
     }
 }
 
-void ring(float cx, float cy, float r, float t, uint32_t color) {
-    if (!current_buffer.pixels || r <= 0 || t <= 0) return;
-    
-    int rad = (int)(r + 0.5f);
-    int thick = (int)(t + 0.5f);
-    int cx_int = (int)(cx + 0.5f);
-    int cy_int = (int)(cy + 0.5f);
-    int r_out2 = rad * rad;
-    int r_in2 = (rad - thick) * (rad - thick);
-    
-    if (r_in2 < 0) r_in2 = 0;
-    
-    for (int y = -rad; y <= rad; y++) {
-        int sy = cy_int + y;
-        if (sy < 0 || sy >= current_buffer.height) continue;
-        uint32_t* line = current_buffer.pixels + sy * current_buffer.stride;
-        int y2 = y * y;
-        for (int x = -rad; x <= rad; x++) {
-            int sx = cx_int + x;
-            if (sx < 0 || sx >= current_buffer.width) continue;
-            int d2 = x*x + y2;
-            if (d2 <= r_out2 && d2 >= r_in2) {
-                line[sx] = color;
+void ring(float cx, float cy, float r, float thickness, uint32_t color) {
+    int radius;
+    int thick;
+    int cx_int;
+    int cy_int;
+    int outer_squared;
+    int inner_squared;
+    int y;
+
+    if (!current_buffer.pixels || r <= 0.0f || thickness <= 0.0f ||
+        current_buffer.width <= 0 || current_buffer.height <= 0) {
+        return;
+    }
+
+    radius = (int)(r + 0.5f);
+    thick = (int)(thickness + 0.5f);
+    cx_int = (int)(cx + 0.5f);
+    cy_int = (int)(cy + 0.5f);
+    outer_squared = radius * radius;
+    inner_squared = radius - thick;
+    inner_squared = inner_squared > 0 ? inner_squared * inner_squared : 0;
+
+    for (y = -radius; y <= radius; ++y) {
+        int screen_y = cy_int + y;
+        int x;
+        int y_squared = y * y;
+
+        if (screen_y < 0 || screen_y >= current_buffer.height) continue;
+
+        for (x = -radius; x <= radius; ++x) {
+            int screen_x = cx_int + x;
+            int distance_squared;
+            if (screen_x < 0 || screen_x >= current_buffer.width) continue;
+            distance_squared = x * x + y_squared;
+            if (distance_squared <= outer_squared && distance_squared >= inner_squared) {
+                current_buffer.pixels[screen_y * current_buffer.stride + screen_x] = color;
             }
         }
     }
 }
 
-void tex(float x, float y, const char* name, float angle, float scale) {}
-void text(const char* str, float x, float y, uint32_t color) {}
+void tex(float x, float y, const char *name, float angle, float scale) {
+    (void)x;
+    (void)y;
+    (void)name;
+    (void)angle;
+    (void)scale;
+}
 
-// === ДВИЖОК ===
+void text(const char *string, float x, float y, uint32_t color) {
+    (void)string;
+    (void)x;
+    (void)y;
+    (void)color;
+}
 
-struct engine { struct android_app* app; };
+/* === Android event loop === */
 
-static void handle_cmd(struct android_app* app, int32_t cmd) {
-    struct engine* e = (struct engine*)app->userData;
-    
-    switch(cmd) {
-        case APP_CMD_INIT_WINDOW: {
-            ds_log("=== INIT WINDOW ===\n");
+struct engine {
+    struct android_app *app;
+};
+
+static void handle_cmd(struct android_app *app, int32_t command) {
+    if (!app) {
+        ds_runtime_error("received an Android command without an app instance");
+        return;
+    }
+
+    switch (command) {
+        case APP_CMD_INIT_WINDOW:
+            if (!app->window) {
+                init_done = 0;
+                clear_current_buffer();
+                ds_runtime_error("APP_CMD_INIT_WINDOW arrived without a window");
+                return;
+            }
+
             screen_w = ANativeWindow_getWidth(app->window);
             screen_h = ANativeWindow_getHeight(app->window);
-            ds_log("Screen: %dx%d\n", screen_w, screen_h);
-            
-            ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
-            
-            ds_log("Calling init()...\n");
-            init(app->activity->assetManager);
-            ds_log("init() done!\n");
+            if (screen_w <= 0 || screen_h <= 0) {
+                init_done = 0;
+                ds_runtime_error("Android returned an invalid window size: %dx%d", screen_w, screen_h);
+                return;
+            }
+
+            ds_log("initialising DimScript window: %dx%d", screen_w, screen_h);
+            if (ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888) != 0) {
+                ds_runtime_error("could not select RGBA_8888 window buffers");
+            }
+
+            /* This is intentionally a normal call: script errors remain
+             * visible in logcat instead of being swallowed. */
+            init_done = 0;
+            init(app->activity ? app->activity->assetManager : NULL);
+            frame_count = 0;
             init_done = 1;
             break;
-        }
-        case APP_CMD_TERM_WINDOW: {
-            ds_log("=== TERM WINDOW ===\n");
+
+        case APP_CMD_TERM_WINDOW:
+            init_done = 0;
+            clear_current_buffer();
             break;
-        }
-        default: {
-            ds_log("CMD: %d\n", cmd);
+
+        default:
             break;
-        }
     }
 }
 
-static int32_t handle_input(struct android_app* app, AInputEvent* event) {
-    if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
-        float x = AMotionEvent_getX(event, 0);
-        float y = AMotionEvent_getY(event, 0);
-        int action = AMotionEvent_getAction(event);
-        
-        touch(x, y, action);
-        return 1;
+static int32_t handle_input(struct android_app *app, AInputEvent *event) {
+    int action;
+
+    (void)app;
+    if (!event || AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION) {
+        return 0;
     }
-    return 0;
+    if (AMotionEvent_getPointerCount(event) <= 0) {
+        return 0;
+    }
+
+    action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+    touch(AMotionEvent_getX(event, 0), AMotionEvent_getY(event, 0), action);
+    return 1;
 }
 
-void android_main(struct android_app* app) {
-    ds_log("=== ANDROID_MAIN STARTED ===\n");
-    ds_log("Log buffer size: %d bytes\n", sizeof(log_text));
-    
-    struct engine e = {0};
-    e.app = app;
-    app->userData = &e;
+void android_main(struct android_app *app) {
+    struct engine engine_state = {0};
+
+    if (!app) {
+        ds_runtime_error("android_main received a null app instance");
+        return;
+    }
+
+    engine_state.app = app;
+    app->userData = &engine_state;
     app->onAppCmd = handle_cmd;
     app->onInputEvent = handle_input;
-    
-    while (1) {
-        struct android_poll_source* source;
+
+    ds_log("DimScript application started");
+
+    for (;;) {
+        struct android_poll_source *source = NULL;
         int ident;
-        
-        while ((ident = ALooper_pollOnce(0, NULL, NULL, (void**)&source)) >= 0) {
-            if (source) {
+
+        while ((ident = ALooper_pollOnce(0, NULL, NULL, (void **)&source)) >= 0) {
+            if (source && source->process) {
                 source->process(app, source);
             }
             if (app->destroyRequested) {
-                ds_log("=== DESTROY ===\n");
+                clear_current_buffer();
                 return;
             }
         }
-        
+
         if (app->window && !app->destroyRequested && init_done) {
-            frame_count++;
-            
-            if (frame_count % 2 == 0) {
-                update();
-            }
-            
-            ANativeWindow_Buffer buf;
-            if (ANativeWindow_lock(app->window, &buf, NULL) == 0) {
-                current_buffer.pixels = (uint32_t*)buf.bits;
-                current_buffer.width = buf.width;
-                current_buffer.height = buf.height;
-                current_buffer.stride = buf.stride;
-                
-                if (current_buffer.pixels && current_buffer.width > 0 && current_buffer.height > 0) {
+            ANativeWindow_Buffer buffer;
+
+            update();
+            if (ANativeWindow_lock(app->window, &buffer, NULL) == 0) {
+                current_buffer.pixels = (uint32_t *)buffer.bits;
+                current_buffer.width = buffer.width;
+                current_buffer.height = buffer.height;
+                current_buffer.stride = buffer.stride;
+
+                if (current_buffer.pixels && current_buffer.width > 0 &&
+                    current_buffer.height > 0 && current_buffer.stride >= current_buffer.width) {
                     draw(&current_buffer);
+                } else {
+                    ds_runtime_error("Android supplied an invalid framebuffer");
                 }
-                
+
                 ANativeWindow_unlockAndPost(app->window);
+                ++frame_count;
+            } else if ((frame_count % 60) == 0) {
+                ds_runtime_error("ANativeWindow_lock failed");
             }
         } else {
-            usleep(10000);
+            /* Avoid a busy loop while Android has no surface. */
+            (void)ALooper_pollOnce(10, NULL, NULL, NULL);
         }
     }
 }
