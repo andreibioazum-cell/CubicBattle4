@@ -1,5 +1,6 @@
 #include <android_native_app_glue.h>
 #include "runtime.h"
+#include "stb_image.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -7,8 +8,6 @@
 static Buffer current_buffer = {0};
 static int frame_count = 0;
 static int init_done = 0;
-static char log_text[16384] = {0};
-static size_t log_len = 0;
 
 /* Keep a copy for diagnostics, but also send every message straight to
  * logcat.  The old implementation only appended to an in-memory buffer and
@@ -16,33 +15,9 @@ static size_t log_len = 0;
  * startup failures then appeared to be silently swallowed. */
 void ds_log(const char *format, ...) {
     va_list args;
-    va_list buffer_args;
-
     va_start(args, format);
-    va_copy(buffer_args, args);
     __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, args);
-
-    if (log_len < sizeof(log_text) - 1) {
-        int available = (int)(sizeof(log_text) - log_len);
-        int written = vsnprintf(log_text + log_len, (size_t)available, format, buffer_args);
-
-        if (written < 0) {
-            log_len = sizeof(log_text) - 1;
-            log_text[log_len] = '\0';
-        } else if (written >= available) {
-            log_len = sizeof(log_text) - 1;
-            log_text[log_len] = '\0';
-        } else {
-            log_len += (size_t)written;
-        }
-    }
-
-    va_end(buffer_args);
     va_end(args);
-}
-
-void ds_show_log(void) {
-    __android_log_print(ANDROID_LOG_INFO, "DimScript", "%s", log_text);
 }
 
 static void clear_current_buffer(void) {
@@ -179,11 +154,25 @@ void ring(float cx, float cy, float r, float thickness, uint32_t color) {
 }
 
 void tex(float x, float y, const char *name, float angle, float scale) {
-    (void)x;
-    (void)y;
-    (void)name;
-    (void)angle;
-    (void)scale;
+    int w, h, ch;
+    stbi_uc *img = stbi_load(name, &w, &h, &ch, 4);
+    if (!img) return;
+    int ix = (int)(x + 0.5f), iy = (int)(y + 0.5f);
+    int iw = (int)(w * scale + 0.5f), ih = (int)(h * scale + 0.5f);
+    for (int row = 0; row < ih; ++row) {
+        int sy = row * h / ih;
+        int screen_y = iy + row;
+        if (screen_y < 0 || screen_y >= current_buffer.height) continue;
+        for (int col = 0; col < iw; ++col) {
+            int sx = col * w / iw;
+            int screen_x = ix + col;
+            if (screen_x < 0 || screen_x >= current_buffer.width) continue;
+            stbi_uc *p = img + (sy * w + sx) * 4;
+            uint32_t c = ((uint32_t)p[3] << 24) | ((uint32_t)p[2] << 16) | ((uint32_t)p[1] << 8) | p[0];
+            current_buffer.pixels[screen_y * current_buffer.stride + screen_x] = c;
+        }
+    }
+    stbi_image_free(img);
 }
 
 void text(const char *string, float x, float y, uint32_t color) {
