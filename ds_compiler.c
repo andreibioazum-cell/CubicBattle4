@@ -19,6 +19,7 @@
 
 typedef struct {
     char *text;
+    const char *source_name;
     int source_line;
 } SourceLine;
 
@@ -168,6 +169,7 @@ static int load_source(const char *path, Source *source) {
             fclose(input);
             return 0;
         }
+        source->lines[source->count].source_name = path;
         source->lines[source->count].source_line = line_number;
         ++source->count;
     }
@@ -268,6 +270,7 @@ static int collect_functions(void) {
         int j;
 
         memset(&function, 0, sizeof(function));
+        C.source_name = C.source->lines[i].source_name;
         C.line_number = C.source->lines[i].source_line;
         parsed = parse_function_header(C.source->lines[i].text, &function);
         if (parsed <= 0) {
@@ -1075,6 +1078,22 @@ static int line_is_inside_function(int line_number) {
     return 0;
 }
 
+static void emit_function_prototypes(void) {
+    int i;
+    int parameter;
+
+    for (i = 0; i < C.function_count; ++i) {
+        const Function *function = &C.functions[i];
+        fprintf(C.out, "static void ds_fn_%s(", function->name);
+        for (parameter = 0; parameter < function->param_count; ++parameter) {
+            if (parameter) fputs(", ", C.out);
+            fprintf(C.out, "double %s", function->params[parameter]);
+        }
+        fputs(");\n", C.out);
+    }
+    if (C.function_count > 0) fputc('\n', C.out);
+}
+
 static void emit_function(const Function *function) {
     int i;
     int block_depth = 0;
@@ -1089,10 +1108,12 @@ static void emit_function(const Function *function) {
     C.local_count = 0;
     for (i = 0; i < function->param_count; ++i) add_local(function->params[i]);
     for (i = function->body_start; i < function->body_end; ++i) {
+        C.source_name = C.source->lines[i].source_name;
         C.line_number = C.source->lines[i].source_line;
         compile_statement(C.source->lines[i].text, &block_depth);
     }
     if (block_depth != 0) {
+        C.source_name = C.source->lines[function->body_end].source_name;
         C.line_number = C.source->lines[function->body_end].source_line;
         compiler_error("unclosed control block in function '%s'", function->name);
     }
@@ -1117,6 +1138,7 @@ static void emit_hooks(void) {
     C.local_count = 0;
     for (i = 0; i < C.source->count; ++i) {
         if (line_is_inside_function(i)) continue;
+        C.source_name = C.source->lines[i].source_name;
         C.line_number = C.source->lines[i].source_line;
         compile_statement(C.source->lines[i].text, &block_depth);
     }
@@ -1148,15 +1170,26 @@ static void emit_hooks(void) {
     fputs("}\n", C.out);
 }
 
-int compile_ds(const char *source_path, const char *destination_path) {
+static int compile_sources(const char *destination_path, int source_count,
+                           const char *const source_paths[]) {
     Source source = {0};
     FILE *output;
     int i;
 
+    if (source_count <= 0) {
+        fprintf(stderr, "Error: no DimScript source files were provided\n");
+        return 0;
+    }
+
     memset(&C, 0, sizeof(C));
-    C.source_name = source_path;
+    C.source_name = source_paths[0];
     C.source = &source;
-    if (!load_source(source_path, &source)) return 0;
+    for (i = 0; i < source_count; ++i) {
+        if (!load_source(source_paths[i], &source)) {
+            free_source(&source);
+            return 0;
+        }
+    }
     if (!collect_functions()) {
         free_source(&source);
         return 0;
@@ -1172,6 +1205,7 @@ int compile_ds(const char *source_path, const char *destination_path) {
 
     fputs("#include \"runtime.h\"\n#include <math.h>\n#include <string.h>\n\n", output);
     emit_runtime_helpers();
+    emit_function_prototypes();
     for (i = 0; i < C.function_count; ++i) emit_function(&C.functions[i]);
     emit_hooks();
     fclose(output);
@@ -1186,10 +1220,57 @@ int compile_ds(const char *source_path, const char *destination_path) {
     return 1;
 }
 
+int compile_ds(const char *source_path, const char *destination_path) {
+    const char *source_paths[1] = {source_path};
+    return compile_sources(destination_path, 1, source_paths);
+}
+
+static void print_usage(const char *program) {
+    fprintf(stderr,
+            "Usage: %s input.ds output.c\n"
+            "       %s --output output.c file1.ds [file2.ds ...]\n",
+            program, program);
+}
+
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s input.ds output.c\n", argv[0]);
+    const char *destination;
+    int first_source;
+    int source_count;
+    const char **source_paths;
+    int i;
+    int result;
+
+    if (argc == 3) {
+        return compile_ds(argv[1], argv[2]) ? 0 : 1;
+    }
+    if (argc < 4) {
+        print_usage(argv[0]);
         return 2;
     }
-    return compile_ds(argv[1], argv[2]) ? 0 : 1;
+
+    if (strcmp(argv[1], "--output") == 0) {
+        destination = argv[2];
+        first_source = 3;
+    } else {
+        destination = argv[1];
+        first_source = 2;
+    }
+    source_count = argc - first_source;
+    if (source_count <= 0) {
+        print_usage(argv[0]);
+        return 2;
+    }
+
+    source_paths = (const char **)calloc((size_t)source_count, sizeof(*source_paths));
+    if (!source_paths) {
+        fprintf(stderr, "Error: out of memory while preparing source files\n");
+        return 1;
+    }
+    for (i = 0; i < source_count; ++i) {
+        source_paths[i] = argv[first_source + i];
+    }
+
+    result = compile_sources(destination, source_count, source_paths) ? 0 : 1;
+    free(source_paths);
+    return result;
 }

@@ -1,12 +1,8 @@
--- The complete game is written in DimScript: background, player and joystick.
-
-COLOR_BG = 0xFFCCCCCC
-COLOR_PLAYER = 0xFFEE7722
-COLOR_JOY = 0xFF000000
+-- Gameplay code can live in a separate DimScript file.
 
 player = {x = 0, y = 0, speed = 5, size = 40}
 
-function init()
+function player_init()
     player.x = screen_w / 2
     player.y = screen_h / 2
     joy.x = 150
@@ -14,19 +10,18 @@ function init()
     joy.r = 80
 end
 
-function update()
+function player_update()
     player.x = player.x + joy.dx * player.speed
     player.y = player.y + joy.dy * player.speed
 end
 
-function draw()
-    cls(COLOR_BG)
+function player_draw()
     rect(player.x - player.size / 2, player.y - player.size / 2, player.size, player.size, COLOR_PLAYER)
     ring(joy.x, joy.y, joy.r, 4, COLOR_JOY)
     circle(joy.x + joy.ox, joy.y + joy.oy, 35, COLOR_JOY)
 end
 
-function touch(x, y, action)
+function player_touch(x, y, action)
     if action == 1 or action == 3 then
         joy.dx = 0
         joy.dy = 0

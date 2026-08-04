@@ -16,7 +16,7 @@ jobs:
     - name: Generate game/game.c
       run: |
         chmod +x gen.sh
-        ./gen.sh game/game.ds game/game.c
+        ./gen.sh game game/game.c
 
     - name: Build NDK
       run: |
