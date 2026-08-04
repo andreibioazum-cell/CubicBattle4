@@ -1,0 +1,7 @@
+# Generated build output
+game.c
+staging/
+unsigned.apk
+aligned.apk
+Game.apk
+debug.keystore
