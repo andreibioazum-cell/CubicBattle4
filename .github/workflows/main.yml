@@ -13,10 +13,14 @@ jobs:
       with:
         ndk-version: r25c
 
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
     - name: Generate game.c
       run: |
-        chmod +x gen.sh
-        ./gen.sh
+        python3 gen.py
 
     - name: Build NDK
       run: |
