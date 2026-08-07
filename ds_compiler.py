@@ -279,6 +279,16 @@ class Compiler:
                 i += 1
                 continue
 
+            # Hex number literal: 0xRRGGBB
+            if ch == '0' and i+1 < len(expr) and expr[i+1] == 'x':
+                num = '0x'
+                i += 2
+                while i < len(expr) and (expr[i].isdigit() or expr[i] in 'abcdefABCDEF'):
+                    num += expr[i]
+                    i += 1
+                result.append(num)
+                continue
+
             # Number literal
             if ch.isdigit() or (ch == '.' and i+1 < len(expr) and expr[i+1].isdigit()):
                 num = ''
