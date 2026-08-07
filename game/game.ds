@@ -2,58 +2,58 @@
 // JOYSTICK DEMO - DimScript
 // ============================================
 
-num COLOR_BG = 0xFF333366;
-num COLOR_PLAYER = 0xFFFF8844;
-num COLOR_JOY = 0xFFFFFFFF;
+num COLOR_BG = 0xFF333366
+num COLOR_PLAYER = 0xFFFF8844
+num COLOR_JOY = 0xFFFFFFFF
 
-num player_x = 200;
-num player_y = 400;
-num player_speed = 4;
-num player_size = 40;
+num player_x = 200
+num player_y = 400
+num player_speed = 4
+num player_size = 40
 
-num joy_x = 150;
-num joy_y = 700;
-num joy_r = 80;
-num joy_dx = 0;
-num joy_dy = 0;
-num joy_ox = 0;
-num joy_oy = 0;
+num joy_x = 150
+num joy_y = 700
+num joy_r = 80
+num joy_dx = 0
+num joy_dy = 0
+num joy_ox = 0
+num joy_oy = 0
 
-num touch_x = 0;
-num touch_y = 0;
-num touch_action = 0;
+num touch_x = 0
+num touch_y = 0
+num touch_action = 0
 
 // ============================================
 fn init() {
-    player_x = screen_w / 2;
-    player_y = screen_h / 2;
-    joy_x = 150;
-    joy_y = screen_h - 150;
-    joy_r = 80;
+    player_x = screen_w / 2
+    player_y = screen_h / 2
+    joy_x = 150
+    joy_y = screen_h - 150
+    joy_r = 80
 }
 
 // ============================================
 fn update() {
-    player_x = player_x + joy_dx * player_speed;
-    player_y = player_y + joy_dy * player_speed;
+    player_x = player_x + joy_dx * player_speed
+    player_y = player_y + joy_dy * player_speed
     
     if (player_x < player_size / 2) {
-        player_x = player_size / 2;
+        player_x = player_size / 2
     }
     if (player_x > screen_w - player_size / 2) {
-        player_x = screen_w - player_size / 2;
+        player_x = screen_w - player_size / 2
     }
     if (player_y < player_size / 2) {
-        player_y = player_size / 2;
+        player_y = player_size / 2
     }
     if (player_y > screen_h - player_size / 2) {
-        player_y = screen_h - player_size / 2;
+        player_y = screen_h - player_size / 2
     }
 }
 
 // ============================================
 fn draw() {
-    cls(COLOR_BG);
+    cls(COLOR_BG)
     
     rect(
         player_x - player_size / 2,
@@ -61,48 +61,48 @@ fn draw() {
         player_size,
         player_size,
         COLOR_PLAYER
-    );
+    )
     
-    ring(joy_x, joy_y, joy_r, 4, COLOR_JOY);
-    circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY);
+    ring(joy_x, joy_y, joy_r, 4, COLOR_JOY)
+    circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY)
 }
 
 // ============================================
 fn touch(x, y, action) {
-    touch_x = x;
-    touch_y = y;
-    touch_action = action;
+    touch_x = x
+    touch_y = y
+    touch_action = action
 }
 
 // ============================================
 fn update_touch() {
     if (touch_action == 1 || touch_action == 3) {
-        joy_dx = 0;
-        joy_dy = 0;
-        joy_ox = 0;
-        joy_oy = 0;
-        return;
+        joy_dx = 0
+        joy_dy = 0
+        joy_ox = 0
+        joy_oy = 0
+        return
     }
     
-    num dx = touch_x - joy_x;
-    num dy = touch_y - joy_y;
-    num distance = sqrt(dx * dx + dy * dy);
+    num dx = touch_x - joy_x
+    num dy = touch_y - joy_y
+    num distance = sqrt(dx * dx + dy * dy)
     
     if (distance > joy_r + 30 || distance < 15) {
-        joy_dx = 0;
-        joy_dy = 0;
-        joy_ox = 0;
-        joy_oy = 0;
-        return;
+        joy_dx = 0
+        joy_dy = 0
+        joy_ox = 0
+        joy_oy = 0
+        return
     }
     
-    num knob_distance = distance;
+    num knob_distance = distance
     if (knob_distance > joy_r) {
-        knob_distance = joy_r;
+        knob_distance = joy_r
     }
     
-    joy_dx = dx / distance;
-    joy_dy = dy / distance;
-    joy_ox = joy_dx * knob_distance;
-    joy_oy = joy_dy * knob_distance;
+    joy_dx = dx / distance
+    joy_dy = dy / distance
+    joy_ox = joy_dx * knob_distance
+    joy_oy = joy_dy * knob_distance
 }
