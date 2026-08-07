@@ -20,6 +20,9 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Show files (debug)
+      run: ls -la
+
     - name: Generate game.c
       run: |
         python3 gen.py
