@@ -1,4 +1,4 @@
-name: Build DS Game (Fast)
+ name: Build DS Game (Fast)
 
 on:
   push:
@@ -23,6 +23,14 @@ jobs:
     - name: Generate game.c
       run: |
         python3 gen.py
+
+    - name: Show generated C code
+      run: |
+        echo "=========================================="
+        echo "GENERATED GAME.C:"
+        echo "=========================================="
+        cat game/game.c || echo "game.c not found!"
+        echo "=========================================="
 
     - name: Build NDK
       run: |
