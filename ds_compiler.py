@@ -33,19 +33,14 @@ class DimScriptCompiler:
         while i < len(self.source_lines):
             line = self.source_lines[i]
             
-            # Переменные: num NAME = VALUE;
             if re.match(r'^(int|num|bool|byte\*|size|col|\w+\*)\s+', line):
                 self.parse_var(line)
                 i += 1
-            # Функции: fn NAME(PARAMS) {
             elif line.startswith('fn '):
                 i = self.parse_function(i)
-            # Main: int Main() {
             elif 'Main(' in line:
                 i = self.parse_main(i)
             else:
-                if self.in_function and self.current_function:
-                    self.functions[self.current_function]['body'].append(line)
                 i += 1
         
         return self.errors == 0
@@ -155,24 +150,20 @@ class DimScriptCompiler:
         if not line:
             return
         
-        # if
         if line.startswith('if '):
             cond = line[2:].strip().rstrip(';')
             if cond.endswith('{'):
                 cond = cond[:-1]
             self.emit(f'if ({cond}) {{')
         
-        # loop -> while
         elif line.startswith('loop '):
             cond = line[5:].strip().strip('()').rstrip('{')
             self.emit(f'while ({cond}) {{')
         
-        # while
         elif line.startswith('while '):
             cond = line[6:].strip().strip('()').rstrip('{')
             self.emit(f'while ({cond}) {{')
         
-        # for
         elif line.startswith('for '):
             m = re.search(r'for\s*\(\s*(.+?);\s*(.+?);\s*(.+?)\s*\)', line)
             if m:
@@ -184,28 +175,23 @@ class DimScriptCompiler:
                 self.emit('    }')
                 self.emit('}')
         
-        # new
         elif ' = new ' in line:
             var, cls = line.split(' = new ')
             var = var.strip()
             cls = cls.split('(')[0].strip()
             self.emit(f'{cls}* {var} = ({cls}*)calloc(1, sizeof({cls}));')
         
-        # delete
         elif line.startswith('delete '):
             var = line[7:].strip().rstrip(';')
             self.emit(f'free({var}); {var} = NULL;')
         
-        # return
         elif line.startswith('return '):
             val = line[7:].rstrip(';')
             self.emit(f'return {val};')
         
-        # }
         elif line == '}':
             self.emit('}')
         
-        # Вызов функции
         elif '(' in line and ')' in line and not ('=' in line or '+=' in line):
             name = line.split('(')[0].strip()
             args = line[line.find('(')+1:line.rfind(')')]
@@ -214,7 +200,6 @@ class DimScriptCompiler:
             else:
                 self.emit(f'{line}')
         
-        # Присваивание
         elif '=' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
             self.compile_assign(line)
         
@@ -269,7 +254,12 @@ class DimScriptCompiler:
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
         if 'touch' in self.functions:
-            self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
+            # Проверяем параметры функции touch
+            func = self.functions['touch']
+            if len(func['params']) >= 3:
+                self.emit('    ds_fn_touch(x, y, action);')
+            else:
+                self.emit('    ds_fn_touch();')
         self.emit('}')
 
     def compile(self, sources: List[str], output: str) -> bool:
