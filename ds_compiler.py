@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DimScript Compiler - Генерирует C-код из .ds файлов
+DimScript Compiler - Рабочая версия
 """
 
 import sys, re
@@ -13,8 +13,6 @@ class DimScriptCompiler:
         self.output = []
         self.src = []
         self.errors = 0
-        self.in_function = False
-        self.current_function = None
 
     def parse(self, paths):
         for path in paths:
@@ -114,19 +112,120 @@ class DimScriptCompiler:
             ps = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in params)
             self.emit(f'static void ds_fn_{name}({ps}) {{')
             for line in body:
-                self.compile_line(line, inside_func=True)
+                self.compile_line(line)
             self.emit('}')
             self.emit('')
         
         # Main
         self.emit('int ds_main(void) {')
         for line in self.main_body:
-            self.compile_line(line, inside_func=True)
+            self.compile_line(line)
         self.emit('    return 0;')
         self.emit('}')
         self.emit('')
         
         # Хуки
+        self.emit_hooks()
+
+    def compile_line(self, line):
+        line = line.strip()
+        if not line:
+            return
+        
+        # Локальная переменная: num dx = touch_x - joy_x;
+        if re.match(r'^(num|int|bool)\s+[a-zA-Z_][a-zA-Z0-9_]*', line):
+            line = re.sub(r'^num\s+', 'double ', line)
+            line = re.sub(r'^int\s+', 'int ', line)
+            line = re.sub(r'^bool\s+', 'int ', line)
+            self.emit(f'    {line}')
+            return
+        
+        # if
+        if line.startswith('if '):
+            cond = line[2:].strip()
+            if cond.endswith('{'): cond = cond[:-1]
+            self.emit(f'    if ({cond}) {{')
+            return
+        
+        # loop -> while
+        if line.startswith('loop '):
+            cond = line[5:].strip()
+            if cond.endswith('{'): cond = cond[:-1]
+            cond = cond.strip('()')
+            self.emit(f'    while ({cond}) {{')
+            return
+        
+        # while
+        if line.startswith('while '):
+            cond = line[6:].strip()
+            if cond.endswith('{'): cond = cond[:-1]
+            cond = cond.strip('()')
+            self.emit(f'    while ({cond}) {{')
+            return
+        
+        # return
+        if line.startswith('return '):
+            val = line[7:].strip()
+            self.emit(f'    return {val};')
+            return
+        
+        # new
+        if ' = new ' in line:
+            var, cls = line.split(' = new ')
+            var = var.strip()
+            cls = cls.split('(')[0].strip()
+            self.emit(f'    {cls}* {var} = ({cls}*)calloc(1, sizeof({cls}));')
+            return
+        
+        # delete
+        if line.startswith('delete '):
+            var = line[7:].strip()
+            self.emit(f'    free({var}); {var} = NULL;')
+            return
+        
+        # }
+        if line == '}':
+            self.emit('    }')
+            return
+        
+        # Вызов функции
+        if '(' in line and ')' in line and not any(op in line for op in ['=', '+=', '-=', '*=', '/=']):
+            name = line.split('(')[0].strip()
+            args = line[line.find('(')+1:line.rfind(')')]
+            if name in self.functions:
+                self.emit(f'    ds_fn_{name}({args});')
+            else:
+                self.emit(f'    {line}')
+            return
+        
+        # Присваивание
+        if any(op in line for op in ['=', '+=', '-=', '*=', '/=']):
+            line = line.replace(';', '')
+            for op in ('+=', '-=', '*=', '/='):
+                if op in line:
+                    l, r = line.split(op, 1)
+                    self.emit(f'    {l.strip()} = {l.strip()} {op[0]} {r.strip()};')
+                    return
+            if '=' in line:
+                l, r = line.split('=', 1)
+                self.emit(f'    {l.strip()} = {r.strip()};')
+            return
+        
+        # Всё остальное
+        self.emit(f'    {line};')
+
+    def c_type(self, t):
+        m = {'int': 'int', 'num': 'double', 'bool': 'int', 'byte*': 'unsigned char*', 
+             'size': 'size_t', 'col': 'uint32_t'}
+        if t.endswith('*'):
+            return t
+        return m.get(t, t)
+
+    def emit(self, line):
+        self.output.append(line)
+
+    def emit_hooks(self):
+        self.emit('')
         self.emit('void init(AAssetManager *assets) {')
         self.emit('    (void)assets;')
         self.emit('    ds_main();')
@@ -149,87 +248,6 @@ class DimScriptCompiler:
         if 'touch' in self.functions:
             self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
         self.emit('}')
-
-    def compile_line(self, line, inside_func=False):
-        line = line.strip()
-        if not line:
-            return
-        
-        # Обработка объявления локальной переменной: num dx = touch_x - joy_x;
-        if inside_func and re.match(r'^(num|int|bool)\s+[a-zA-Z_][a-zA-Z0-9_]*', line):
-            # Заменяем num на double
-            line = re.sub(r'^num\s+', 'double ', line)
-            line = re.sub(r'^int\s+', 'int ', line)
-            line = re.sub(r'^bool\s+', 'int ', line)
-            # Добавляем отступ
-            self.emit(f'    {line}')
-            return
-        
-        if line.startswith('if '):
-            cond = line[2:].strip()
-            if cond.endswith('{'): cond = cond[:-1]
-            self.emit(f'    if ({cond}) {{')
-        elif line.startswith('loop '):
-            cond = line[5:].strip()
-            if cond.endswith('{'): cond = cond[:-1]
-            cond = cond.strip('()')
-            self.emit(f'    while ({cond}) {{')
-        elif line.startswith('while '):
-            cond = line[6:].strip()
-            if cond.endswith('{'): cond = cond[:-1]
-            cond = cond.strip('()')
-            self.emit(f'    while ({cond}) {{')
-        elif line == '}':
-            self.emit('    }')
-        elif line.startswith('return '):
-            val = line[7:].strip()
-            self.emit(f'    return {val};')
-        elif ' = new ' in line:
-            var, cls = line.split(' = new ')
-            var = var.strip()
-            cls = cls.split('(')[0].strip()
-            self.emit(f'    {cls}* {var} = ({cls}*)calloc(1, sizeof({cls}));')
-        elif line.startswith('delete '):
-            var = line[7:].strip()
-            self.emit(f'    free({var}); {var} = NULL;')
-        elif '(' in line and ')' in line and not any(op in line for op in ['=', '+=', '-=', '*=', '/=']):
-            name = line.split('(')[0].strip()
-            args = line[line.find('(')+1:line.rfind(')')]
-            if name in self.functions:
-                self.emit(f'    ds_fn_{name}({args});')
-            else:
-                self.emit(f'    {line}')
-        elif any(op in line for op in ['=', '+=', '-=', '*=', '/=']):
-            self.compile_assign(line, inside_func)
-        else:
-            if inside_func:
-                self.emit(f'    {line};')
-            else:
-                self.emit(f'{line};')
-
-    def compile_assign(self, line, inside_func=False):
-        line = line.replace(';', '')
-        for op in ('+=', '-=', '*=', '/='):
-            if op in line:
-                l, r = line.split(op, 1)
-                self.emit(f'    {l.strip()} = {l.strip()} {op[0]} {r.strip()};')
-                return
-        if '=' in line:
-            l, r = line.split('=', 1)
-            self.emit(f'    {l.strip()} = {r.strip()};')
-
-    def c_type(self, t):
-        m = {'int': 'int', 'num': 'double', 'bool': 'int', 'byte*': 'unsigned char*', 
-             'size': 'size_t', 'col': 'uint32_t'}
-        if t.endswith('*'):
-            return t
-        return m.get(t, t)
-
-    def emit(self, line, indent=0):
-        if indent:
-            self.output.append('    ' * indent + line)
-        else:
-            self.output.append(line)
 
     def compile(self, sources, output):
         if not self.parse(sources):
