@@ -14,8 +14,6 @@ class DimScriptCompiler:
         self.output = []
         self.errors = 0
         self.source_lines = []
-        self.in_function = False
-        self.current_function = None
 
     def parse(self, paths: List[str]) -> bool:
         for path in paths:
@@ -244,6 +242,8 @@ class DimScriptCompiler:
         self.emit('void update(void) {')
         if 'update' in self.functions:
             self.emit('    ds_fn_update();')
+        if 'update_touch' in self.functions:
+            self.emit('    ds_fn_update_touch();')
         self.emit('}')
         self.emit('')
         self.emit('void draw(Buffer *buffer) {')
@@ -253,13 +253,9 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
-        if 'touch' in self.functions:
-            # Проверяем параметры функции touch
-            func = self.functions['touch']
-            if len(func['params']) >= 3:
-                self.emit('    ds_fn_touch(x, y, action);')
-            else:
-                self.emit('    ds_fn_touch();')
+        self.emit('    touch_x = x;')
+        self.emit('    touch_y = y;')
+        self.emit('    touch_action = action;')
         self.emit('}')
 
     def compile(self, sources: List[str], output: str) -> bool:
