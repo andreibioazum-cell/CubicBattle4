@@ -1,29 +1,24 @@
 // ============================================
-// JOYSTICK DEMO - DimScript
+// JOYSTICK DEMO - Упрощённая версия
 // ============================================
 
-// ЦВЕТА
-num COLOR_BG = 0xFFCCCCCC;
-num COLOR_PLAYER = 0xFFEE7722;
-num COLOR_JOY = 0xFF000000;
+num COLOR_BG = 0xFF333366;
+num COLOR_PLAYER = 0xFFFF8844;
+num COLOR_JOY = 0xFFFFFFFF;
 
-// ИГРОК
-num player_x = 0;
-num player_y = 0;
-num player_speed = 5;
+num player_x = 200;
+num player_y = 400;
+num player_speed = 4;
 num player_size = 40;
 
-// ДЖОЙСТИК
 num joy_x = 150;
-num joy_y = 0;
+num joy_y = 700;
+num joy_r = 80;
 num joy_dx = 0;
 num joy_dy = 0;
 num joy_ox = 0;
 num joy_oy = 0;
-num joy_r = 80;
 
-// ============================================
-// ИНИЦИАЛИЗАЦИЯ
 // ============================================
 fn init() {
     player_x = screen_w / 2;
@@ -33,8 +28,6 @@ fn init() {
     joy_r = 80;
 }
 
-// ============================================
-// ОБНОВЛЕНИЕ
 // ============================================
 fn update() {
     player_x = player_x + joy_dx * player_speed;
@@ -55,8 +48,6 @@ fn update() {
 }
 
 // ============================================
-// ОТРИСОВКА
-// ============================================
 fn draw() {
     cls(COLOR_BG);
     
@@ -73,10 +64,14 @@ fn draw() {
 }
 
 // ============================================
-// ОБРАБОТКА КАСАНИЙ
+// touch - используем глобальные переменные для x, y
 // ============================================
-fn touch(x, y, action) {
-    if (action == 1 || action == 3) {
+num touch_x = 0;
+num touch_y = 0;
+num touch_action = 0;
+
+fn update_touch() {
+    if (touch_action == 1 || touch_action == 3) {
         joy_dx = 0;
         joy_dy = 0;
         joy_ox = 0;
@@ -84,8 +79,8 @@ fn touch(x, y, action) {
         return;
     }
     
-    num dx = x - joy_x;
-    num dy = y - joy_y;
+    num dx = touch_x - joy_x;
+    num dy = touch_y - joy_y;
     num distance = sqrt(dx * dx + dy * dy);
     
     if (distance > joy_r + 30 || distance < 15) {
