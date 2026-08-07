@@ -105,16 +105,22 @@ class DimScriptCompiler:
 
     def parse_function(self, i: int) -> int:
         line = self.source_lines[i]
-        rest = line[2:].strip()
+        rest = line[2:].strip()  # remove 'fn '
         name = rest.split('(')[0].strip()
         params_str = rest.split('(')[1].split(')')[0]
         params = []
-        if params_str:
+        if params_str.strip():
             for p in params_str.split(','):
                 p = p.strip()
                 if p:
-                    ptype, pname = p.split()
-                    params.append((ptype, pname))
+                    # Проверяем есть ли тип
+                    parts = p.split()
+                    if len(parts) == 2:
+                        ptype, pname = parts
+                        params.append((ptype, pname))
+                    else:
+                        # Если нет типа, используем 'num' по умолчанию
+                        params.append(('num', p))
         body = []
         i += 1
         while i < len(self.source_lines) and self.source_lines[i] != '}':
@@ -336,8 +342,6 @@ class DimScriptCompiler:
         name = line.split('(')[0].strip()
         args = line[line.find('(')+1:line.rfind(')')]
         if name in self.functions:
-            self.emit(f'ds_fn_{name}({args});')
-        elif name in ('UpdateParts', 'SpawnPart', 'ClearParts', 'Update', 'Draw', 'DrawBall', 'DrawParts', 'DrawUI', 'DrawPause', 'OnTouch', 'OnSwipe', 'OnPinch', 'OnBack', 'LoadBest', 'SaveBest'):
             self.emit(f'ds_fn_{name}({args});')
         else:
             self.emit(f'{line}')
