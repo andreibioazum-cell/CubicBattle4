@@ -1,4 +1,4 @@
- name: Build DS Game (Fast)
+name: Build DS Game (Fast)
 
 on:
   push:
