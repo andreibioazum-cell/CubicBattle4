@@ -1,5 +1,5 @@
 // ============================================
-// JOYSTICK DEMO - DimScript
+// JOYSTICK DEMO
 // ============================================
 
 num COLOR_BG = 0xFF333366
@@ -23,7 +23,6 @@ num touch_x = 0
 num touch_y = 0
 num touch_action = 0
 
-// ============================================
 fn init() {
     player_x = screen_w / 2
     player_y = screen_h / 2
@@ -32,7 +31,6 @@ fn init() {
     joy_r = 80
 }
 
-// ============================================
 fn update() {
     player_x = player_x + joy_dx * player_speed
     player_y = player_y + joy_dy * player_speed
@@ -51,7 +49,6 @@ fn update() {
     }
 }
 
-// ============================================
 fn draw() {
     cls(COLOR_BG)
     
@@ -67,14 +64,12 @@ fn draw() {
     circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY)
 }
 
-// ============================================
 fn touch(x, y, action) {
     touch_x = x
     touch_y = y
     touch_action = action
 }
 
-// ============================================
 fn update_touch() {
     if (touch_action == 1 || touch_action == 3) {
         joy_dx = 0
