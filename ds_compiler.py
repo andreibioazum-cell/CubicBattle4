@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DimScript Compiler - Простой компилятор
+DimScript Compiler
 """
 
 import sys, os, re
@@ -116,7 +116,7 @@ class DimScriptCompiler:
             self.emit(f'static void ds_fn_{name}({params});')
         self.emit('')
         
-        # Тела функций
+        # Тела функций - КАЖДАЯ ФУНКЦИЯ ОТДЕЛЬНО
         for name, func in self.functions.items():
             self.emit_function(name, func)
         
@@ -130,6 +130,9 @@ class DimScriptCompiler:
         params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in func['params'])
         self.emit(f'static void ds_fn_{name}({params}) {{')
         for line in func['body']:
+            line = line.strip()
+            if not line:
+                continue
             self.compile_line(line)
         self.emit('}')
         self.emit('')
@@ -137,6 +140,9 @@ class DimScriptCompiler:
     def emit_main(self):
         self.emit('int ds_main(void) {')
         for line in self.main_body:
+            line = line.strip()
+            if not line:
+                continue
             self.compile_line(line)
         self.emit('    return 0;')
         self.emit('}')
@@ -198,11 +204,13 @@ class DimScriptCompiler:
             self.emit('}')
         
         # Вызов функции
-        elif '(' in line and ')' in line and not ('=' in line or '+=' in line):
+        elif '(' in line and ')' in line and not ('=' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line):
             name = line.split('(')[0].strip()
             args = line[line.find('(')+1:line.rfind(')')]
             if name in self.functions:
                 self.emit(f'ds_fn_{name}({args});')
+            elif name in ('rect', 'cls', 'circle', 'ring', 'text', 'print', 'printn', 'prints', 'sqrt', 'sin', 'cos', 'atan2'):
+                self.emit(f'{line}')
             else:
                 self.emit(f'{line}')
         
@@ -236,10 +244,15 @@ class DimScriptCompiler:
         if v == 'null': return 'NULL'
         if v == 'true': return '1'
         if v == 'false': return '0'
+        if v.startswith('0x'):
+            return v
         return v
 
     def emit(self, line, indent=0):
-        self.output.append(('    ' * indent) + line)
+        if indent:
+            self.output.append('    ' * indent + line)
+        else:
+            self.output.append(line)
 
     def emit_hooks(self):
         self.emit('')
@@ -262,7 +275,8 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
-        self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
+        if 'touch' in self.functions:
+            self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
         self.emit('}')
 
     def compile(self, sources, output):
