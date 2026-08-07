@@ -712,7 +712,8 @@ class Compiler:
             else:
                 val_expr = f'&(Val){{DS_NUMBER, {{.num = {self.emit_expression(value)}}}}}'
                 type_str = 'DS_NUMBER'
-            self.emit(f'if (!T_set(ds_table_{table_num}, "{key}", {val_expr}, {type_str})) {{ ds_runtime_error("could not assign field \\"{key}\\"); return; }}', indent=self.block_depth)
+            # Исправлено: правильное экранирование кавычек
+            self.emit(f'if (!T_set(ds_table_{table_num}, "{key}", {val_expr}, {type_str})) {{ ds_runtime_error("could not assign field \\"{key}\\""); return; }}', indent=self.block_depth)
         self.emit(f'if (!T_set(ds_active_scope(), "{object_name}", ds_table_{table_num}, DS_TABLE)) return;', indent=self.block_depth)
         self.emit('}', indent=self.block_depth)
 
