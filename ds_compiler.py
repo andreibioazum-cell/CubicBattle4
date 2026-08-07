@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-DimScript Compiler - Простой компилятор для синтаксиса LuaMC
+DimScript Compiler - Простой компилятор
 """
 
 import sys, os, re
-from typing import List
 
 class DimScriptCompiler:
     def __init__(self):
@@ -15,7 +14,7 @@ class DimScriptCompiler:
         self.errors = 0
         self.source_lines = []
 
-    def parse(self, paths: List[str]) -> bool:
+    def parse(self, paths) -> bool:
         for path in paths:
             try:
                 with open(path, 'r') as f:
@@ -43,7 +42,7 @@ class DimScriptCompiler:
         
         return self.errors == 0
 
-    def parse_var(self, line: str):
+    def parse_var(self, line):
         if line.endswith(';'): line = line[:-1]
         parts = line.split()
         if len(parts) >= 2:
@@ -52,7 +51,7 @@ class DimScriptCompiler:
             value = rest.split('=')[1].strip() if '=' in rest else None
             self.vars[vname] = {'type': vtype, 'value': value}
 
-    def parse_function(self, i: int) -> int:
+    def parse_function(self, i):
         line = self.source_lines[i]
         rest = line[2:].strip()
         name = rest.split('(')[0].strip()
@@ -83,7 +82,7 @@ class DimScriptCompiler:
         }
         return i + 1
 
-    def parse_main(self, i: int) -> int:
+    def parse_main(self, i):
         body = []
         i += 1
         while i < len(self.source_lines):
@@ -127,7 +126,7 @@ class DimScriptCompiler:
         # Хуки
         self.emit_hooks()
 
-    def emit_function(self, name: str, func: dict):
+    def emit_function(self, name, func):
         params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in func['params'])
         self.emit(f'static void ds_fn_{name}({params}) {{')
         for line in func['body']:
@@ -143,25 +142,29 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
 
-    def compile_line(self, line: str):
+    def compile_line(self, line):
         line = line.strip()
         if not line:
             return
         
+        # if
         if line.startswith('if '):
             cond = line[2:].strip().rstrip(';')
             if cond.endswith('{'):
                 cond = cond[:-1]
             self.emit(f'if ({cond}) {{')
         
+        # loop -> while
         elif line.startswith('loop '):
             cond = line[5:].strip().strip('()').rstrip('{')
             self.emit(f'while ({cond}) {{')
         
+        # while
         elif line.startswith('while '):
             cond = line[6:].strip().strip('()').rstrip('{')
             self.emit(f'while ({cond}) {{')
         
+        # for
         elif line.startswith('for '):
             m = re.search(r'for\s*\(\s*(.+?);\s*(.+?);\s*(.+?)\s*\)', line)
             if m:
@@ -173,23 +176,28 @@ class DimScriptCompiler:
                 self.emit('    }')
                 self.emit('}')
         
+        # new
         elif ' = new ' in line:
             var, cls = line.split(' = new ')
             var = var.strip()
             cls = cls.split('(')[0].strip()
             self.emit(f'{cls}* {var} = ({cls}*)calloc(1, sizeof({cls}));')
         
+        # delete
         elif line.startswith('delete '):
             var = line[7:].strip().rstrip(';')
             self.emit(f'free({var}); {var} = NULL;')
         
+        # return
         elif line.startswith('return '):
             val = line[7:].rstrip(';')
             self.emit(f'return {val};')
         
+        # }
         elif line == '}':
             self.emit('}')
         
+        # Вызов функции
         elif '(' in line and ')' in line and not ('=' in line or '+=' in line):
             name = line.split('(')[0].strip()
             args = line[line.find('(')+1:line.rfind(')')]
@@ -198,13 +206,14 @@ class DimScriptCompiler:
             else:
                 self.emit(f'{line}')
         
+        # Присваивание
         elif '=' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
             self.compile_assign(line)
         
         else:
             self.emit(f'{line};')
 
-    def compile_assign(self, line: str):
+    def compile_assign(self, line):
         if line.endswith(';'):
             line = line[:-1]
         for op in ('+=', '-=', '*=', '/='):
@@ -216,20 +225,20 @@ class DimScriptCompiler:
             l, r = line.split('=', 1)
             self.emit(f'{l.strip()} = {r.strip()};')
 
-    def c_type(self, t: str) -> str:
+    def c_type(self, t):
         m = {'int': 'int', 'num': 'double', 'bool': 'int', 'byte*': 'unsigned char*', 
              'size': 'size_t', 'col': 'uint32_t'}
         if t.endswith('*'):
             return t
         return m.get(t, t)
 
-    def c_value(self, v: str) -> str:
+    def c_value(self, v):
         if v == 'null': return 'NULL'
         if v == 'true': return '1'
         if v == 'false': return '0'
         return v
 
-    def emit(self, line: str = '', indent: int = 0):
+    def emit(self, line, indent=0):
         self.output.append(('    ' * indent) + line)
 
     def emit_hooks(self):
@@ -253,12 +262,10 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
-        self.emit('    touch_x = x;')
-        self.emit('    touch_y = y;')
-        self.emit('    touch_action = action;')
+        self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
         self.emit('}')
 
-    def compile(self, sources: List[str], output: str) -> bool:
+    def compile(self, sources, output):
         if not self.parse(sources):
             return False
         self.generate()
