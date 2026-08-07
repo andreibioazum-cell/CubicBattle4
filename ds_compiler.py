@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 DimScript Compiler - LuaMC Syntax
-Поддерживает: class, fn, loop, delete, new, Screen.*, Draw.*, File.*, Vibrate
 """
 
 import sys, os, re
@@ -139,6 +138,8 @@ class DimScriptCompiler:
     # ---------- ГЕНЕРАЦИЯ ----------
 
     def generate(self):
+        self.output = []
+        
         self.emit('#include "runtime.h"')
         self.emit('#include <math.h>')
         self.emit('#include <string.h>')
@@ -158,7 +159,7 @@ class DimScriptCompiler:
             self.emit(f'{self.c_type(v.type)} {v.name} = {val};')
         if self.vars: self.emit('')
         
-        # Прототипы
+        # Прототипы функций (всех)
         for f in self.functions.values():
             params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in f.params)
             self.emit(f'static void ds_fn_{f.name}({params});')
@@ -166,18 +167,19 @@ class DimScriptCompiler:
             self.emit('int ds_main(void);')
         self.emit('')
         
-        # Функции
+        # Тела функций
         for f in self.functions.values():
-            self.emit_function(f)
+            self.emit_function_body(f)
         
         # Main
         if self.main_func:
-            self.emit_main()
+            self.emit_main_body()
         
         # Хуки
         self.emit_hooks()
 
-    def emit_function(self, f: FunctionDef):
+    def emit_function_body(self, f: FunctionDef):
+        """Генерирует тело функции на верхнем уровне"""
         params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in f.params)
         self.emit(f'static void ds_fn_{f.name}({params}) {{')
         for line in f.body:
@@ -185,7 +187,8 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
 
-    def emit_main(self):
+    def emit_main_body(self):
+        """Генерирует тело main на верхнем уровне"""
         self.emit('int ds_main(void) {')
         for line in self.main_func.body:
             self.compile_line(line)
@@ -199,7 +202,7 @@ class DimScriptCompiler:
         line = line.strip()
         if not line: return
         
-        # if, loop, while, for
+        # if
         if line.startswith('if '):
             self.compile_if(line)
         elif line.startswith('loop '):
@@ -222,12 +225,11 @@ class DimScriptCompiler:
         elif 'Touch.' in line:
             self.compile_touch(line)
         elif 'Vibrate(' in line:
-            ms = re.search(r'\d+', line)
-            self.emit(f'// Vibrate({ms.group() if ms else 0}) - add to runtime')
+            self.emit(f'// Vibrate')
         elif 'File.Read' in line:
-            self.compile_file_read(line)
+            self.emit(f'// File.Read')
         elif 'File.Write' in line:
-            self.compile_file_write(line)
+            self.emit(f'// File.Write')
         elif ' = ' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
             self.compile_assign(line)
         elif line.startswith('return '):
@@ -241,9 +243,8 @@ class DimScriptCompiler:
             self.emit(f'{line};')
 
     def compile_if(self, line: str):
-        # Убираем лишние скобки
         cond = line[2:].strip().rstrip(';')
-        # Убираем лишние { ) {
+        # Убираем лишние скобки
         if cond.endswith('{) {'):
             cond = cond[:-4]
         elif cond.endswith('{)'):
@@ -265,7 +266,6 @@ class DimScriptCompiler:
             self.emit('{')
             self.emit(f'    {init};')
             self.emit(f'    while ({cond}) {{')
-            self.emit(f'        // body')
             self.emit(f'        {inc};')
             self.emit('    }')
             self.emit('}')
@@ -280,7 +280,7 @@ class DimScriptCompiler:
                 if f.default:
                     self.emit(f'if ({var}) {var}->{f.name} = {self.c_value(f.default)};')
         else:
-            self.emit(f'{var} = NULL; // new {cls} not found')
+            self.emit(f'{var} = NULL;')
 
     def compile_screen(self, line: str):
         if 'Screen.Title' in line:
@@ -296,7 +296,7 @@ class DimScriptCompiler:
         elif 'Screen.Flip' in line:
             self.emit('// Screen flip')
         elif 'Screen.Active' in line:
-            self.emit('1 // Screen always active')
+            self.emit('1')
 
     def compile_draw(self, line: str):
         if 'Draw.Clear' in line:
@@ -304,42 +304,30 @@ class DimScriptCompiler:
         elif 'Draw.Circle' in line:
             args = [a.strip() for a in line[line.find('(')+1:line.rfind(')')].split(',')]
             if len(args) >= 4:
-                mode, x, y, r = args[0].strip('"'), args[1], args[2], args[3]
+                x, y, r = args[1], args[2], args[3]
                 self.emit(f'circle({x}, {y}, {r}, 0x33CC33);')
         elif 'Draw.Rect' in line:
-            self.emit('// rect not implemented')
+            self.emit('// rect')
         elif 'Draw.Text' in line:
             m = re.search(r'"([^"]+)"', line)
             nums = re.findall(r'[\d.]+', line)
             if m and len(nums) >= 2:
                 self.emit(f'text("{m.group(1)}", {nums[0]}, {nums[1]}, 0xFFFFFF);')
         elif 'Draw.Color' in line:
-            self.emit('// Draw.Color not needed in this runtime')
+            pass
         elif 'Draw.Target' in line:
-            self.emit('// Draw.Target not needed')
+            pass
         elif 'Draw.End' in line:
-            self.emit('// Draw.End not needed')
+            pass
 
     def compile_touch(self, line: str):
         if 'Touch.Poll' in line:
-            self.emit('// Touch polling handled by runtime')
+            self.emit('// Touch polling')
         elif 'Touch.Down' in line:
-            self.emit('0 // Touch down constant')
-
-    def compile_file_read(self, line: str):
-        m = re.search(r'"([^"]+)"', line)
-        if m:
-            self.emit(f'// File.Read("{m.group(1)}") not implemented yet')
-            self.emit('int val = 0;')
-
-    def compile_file_write(self, line: str):
-        m = re.search(r'"([^"]+)"', line)
-        if m:
-            self.emit(f'// File.Write("{m.group(1)}", val) not implemented yet')
+            self.emit('0')
 
     def compile_assign(self, line: str):
         if line.endswith(';'): line = line[:-1]
-        # Убираем лишние скобки
         line = line.strip()
         for op in ('+=', '-=', '*=', '/='):
             if op in line:
@@ -397,20 +385,24 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
-        self.emit('    (void)x; (void)y; (void)action;')
-        if 'touch' in self.functions:
-            self.emit('    ds_fn_touch(x, y, action);')
+        self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
         self.emit('}')
 
     # ---------- ЗАПУСК ----------
 
     def compile(self, sources: List[str], output: str) -> bool:
         if not self.parse(sources): return False
+        
         self.generate()
+        
         if self.errors == 0:
-            with open(output, 'w') as f:
-                f.write('\n'.join(self.output))
-            return True
+            try:
+                with open(output, 'w') as f:
+                    f.write('\n'.join(self.output))
+                return True
+            except Exception as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return False
         return False
 
 def main():
