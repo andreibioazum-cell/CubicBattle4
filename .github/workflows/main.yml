@@ -22,7 +22,7 @@ jobs:
 
     - name: Generate game.c
       run: |
-        python3 game/gen.py
+        python3 gen.py
 
     - name: Build NDK
       run: |
