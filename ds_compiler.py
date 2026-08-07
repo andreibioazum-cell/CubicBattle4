@@ -4,6 +4,7 @@ DimScript Compiler - Простой компилятор для синтакси
 """
 
 import sys, os, re
+from typing import List
 
 class DimScriptCompiler:
     def __init__(self):
