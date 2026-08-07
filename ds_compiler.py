@@ -1,49 +1,20 @@
 #!/usr/bin/env python3
 """
-DimScript Compiler - LuaMC Syntax
+DimScript Compiler - Простой компилятор для синтаксиса LuaMC
 """
 
 import sys, os, re
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple
-
-# ============================================
-# КЛАССЫ
-# ============================================
-
-@dataclass
-class Field:
-    name: str; type: str; default: Optional[str] = None
-
-@dataclass
-class ClassDef:
-    name: str; fields: List[Field]
-
-@dataclass
-class VarDecl:
-    name: str; type: str; value: Optional[str] = None
-
-@dataclass
-class FunctionDef:
-    name: str; params: List[Tuple[str, str]]; body: List[str]; is_main: bool = False
-
-# ============================================
-# КОМПИЛЯТОР
-# ============================================
 
 class DimScriptCompiler:
     def __init__(self):
-        self.classes = {}
         self.vars = {}
         self.functions = {}
-        self.main_func = None
+        self.main_body = []
         self.output = []
         self.errors = 0
         self.source_lines = []
-        self.indent = 0
-        self.temp = 0
-
-    # ---------- ПАРСИНГ ----------
+        self.in_function = False
+        self.current_function = None
 
     def parse(self, paths: List[str]) -> bool:
         for path in paths:
@@ -60,51 +31,36 @@ class DimScriptCompiler:
         i = 0
         while i < len(self.source_lines):
             line = self.source_lines[i]
-            if line.startswith('class '):
-                i = self.parse_class(i)
-            elif re.match(r'^(int|num|bool|byte\*|size|col|\w+\*)\s+', line):
-                i = self.parse_var(i)
+            
+            # Переменные: num NAME = VALUE;
+            if re.match(r'^(int|num|bool|byte\*|size|col|\w+\*)\s+', line):
+                self.parse_var(line)
+                i += 1
+            # Функции: fn NAME(PARAMS) {
             elif line.startswith('fn '):
                 i = self.parse_function(i)
+            # Main: int Main() {
             elif 'Main(' in line:
                 i = self.parse_main(i)
             else:
+                if self.in_function and self.current_function:
+                    self.functions[self.current_function]['body'].append(line)
                 i += 1
+        
         return self.errors == 0
 
-    def parse_class(self, i: int) -> int:
-        name = self.source_lines[i].split()[1]
-        cls = ClassDef(name, [])
-        i += 1
-        while i < len(self.source_lines):
-            line = self.source_lines[i].strip()
-            if line == '}':
-                break
-            if line.endswith(';'):
-                line = line[:-1]
-            parts = line.split()
-            if len(parts) >= 2:
-                ftype, fname = parts[0], parts[1].split('=')[0].strip()
-                default = parts[1].split('=')[1].strip() if '=' in parts[1] else None
-                cls.fields.append(Field(fname, ftype, default))
-            i += 1
-        self.classes[name] = cls
-        return i + 1
-
-    def parse_var(self, i: int) -> int:
-        line = self.source_lines[i].strip()
+    def parse_var(self, line: str):
         if line.endswith(';'): line = line[:-1]
         parts = line.split()
         if len(parts) >= 2:
             vtype, rest = parts[0], ' '.join(parts[1:])
             vname = rest.split('=')[0].strip()
             value = rest.split('=')[1].strip() if '=' in rest else None
-            self.vars[vname] = VarDecl(vname, vtype, value)
-        return i + 1
+            self.vars[vname] = {'type': vtype, 'value': value}
 
     def parse_function(self, i: int) -> int:
         line = self.source_lines[i]
-        rest = line[2:].strip()  # remove 'fn '
+        rest = line[2:].strip()
         name = rest.split('(')[0].strip()
         params_str = rest.split('(')[1].split(')')[0]
         params = []
@@ -114,28 +70,36 @@ class DimScriptCompiler:
                 if p:
                     parts = p.split()
                     if len(parts) == 2:
-                        ptype, pname = parts
-                        params.append((ptype, pname))
+                        params.append((parts[0], parts[1]))
                     else:
                         params.append(('num', p))
+        
         body = []
         i += 1
-        while i < len(self.source_lines) and self.source_lines[i] != '}':
-            body.append(self.source_lines[i])
+        while i < len(self.source_lines):
+            line = self.source_lines[i]
+            if line == '}':
+                break
+            body.append(line)
             i += 1
-        self.functions[name] = FunctionDef(name, params, body)
+        
+        self.functions[name] = {
+            'params': params,
+            'body': body
+        }
         return i + 1
 
     def parse_main(self, i: int) -> int:
         body = []
         i += 1
-        while i < len(self.source_lines) and self.source_lines[i] != '}':
-            body.append(self.source_lines[i])
+        while i < len(self.source_lines):
+            line = self.source_lines[i]
+            if line == '}':
+                break
+            body.append(line)
             i += 1
-        self.main_func = FunctionDef("Main", [], body, True)
+        self.main_body = body
         return i + 1
-
-    # ---------- ГЕНЕРАЦИЯ ----------
 
     def generate(self):
         self.output = []
@@ -145,190 +109,120 @@ class DimScriptCompiler:
         self.emit('#include <string.h>')
         self.emit('')
         
-        # Структуры
-        for cls in self.classes.values():
-            self.emit(f'typedef struct {{')
-            for f in cls.fields:
-                self.emit(f'    {self.c_type(f.type)} {f.name};', 1)
-            self.emit(f'}} {cls.name};')
+        # Глобальные переменные
+        for name, var in self.vars.items():
+            vtype = self.c_type(var['type'])
+            val = self.c_value(var['value']) if var['value'] else ('NULL' if '*' in var['type'] else '0')
+            self.emit(f'{vtype} {name} = {val};')
+        if self.vars:
             self.emit('')
         
-        # Глобальные переменные
-        for v in self.vars.values():
-            val = self.c_value(v.value) if v.value else ('NULL' if '*' in v.type else '0')
-            self.emit(f'{self.c_type(v.type)} {v.name} = {val};')
-        if self.vars: self.emit('')
-        
-        # Прототипы функций (всех)
-        for f in self.functions.values():
-            params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in f.params)
-            self.emit(f'static void ds_fn_{f.name}({params});')
-        if self.main_func:
-            self.emit('int ds_main(void);')
+        # Прототипы функций
+        for name, func in self.functions.items():
+            params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in func['params'])
+            self.emit(f'static void ds_fn_{name}({params});')
         self.emit('')
         
         # Тела функций
-        for f in self.functions.values():
-            self.emit_function_body(f)
+        for name, func in self.functions.items():
+            self.emit_function(name, func)
         
         # Main
-        if self.main_func:
-            self.emit_main_body()
+        self.emit_main()
         
         # Хуки
         self.emit_hooks()
 
-    def emit_function_body(self, f: FunctionDef):
-        """Генерирует тело функции на верхнем уровне"""
-        params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in f.params)
-        self.emit(f'static void ds_fn_{f.name}({params}) {{')
-        for line in f.body:
+    def emit_function(self, name: str, func: dict):
+        params = ', '.join(f'{self.c_type(p[0])} {p[1]}' for p in func['params'])
+        self.emit(f'static void ds_fn_{name}({params}) {{')
+        for line in func['body']:
             self.compile_line(line)
         self.emit('}')
         self.emit('')
 
-    def emit_main_body(self):
-        """Генерирует тело main на верхнем уровне"""
+    def emit_main(self):
         self.emit('int ds_main(void) {')
-        for line in self.main_func.body:
+        for line in self.main_body:
             self.compile_line(line)
         self.emit('    return 0;')
         self.emit('}')
         self.emit('')
 
-    # ---------- КОМПИЛЯЦИЯ СТРОК ----------
-
     def compile_line(self, line: str):
         line = line.strip()
-        if not line: return
+        if not line:
+            return
         
         # if
         if line.startswith('if '):
-            self.compile_if(line)
+            cond = line[2:].strip().rstrip(';')
+            if cond.endswith('{'):
+                cond = cond[:-1]
+            self.emit(f'if ({cond}) {{')
+        
+        # loop -> while
         elif line.startswith('loop '):
             cond = line[5:].strip().strip('()').rstrip('{')
             self.emit(f'while ({cond}) {{')
+        
+        # while
         elif line.startswith('while '):
             cond = line[6:].strip().strip('()').rstrip('{')
             self.emit(f'while ({cond}) {{')
+        
+        # for
         elif line.startswith('for '):
-            self.compile_for(line)
+            m = re.search(r'for\s*\(\s*(.+?);\s*(.+?);\s*(.+?)\s*\)', line)
+            if m:
+                init, cond, inc = m.groups()
+                self.emit('{')
+                self.emit(f'    {init};')
+                self.emit(f'    while ({cond}) {{')
+                self.emit(f'        {inc};')
+                self.emit('    }')
+                self.emit('}')
+        
+        # new
         elif ' = new ' in line:
-            self.compile_new(line)
+            var, cls = line.split(' = new ')
+            var = var.strip()
+            cls = cls.split('(')[0].strip()
+            self.emit(f'{cls}* {var} = ({cls}*)calloc(1, sizeof({cls}));')
+        
+        # delete
         elif line.startswith('delete '):
             var = line[7:].strip().rstrip(';')
             self.emit(f'free({var}); {var} = NULL;')
-        elif 'Screen.' in line:
-            self.compile_screen(line)
-        elif 'Draw.' in line:
-            self.compile_draw(line)
-        elif 'Touch.' in line:
-            self.compile_touch(line)
-        elif 'Vibrate(' in line:
-            self.emit(f'// Vibrate')
-        elif 'File.Read' in line:
-            self.emit(f'// File.Read')
-        elif 'File.Write' in line:
-            self.emit(f'// File.Write')
-        elif ' = ' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
-            self.compile_assign(line)
+        
+        # return
         elif line.startswith('return '):
             val = line[7:].rstrip(';')
             self.emit(f'return {val};')
+        
+        # }
         elif line == '}':
             self.emit('}')
-        elif '(' in line and ')' in line:
-            self.compile_call(line)
+        
+        # Вызов функции
+        elif '(' in line and ')' in line and not ('=' in line or '+=' in line):
+            name = line.split('(')[0].strip()
+            args = line[line.find('(')+1:line.rfind(')')]
+            if name in self.functions:
+                self.emit(f'ds_fn_{name}({args});')
+            else:
+                self.emit(f'{line}')
+        
+        # Присваивание
+        elif '=' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
+            self.compile_assign(line)
+        
         else:
             self.emit(f'{line};')
 
-    def compile_if(self, line: str):
-        cond = line[2:].strip().rstrip(';')
-        # Убираем лишние скобки
-        if cond.endswith('{) {'):
-            cond = cond[:-4]
-        elif cond.endswith('{)'):
-            cond = cond[:-2]
-        elif cond.endswith('{'):
-            cond = cond[:-1]
-        cond = cond.strip()
-        
-        if ' return;' in cond:
-            c, _ = cond.split(' return;', 1)
-            self.emit(f'if ({c}) {{ return; }}')
-        else:
-            self.emit(f'if ({cond}) {{')
-
-    def compile_for(self, line: str):
-        m = re.search(r'for\s*\(\s*(.+?);\s*(.+?);\s*(.+?)\s*\)', line)
-        if m:
-            init, cond, inc = m.groups()
-            self.emit('{')
-            self.emit(f'    {init};')
-            self.emit(f'    while ({cond}) {{')
-            self.emit(f'        {inc};')
-            self.emit('    }')
-            self.emit('}')
-
-    def compile_new(self, line: str):
-        var, cls = line.split(' = new ')
-        var = var.strip()
-        cls = cls.split('(')[0].strip()
-        if cls in self.classes:
-            self.emit(f'{cls}* {var} = ({cls}*)calloc(1, sizeof({cls}));')
-            for f in self.classes[cls].fields:
-                if f.default:
-                    self.emit(f'if ({var}) {var}->{f.name} = {self.c_value(f.default)};')
-        else:
-            self.emit(f'{var} = NULL;')
-
-    def compile_screen(self, line: str):
-        if 'Screen.Title' in line:
-            t = re.search(r'"([^"]+)"', line)
-            if t: self.emit(f'// Screen title: {t.group(1)}')
-        elif 'Screen.Size' in line:
-            nums = re.findall(r'\d+', line)
-            if len(nums) >= 2:
-                self.emit(f'// Screen size: {nums[0]}x{nums[1]}')
-        elif 'Screen.FPS' in line:
-            nums = re.findall(r'\d+', line)
-            if nums: self.emit(f'// FPS: {nums[0]}')
-        elif 'Screen.Flip' in line:
-            self.emit('// Screen flip')
-        elif 'Screen.Active' in line:
-            self.emit('1')
-
-    def compile_draw(self, line: str):
-        if 'Draw.Clear' in line:
-            self.emit('cls(0x1A1A26);')
-        elif 'Draw.Circle' in line:
-            args = [a.strip() for a in line[line.find('(')+1:line.rfind(')')].split(',')]
-            if len(args) >= 4:
-                x, y, r = args[1], args[2], args[3]
-                self.emit(f'circle({x}, {y}, {r}, 0x33CC33);')
-        elif 'Draw.Rect' in line:
-            self.emit('// rect')
-        elif 'Draw.Text' in line:
-            m = re.search(r'"([^"]+)"', line)
-            nums = re.findall(r'[\d.]+', line)
-            if m and len(nums) >= 2:
-                self.emit(f'text("{m.group(1)}", {nums[0]}, {nums[1]}, 0xFFFFFF);')
-        elif 'Draw.Color' in line:
-            pass
-        elif 'Draw.Target' in line:
-            pass
-        elif 'Draw.End' in line:
-            pass
-
-    def compile_touch(self, line: str):
-        if 'Touch.Poll' in line:
-            self.emit('// Touch polling')
-        elif 'Touch.Down' in line:
-            self.emit('0')
-
     def compile_assign(self, line: str):
-        if line.endswith(';'): line = line[:-1]
-        line = line.strip()
+        if line.endswith(';'):
+            line = line[:-1]
         for op in ('+=', '-=', '*=', '/='):
             if op in line:
                 l, r = line.split(op, 1)
@@ -338,22 +232,10 @@ class DimScriptCompiler:
             l, r = line.split('=', 1)
             self.emit(f'{l.strip()} = {r.strip()};')
 
-    def compile_call(self, line: str):
-        name = line.split('(')[0].strip()
-        args = line[line.find('(')+1:line.rfind(')')]
-        if name in self.functions:
-            self.emit(f'ds_fn_{name}({args});')
-        else:
-            self.emit(f'{line}')
-
-    # ---------- ВСПОМОГАТЕЛЬНЫЕ ----------
-
     def c_type(self, t: str) -> str:
         m = {'int': 'int', 'num': 'double', 'bool': 'int', 'byte*': 'unsigned char*', 
              'size': 'size_t', 'col': 'uint32_t'}
         if t.endswith('*'):
-            base = t[:-1]
-            if base in self.classes: return f'{base}*'
             return t
         return m.get(t, t)
 
@@ -385,24 +267,18 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
-        self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
+        if 'touch' in self.functions:
+            self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
         self.emit('}')
 
-    # ---------- ЗАПУСК ----------
-
     def compile(self, sources: List[str], output: str) -> bool:
-        if not self.parse(sources): return False
-        
+        if not self.parse(sources):
+            return False
         self.generate()
-        
         if self.errors == 0:
-            try:
-                with open(output, 'w') as f:
-                    f.write('\n'.join(self.output))
-                return True
-            except Exception as e:
-                print(f"Error: {e}", file=sys.stderr)
-                return False
+            with open(output, 'w') as f:
+                f.write('\n'.join(self.output))
+            return True
         return False
 
 def main():
