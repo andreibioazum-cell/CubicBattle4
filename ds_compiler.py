@@ -113,13 +113,11 @@ class DimScriptCompiler:
             for p in params_str.split(','):
                 p = p.strip()
                 if p:
-                    # Проверяем есть ли тип
                     parts = p.split()
                     if len(parts) == 2:
                         ptype, pname = parts
                         params.append((ptype, pname))
                     else:
-                        # Если нет типа, используем 'num' по умолчанию
                         params.append(('num', p))
         body = []
         i += 1
@@ -243,7 +241,17 @@ class DimScriptCompiler:
             self.emit(f'{line};')
 
     def compile_if(self, line: str):
+        # Убираем лишние скобки
         cond = line[2:].strip().rstrip(';')
+        # Убираем лишние { ) {
+        if cond.endswith('{) {'):
+            cond = cond[:-4]
+        elif cond.endswith('{)'):
+            cond = cond[:-2]
+        elif cond.endswith('{'):
+            cond = cond[:-1]
+        cond = cond.strip()
+        
         if ' return;' in cond:
             c, _ = cond.split(' return;', 1)
             self.emit(f'if ({c}) {{ return; }}')
@@ -309,6 +317,8 @@ class DimScriptCompiler:
             self.emit('// Draw.Color not needed in this runtime')
         elif 'Draw.Target' in line:
             self.emit('// Draw.Target not needed')
+        elif 'Draw.End' in line:
+            self.emit('// Draw.End not needed')
 
     def compile_touch(self, line: str):
         if 'Touch.Poll' in line:
@@ -329,6 +339,8 @@ class DimScriptCompiler:
 
     def compile_assign(self, line: str):
         if line.endswith(';'): line = line[:-1]
+        # Убираем лишние скобки
+        line = line.strip()
         for op in ('+=', '-=', '*=', '/='):
             if op in line:
                 l, r = line.split(op, 1)
@@ -374,16 +386,20 @@ class DimScriptCompiler:
         self.emit('}')
         self.emit('')
         self.emit('void update(void) {')
-        if 'Update' in self.functions:
-            self.emit('    // Update called from main loop')
+        if 'update' in self.functions:
+            self.emit('    ds_fn_update();')
         self.emit('}')
         self.emit('')
         self.emit('void draw(Buffer *buffer) {')
         self.emit('    (void)buffer;')
+        if 'draw' in self.functions:
+            self.emit('    ds_fn_draw();')
         self.emit('}')
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
         self.emit('    (void)x; (void)y; (void)action;')
+        if 'touch' in self.functions:
+            self.emit('    ds_fn_touch(x, y, action);')
         self.emit('}')
 
     # ---------- ЗАПУСК ----------
