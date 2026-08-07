@@ -40,7 +40,6 @@ fn update() {
     player_x = player_x + joy_dx * player_speed;
     player_y = player_y + joy_dy * player_speed;
     
-    // Границы экрана
     if (player_x < player_size / 2) {
         player_x = player_size / 2;
     }
@@ -59,10 +58,8 @@ fn update() {
 // ОТРИСОВКА
 // ============================================
 fn draw() {
-    // Очистка экрана
     cls(COLOR_BG);
     
-    // Рисуем игрока
     rect(
         player_x - player_size / 2,
         player_y - player_size / 2,
@@ -71,10 +68,7 @@ fn draw() {
         COLOR_PLAYER
     );
     
-    // Рисуем джойстик (кольцо)
     ring(joy_x, joy_y, joy_r, 4, COLOR_JOY);
-    
-    // Рисуем джойстик (ручка)
     circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY);
 }
 
@@ -82,7 +76,6 @@ fn draw() {
 // ОБРАБОТКА КАСАНИЙ
 // ============================================
 fn touch(x, y, action) {
-    // Отпускание (action == 1) или отмена (action == 3)
     if (action == 1 || action == 3) {
         joy_dx = 0;
         joy_dy = 0;
@@ -91,12 +84,10 @@ fn touch(x, y, action) {
         return;
     }
     
-    // Расчёт расстояния до центра джойстика
     num dx = x - joy_x;
     num dy = y - joy_y;
     num distance = sqrt(dx * dx + dy * dy);
     
-    // Если вне зоны джойстика
     if (distance > joy_r + 30 || distance < 15) {
         joy_dx = 0;
         joy_dy = 0;
@@ -105,7 +96,6 @@ fn touch(x, y, action) {
         return;
     }
     
-    // Нормализация
     num knob_distance = distance;
     if (knob_distance > joy_r) {
         knob_distance = joy_r;
