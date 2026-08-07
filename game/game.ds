@@ -1,5 +1,5 @@
 // ============================================
-// JOYSTICK DEMO - Упрощённая версия
+// JOYSTICK DEMO - DimScript
 // ============================================
 
 num COLOR_BG = 0xFF333366;
@@ -18,6 +18,10 @@ num joy_dx = 0;
 num joy_dy = 0;
 num joy_ox = 0;
 num joy_oy = 0;
+
+num touch_x = 0;
+num touch_y = 0;
+num touch_action = 0;
 
 // ============================================
 fn init() {
@@ -64,12 +68,17 @@ fn draw() {
 }
 
 // ============================================
-// touch - используем глобальные переменные для x, y
+// touch - сохраняет координаты в глобальные переменные
 // ============================================
-num touch_x = 0;
-num touch_y = 0;
-num touch_action = 0;
+fn touch(x, y, action) {
+    touch_x = x;
+    touch_y = y;
+    touch_action = action;
+}
 
+// ============================================
+// update_touch - обрабатывает касания
+// ============================================
 fn update_touch() {
     if (touch_action == 1 || touch_action == 3) {
         joy_dx = 0;
