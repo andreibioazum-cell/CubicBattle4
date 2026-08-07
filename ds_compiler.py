@@ -524,6 +524,9 @@ class Compiler:
     def compile_call(self, line: str):
         # Parse function call: name(args)
         open_paren = line.find('(')
+        if open_paren == -1:
+            self.error(f"invalid function call '{line}'")
+            return
         name = line[:open_paren].strip()
         args_str = line[open_paren+1:-1].strip()
         args = []
@@ -584,9 +587,9 @@ class Compiler:
                     depth -= 1
             elif depth == 0 and ch in '=+-*/':
                 # Skip ==, <=, >=, !=
-                if ch == '=' and (line[i+1] == '=' if i+1 < len(line) else False):
+                if ch == '=' and (i+1 < len(line) and line[i+1] == '='):
                     continue
-                if ch in '+-*/' and (i+1 < len(line) and line[i+1] == '='):
+                if i+1 < len(line) and line[i+1] == '=' and ch in '+-*/':
                     return i, 2  # +=, -=, *=, /=
                 if ch == '=':
                     return i, 1
@@ -651,19 +654,21 @@ class Compiler:
 
         # General assignment
         if member:
-            self.emit(f'ds_write_field("{object_name}", "{member}", ', indent=self.block_depth, end='')
-            if op == '=':
-                self.output[-1] += self.emit_expression(right) + ');'
-            else:
+            if op != '=':
                 read = self.emit_identifier(object_name, member)
-                self.output[-1] += f'{read} {op[:-1]} {self.emit_expression(right)});'
-        else:
-            self.emit(f'ds_write("{object_name}", ', indent=self.block_depth, end='')
-            if op == '=':
-                self.output[-1] += self.emit_expression(right) + ');'
+                self.emit(f'ds_write_field("{object_name}", "{member}", {read} {op[:-1]} {self.emit_expression(right)});',
+                          indent=self.block_depth)
             else:
+                self.emit(f'ds_write_field("{object_name}", "{member}", {self.emit_expression(right)});',
+                          indent=self.block_depth)
+        else:
+            if op != '=':
                 read = self.emit_identifier(object_name, None)
-                self.output[-1] += f'{read} {op[:-1]} {self.emit_expression(right)});'
+                self.emit(f'ds_write("{object_name}", {read} {op[:-1]} {self.emit_expression(right)});',
+                          indent=self.block_depth)
+            else:
+                self.emit(f'ds_write("{object_name}", {self.emit_expression(right)});',
+                          indent=self.block_depth)
 
     def emit_table_literal(self, object_name: str, literal: str):
         """Emit code for table literal: { field1 = val1, field2 = val2 }"""
