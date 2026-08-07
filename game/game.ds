@@ -1,61 +1,57 @@
 // ============================================
-// JOYSTICK DEMO - LuaMC Syntax
+// JOYSTICK DEMO - DimScript
 // ============================================
 
-// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-COLOR_BG = 0xFFCCCCCC;
-COLOR_PLAYER = 0xFFEE7722;
-COLOR_JOY = 0xFF000000;
+// ЦВЕТА
+num COLOR_BG = 0xFFCCCCCC;
+num COLOR_PLAYER = 0xFFEE7722;
+num COLOR_JOY = 0xFF000000;
 
-// Игрок
-player = {
-    x = 0,
-    y = 0,
-    speed = 5,
-    size = 40
-};
+// ИГРОК
+num player_x = 0;
+num player_y = 0;
+num player_speed = 5;
+num player_size = 40;
 
-// Джойстик
-joy = {
-    x = 150,
-    y = 0,
-    dx = 0,
-    dy = 0,
-    ox = 0,
-    oy = 0,
-    r = 80
-};
+// ДЖОЙСТИК
+num joy_x = 150;
+num joy_y = 0;
+num joy_dx = 0;
+num joy_dy = 0;
+num joy_ox = 0;
+num joy_oy = 0;
+num joy_r = 80;
 
 // ============================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================
 fn init() {
-    player.x = screen_w / 2;
-    player.y = screen_h / 2;
-    joy.x = 150;
-    joy.y = screen_h - 150;
-    joy.r = 80;
+    player_x = screen_w / 2;
+    player_y = screen_h / 2;
+    joy_x = 150;
+    joy_y = screen_h - 150;
+    joy_r = 80;
 }
 
 // ============================================
 // ОБНОВЛЕНИЕ
 // ============================================
 fn update() {
-    player.x = player.x + joy.dx * player.speed;
-    player.y = player.y + joy.dy * player.speed;
+    player_x = player_x + joy_dx * player_speed;
+    player_y = player_y + joy_dy * player_speed;
     
     // Границы экрана
-    if (player.x < player.size / 2) {
-        player.x = player.size / 2;
+    if (player_x < player_size / 2) {
+        player_x = player_size / 2;
     }
-    if (player.x > screen_w - player.size / 2) {
-        player.x = screen_w - player.size / 2;
+    if (player_x > screen_w - player_size / 2) {
+        player_x = screen_w - player_size / 2;
     }
-    if (player.y < player.size / 2) {
-        player.y = player.size / 2;
+    if (player_y < player_size / 2) {
+        player_y = player_size / 2;
     }
-    if (player.y > screen_h - player.size / 2) {
-        player.y = screen_h - player.size / 2;
+    if (player_y > screen_h - player_size / 2) {
+        player_y = screen_h - player_size / 2;
     }
 }
 
@@ -68,18 +64,18 @@ fn draw() {
     
     // Рисуем игрока
     rect(
-        player.x - player.size / 2,
-        player.y - player.size / 2,
-        player.size,
-        player.size,
+        player_x - player_size / 2,
+        player_y - player_size / 2,
+        player_size,
+        player_size,
         COLOR_PLAYER
     );
     
     // Рисуем джойстик (кольцо)
-    ring(joy.x, joy.y, joy.r, 4, COLOR_JOY);
+    ring(joy_x, joy_y, joy_r, 4, COLOR_JOY);
     
     // Рисуем джойстик (ручка)
-    circle(joy.x + joy.ox, joy.y + joy.oy, 35, COLOR_JOY);
+    circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY);
 }
 
 // ============================================
@@ -88,43 +84,35 @@ fn draw() {
 fn touch(x, y, action) {
     // Отпускание (action == 1) или отмена (action == 3)
     if (action == 1 || action == 3) {
-        joy.dx = 0;
-        joy.dy = 0;
-        joy.ox = 0;
-        joy.oy = 0;
+        joy_dx = 0;
+        joy_dy = 0;
+        joy_ox = 0;
+        joy_oy = 0;
         return;
     }
     
     // Расчёт расстояния до центра джойстика
-    num dx = x - joy.x;
-    num dy = y - joy.y;
+    num dx = x - joy_x;
+    num dy = y - joy_y;
     num distance = sqrt(dx * dx + dy * dy);
     
     // Если вне зоны джойстика
-    if (distance > joy.r + 30 || distance < 15) {
-        joy.dx = 0;
-        joy.dy = 0;
-        joy.ox = 0;
-        joy.oy = 0;
+    if (distance > joy_r + 30 || distance < 15) {
+        joy_dx = 0;
+        joy_dy = 0;
+        joy_ox = 0;
+        joy_oy = 0;
         return;
     }
     
     // Нормализация
     num knob_distance = distance;
-    if (knob_distance > joy.r) {
-        knob_distance = joy.r;
+    if (knob_distance > joy_r) {
+        knob_distance = joy_r;
     }
     
-    joy.dx = dx / distance;
-    joy.dy = dy / distance;
-    joy.ox = joy.dx * knob_distance;
-    joy.oy = joy.dy * knob_distance;
-}
-
-// ============================================
-// ДОПОЛНИТЕЛЬНО: ОБРАБОТКА НАЗАД
-// ============================================
-fn onBack() {
-    // Выход из игры
-    // Screen.Exit();
+    joy_dx = dx / distance;
+    joy_dy = dy / distance;
+    joy_ox = joy_dx * knob_distance;
+    joy_oy = joy_dy * knob_distance;
 }
