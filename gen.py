@@ -6,7 +6,7 @@ Game DS build script - compiles all .ds files in a game directory.
 import sys
 import os
 import glob
-from ds_compiler import Compiler
+from ds_compiler import DimScriptCompiler
 
 def find_ds_files(directory: str) -> list:
     """Return sorted list of .ds files in directory (non-recursive)."""
@@ -55,7 +55,7 @@ def main():
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
 
     # Compile
-    comp = Compiler()
+    comp = DimScriptCompiler()
     success = comp.compile(sources, output_path)
 
     if not success:
