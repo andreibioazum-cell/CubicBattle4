@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DimScript Compiler - Рабочая версия
+DimScript Compiler - Полностью переписан
 """
 
 import sys, re
@@ -90,7 +90,6 @@ class DimScriptCompiler:
         self.output = []
         self.emit('#include "runtime.h"')
         self.emit('#include <math.h>')
-        self.emit('#include <string.h>')
         self.emit('')
         
         # Глобальные переменные
@@ -125,14 +124,35 @@ class DimScriptCompiler:
         self.emit('')
         
         # Хуки
-        self.emit_hooks()
+        self.emit('void init(AAssetManager *assets) {')
+        self.emit('    (void)assets;')
+        self.emit('    ds_main();')
+        self.emit('}')
+        self.emit('')
+        self.emit('void update(void) {')
+        if 'update' in self.functions:
+            self.emit('    ds_fn_update();')
+        if 'update_touch' in self.functions:
+            self.emit('    ds_fn_update_touch();')
+        self.emit('}')
+        self.emit('')
+        self.emit('void draw(Buffer *buffer) {')
+        self.emit('    (void)buffer;')
+        if 'draw' in self.functions:
+            self.emit('    ds_fn_draw();')
+        self.emit('}')
+        self.emit('')
+        self.emit('void touch(float x, float y, int action) {')
+        if 'touch' in self.functions:
+            self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
+        self.emit('}')
 
     def compile_line(self, line):
         line = line.strip()
         if not line:
             return
         
-        # Локальная переменная: num dx = touch_x - joy_x;
+        # Локальная переменная
         if re.match(r'^(num|int|bool)\s+[a-zA-Z_][a-zA-Z0-9_]*', line):
             line = re.sub(r'^num\s+', 'double ', line)
             line = re.sub(r'^int\s+', 'int ', line)
@@ -147,7 +167,7 @@ class DimScriptCompiler:
             self.emit(f'    if ({cond}) {{')
             return
         
-        # loop -> while
+        # loop
         if line.startswith('loop '):
             cond = line[5:].strip()
             if cond.endswith('{'): cond = cond[:-1]
@@ -189,9 +209,13 @@ class DimScriptCompiler:
             return
         
         # Вызов функции
-        if '(' in line and ')' in line and not any(op in line for op in ['=', '+=', '-=', '*=', '/=']):
+        if '(' in line and ')' in line:
             name = line.split('(')[0].strip()
             args = line[line.find('(')+1:line.rfind(')')]
+            # Проверяем, не присваивание ли это
+            if '=' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
+                self.compile_assign(line)
+                return
             if name in self.functions:
                 self.emit(f'    ds_fn_{name}({args});')
             else:
@@ -199,20 +223,23 @@ class DimScriptCompiler:
             return
         
         # Присваивание
-        if any(op in line for op in ['=', '+=', '-=', '*=', '/=']):
-            line = line.replace(';', '')
-            for op in ('+=', '-=', '*=', '/='):
-                if op in line:
-                    l, r = line.split(op, 1)
-                    self.emit(f'    {l.strip()} = {l.strip()} {op[0]} {r.strip()};')
-                    return
-            if '=' in line:
-                l, r = line.split('=', 1)
-                self.emit(f'    {l.strip()} = {r.strip()};')
+        if '=' in line or '+=' in line or '-=' in line or '*=' in line or '/=' in line:
+            self.compile_assign(line)
             return
         
         # Всё остальное
         self.emit(f'    {line};')
+
+    def compile_assign(self, line):
+        line = line.replace(';', '')
+        for op in ('+=', '-=', '*=', '/='):
+            if op in line:
+                l, r = line.split(op, 1)
+                self.emit(f'    {l.strip()} = {l.strip()} {op[0]} {r.strip()};')
+                return
+        if '=' in line:
+            l, r = line.split('=', 1)
+            self.emit(f'    {l.strip()} = {r.strip()};')
 
     def c_type(self, t):
         m = {'int': 'int', 'num': 'double', 'bool': 'int', 'byte*': 'unsigned char*', 
@@ -223,31 +250,6 @@ class DimScriptCompiler:
 
     def emit(self, line):
         self.output.append(line)
-
-    def emit_hooks(self):
-        self.emit('')
-        self.emit('void init(AAssetManager *assets) {')
-        self.emit('    (void)assets;')
-        self.emit('    ds_main();')
-        self.emit('}')
-        self.emit('')
-        self.emit('void update(void) {')
-        if 'update' in self.functions:
-            self.emit('    ds_fn_update();')
-        if 'update_touch' in self.functions:
-            self.emit('    ds_fn_update_touch();')
-        self.emit('}')
-        self.emit('')
-        self.emit('void draw(Buffer *buffer) {')
-        self.emit('    (void)buffer;')
-        if 'draw' in self.functions:
-            self.emit('    ds_fn_draw();')
-        self.emit('}')
-        self.emit('')
-        self.emit('void touch(float x, float y, int action) {')
-        if 'touch' in self.functions:
-            self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
-        self.emit('}')
 
     def compile(self, sources, output):
         if not self.parse(sources):
