@@ -32,7 +32,7 @@ class FunctionDef:
 # КОМПИЛЯТОР
 # ============================================
 
-class LuaMCCompiler:
+class DimScriptCompiler:
     def __init__(self):
         self.classes = {}
         self.vars = {}
@@ -413,7 +413,7 @@ def main():
         print("Error: no input files", file=sys.stderr)
         sys.exit(2)
     
-    comp = LuaMCCompiler()
+    comp = DimScriptCompiler()
     sys.exit(0 if comp.compile(sources, output) else 1)
 
 if __name__ == '__main__':
