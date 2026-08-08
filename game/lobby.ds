@@ -2,26 +2,28 @@
 
 num btn_x = 0
 num btn_y = 0
-num btn_w = 200
-num btn_h = 80
-num btn_color = 0x4CAF50
-num btn_hover_color = 0x66BB6A
+num btn_w = 220
+num btn_h = 70
+num btn_color = 0x2E7D32
+num btn_hover_color = 0x388E3C
 num btn_text_color = 0xFFFFFF
 
 num title_y = 0
 
 fn update_lobby() {
     // Центрируем кнопку
+    btn_w = 220
+    btn_h = 70
     btn_x = (screen_w / 2) - (btn_w / 2)
-    btn_y = (screen_h / 2) - (btn_h / 2) + 50
-    title_y = btn_y - 100
+    btn_y = (screen_h / 2) - (btn_h / 2) + 40
+    title_y = btn_y - 110
 }
 
 fn draw_lobby() {
     cls(0x1a1a2e)
     
-    // Заголовок
-    text("🎮 GAME DS", screen_w/2 - 160, title_y, 0xE94560)
+    // Заголовок игры
+    text("🎮 GAME DS", screen_w / 2 - 45, title_y, 0xE94560)
     
     // Кнопка "Play"
     num hover = 0
@@ -33,13 +35,16 @@ fn draw_lobby() {
         color = btn_hover_color
     }
     
+    // Стильная кнопка с тенью, рамкой и заливкой
+    rect(btn_x + 3, btn_y + 4, btn_w, btn_h, 0x0f0f1c)
+    rect(btn_x - 2, btn_y - 2, btn_w + 4, btn_h + 4, 0x4CAF50)
     rect(btn_x, btn_y, btn_w, btn_h, color)
-    rect(btn_x, btn_y, btn_w, btn_h, 0x000000)  // обводка
     
-    text("▶ PLAY", btn_x + 55, btn_y + 25, btn_text_color)
+    // Текст на кнопке
+    text("▶ PLAY", btn_x + 72, btn_y + 27, btn_text_color)
     
-    // Информация внизу
-    text("v1.1 | Joystick", screen_w/2 - 70, screen_h - 40, 0x666666)
+    // Информация внизу экрана
+    text("v1.1 | Joystick", screen_w / 2 - 50, screen_h - 40, 0x777788)
 }
 
 fn touch_lobby(x, y) {

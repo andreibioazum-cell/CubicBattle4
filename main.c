@@ -7,6 +7,7 @@
 #define STBI_NO_LINEAR
 #define STB_IMAGE_IMPLEMENTATION
 #include "third_party/stb_image.h"
+#include "third_party/font_library.h"
 
 #include <limits.h>
 #include <math.h>
@@ -518,10 +519,34 @@ void tex(float x, float y, const char *name, float angle, float scale) {
 }
 
 void text(const char *string, float x, float y, uint32_t color) {
-    (void)string;
-    (void)x;
-    (void)y;
-    (void)color;
+    text_scaled(string, x, y, color, 1.0f);
+}
+
+void text_scaled(const char *string, float x, float y, uint32_t color, float scale) {
+    if (!current_buffer.pixels || !string ||
+        current_buffer.width <= 0 || current_buffer.height <= 0 ||
+        current_buffer.stride < current_buffer.width) {
+        return;
+    }
+    ds_render_text(
+        current_buffer.pixels,
+        current_buffer.width,
+        current_buffer.height,
+        current_buffer.stride,
+        string,
+        x,
+        y,
+        color,
+        scale
+    );
+}
+
+int text_width(const char *string) {
+    return ds_measure_text(string);
+}
+
+int text_height(void) {
+    return DS_FONT_HEIGHT;
 }
 
 /* === Android event loop === */
