@@ -32,6 +32,14 @@ jobs:
         cat game/game.c || echo "game.c not found!"
         echo "=========================================="
 
+    # Без этого шага в APK попадает ПУСТОЙ каталог assets: папка
+    # staging/assets создаётся, но player.png в неё не копируется,
+    # png_load("player.png") возвращает 0 и текстура игрока не рисуется
+    # (рисуется оранжевый прямоугольник-заглушка).
+    - name: Stage assets
+      run: |
+        python3 stage_assets.py game/assets staging/assets
+
     - name: Build NDK
       run: |
         NDK_ROOT=$ANDROID_NDK_ROOT
