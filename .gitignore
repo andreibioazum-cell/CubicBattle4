@@ -1,4 +1,6 @@
 # Generated build output
+__pycache__/
+*.py[cod]
 /game.c
 **/game.c
 /AndroidManifest.xml

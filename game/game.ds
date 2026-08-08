@@ -1,6 +1,8 @@
 num COLOR_BG = 0xFF333366
 num COLOR_PLAYER = 0xFFFF8844
 num COLOR_JOY = 0xFFFFFFFF
+str PLAYER_PNG = "player.png"
+bool player_png_loaded = 0
 
 num player_x = 200
 num player_y = 400
@@ -20,6 +22,7 @@ num touch_y = 0
 num touch_action = 0
 
 fn init() {
+    player_png_loaded = png_load(PLAYER_PNG)
     player_x = screen_w / 2
     player_y = screen_h / 2
     joy_x = 150
@@ -47,7 +50,12 @@ fn update() {
 
 fn draw() {
     cls(COLOR_BG)
-    rect(player_x - 20, player_y - 20, 40, 40, COLOR_PLAYER)
+    if (player_png_loaded) {
+        tex(player_x - 20, player_y - 20, PLAYER_PNG, 0, 1)
+    }
+    if (!player_png_loaded) {
+        rect(player_x - 20, player_y - 20, 40, 40, COLOR_PLAYER)
+    }
     ring(joy_x, joy_y, joy_r, 4, COLOR_JOY)
     circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY)
 }

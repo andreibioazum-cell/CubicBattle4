@@ -95,6 +95,13 @@ void cls(uint32_t color);
 void rect(float x, float y, float w, float h, uint32_t color);
 void circle(float x, float y, float r, uint32_t color);
 void ring(float x, float y, float r, float t, uint32_t color);
+
+/* PNG files live under game/assets at build time and are addressed relative
+ * to the APK asset root (for example, "player.png" or "sprites/enemy.png").
+ * png_load is optional because tex also loads and caches on first use. */
+void ds_set_asset_manager(AAssetManager *assets);
+void ds_release_assets(void);
+int png_load(const char *name);
 void tex(float x, float y, const char *name, float angle, float scale);
 void text(const char *string, float x, float y, uint32_t color);
 
