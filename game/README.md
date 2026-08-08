@@ -41,6 +41,15 @@ fn draw() {
 радианах. Вложенный ресурс `game/assets/sprites/hero.png` называется в скрипте
 `"sprites/hero.png"`.
 
+Чтобы PNG действительно попали в APK, перед `aapt` скопируйте assets в staging:
+
+```sh
+python3 stage_assets.py game/assets staging/assets
+```
+
+Скрипт очищает старое содержимое назначения и рекурсивно копирует все ресурсы.
+Если создать только пустую папку `staging/assets`, изображения в APK не будет.
+
 ## Генерация C
 
 Из корня репозитория:
