@@ -91,12 +91,12 @@ fn draw_game() {
     cls(0x1a1a2e)
 
     // Счет и таймер
-    text(\"Score: \" + floor(score), 20, 30, 0xFFFFFF)
-    text(\"Time: \" + floor(timer), 20, 60, 0xFFFFFF)
+    text("Score: " + floor(score), 20, 30, 0xFFFFFF)
+    text("Time: " + floor(timer), 20, 60, 0xFFFFFF)
 
     // Игрок - текстура player.png и резервный круг
     circle(player_x, player_y, 15, player_color)
-    tex(player_x - 20, player_y - 20, \"player.png\", 0, 1)
+    tex(player_x - 20, player_y - 20, "player.png", 0, 1)
 
     // Враг
     circle(enemy_x, enemy_y, enemy_size, enemy_color)
@@ -107,10 +107,10 @@ fn draw_game() {
 
     // Кнопка назад (справа сверху)
     rect(screen_w - 90, 10, 80, 40, 0xE94560)
-    text(\"Back\", screen_w - 78, 20, 0xFFFFFF)
+    text("Back", screen_w - 78, 20, 0xFFFFFF)
 
     // Подсказка
-    text(\"Joystick: move | Avoid red enemy!\", screen_w/2 - 140, 110, 0x666666)
+    text("Joystick: move | Avoid red enemy!", screen_w/2 - 140, 110, 0x666666)
 }
 
 fn draw_joystick() {
