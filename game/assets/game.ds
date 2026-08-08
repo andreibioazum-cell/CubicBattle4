@@ -1,0 +1,109 @@
+// Игровая логика
+
+num player_x = 0
+num player_y = 0
+num player_size = 30
+num player_color = 0x00BCD4
+
+num target_x = 0
+num target_y = 0
+num target_size = 20
+num target_color = 0xFF5722
+
+num click_count = 0
+num target_hit = 0
+num timer = 0
+num game_time = 30  // 30 секунд
+
+fn init_game() {
+    player_x = screen_w / 2
+    player_y = screen_h / 2
+    click_count = 0
+    target_hit = 0
+    timer = game_time
+    spawn_target()
+}
+
+fn update_game() {
+    timer = timer - (1 / 60)  // примерно 60 FPS
+    
+    if (timer <= 0) {
+        // Конец игры - возвращаемся в лобби
+        game_state = 0
+    }
+    
+    // Плавное движение игрока к клику
+    num speed = 4
+    num dx = target_x - player_x
+    num dy = target_y - player_y
+    num dist = sqrt(dx*dx + dy*dy)
+    
+    if (dist > 5) {
+        player_x = player_x + (dx / dist) * speed
+        player_y = player_y + (dy / dist) * speed
+    }
+}
+
+fn draw_game() {
+    cls(0x1a1a2e)
+    
+    // Счет и таймер
+    text("Score: " + score, 20, 30, 0xFFFFFF)
+    text("Time: " + floor(timer), 20, 60, 0xFFFFFF)
+    text("Clicks: " + click_count, 20, 90, 0xAAAAAA)
+    
+    // Игрок
+    circle(player_x, player_y, player_size, player_color)
+    circle(player_x, player_y, player_size/2, 0x80DEEA)
+    
+    // Цель
+    circle(target_x, target_y, target_size, target_color)
+    circle(target_x, target_y, target_size/2, 0xFF8A65)
+    
+    // Инструкция
+    text("Tap to move and collect!", screen_w/2 - 120, screen_h - 30, 0x666666)
+    
+    // Кнопка назад
+    rect(10, screen_h - 50, 80, 40, 0xE94560)
+    text("Back", 25, screen_h - 40, 0xFFFFFF)
+}
+
+fn touch_game(x, y) {
+    // Проверка нажатия на кнопку Back
+    if (x >= 10 && x <= 90 && y >= screen_h - 50 && y <= screen_h - 10) {
+        game_state = 0
+        return
+    }
+    
+    click_count = click_count + 1
+    
+    // Проверка попадания в цель
+    num dx = x - target_x
+    num dy = y - target_y
+    num dist = sqrt(dx*dx + dy*dy)
+    
+    if (dist < target_size + 20) {
+        target_hit = target_hit + 1
+        score = score + 10
+        spawn_target()
+    } else {
+        // Движение к месту клика
+        target_x = x
+        target_y = y
+    }
+}
+
+fn spawn_target() {
+    target_x = 50 + random() % (screen_w - 100)
+    target_y = 50 + random() % (screen_h - 100)
+}
+
+fn random() {
+    // Простая функция случайного числа
+    return (timer * 1103515245 + 12345) % 32768
+}
+
+fn floor(num) {
+    // Преобразование числа в int для отображения
+    return int(num)
+}
