@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "text.h"
 
 /* The runtime deliberately keeps the value representation small and boring.
  * A table owns the Val stored in each entry.  This is important because the

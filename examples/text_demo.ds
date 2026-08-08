@@ -1,0 +1,53 @@
+// Пример использования текстовых утилит DimScript.
+//
+// Модуль text.c/text.h подключается автоматически через runtime.h,
+// поэтому все функции доступны из скрипта без дополнительных include.
+
+fn init() {
+    str greeting = "  Привет, DimScript!  "
+
+    // Обрезаем пробелы по краям
+    str trimmed = ds_trim(greeting)
+    prints(trimmed)               // "Привет, DimScript!"
+
+    // Длина в байтах и в символах (для UTF-8)
+    num bytes = ds_len(trimmed)
+    num chars = ds_ulen(trimmed)
+    printn(bytes)                 // 21
+    printn(chars)                 // 17
+
+    // Поиск подстроки
+    num pos = ds_find(trimmed, "Dim", 0)
+    printn(pos)                   // 10
+
+    // Замена
+    str result = ds_replace(trimmed, "DimScript", "мир")
+    prints(result)                // "Привет, мир!"
+
+    // Верхний / нижний регистр (только ASCII)
+    str lower = ds_lower("HELLO")
+    str upper = ds_upper("hello")
+    prints(lower)                 // "hello"
+    prints(upper)                 // "HELLO"
+
+    // Проверки
+    num has = ds_contains(trimmed, "Script")
+    printn(has)                   // 1
+
+    num starts = ds_starts_with(trimmed, "Привет")
+    printn(starts)                // 1
+
+    // Подстрока
+    str sub = ds_substr(trimmed, 0, 6)
+    prints(sub)                   // "Привет" (первые 6 байт = 3 символа UTF-8)
+
+    // Конкатенация
+    str combined = ds_concat("foo", "bar")
+    prints(combined)              // "foobar"
+}
+
+fn update() {
+}
+
+fn draw() {
+}
