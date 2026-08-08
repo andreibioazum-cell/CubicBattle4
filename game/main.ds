@@ -33,6 +33,7 @@ fn draw() {
 }
 
 fn touch(x, y, action) {
+    set_touch(x, y)
     if (action == 0) {  // нажатие
         if (game_state == 0) {
             touch_lobby(x, y)

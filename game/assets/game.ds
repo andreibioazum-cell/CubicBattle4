@@ -94,16 +94,6 @@ fn touch_game(x, y) {
 }
 
 fn spawn_target() {
-    target_x = 50 + random() % (screen_w - 100)
-    target_y = 50 + random() % (screen_h - 100)
-}
-
-fn random() {
-    // Простая функция случайного числа
-    return (timer * 1103515245 + 12345) % 32768
-}
-
-fn floor(num) {
-    // Преобразование числа в int для отображения
-    return int(num)
+    target_x = 50 + rand() % (screen_w - 100)
+    target_y = 50 + rand() % (screen_h - 100)
 }
