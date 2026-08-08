@@ -1,0 +1,43 @@
+// Главный файл - инициализация и управление состоянием
+
+// Глобальное состояние игры
+num game_state = 0  // 0 - лобби, 1 - игра
+num score = 0
+
+// Импортируем другие файлы (компилятор объединит все .ds файлы)
+// lobby.ds - функции лобби
+// game.ds - игровая логика
+// ui.ds - элементы интерфейса
+
+fn init() {
+    // Инициализация
+    cls(0x2C2C2C)
+    score = 0
+    game_state = 0
+}
+
+fn update() {
+    if (game_state == 0) {
+        update_lobby()
+    } else {
+        update_game()
+    }
+}
+
+fn draw() {
+    if (game_state == 0) {
+        draw_lobby()
+    } else {
+        draw_game()
+    }
+}
+
+fn touch(x, y, action) {
+    if (action == 0) {  // нажатие
+        if (game_state == 0) {
+            touch_lobby(x, y)
+        } else {
+            touch_game(x, y)
+        }
+    }
+}
