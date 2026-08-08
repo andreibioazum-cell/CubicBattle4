@@ -85,9 +85,7 @@ fn draw_game() {
     text("Score: " + score, 20, 30, 0xFFFFFF)
     text("Time: " + floor(timer), 20, 60, 0xFFFFFF)
 
-    // Игрок
-    circle(player_x, player_y, player_size, player_color)
-    circle(player_x, player_y, player_size/2, 0x80DEEA)
+    // Игрок убран
 
     // Цель
     circle(target_x, target_y, target_size, target_color)
@@ -105,13 +103,14 @@ fn draw_game() {
 }
 
 fn draw_joystick() {
-    // База джойстика
-    circle(joy.x, joy.y, joy.r, 0x33334D)
-    ring(joy.x, joy.y, joy.r, 8, 0x4A4A6A)
+    // Прозрачная база
+    circle(joy.x, joy.y, joy.r, 0x00000000)
+    // Кольцевая часть полностью чёрная
+    ring(joy.x, joy.y, joy.r, 8, 0x000000)
 
-    // Ручка-кноб
-    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r, 0x00BCD4)
-    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r/2, 0x80DEEA)
+    // Стик залит чёрным
+    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r, 0x000000)
+    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r/2, 0x000000)
 }
 
 fn touch_game(x, y, action) {
