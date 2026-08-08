@@ -10,90 +10,188 @@ num target_y = 0
 num target_size = 20
 num target_color = 0xFF5722
 
-num click_count = 0
 num target_hit = 0
 num timer = 0
 num game_time = 30  // 30 секунд
 
+// Виртуальный джойстик.
+// Поля joy.x, joy.y, joy.r, joy.dx, joy.dy, joy.ox, joy.oy — структура Joy из runtime.h.
+num joy_active = 0       // 1, пока палец держит джойстик
+num joy_knob_r = 30      // радиус ручки-кноба
+num joy_hit_r = 120      // зона активации вокруг базы
+num joy_speed = 5        // скорость движения игрока
+
 fn init_game() {
     player_x = screen_w / 2
     player_y = screen_h / 2
-    click_count = 0
     target_hit = 0
     timer = game_time
+    init_joystick()
     spawn_target()
 }
 
+fn init_joystick() {
+    joy.x = 110
+    joy.y = screen_h - 120
+    joy.r = 65
+    joy.dx = 0
+    joy.dy = 0
+    joy.ox = 0
+    joy.oy = 0
+    joy_active = 0
+}
+
 fn update_game() {
-    timer = timer - (1 / 60)  // примерно 60 FPS
-    
+    timer = timer - (1.0 / 60.0)  // примерно 60 FPS
+
     if (timer <= 0) {
         // Конец игры - возвращаемся в лобби
         game_state = 0
     }
-    
-    // Плавное движение игрока к клику
-    num speed = 4
+
+    // Движение игрока джойстиком
+    player_x = player_x + joy.dx * joy_speed
+    player_y = player_y + joy.dy * joy_speed
+
+    // Не даём игроку выйти за экран
+    if (player_x < player_size) {
+        player_x = player_size
+    }
+    if (player_x > screen_w - player_size) {
+        player_x = screen_w - player_size
+    }
+    if (player_y < player_size) {
+        player_y = player_size
+    }
+    if (player_y > screen_h - player_size) {
+        player_y = screen_h - player_size
+    }
+
+    // Сбор цели при столкновении с игроком
     num dx = target_x - player_x
     num dy = target_y - player_y
     num dist = sqrt(dx*dx + dy*dy)
-    
-    if (dist > 5) {
-        player_x = player_x + (dx / dist) * speed
-        player_y = player_y + (dy / dist) * speed
+    if (dist < player_size + target_size) {
+        target_hit = target_hit + 1
+        score = score + 10
+        spawn_target()
     }
 }
 
 fn draw_game() {
     cls(0x1a1a2e)
-    
+
     // Счет и таймер
     text("Score: " + score, 20, 30, 0xFFFFFF)
     text("Time: " + floor(timer), 20, 60, 0xFFFFFF)
-    text("Clicks: " + click_count, 20, 90, 0xAAAAAA)
-    
+
     // Игрок
     circle(player_x, player_y, player_size, player_color)
     circle(player_x, player_y, player_size/2, 0x80DEEA)
-    
+
     // Цель
     circle(target_x, target_y, target_size, target_color)
     circle(target_x, target_y, target_size/2, 0xFF8A65)
-    
-    // Инструкция
-    text("Tap to move and collect!", screen_w/2 - 120, screen_h - 30, 0x666666)
-    
-    // Кнопка назад
-    rect(10, screen_h - 50, 80, 40, 0xE94560)
-    text("Back", 25, screen_h - 40, 0xFFFFFF)
+
+    // Джойстик
+    draw_joystick()
+
+    // Кнопка назад (справа сверху)
+    rect(screen_w - 90, 10, 80, 40, 0xE94560)
+    text("Back", screen_w - 78, 20, 0xFFFFFF)
+
+    // Подсказка
+    text("Joystick: move | Walk into targets", screen_w/2 - 140, 110, 0x666666)
 }
 
-fn touch_game(x, y) {
-    // Проверка нажатия на кнопку Back
-    if (x >= 10 && x <= 90 && y >= screen_h - 50 && y <= screen_h - 10) {
-        game_state = 0
+fn draw_joystick() {
+    // База джойстика
+    circle(joy.x, joy.y, joy.r, 0x33334D)
+    ring(joy.x, joy.y, joy.r, 8, 0x4A4A6A)
+
+    // Ручка-кноб
+    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r, 0x00BCD4)
+    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r/2, 0x80DEEA)
+}
+
+fn touch_game(x, y, action) {
+    // Кнопка Back — только по нажатию
+    if (action == 0) {
+        if (x >= screen_w - 90 && x <= screen_w - 10 && y >= 10 && y <= 50) {
+            game_state = 0
+            return
+        }
+    }
+
+    // Джойстик
+    joy_touch(x, y, action)
+
+    // Быстрый сбор цели тапом (нажатие вне зоны джойстика)
+    if (action == 0 && joy_active == 0) {
+        num dx = x - target_x
+        num dy = y - target_y
+        num dist = sqrt(dx*dx + dy*dy)
+        if (dist < target_size + 20) {
+            target_hit = target_hit + 1
+            score = score + 10
+            spawn_target()
+        }
+    }
+}
+
+fn joy_touch(x, y, action) {
+    // Палец отпущен (UP / CANCEL) — возвращаем кноб в центр
+    if (action == 1 || action == 3) {
+        joy_active = 0
+        joy.dx = 0
+        joy.dy = 0
+        joy.ox = 0
+        joy.oy = 0
         return
     }
-    
-    click_count = click_count + 1
-    
-    // Проверка попадания в цель
-    num dx = x - target_x
-    num dy = y - target_y
+
+    // Движение без нажатия на джойстик — игнорируем
+    if (action == 2 && joy_active == 0) {
+        return
+    }
+
+    num dx = x - joy.x
+    num dy = y - joy.y
     num dist = sqrt(dx*dx + dy*dy)
-    
-    if (dist < target_size + 20) {
-        target_hit = target_hit + 1
-        score = score + 10
-        spawn_target()
+
+    // Нажатие вне зоны джойстика — не наш жест
+    if (action == 0 && dist > joy_hit_r) {
+        return
+    }
+
+    joy_active = 1
+
+    if (dist > joy.r) {
+        // Кноб упёрся в край базы
+        joy.dx = dx / dist
+        joy.dy = dy / dist
+        joy.ox = joy.dx * joy.r
+        joy.oy = joy.dy * joy.r
     } else {
-        // Движение к месту клика
-        target_x = x
-        target_y = y
+        // Кноб следует за пальцем (аналоговое управление)
+        joy.dx = dx / joy.r
+        joy.dy = dy / joy.r
+        joy.ox = dx
+        joy.oy = dy
     }
 }
 
 fn spawn_target() {
-    target_x = 50 + rand() % (screen_w - 100)
-    target_y = 50 + rand() % (screen_h - 100)
+    num tries = 0
+    loop (tries < 20) {
+        target_x = 50 + rand() % (screen_w - 100)
+        target_y = 50 + rand() % (screen_h - 100)
+        num dx = target_x - player_x
+        num dy = target_y - player_y
+        num dist = sqrt(dx*dx + dy*dy)
+        if (dist > 150) {
+            return
+        }
+        tries = tries + 1
+    }
 }

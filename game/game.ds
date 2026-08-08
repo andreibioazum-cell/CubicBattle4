@@ -34,11 +34,13 @@ fn draw() {
 
 fn touch(x, y, action) {
     set_touch(x, y)
-    if (action == 0) {  // нажатие
-        if (game_state == 0) {
+    if (game_state == 0) {
+        if (action == 0) {  // нажатие
             touch_lobby(x, y)
-        } else {
-            touch_game(x, y)
         }
+    } else {
+        // В игре передаём все события: 0 - нажатие, 1 - отпускание,
+        // 2 - движение пальца (нужно джойстику), 3 - отмена
+        touch_game(x, y, action)
     }
 }
