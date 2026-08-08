@@ -5,12 +5,13 @@ num player_y = 0
 num player_size = 30
 num player_color = 0xFF8844
 
-num target_x = 0
-num target_y = 0
-num target_size = 20
-num target_color = 0xFF5722
+// Враг который преследует игрока
+num enemy_x = 0
+num enemy_y = 0
+num enemy_size = 22
+num enemy_color = 0xFF0000
+num enemy_speed = 2.2
 
-num target_hit = 0
 num timer = 0
 num game_time = 30  // 30 секунд
 
@@ -24,10 +25,9 @@ num joy_speed = 5        // скорость движения игрока
 fn init_game() {
     player_x = screen_w / 2
     player_y = screen_h / 2
-    target_hit = 0
     timer = game_time
     init_joystick()
-    spawn_target()
+    spawn_enemy()
 }
 
 fn init_joystick() {
@@ -47,6 +47,7 @@ fn update_game() {
     if (timer <= 0) {
         // Конец игры - возвращаемся в лобби
         game_state = 0
+        return
     }
 
     // Движение игрока джойстиком
@@ -67,50 +68,56 @@ fn update_game() {
         player_y = screen_h - player_size
     }
 
-    // Сбор цели при столкновении с игроком
-    num dx = target_x - player_x
-    num dy = target_y - player_y
-    num dist = sqrt(dx*dx + dy*dy)
-    if (dist < player_size + target_size) {
-        target_hit = target_hit + 1
-        score = score + 10
-        spawn_target()
+    // Враг двигается за игроком
+    num edx = player_x - enemy_x
+    num edy = player_y - enemy_y
+    num edist = sqrt(edx*edx + edy*edy)
+    if (edist > 1) {
+        enemy_x = enemy_x + (edx / edist) * enemy_speed
+        enemy_y = enemy_y + (edy / edist) * enemy_speed
     }
+
+    // Столкновение игрока с врагом -> проигрыш
+    if (edist < player_size + enemy_size) {
+        game_state = 0
+        return
+    }
+
+    // Начисляем очки за выживание
+    score = score + 0.1
 }
 
 fn draw_game() {
     cls(0x1a1a2e)
 
     // Счет и таймер
-    text("Score: " + score, 20, 30, 0xFFFFFF)
-    text("Time: " + floor(timer), 20, 60, 0xFFFFFF)
+    text(\"Score: \" + floor(score), 20, 30, 0xFFFFFF)
+    text(\"Time: \" + floor(timer), 20, 60, 0xFFFFFF)
 
     // Игрок - текстура player.png и резервный круг
     circle(player_x, player_y, 15, player_color)
-    tex(player_x - 20, player_y - 20, "player.png", 0, 1)
+    tex(player_x - 20, player_y - 20, \"player.png\", 0, 1)
 
-    // Цель
-    circle(target_x, target_y, target_size, target_color)
-    circle(target_x, target_y, target_size/2, 0xFF8A65)
+    // Враг
+    circle(enemy_x, enemy_y, enemy_size, enemy_color)
+    circle(enemy_x, enemy_y, enemy_size - 6, 0x990000)
 
-    // Джойстик
+    // Джойстик - кольцо только чёрное и стик залитый чёрным
     draw_joystick()
 
     // Кнопка назад (справа сверху)
     rect(screen_w - 90, 10, 80, 40, 0xE94560)
-    text("Back", screen_w - 78, 20, 0xFFFFFF)
+    text(\"Back\", screen_w - 78, 20, 0xFFFFFF)
 
     // Подсказка
-    text("Joystick: move | Walk into targets", screen_w/2 - 140, 110, 0x666666)
+    text(\"Joystick: move | Avoid red enemy!\", screen_w/2 - 140, 110, 0x666666)
 }
 
 fn draw_joystick() {
-    // База джойстика — кольцо
-    ring(joy.x, joy.y, joy.r, 4, 0x666666)
-
-    // Стик (ручка) джойстика — кольцо вместо сплошного чёрного круга
-    ring(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r, 4, 0xFFFFFF)
-    ring(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r / 2, 2, 0xAAAAAA)
+    // База джойстика — только чёрное кольцо
+    ring(joy.x, joy.y, joy.r, 4, 0x000000)
+    // Стик — тупо залитый чёрный круг
+    circle(joy.x + joy.ox, joy.y + joy.oy, joy_knob_r, 0x000000)
 }
 
 fn touch_game(x, y, action) {
@@ -124,18 +131,6 @@ fn touch_game(x, y, action) {
 
     // Джойстик
     joy_touch(x, y, action)
-
-    // Быстрый сбор цели тапом (нажатие вне зоны джойстика)
-    if (action == 0 && joy_active == 0) {
-        num dx = x - target_x
-        num dy = y - target_y
-        num dist = sqrt(dx*dx + dy*dy)
-        if (dist < target_size + 20) {
-            target_hit = target_hit + 1
-            score = score + 10
-            spawn_target()
-        }
-    }
 }
 
 fn joy_touch(x, y, action) {
@@ -180,17 +175,21 @@ fn joy_touch(x, y, action) {
     }
 }
 
-fn spawn_target() {
+fn spawn_enemy() {
+    // Спавним врага подальше от игрока
     num tries = 0
-    loop (tries < 20) {
-        target_x = 50 + rand() % (screen_w - 100)
-        target_y = 50 + rand() % (screen_h - 100)
-        num dx = target_x - player_x
-        num dy = target_y - player_y
+    loop (tries < 50) {
+        enemy_x = 50 + rand() % (screen_w - 100)
+        enemy_y = 50 + rand() % (screen_h - 100)
+        num dx = enemy_x - player_x
+        num dy = enemy_y - player_y
         num dist = sqrt(dx*dx + dy*dy)
-        if (dist > 150) {
+        if (dist > 250) {
             return
         }
         tries = tries + 1
     }
+    // fallback - угол экрана
+    enemy_x = 50
+    enemy_y = 50
 }
