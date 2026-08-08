@@ -31,7 +31,7 @@
     },
     {
       "name": "support.function.builtin.dimscript",
-      "match": "\\b(cls|rect|circle|ring|tex|png_load|text|print|printn|prints|sqrt|sin|cos|atan2)\\b"
+      "match": "\\b(cls|rect|circle|ring|tex|png_load|text|print|printn|prints|sqrt|sin|cos|atan2|ds_len|ds_ulen|ds_substr|ds_concat|ds_find|ds_contains|ds_starts_with|ds_ends_with|ds_upper|ds_lower|ds_trim|ds_replace)\\b"
     },
     {
       "name": "string.quoted.double.dimscript",
