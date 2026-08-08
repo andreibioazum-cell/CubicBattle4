@@ -5,9 +5,9 @@ num game_state = 0  // 0 - лобби, 1 - игра
 num score = 0
 
 // Подключаем модули игры. Пути указаны относительно этого файла.
-#include "assets/lobby.ds"
-#include "assets/game.ds"
-#include "assets/ui.ds"
+#include "lobby.ds"
+#include "game_logic.ds"
+#include "ui.ds"
 
 fn init() {
     // Инициализация
