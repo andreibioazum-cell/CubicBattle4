@@ -47,7 +47,7 @@ fn update() {
 
 fn draw() {
     cls(COLOR_BG)
-    rect(player_x - player_size / 2, player_y - player_size / 2, player_size, player_size, COLOR_PLAYER)
+    rect(player_x - 20, player_y - 20, 40, 40, COLOR_PLAYER)
     ring(joy_x, joy_y, joy_r, 4, COLOR_JOY)
     circle(joy_x + joy_ox, joy_y + joy_oy, 35, COLOR_JOY)
 }
@@ -71,7 +71,8 @@ fn update_touch() {
     num dy = touch_y - joy_y
     num distance = sqrt(dx * dx + dy * dy)
     
-    if (distance > joy_r + 30 || distance < 15) {
+    // Мёртвая зона
+    if (distance < 15) {
         joy_dx = 0
         joy_dy = 0
         joy_ox = 0
@@ -79,13 +80,19 @@ fn update_touch() {
         return
     }
     
-    num knob_distance = distance
-    if (knob_distance > joy_r) {
-        knob_distance = joy_r
+    // Направление (всегда нормализовано)
+    num norm_dx = dx / distance
+    num norm_dy = dy / distance
+    
+    // Ограничиваем расстояние радиусом кольца
+    num limited_distance = distance
+    if (limited_distance > joy_r) {
+        limited_distance = joy_r
     }
     
-    joy_dx = dx / distance
-    joy_dy = dy / distance
-    joy_ox = joy_dx * knob_distance
-    joy_oy = joy_dy * knob_distance
+    // Стик всегда на краю или внутри кольца
+    joy_dx = norm_dx
+    joy_dy = norm_dy
+    joy_ox = norm_dx * limited_distance
+    joy_oy = norm_dy * limited_distance
 }
