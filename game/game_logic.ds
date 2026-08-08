@@ -22,6 +22,11 @@ num joy_knob_r = 30      // радиус ручки-кноба
 num joy_hit_r = 120      // зона активации вокруг базы
 num joy_speed = 5        // скорость движения игрока
 
+num back_w = 90
+num back_h = 38
+num back_x = 0
+num back_y = 12
+
 fn init_game() {
     player_x = screen_w / 2
     player_y = screen_h / 2
@@ -91,8 +96,8 @@ fn draw_game() {
     cls(0x1a1a2e)
 
     // Счет и таймер
-    text("Score: " + floor(score), 20, 30, 0xFFFFFF)
-    text("Time: " + floor(timer), 20, 60, 0xFFFFFF)
+    text("Score: " + floor(score), 20, 24, 0xFFFFFF)
+    text("Time: " + floor(timer), 20, 48, 0x4FC3F7)
 
     // Игрок - текстура player.png и резервный круг
     circle(player_x, player_y, 15, player_color)
@@ -106,11 +111,14 @@ fn draw_game() {
     draw_joystick()
 
     // Кнопка назад (справа сверху)
-    rect(screen_w - 90, 10, 80, 40, 0xE94560)
-    text("Back", screen_w - 78, 20, 0xFFFFFF)
+    back_x = screen_w - back_w - 14
+    rect(back_x + 2, back_y + 2, back_w, back_h, 0x0f0f1c)
+    rect(back_x - 1, back_y - 1, back_w + 2, back_h + 2, 0xFF6B81)
+    rect(back_x, back_y, back_w, back_h, 0xE94560)
+    text("◀ Back", back_x + 18, back_y + 11, 0xFFFFFF)
 
     // Подсказка
-    text("Joystick: move | Avoid red enemy!", screen_w/2 - 140, 110, 0x666666)
+    text("Joystick: move | Avoid red enemy!", screen_w / 2 - 130, 95, 0x777788)
 }
 
 fn draw_joystick() {
@@ -122,8 +130,9 @@ fn draw_joystick() {
 
 fn touch_game(x, y, action) {
     // Кнопка Back — только по нажатию
+    back_x = screen_w - back_w - 14
     if (action == 0) {
-        if (x >= screen_w - 90 && x <= screen_w - 10 && y >= 10 && y <= 50) {
+        if (x >= back_x - 4 && x <= back_x + back_w + 4 && y >= back_y - 4 && y <= back_y + back_h + 4) {
             game_state = 0
             return
         }

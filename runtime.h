@@ -105,6 +105,9 @@ void ds_release_assets(void);
 int png_load(const char *name);
 void tex(float x, float y, const char *name, float angle, float scale);
 void text(const char *string, float x, float y, uint32_t color);
+void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
+int text_width(const char *string);
+int text_height(void);
 
 void init(AAssetManager *assets);
 void update(void);

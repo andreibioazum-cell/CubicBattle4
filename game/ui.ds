@@ -1,18 +1,19 @@
 // Вспомогательные UI функции
 
 fn draw_button(x, y, w, h, str label, color, text_color) {
+    rect(x + 2, y + 3, w, h, 0x0f0f1c)
+    rect(x - 2, y - 2, w + 4, h + 4, 0x334455)
     rect(x, y, w, h, color)
-    rect(x, y, w, h, 0x000000)  // обводка
-    text(label, x + 20, y + 25, text_color)
+    text(label, x + 16, y + (h / 2) - 8, text_color)
 }
 
 fn draw_panel(x, y, w, h, color, border_color) {
-    rect(x, y, w, h, color)
     if (border_color != 0) {
-        rect(x, y, w, h, border_color)
+        rect(x - 2, y - 2, w + 4, h + 4, border_color)
     }
+    rect(x, y, w, h, color)
 }
 
 fn draw_centered_text(str label, y, color, size) {
-    text(label, screen_w / 2 - 80, y, color)
+    text(label, screen_w / 2 - 40, y, color)
 }
