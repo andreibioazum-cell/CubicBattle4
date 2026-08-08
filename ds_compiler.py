@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""
-DimScript Compiler - Исправленная версия
-- Корректно обрабатывает вложенные блоки { } (раньше ломался на первом '}' внутри функции)
-- Добавляет недостающие ';' для вызовов функций и локальных переменных
-- Не выносит локальные переменные из функций в глобальные
+"""DimScript-to-C compiler.
+
+Quoted ``#include "file.ds"`` directives are expanded recursively, relative to
+where they are written.  A source file is loaded once, so directory builds and
+explicit includes can safely be used together.
 """
 
-import sys
+import os
 import re
+import sys
+
+
+_INCLUDE_RE = re.compile(
+    r'^(?:#\s*)?include\s*(?:"([^"]+)"|<([^>]+)>)\s*;?\s*$'
+)
+_INCLUDE_PREFIX_RE = re.compile(r'^(?:#\s*)?include\b')
 
 
 class DimScriptCompiler:
@@ -18,31 +25,140 @@ class DimScriptCompiler:
         self.output = []
         self.src = []
         self.errors = 0
+        self.loaded_sources = []
+        self._loaded_paths = set()
+        self._include_stack = []
+
+    @staticmethod
+    def _strip_inline_comment(line):
+        """Remove // comments without damaging // inside quoted strings."""
+        quote = None
+        escaped = False
+        for index, char in enumerate(line):
+            if escaped:
+                escaped = False
+                continue
+            if char == '\\' and quote:
+                escaped = True
+                continue
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in ('"', "'"):
+                quote = char
+            elif char == '/' and index + 1 < len(line) and line[index + 1] == '/':
+                return line[:index]
+        return line
+
+    @staticmethod
+    def _brace_counts(line):
+        """Count block braces while ignoring braces in string literals."""
+        opening = 0
+        closing = 0
+        quote = None
+        escaped = False
+        for char in line:
+            if escaped:
+                escaped = False
+                continue
+            if char == '\\' and quote:
+                escaped = True
+                continue
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in ('"', "'"):
+                quote = char
+            elif char == '{':
+                opening += 1
+            elif char == '}':
+                closing += 1
+        return opening, closing
+
+    def _error(self, message):
+        self.errors += 1
+        print(f"DimScript error: {message}", file=sys.stderr)
+
+    def _load_source(self, path, included_from=None, include_line=0):
+        canonical = os.path.realpath(os.path.abspath(os.fspath(path)))
+
+        if canonical in self._include_stack:
+            start = self._include_stack.index(canonical)
+            cycle = self._include_stack[start:] + [canonical]
+            self._error("cyclic include: " + " -> ".join(os.path.basename(p) for p in cycle))
+            return False
+        if canonical in self._loaded_paths:
+            return True
+        if len(self._include_stack) >= 128:
+            self._error(f"include nesting is too deep near '{canonical}'")
+            return False
+        if not os.path.isfile(canonical):
+            if included_from:
+                self._error(
+                    f"{included_from}:{include_line}: include file not found: {path}"
+                )
+            else:
+                self._error(f"source file not found: {path}")
+            return False
+
+        self._include_stack.append(canonical)
+        self.loaded_sources.append(canonical)
+        success = True
+        try:
+            with open(canonical, 'r', encoding='utf-8-sig') as source:
+                for line_number, raw in enumerate(source, 1):
+                    line = self._strip_inline_comment(raw).strip()
+                    if not line:
+                        continue
+
+                    include = _INCLUDE_RE.fullmatch(line)
+                    if include:
+                        include_name = include.group(1) or include.group(2)
+                        include_path = os.path.join(os.path.dirname(canonical), include_name)
+                        if not self._load_source(include_path, canonical, line_number):
+                            success = False
+                        continue
+                    if _INCLUDE_PREFIX_RE.match(line):
+                        self._error(
+                            f"{canonical}:{line_number}: malformed include; "
+                            'use #include "file.ds"'
+                        )
+                        success = False
+                        continue
+
+                    self.src.append(line)
+        except (OSError, UnicodeError) as error:
+            self._error(f"cannot read '{canonical}': {error}")
+            success = False
+        finally:
+            self._include_stack.pop()
+
+        if success:
+            self._loaded_paths.add(canonical)
+        return success
 
     def parse(self, paths):
+        self.vars.clear()
+        self.functions.clear()
+        self.main_body = []
+        self.output = []
+        self.src = []
+        self.errors = 0
+        self.loaded_sources = []
+        self._loaded_paths = set()
+        self._include_stack = []
+
         for path in paths:
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    for raw in f:
-                        line = raw.strip()
-                        # пропуск пустых и комментариев
-                        if not line or line.startswith('//'):
-                            continue
-                        # убираем inline комментарии
-                        if '//' in line:
-                            line = line.split('//', 1)[0].strip()
-                            if not line:
-                                continue
-                        self.src.append(line)
-            except Exception as e:
-                print(f"Error: {e}")
+            if not self._load_source(path):
                 return False
 
         i = 0
         while i < len(self.src):
             line = self.src[i]
-            if re.match(r'^(int|num|bool|byte\*|size|col|\w+\*)\s+', line):
-                # глобальная переменная только если мы НЕ внутри функции
+            if re.match(r'^(int|num|bool|str|byte\*|size|col|\w+\*)\s+', line):
+                # Глобальная переменная: объявления внутри функций забирает parse_func.
                 self.parse_var(line)
                 i += 1
             elif line.startswith('fn '):
@@ -50,9 +166,9 @@ class DimScriptCompiler:
             elif 'Main(' in line:
                 i = self.parse_main(i)
             else:
-                # неизвестная строка на верхнем уровне — пропускаем
+                # Неизвестная строка верхнего уровня не попадает в C-код.
                 i += 1
-        return True
+        return self.errors == 0
 
     def parse_var(self, line):
         line = line.replace(';', '').strip()
@@ -61,9 +177,10 @@ class DimScriptCompiler:
             vtype, rest = parts[0], ' '.join(parts[1:])
             vname = rest.split('=')[0].strip()
             value = rest.split('=')[1].strip() if '=' in rest else None
-            # защита от перезаписи: если уже есть — не перезаписываем, если это локальная внутри функции
-            # но на этапе parse_vars мы вызываемся только для глобальных, так что можно смело писать
-            self.vars[vname] = (vtype, value)
+            if vname in self.vars:
+                self._error(f"duplicate global variable '{vname}'")
+            else:
+                self.vars[vname] = (vtype, value)
 
     def parse_func(self, i):
         line = self.src[i]
@@ -99,8 +216,7 @@ class DimScriptCompiler:
             # подсчёт глубины до добавления в body, чтобы правильно обработать закрывающую '}'
             # если строка содержит '{' — увеличиваем, если '}' — уменьшаем
             # важно: строки типа "} else {" — обрабатываем
-            open_cnt = cur.count('{')
-            close_cnt = cur.count('}')
+            open_cnt, close_cnt = self._brace_counts(cur)
 
             if cur == '}' and depth == 1 and open_cnt == 0 and close_cnt == 1:
                 # закрытие самой функции
@@ -120,7 +236,14 @@ class DimScriptCompiler:
                     break
             i += 1
 
-        self.functions[name] = (params, body)
+        if depth != 0:
+            self._error(f"function '{name}' has no closing '}}'")
+        elif not name:
+            self._error("function name is missing")
+        elif name in self.functions:
+            self._error(f"duplicate function '{name}'")
+        else:
+            self.functions[name] = (params, body)
         return i + 1
 
     def parse_main(self, i):
@@ -129,8 +252,7 @@ class DimScriptCompiler:
         i += 1
         while i < len(self.src):
             cur = self.src[i]
-            open_cnt = cur.count('{')
-            close_cnt = cur.count('}')
+            open_cnt, close_cnt = self._brace_counts(cur)
             if cur == '}' and depth == 1:
                 depth -= 1
                 break
@@ -153,7 +275,7 @@ class DimScriptCompiler:
         # Глобальные переменные
         for name, (vtype, val) in self.vars.items():
             ct = self.c_type(vtype)
-            cv = val if val is not None and val != '' else ('NULL' if '*' in vtype else '0')
+            cv = val if val is not None and val != '' else ('NULL' if '*' in ct else '0')
             self.emit(f'{ct} {name} = {cv};')
         if self.vars:
             self.emit('')
@@ -188,7 +310,7 @@ class DimScriptCompiler:
 
         # Хуки
         self.emit('void init(AAssetManager *assets) {')
-        self.emit('    (void)assets;')
+        self.emit('    ds_set_asset_manager(assets);')
         self.emit('    ds_main();')
         if 'init' in self.functions:
             self.emit('    ds_fn_init();')
@@ -217,11 +339,12 @@ class DimScriptCompiler:
         if not line:
             return
 
-        # Локальная переменная: num/dx, int, bool
-        if re.match(r'^(num|int|bool)\s+[a-zA-Z_][a-zA-Z0-9_]*', line):
+        # Локальная переменная: num, int, bool или str.
+        if re.match(r'^(num|int|bool|str)\s+[a-zA-Z_][a-zA-Z0-9_]*', line):
             c_line = re.sub(r'^num\s+', 'double ', line)
             c_line = re.sub(r'^int\s+', 'int ', c_line)
             c_line = re.sub(r'^bool\s+', 'int ', c_line)
+            c_line = re.sub(r'^str\s+', 'const char *', c_line)
             # гарантируем точку с запятой
             if not c_line.rstrip().endswith(';'):
                 c_line = c_line.rstrip() + ';'
@@ -343,10 +466,8 @@ class DimScriptCompiler:
             self.emit(f'    {l.strip()} = {r.strip()};')
 
     def c_type(self, t):
-        m = {'int': 'int', 'num': 'double', 'bool': 'int', 'byte*': 'unsigned char*',
-             'size': 'size_t', 'col': 'uint32_t'}
-        if t.endswith('*'):
-            return t
+        m = {'int': 'int', 'num': 'double', 'bool': 'int', 'str': 'const char *',
+             'byte*': 'unsigned char*', 'size': 'size_t', 'col': 'uint32_t'}
         return m.get(t, t)
 
     def emit(self, line):
