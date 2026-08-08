@@ -74,3 +74,11 @@ python3 stage_assets.py game/assets staging/assets
 установленного приложения.
 
 Готовый многофайловый пример находится в `examples/game_template`.
+
+## Сборка в GitHub Actions
+
+Воркфлоу `.github/workflows/main.yml` должен перед `aapt` скопировать ресурсы в
+`staging/assets` (шаг `Stage assets`), иначе в APK попадёт пустой каталог
+assets, `png_load` не найдёт PNG и текстуры не отобразятся. Актуальная версия
+воркфлоу с этим шагом лежит в `docs/workflow-main.yml` — замените ею
+`.github/workflows/main.yml`.
