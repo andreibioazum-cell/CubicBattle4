@@ -339,6 +339,13 @@ class DimScriptCompiler:
         if not line:
             return
 
+        if '+' in line and ('"' in line or "'" in line):
+            line = re.sub(
+                r'("[^"]*"|\'[^\']*\')\s*\+\s*([^,;)]+)',
+                r'ds_str_cat(\1, (double)(\2))',
+                line
+            )
+
         # Локальная переменная: num, int, bool или str.
         if re.match(r'^(num|int|bool|str)\s+[a-zA-Z_][a-zA-Z0-9_]*', line):
             c_line = re.sub(r'^num\s+', 'double ', line)

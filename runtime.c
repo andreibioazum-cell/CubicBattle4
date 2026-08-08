@@ -290,3 +290,13 @@ const char *tostring(Val value) {
 
     return "nil";
 }
+
+const char *ds_str_cat(const char *prefix, double val) {
+    static char buffer[128];
+    if (val == (int)val) {
+        snprintf(buffer, sizeof(buffer), "%s%d", prefix ? prefix : "", (int)val);
+    } else {
+        snprintf(buffer, sizeof(buffer), "%s%.2f", prefix ? prefix : "", val);
+    }
+    return buffer;
+}

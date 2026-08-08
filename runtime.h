@@ -109,5 +109,6 @@ void init(AAssetManager *assets);
 void update(void);
 void draw(Buffer *buffer);
 void touch(float x, float y, int action);
+const char *ds_str_cat(const char *prefix, double val);
 
 #endif

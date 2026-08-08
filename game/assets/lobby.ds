@@ -24,7 +24,10 @@ fn draw_lobby() {
     text("🎮 GAME DS", screen_w/2 - 160, title_y, 0xE94560)
     
     // Кнопка "Play"
-    num hover = is_mouse_over_button(btn_x, btn_y, btn_w, btn_h)
+    num hover = 0
+    if (touch_x >= btn_x && touch_x <= btn_x + btn_w && touch_y >= btn_y && touch_y <= btn_y + btn_h) {
+        hover = 1
+    }
     num color = btn_color
     if (hover == 1) {
         color = btn_hover_color
@@ -40,23 +43,11 @@ fn draw_lobby() {
 }
 
 fn touch_lobby(x, y) {
-    if (is_point_in_rect(x, y, btn_x, btn_y, btn_w, btn_h) == 1) {
+    if (x >= btn_x && x <= btn_x + btn_w && y >= btn_y && y <= btn_y + btn_h) {
         game_state = 1
         score = 0
         init_game()
     }
-}
-
-fn is_mouse_over_button(x, y, w, h) {
-    // Возвращает 1 если мышь над кнопкой
-    // В DimScript нет курсора мыши, но можно использовать последний touch
-    // Для упрощения используем глобальные переменные
-    num mx = touch_x
-    num my = touch_y
-    if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
-        return 1
-    }
-    return 0
 }
 
 // Глобальные переменные для touch
@@ -66,11 +57,4 @@ num touch_y = 0
 fn set_touch(x, y) {
     touch_x = x
     touch_y = y
-}
-
-fn is_point_in_rect(px, py, rx, ry, rw, rh) {
-    if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) {
-        return 1
-    }
-    return 0
 }
