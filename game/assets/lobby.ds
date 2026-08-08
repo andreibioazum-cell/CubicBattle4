@@ -1,0 +1,76 @@
+// Лобби - главное меню
+
+num btn_x = 0
+num btn_y = 0
+num btn_w = 200
+num btn_h = 80
+num btn_color = 0x4CAF50
+num btn_hover_color = 0x66BB6A
+num btn_text_color = 0xFFFFFF
+
+num title_y = 0
+
+fn update_lobby() {
+    // Центрируем кнопку
+    btn_x = (screen_w / 2) - (btn_w / 2)
+    btn_y = (screen_h / 2) - (btn_h / 2) + 50
+    title_y = btn_y - 100
+}
+
+fn draw_lobby() {
+    cls(0x1a1a2e)
+    
+    // Заголовок
+    text("🎮 GAME DS", screen_w/2 - 160, title_y, 0xE94560)
+    
+    // Кнопка "Play"
+    num hover = is_mouse_over_button(btn_x, btn_y, btn_w, btn_h)
+    num color = btn_color
+    if (hover == 1) {
+        color = btn_hover_color
+    }
+    
+    rect(btn_x, btn_y, btn_w, btn_h, color)
+    rect(btn_x, btn_y, btn_w, btn_h, 0x000000)  // обводка
+    
+    text("▶ PLAY", btn_x + 55, btn_y + 25, btn_text_color)
+    
+    // Информация внизу
+    text("v1.0 | Tap to start", screen_w/2 - 80, screen_h - 40, 0x666666)
+}
+
+fn touch_lobby(x, y) {
+    if (is_point_in_rect(x, y, btn_x, btn_y, btn_w, btn_h) == 1) {
+        game_state = 1
+        score = 0
+        init_game()
+    }
+}
+
+fn is_mouse_over_button(x, y, w, h) {
+    // Возвращает 1 если мышь над кнопкой
+    // В DimScript нет курсора мыши, но можно использовать последний touch
+    // Для упрощения используем глобальные переменные
+    num mx = touch_x
+    num my = touch_y
+    if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
+        return 1
+    }
+    return 0
+}
+
+// Глобальные переменные для touch
+num touch_x = 0
+num touch_y = 0
+
+fn set_touch(x, y) {
+    touch_x = x
+    touch_y = y
+}
+
+fn is_point_in_rect(px, py, rx, ry, rw, rh) {
+    if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) {
+        return 1
+    }
+    return 0
+}
