@@ -354,9 +354,11 @@ class DimScriptCompiler:
         # if
         if line.startswith('if '):
             cond = line[2:].strip()
-            # убрать trailing '{'
+            # убрать trailing '{' и внешние скобки: иначе получается if ((x == 0)).
             if cond.endswith('{'):
                 cond = cond[:-1].strip()
+            if cond.startswith('(') and cond.endswith(')'):
+                cond = cond[1:-1].strip()
             self.emit(f'    if ({cond}) {{')
             return
 
