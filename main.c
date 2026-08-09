@@ -15,34 +15,13 @@ static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
 static unsigned int frame_count = 0;
 
-/* Keep a bounded diagnostic copy for logcat/debug tooling.  This file owns
- * only the Android window lock and script lifecycle; graphics.c owns the
- * software command buffer and rasterisation. */
-static char log_text[16384] = {0};
-static size_t log_len = 0;
-
+/* This file owns only the Android window lock and script lifecycle;
+ * graphics.c owns the software command buffer and rasterisation. */
 void ds_log(const char *format, ...) {
     va_list args;
-    va_list copy;
     va_start(args, format);
-    va_copy(copy, args);
     __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, args);
-    if (log_len < sizeof(log_text) - 1) {
-        int available = (int)(sizeof(log_text) - log_len);
-        int written = vsnprintf(log_text + log_len, (size_t)available, format, copy);
-        if (written < 0 || written >= available) {
-            log_len = sizeof(log_text) - 1;
-            log_text[log_len] = '\0';
-        } else {
-            log_len += (size_t)written;
-        }
-    }
-    va_end(copy);
     va_end(args);
-}
-
-void ds_show_log(void) {
-    __android_log_print(ANDROID_LOG_INFO, "DimScript", "%s", log_text);
 }
 
 static uint64_t monotonic_ns(void) {
@@ -282,6 +261,4 @@ void android_main(struct android_app *app) {
 /* The repository's original Android workflow lists only main.c and runtime.c.
  * Embed the software renderer here so that workflow remains usable without
  * requiring a workflow-file permission just to add translation units. */
-#define DIMSCRIPT_GRAPHICS_EMBEDDED
 #include "graphics.c"
-#undef DIMSCRIPT_GRAPHICS_EMBEDDED

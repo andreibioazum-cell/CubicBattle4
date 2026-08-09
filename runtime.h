@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "text.h"
 
 /* The software renderer receives the locked Android frame here.  Scripts do
  * not touch this pointer; graphics.c owns clipping, batching and rasterisation
@@ -94,7 +93,6 @@ typedef struct { float x, y, dx, dy, ox, oy, r; } Joy;
 extern Joy joy;
 
 void ds_log(const char *format, ...);
-void ds_show_log(void);
 
 Table *T_new(void);
 void T_free(Table *table);
@@ -117,19 +115,17 @@ void ds_restart_script(void); /* script-facing alias: request a safe restart */
 int ds_script_restart_requested(void);
 void ds_clear_script_restart(void);
 
-void print(Val value);
-void printn(double number);
-void prints(const char *string);
-double tonumber(Val value);
-const char *tostring(Val value);
-
 /* String expressions in generated C use real concatenation.  The result of
  * ds_concat is heap-owned and remains valid until the caller releases it (or
  * until the script is restarted, when the runtime pool is reset). */
+int ds_len(const char *string);
 char *ds_concat(const char *left, const char *right);
+int ds_find(const char *haystack, const char *needle, int from);
+int ds_contains(const char *haystack, const char *needle);
+int ds_starts_with(const char *string, const char *prefix);
+int ds_ends_with(const char *string, const char *suffix);
 char *ds_num_to_string(double number);
 char *ds_bool_to_string(int value);
-char *ds_value_to_string(Val value);
 void ds_string_release(char *string);
 void ds_string_pool_reset(void);
 
