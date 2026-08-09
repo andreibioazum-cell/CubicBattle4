@@ -17,14 +17,14 @@ aapt ...
 ```
 
 Перед упаковкой APK обязательно выполните `python3 stage_assets.py game/assets
-staging/assets`: команда копирует и `fonts/DejaVuSans.ttf`, и PNG. Рендеринг
+staging/assets`: команда копирует и `fonts/ChillRoundGothic_Heavy.ttf`, и PNG. Рендеринг
 выполняется встроенным software renderer без OpenGL.
 
 Поддерживаются `#include "file.ds"` (пути относительно текущего файла), циклы
 `for (init; condition; step)` и объекты `object Name { ... }`.
 
 Игра:
-- Лобби с кнопкой PLAY
+- Лобби с кнопкой Play
 - Виртуальный джойстик (слева внизу): держи и веди пальцем — игрок идёт за
   ручкой джойстика, аналоговая скорость зависит от наклона ручки
 - Таймер 30 секунд и очки за выживание

@@ -32,7 +32,7 @@ fn draw_lobby() {
 
     // Заголовок — отцентрован по реальным границам отрисовки текста
     // (text_ink_width), а не по магической константе.
-    text("GAME DS", screen_w / 2 - text_ink_width("GAME DS") / 2, title_y, 0xE94560)
+    text("Cubic Battle 4", screen_w / 2 - text_ink_width("Cubic Battle 4") / 2, title_y, 0xE94560)
 
     // Кнопка Play: без тени, рамки и hover-эффекта. При нажатии кнопка
     // увеличивается (press_scale) и темнеет (pressed_color), при отпускании
@@ -52,7 +52,7 @@ fn draw_lobby() {
 
     // Одна аккуратная заливка скруглённым прямоугольником
     roundrect(bx, by, bw, bh, 20 * scale, color)
-    draw_button_label("PLAY", bx, by, bw, bh, play_btn.text_color)
+    draw_button_label("Play", bx, by, bw, bh, play_btn.text_color)
 }
 
 fn touch_lobby(x, y, int action) {

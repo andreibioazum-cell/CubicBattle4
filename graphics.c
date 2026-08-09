@@ -1388,14 +1388,14 @@ static int ensure_font(void) {
     if (font) return 1;
     if (font_attempted) return 0;
     font_attempted = 1;
-    if (!open_asset("fonts/DejaVuSans.ttf", &data, &size)) {
-        ds_runtime_error("TTF asset not found: fonts/DejaVuSans.ttf (put a TTF in game/assets/fonts)");
+    if (!open_asset("fonts/ChillRoundGothic_Heavy.ttf", &data, &size)) {
+        ds_runtime_error("TTF asset not found: fonts/ChillRoundGothic_Heavy.ttf (put a TTF in game/assets/fonts)");
         return 0;
     }
     font = ds_font_create(data, size, 32);
     free(data);
     if (!font) {
-        ds_runtime_error("could not parse TrueType font fonts/DejaVuSans.ttf");
+        ds_runtime_error("could not parse TrueType font fonts/ChillRoundGothic_Heavy.ttf");
         return 0;
     }
     return 1;
