@@ -40,8 +40,8 @@ fn draw_lobby() {
     rect(btn_x - 2, btn_y - 2, btn_w + 4, btn_h + 4, 0x4CAF50)
     rect(btn_x, btn_y, btn_w, btn_h, color)
     
-    // Текст на кнопке
-    text("▶ PLAY", btn_x + 72, btn_y + 27, btn_text_color)
+    // Текст на кнопке, отцентрирован по кнопке
+    draw_button_label("▶ PLAY", btn_x, btn_y, btn_w, btn_h, btn_text_color)
 }
 
 fn touch_lobby(x, y) {

@@ -1,6 +1,5 @@
 #include "runtime.h"
 
-#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -331,59 +330,6 @@ void T_free(Table *table) {
     free(freed.items);
 }
 
-void print(Val value) {
-    switch (value.type) {
-        case DS_NUMBER:
-            __android_log_print(ANDROID_LOG_INFO, "DimScript", "%g", value.num);
-            break;
-        case DS_STRING:
-            __android_log_print(ANDROID_LOG_INFO, "DimScript", "%s", value.str ? value.str : "");
-            break;
-        case DS_TABLE:
-            __android_log_print(ANDROID_LOG_INFO, "DimScript", "<table>");
-            break;
-        case DS_VEC2:
-            __android_log_print(ANDROID_LOG_INFO, "DimScript", "(%g, %g)", value.v2.x, value.v2.y);
-            break;
-        case DS_VEC3:
-            __android_log_print(ANDROID_LOG_INFO, "DimScript", "(%g, %g, %g)", value.v3.x, value.v3.y, value.v3.z);
-            break;
-        default:
-            __android_log_print(ANDROID_LOG_INFO, "DimScript", "nil");
-            break;
-    }
-}
-
-void printn(double number) {
-    __android_log_print(ANDROID_LOG_INFO, "DimScript", "%g", number);
-}
-
-void prints(const char *string) {
-    __android_log_print(ANDROID_LOG_INFO, "DimScript", "%s", string ? string : "");
-}
-
-double tonumber(Val value) {
-    char *end;
-    if (value.type == DS_NUMBER) return value.num;
-    if (value.type != DS_STRING || !value.str) return 0.0;
-    errno = 0;
-    end = NULL;
-    {
-        double number = strtod(value.str, &end);
-        return errno == 0 && end != value.str && end && *end == '\0' ? number : 0.0;
-    }
-}
-
-const char *tostring(Val value) {
-    static char buffer[64];
-    if (value.type == DS_STRING && value.str) return value.str;
-    if (value.type == DS_NUMBER) {
-        snprintf(buffer, sizeof(buffer), "%g", value.num);
-        return buffer;
-    }
-    return "nil";
-}
-
 char *ds_track_string(char *string) {
     DSStringNode *node;
     if (!string) {
@@ -420,12 +366,6 @@ char *ds_bool_to_string(int value) {
     return ds_track_string(ds_strdup(value ? "true" : "false"));
 }
 
-char *ds_value_to_string(Val value) {
-    if (value.type == DS_STRING) return ds_track_string(ds_strdup(value.str ? value.str : ""));
-    if (value.type == DS_NUMBER) return ds_num_to_string(value.num);
-    return ds_track_string(ds_strdup("nil"));
-}
-
 void ds_string_release(char *string) {
     DSStringNode **cursor = &ds_strings;
     if (!string) return;
@@ -452,9 +392,77 @@ void ds_string_pool_reset(void) {
     ds_strings = NULL;
 }
 
-/* Keep compatibility with the original NDK workflow, which compiled only
- * runtime.c and main.c.  text.c remains a standalone file for desktop tests;
- * its separate definitions are weak when both translation units are listed. */
-#define DIMSCRIPT_TEXT_EMBEDDED
-#include "text.c"
-#undef DIMSCRIPT_TEXT_EMBEDDED
+/* --------------------------------------------------------------------- */
+/* Helpers                                                                */
+/* --------------------------------------------------------------------- */
+
+static char *ds_strdup_safe(const char *string) {
+    size_t length;
+    char *copy;
+
+    if (!string) {
+        copy = (char *)malloc(1);
+        if (copy) copy[0] = '\0';
+        return copy;
+    }
+
+    length = strlen(string) + 1;
+    copy = (char *)malloc(length);
+    if (copy) memcpy(copy, string, length);
+    return copy;
+}
+
+/* --------------------------------------------------------------------- */
+/* Length                                                                 */
+/* --------------------------------------------------------------------- */
+
+int ds_len(const char *string) {
+    return string ? (int)strlen(string) : 0;
+}
+
+char *ds_concat(const char *left, const char *right) {
+    size_t la = left ? strlen(left) : 0;
+    size_t lb = right ? strlen(right) : 0;
+    char *out = (char *)malloc(la + lb + 1);
+    if (!out) return ds_strdup_safe("");
+    if (la) memcpy(out, left, la);
+    if (lb) memcpy(out + la, right, lb);
+    out[la + lb] = '\0';
+    return ds_track_string(out);
+}
+
+/* --------------------------------------------------------------------- */
+/* Search                                                                 */
+/* --------------------------------------------------------------------- */
+
+int ds_find(const char *haystack, const char *needle, int from) {
+    const char *hit;
+
+    if (!haystack || !needle || !*needle) return -1;
+    if (from < 0) from = 0;
+    if (from > (int)strlen(haystack)) return -1;
+
+    hit = strstr(haystack + from, needle);
+    return hit ? (int)(hit - haystack) : -1;
+}
+
+int ds_contains(const char *haystack, const char *needle) {
+    return ds_find(haystack, needle, 0) >= 0;
+}
+
+int ds_starts_with(const char *string, const char *prefix) {
+    size_t plen;
+    if (!string || !prefix) return 0;
+    plen = strlen(prefix);
+    return strncmp(string, prefix, plen) == 0;
+}
+
+int ds_ends_with(const char *string, const char *suffix) {
+    size_t slen, xlen;
+    if (!string || !suffix) return 0;
+    slen = strlen(string);
+    xlen = strlen(suffix);
+    if (xlen > slen) return 0;
+    return memcmp(string + slen - xlen, suffix, xlen) == 0;
+}
+

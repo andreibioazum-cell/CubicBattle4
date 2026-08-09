@@ -24,7 +24,7 @@ class CompilerRegressionTests(unittest.TestCase):
             num i = 0
             fn update() {
                 for (i = 0; i <= 10; i += 1) {
-                    prints("i=" + i)
+                    ds_log("i=" + i)
                 }
             }
             """

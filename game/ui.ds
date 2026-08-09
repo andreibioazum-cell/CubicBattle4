@@ -1,10 +1,19 @@
 // Вспомогательные UI функции
 
+// Видимая высота текста при шрифте 32px (ink height, а не полная строка)
+num btn_text_ink_h = 30
+
+// Центрирует текст на кнопке по ширине и высоте.
+// Раньше текст рисовался со сдвигом вправо и вниз из-за ручных отступов.
+fn draw_button_label(str label, x, y, w, h, color) {
+    text(label, x + (w - text_width(label)) / 2, y + (h - btn_text_ink_h) / 2, color)
+}
+
 fn draw_button(x, y, w, h, str label, color, text_color) {
     rect(x + 2, y + 3, w, h, 0x0f0f1c)
     rect(x - 2, y - 2, w + 4, h + 4, 0x334455)
     rect(x, y, w, h, color)
-    text(label, x + 16, y + (h / 2) - 8, text_color)
+    draw_button_label(label, x, y, w, h, text_color)
 }
 
 fn draw_panel(x, y, w, h, color, border_color) {

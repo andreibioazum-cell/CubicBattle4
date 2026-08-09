@@ -1,49 +1,33 @@
 // Пример использования текстовых утилит DimScript.
 //
-// Модуль text.c/text.h подключается автоматически через runtime.h,
-// поэтому все функции доступны из скрипта без дополнительных include.
+// Текстовые утилиты встроены в runtime (runtime.h), поэтому функции
+// доступны из скрипта без дополнительных include. Для вывода в лог
+// используйте ds_log (print/printn/prints удалены).
 
 fn init() {
-    str greeting = "  Привет, DimScript!  "
+    str greeting = "  Hello, DimScript!  "
 
-    // Обрезаем пробелы по краям
-    str trimmed = ds_trim(greeting)
-    prints(trimmed)               // "Привет, DimScript!"
-
-    // Длина в байтах и в символах (для UTF-8)
-    num bytes = ds_len(trimmed)
-    num chars = ds_ulen(trimmed)
-    printn(bytes)                 // 21
-    printn(chars)                 // 17
+    // Длина в байтах
+    num bytes = ds_len(greeting)
+    ds_log("bytes: " + bytes)                 // 22
 
     // Поиск подстроки
-    num pos = ds_find(trimmed, "Dim", 0)
-    printn(pos)                   // 10
-
-    // Замена
-    str result = ds_replace(trimmed, "DimScript", "мир")
-    prints(result)                // "Привет, мир!"
-
-    // Верхний / нижний регистр (только ASCII)
-    str lower = ds_lower("HELLO")
-    str upper = ds_upper("hello")
-    prints(lower)                 // "hello"
-    prints(upper)                 // "HELLO"
+    num pos = ds_find(greeting, "Dim", 0)
+    ds_log("pos: " + pos)                     // 4
 
     // Проверки
-    num has = ds_contains(trimmed, "Script")
-    printn(has)                   // 1
+    num has = ds_contains(greeting, "Script")
+    ds_log("has: " + has)                     // 1
 
-    num starts = ds_starts_with(trimmed, "Привет")
-    printn(starts)                // 1
+    num starts = ds_starts_with(greeting, "  He")
+    ds_log("starts: " + starts)               // 1
 
-    // Подстрока
-    str sub = ds_substr(trimmed, 0, 6)
-    prints(sub)                   // "Привет" (первые 6 байт = 3 символа UTF-8)
+    num ends = ds_ends_with(greeting, "!  ")
+    ds_log("ends: " + ends)                   // 1
 
     // Конкатенация
     str combined = ds_concat("foo", "bar")
-    prints(combined)              // "foobar"
+    ds_log(combined)                          // "foobar"
 }
 
 fn update() {

@@ -50,7 +50,7 @@ str title = "Score: " + floor(score)
 str message = title + " / " + ds_num_to_string(10)
 
 for (num i = 0; i <= 10; i += 1) {
-    printn(i)
+    ds_log("i: " + i)   // вывод в лог (print/printn/prints удалены)
 }
 ```
 
@@ -146,5 +146,7 @@ python3 stage_assets.py game/assets staging/assets
 ## Сборка в GitHub Actions
 
 Воркфлоу `.github/workflows/main.yml` перед `aapt` копирует ресурсы в
-`staging/assets`, а NDK-команда собирает software renderer вместе с
-`ttf_font.c`. Для рендера не требуются `libEGL` и `libGLESv2`.
+`staging/assets`, а NDK-команда собирает software renderer (graphics.c с
+встроенным TrueType-загрузчиком и runtime.c со строковыми утилитами) из
+`game/game.c`, `runtime.c` и `main.c`. Для рендера не требуются `libEGL` и
+`libGLESv2`.
