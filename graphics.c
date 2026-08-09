@@ -971,6 +971,7 @@ struct Texture {
 typedef enum {
     DS_CMD_CLEAR,
     DS_CMD_RECT,
+    DS_CMD_ROUNDRECT,
     DS_CMD_CIRCLE,
     DS_CMD_RING,
     DS_CMD_TEXTURE,
@@ -982,6 +983,7 @@ typedef struct {
     union {
         struct { uint32_t colour; } clear;
         struct { float x, y, width, height; uint32_t colour; } rect;
+        struct { float x, y, width, height, radius; uint32_t colour; } roundrect;
         struct { float x, y, radius; uint32_t colour; } circle;
         struct { float x, y, radius, thickness; uint32_t colour; } ring;
         struct { float x, y, angle, scale; Texture *texture; } texture;
@@ -1136,6 +1138,44 @@ static void render_rect(Buffer *buffer, float x, float y, float width, float hei
     bottom = clamp_ceil(ceilf(y + height), buffer->height);
     for (row = top; row < bottom; ++row) {
         fill_span(buffer->pixels + row * buffer->stride + left, right - left, colour);
+    }
+}
+
+static void render_roundrect(Buffer *buffer, float x, float y, float width, float height,
+                             float radius, uint32_t colour) {
+    float r;
+    int row;
+    if (!buffer || !isfinite(x) || !isfinite(y) || !isfinite(width) || !isfinite(height) ||
+        !isfinite(radius) || width <= 0.0f || height <= 0.0f) return;
+    if (x >= buffer->width || y >= buffer->height || x + width <= 0.0f || y + height <= 0.0f) return;
+    r = radius;
+    if (r < 0.0f) r = 0.0f;
+    if (r > width * 0.5f) r = width * 0.5f;
+    if (r > height * 0.5f) r = height * 0.5f;
+    for (row = clamp_floor(floorf(y), buffer->height);
+         row < clamp_ceil(ceilf(y + height), buffer->height); ++row) {
+        float y_in = (float)row + 0.5f - y;
+        float inset = 0.0f;
+        int start;
+        int end;
+        if (r > 0.0f) {
+            if (y_in < r) {
+                float d = r - y_in;
+                if (d > r) d = r;
+                inset = r - sqrtf(r * r - d * d);
+            } else if (y_in > height - r) {
+                float d = y_in - (height - r);
+                if (d > r) d = r;
+                inset = r - sqrtf(r * r - d * d);
+            }
+        }
+        start = (int)ceilf(x + inset);
+        if (start < 0) start = 0;
+        end = (int)ceilf(x + width - inset);
+        if (end > buffer->width) end = buffer->width;
+        if (end > start) {
+            fill_span(buffer->pixels + row * buffer->stride + start, end - start, colour);
+        }
     }
 }
 
@@ -1415,6 +1455,17 @@ void rect(float x, float y, float width, float height, uint32_t colour) {
     command->value.rect.colour = pack_colour(colour);
 }
 
+void roundrect(float x, float y, float width, float height, float radius, uint32_t colour) {
+    DSCommand *command = command_push(DS_CMD_ROUNDRECT);
+    if (!command) return;
+    command->value.roundrect.x = x;
+    command->value.roundrect.y = y;
+    command->value.roundrect.width = width;
+    command->value.roundrect.height = height;
+    command->value.roundrect.radius = radius;
+    command->value.roundrect.colour = pack_colour(colour);
+}
+
 void circle(float x, float y, float radius, uint32_t colour) {
     DSCommand *command = command_push(DS_CMD_CIRCLE);
     if (!command) return;
@@ -1629,10 +1680,58 @@ static void render_texture_unrotated(Buffer *buffer, const Texture *texture,
     }
 }
 
+static void render_texture_rotated(Buffer *buffer, const Texture *texture,
+                                   float x, float y, float angle, float scale) {
+    float half_w = texture->width * 0.5f * scale;
+    float half_h = texture->height * 0.5f * scale;
+    float center_x = x + half_w;
+    float center_y = y + half_h;
+    float cos_a = cosf(angle);
+    float sin_a = sinf(angle);
+    /* Axis-aligned extents of the rotated sprite. */
+    float dx = fabsf(half_w * cos_a) + fabsf(half_h * sin_a);
+    float dy = fabsf(half_w * sin_a) + fabsf(half_h * cos_a);
+    int left;
+    int top;
+    int right;
+    int bottom;
+    int screen_x;
+    int screen_y;
+
+    if (center_x + dx <= 0.0f || center_y + dy <= 0.0f ||
+        center_x - dx >= buffer->width || center_y - dy >= buffer->height) return;
+    left = clamp_floor(floorf(center_x - dx), buffer->width);
+    top = clamp_floor(floorf(center_y - dy), buffer->height);
+    right = clamp_ceil(ceilf(center_x + dx), buffer->width);
+    bottom = clamp_ceil(ceilf(center_y + dy), buffer->height);
+
+    for (screen_y = top; screen_y < bottom; ++screen_y) {
+        uint32_t *row = buffer->pixels + screen_y * buffer->stride;
+        float py = (float)screen_y + 0.5f - center_y;
+        for (screen_x = left; screen_x < right; ++screen_x) {
+            float px = (float)screen_x + 0.5f - center_x;
+            /* Inverse rotation maps the destination pixel back into
+             * texture space: R(-angle) * (px, py). */
+            float u = px * cos_a + py * sin_a;
+            float v = -px * sin_a + py * cos_a;
+            int source_x = (int)floorf(u / scale + texture->width * 0.5f);
+            int source_y = (int)floorf(v / scale + texture->height * 0.5f);
+            uint32_t source;
+            if (source_x < 0 || source_x >= texture->width) continue;
+            if (source_y < 0 || source_y >= texture->height) continue;
+            source = texture->pixels[source_y * texture->width + source_x];
+            row[screen_x] = blend_pixel(row[screen_x], source);
+        }
+    }
+}
+
 static void render_texture(Buffer *buffer, const Texture *texture,
                            float x, float y, float angle, float scale) {
-    (void)angle;  /* rotation is not supported */
-    render_texture_unrotated(buffer, texture, x, y, scale);
+    if (fabsf(angle) < 0.0005f) {  /* effectively no rotation */
+        render_texture_unrotated(buffer, texture, x, y, scale);
+        return;
+    }
+    render_texture_rotated(buffer, texture, x, y, angle, scale);
 }
 
 static void flush_commands(void) {
@@ -1648,6 +1747,14 @@ static void flush_commands(void) {
                 render_rect(current_buffer, command->value.rect.x, command->value.rect.y,
                             command->value.rect.width, command->value.rect.height,
                             command->value.rect.colour);
+                break;
+            case DS_CMD_ROUNDRECT:
+                render_roundrect(current_buffer, command->value.roundrect.x,
+                                 command->value.roundrect.y,
+                                 command->value.roundrect.width,
+                                 command->value.roundrect.height,
+                                 command->value.roundrect.radius,
+                                 command->value.roundrect.colour);
                 break;
             case DS_CMD_CIRCLE:
                 render_circle(current_buffer, command->value.circle.x, command->value.circle.y,

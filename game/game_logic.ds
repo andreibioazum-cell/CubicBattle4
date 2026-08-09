@@ -4,6 +4,7 @@ num player_x = 0
 num player_y = 0
 num player_size = 30
 num player_color = 0xFF8844
+num player_angle = 0       // куда смотрит игрок (радианы)
 
 // Враг который преследует игрока
 num enemy_x = 0
@@ -13,6 +14,7 @@ num enemy_color = 0xFF0000
 num enemy_speed = 2.2
 num enemy_hp = 3         // здоровье врага
 num enemy_max_hp = 3
+num enemy_angle = 0      // куда смотрит враг (радианы)
 
 num timer = 0
 num game_time = 30  // 30 секунд
@@ -20,8 +22,8 @@ num game_time = 30  // 30 секунд
 // Виртуальный джойстик.
 // Поля joy.x, joy.y, joy.r, joy.dx, joy.dy, joy.ox, joy.oy — структура Joy из runtime.h.
 num joy_active = 0       // 1, пока палец держит джойстик
-num joy_knob_r = 42      // радиус ручки-кноба
-num joy_hit_r = 170      // зона активации вокруг базы
+num joy_knob_r = 34      // радиус ручки-кноба
+num joy_hit_r = 150      // зона активации вокруг базы
 num joy_speed = 5        // скорость движения игрока
 
 // Кнопка атаки (справа внизу)
@@ -43,6 +45,7 @@ fn init_game() {
     init_joystick()
     attack_x = screen_w - 140
     attack_y = screen_h - 150
+    attack_r = joy.r          // кнопка атаки того же размера, что и джойстик
     attack_active = 0
     enemy_hp = enemy_max_hp
     spawn_enemy()
@@ -51,7 +54,7 @@ fn init_game() {
 fn init_joystick() {
     joy.x = 130
     joy.y = screen_h - 150
-    joy.r = 90
+    joy.r = 70
     joy.dx = 0
     joy.dy = 0
     joy.ox = 0
@@ -71,6 +74,11 @@ fn update_game() {
     // Движение игрока джойстиком
     player_x = player_x + joy.dx * joy_speed
     player_y = player_y + joy.dy * joy_speed
+
+    // Игрок поворачивается в направлении джойстика
+    if (joy.dx != 0 || joy.dy != 0) {
+        player_angle = atan2(joy.dy, joy.dx)
+    }
 
     // Не даём игроку выйти за экран
     if (player_x < player_size) {
@@ -94,6 +102,8 @@ fn update_game() {
         enemy_x = enemy_x + (edx / edist) * enemy_speed
         enemy_y = enemy_y + (edy / edist) * enemy_speed
     }
+    // Враг всегда повёрнут к игроку
+    enemy_angle = atan2(player_y - enemy_y, player_x - enemy_x)
 
     // Столкновение игрока с врагом -> проигрыш
     if (edist < player_size + enemy_size) {
@@ -112,12 +122,12 @@ fn draw_game() {
     text("Score: " + floor(score), 20, 24, 0xFFFFFF)
     text("Time: " + floor(timer), 20, 48, 0x4FC3F7)
 
-    // Игрок - текстура player.png и резервный круг
+    // Игрок - текстура player.png (повёрнута в сторону джойстика) и резервный круг
     circle(player_x, player_y, 15, player_color)
-    tex(player_x - 20, player_y - 20, "player.png", 0, 1)
+    tex(player_x - 20, player_y - 20, "player.png", player_angle, 1)
 
-    // Враг - та же текстура, что и у игрока (+ тонкое красное кольцо-метка)
-    tex(enemy_x - 20, enemy_y - 20, "player.png", 0, 1)
+    // Враг - та же текстура, что и у игрока (повёрнут к игроку, + красное кольцо-метка)
+    tex(enemy_x - 20, enemy_y - 20, "player.png", enemy_angle, 1)
     ring(enemy_x, enemy_y, 26, 3, 0xFF2020)
 
     // Джойстик - кольцо только чёрное и стик залитый чёрным
@@ -129,7 +139,6 @@ fn draw_game() {
         atk_color = 0xFF6B81
     }
     circle(attack_x, attack_y, attack_r, atk_color)
-    circle(attack_x, attack_y, attack_r - 14, 0xC22D4E)
     ring(attack_x, attack_y, attack_r, 6, 0x000000)
     num a_w = text_width("ATTACK") * 0.55
     text_scaled("ATTACK", attack_x - a_w / 2, attack_y - 7, 0xFFFFFF, 0.55)
