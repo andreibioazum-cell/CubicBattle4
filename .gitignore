@@ -1,11 +1,7 @@
 # Generated build output
 __pycache__/
 *.py[cod]
-/game.c
 **/game.c
-/AndroidManifest.xml
 staging/
-unsigned.apk
-aligned.apk
-Game.apk
+*.apk
 debug.keystore

@@ -35,7 +35,6 @@ static void ds_log_v(int priority, const char *format, va_list args) {
 static char *ds_strdup(const char *string) {
     size_t length;
     char *copy;
-
     if (!string) string = "";
     length = strlen(string) + 1;
     copy = (char *)malloc(length);
@@ -56,7 +55,6 @@ static uint32_t ds_hash(const char *string) {
 void ds_runtime_error(const char *format, ...) {
     va_list args;
     va_list copy;
-
     va_start(args, format);
     va_copy(copy, args);
     vsnprintf(ds_last_error, sizeof(ds_last_error), format, copy);
@@ -64,27 +62,20 @@ void ds_runtime_error(const char *format, ...) {
     ds_has_error = 1;
     ds_log_v(ANDROID_LOG_ERROR, format, args);
     va_end(args);
-
-    /* A script error is a controlled exception.  Do not return to generated
-     * code after reporting it: partially written state is not safe to draw. */
     if (ds_error_handler_active) longjmp(ds_error_jump, 1);
 }
 
 int ds_call_protected(DSProtectedFunction function, void *userdata, const char *label) {
     int jumped;
-
     if (!function) {
         if (label && *label) ds_runtime_error("cannot call an empty script hook '%s'", label);
         else ds_runtime_error("cannot call an empty script hook");
         return 0;
     }
     if (ds_error_handler_active) {
-        /* Hook calls are normally not nested.  If an embedding host does nest
-         * them, the outer boundary still owns the longjmp target. */
         function(userdata);
         return !ds_has_error;
     }
-
     ds_error_handler_active = 1;
     jumped = setjmp(ds_error_jump);
     if (jumped == 0) {
@@ -92,7 +83,6 @@ int ds_call_protected(DSProtectedFunction function, void *userdata, const char *
         ds_error_handler_active = 0;
         return !ds_has_error;
     }
-
     ds_error_handler_active = 0;
     if (label && *label && ds_last_error[0] == '\0') {
         snprintf(ds_last_error, sizeof(ds_last_error), "script hook '%s' failed", label);
@@ -156,7 +146,6 @@ static Val *copy_value(const void *value, int type) {
 static int table_resize(Table *table, size_t capacity) {
     Entry **buckets;
     size_t i;
-
     buckets = (Entry **)calloc(capacity, sizeof(*buckets));
     if (!buckets) {
         ds_runtime_error("out of memory while growing a table");
@@ -184,14 +173,12 @@ int T_set(Table *table, const char *key, const void *value, int type) {
     Entry *entry;
     Val *new_value;
     size_t slot;
-
     if (!table || !key || !*key || !table->buckets || table->capacity == 0) {
         ds_runtime_error("cannot assign a value without a table and key");
         return 0;
     }
     new_value = copy_value(value, type);
     if (!new_value) return 0;
-
     hash = ds_hash(key);
     slot = hash % table->capacity;
     entry = table->buckets[slot];
@@ -208,7 +195,6 @@ int T_set(Table *table, const char *key, const void *value, int type) {
         }
         entry = entry->next;
     }
-
     if ((table->count + 1) * DS_MAX_TABLE_LOAD_DENOMINATOR >
         table->capacity * DS_MAX_TABLE_LOAD_NUMERATOR) {
         if (!table_resize(table, table->capacity * 2)) {
@@ -217,7 +203,6 @@ int T_set(Table *table, const char *key, const void *value, int type) {
         }
         slot = hash % table->capacity;
     }
-
     entry = (Entry *)calloc(1, sizeof(*entry));
     if (!entry) {
         free(new_value);
@@ -244,7 +229,6 @@ Val *T_get(Table *table, const char *key, int *type) {
     uint32_t hash;
     Entry *entry;
     size_t slot;
-
     if (type) *type = DS_NIL;
     if (!table || !table->buckets || !key || !*key || table->capacity == 0) return NULL;
     hash = ds_hash(key);
@@ -263,7 +247,6 @@ Val *T_get(Table *table, const char *key, int *type) {
 Val *T_get_cached(Table *table, const char *key, DSLookupCache *cache, int *type) {
     uint32_t hash;
     Val *value;
-
     if (type) *type = DS_NIL;
     if (!table || !key) return NULL;
     hash = ds_hash(key);
@@ -392,29 +375,19 @@ void ds_string_pool_reset(void) {
     ds_strings = NULL;
 }
 
-/* --------------------------------------------------------------------- */
-/* Helpers                                                                */
-/* --------------------------------------------------------------------- */
-
 static char *ds_strdup_safe(const char *string) {
     size_t length;
     char *copy;
-
     if (!string) {
         copy = (char *)malloc(1);
         if (copy) copy[0] = '\0';
         return copy;
     }
-
     length = strlen(string) + 1;
     copy = (char *)malloc(length);
     if (copy) memcpy(copy, string, length);
     return copy;
 }
-
-/* --------------------------------------------------------------------- */
-/* Length                                                                 */
-/* --------------------------------------------------------------------- */
 
 int ds_len(const char *string) {
     return string ? (int)strlen(string) : 0;
@@ -431,17 +404,11 @@ char *ds_concat(const char *left, const char *right) {
     return ds_track_string(out);
 }
 
-/* --------------------------------------------------------------------- */
-/* Search                                                                 */
-/* --------------------------------------------------------------------- */
-
 int ds_find(const char *haystack, const char *needle, int from) {
     const char *hit;
-
     if (!haystack || !needle || !*needle) return -1;
     if (from < 0) from = 0;
     if (from > (int)strlen(haystack)) return -1;
-
     hit = strstr(haystack + from, needle);
     return hit ? (int)(hit - haystack) : -1;
 }
@@ -465,4 +432,3 @@ int ds_ends_with(const char *string, const char *suffix) {
     if (xlen > slen) return 0;
     return memcmp(string + slen - xlen, suffix, xlen) == 0;
 }
-

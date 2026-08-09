@@ -1,9 +1,5 @@
-// Вспомогательные UI функции
+// UI-утилиты: центрирование текста по реальным ink-метрикам.
 
-// Центрирует текст на кнопке по ширине и высоте. Используются реальные
-// границы отрисовки текста (text_ink_width/text_ink_height): раньше ширина
-// бралась из суммы advance-метрик, а высота — из произвольной константы,
-// из-за чего надпись съезжала вверх и влево.
 fn draw_button_label(str label, x, y, w, h, col color) {
     text(label, x + (w - text_ink_width(label)) / 2, y + (h - text_ink_height(label)) / 2, color)
 }
@@ -22,9 +18,6 @@ fn draw_panel(x, y, w, h, col color, col border_color) {
     rect(x, y, w, h, color)
 }
 
-// Центрирует текст по ширине экрана через реальную ширину отрисовки строки.
-// Раньше здесь был магический сдвиг `screen_w / 2 - 40`, который ломался на
-// любом тексте, кроме одного конкретного. Теперь центрирование точное.
 fn draw_centered_text(str label, y, col color, size) {
     text(label, screen_w / 2 - text_ink_width(label) / 2, y, color)
 }

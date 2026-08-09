@@ -11,9 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The software renderer receives the locked Android frame here.  Scripts do
- * not touch this pointer; graphics.c owns clipping, batching and rasterisation
- * so generated code only submits high-level primitives. */
 typedef struct {
     uint32_t *pixels;
     int width;
@@ -34,13 +31,8 @@ typedef struct { float x, y, z; } Vec3;
 #define V2R(a, angle)  ({ float _c = cosf(angle), _s = sinf(angle); V2((a).x * _c - (a).y * _s, (a).x * _s + (a).y * _c); })
 
 enum {
-    DS_NIL = 0,
-    DS_NUMBER = 1,
-    DS_STRING = 2,
-    DS_TABLE = 3,
-    DS_FUNCTION = 4,
-    DS_VEC2 = 5,
-    DS_VEC3 = 6
+    DS_NIL = 0, DS_NUMBER = 1, DS_STRING = 2, DS_TABLE = 3,
+    DS_FUNCTION = 4, DS_VEC2 = 5, DS_VEC3 = 6
 };
 
 typedef struct Val Val;
@@ -49,19 +41,11 @@ typedef struct Table Table;
 
 struct Val {
     int type;
-    union {
-        double num;
-        char *str;
-        Table *table;
-        void *func;
-        Vec2 v2;
-        Vec3 v3;
-    };
+    union { double num; char *str; Table *table; void *func; Vec2 v2; Vec3 v3; };
 };
 
-/* Tables remain available for dynamic data, but generated script variables do
- * not use them.  The compiler emits typed C locals/globals, so a hot variable
- * is a direct load/store rather than a ds_read/T_get hash lookup. */
+/* Скриптовые переменные компилируются в типизированные C-поля; хэш-таблица
+ * нужна только для динамических данных через T_get/T_set. */
 struct Entry {
     Entry *next;
     uint32_t hash;
@@ -100,10 +84,8 @@ int T_set(Table *table, const char *key, const void *value, int type);
 Val *T_get(Table *table, const char *key, int *type);
 Val *T_get_cached(Table *table, const char *key, DSLookupCache *cache, int *type);
 
-/* Recoverable runtime errors.  The Android loop wraps every script hook in
- * ds_call_protected(); ds_runtime_error records a diagnostic and transfers
- * control to that boundary instead of letting a bad script continue into an
- * invalid state. */
+/* Защищённый вызов хуков скрипта. При ошибке управление возвращается сюда,
+ * а не в сломанный код. */
 typedef void (*DSProtectedFunction)(void *userdata);
 int ds_call_protected(DSProtectedFunction function, void *userdata, const char *label);
 void ds_runtime_error(const char *format, ...);
@@ -111,13 +93,10 @@ const char *ds_runtime_error_message(void);
 int ds_script_has_error(void);
 void ds_clear_runtime_error(void);
 void ds_request_script_restart(void);
-void ds_restart_script(void); /* script-facing alias: request a safe restart */
+void ds_restart_script(void);
 int ds_script_restart_requested(void);
 void ds_clear_script_restart(void);
 
-/* String expressions in generated C use real concatenation.  The result of
- * ds_concat is heap-owned and remains valid until the caller releases it (or
- * until the script is restarted, when the runtime pool is reset). */
 int ds_len(const char *string);
 char *ds_concat(const char *left, const char *right);
 int ds_find(const char *haystack, const char *needle, int from);
@@ -146,9 +125,11 @@ int text_height(void);
 int text_ink_width(const char *string);
 int text_ink_height(const char *string);
 
-/* Software frame lifecycle.  Scripts only call the drawing primitives; the
- * host locks/posts ANativeWindow and the renderer flushes its command list into
- * the supplied frame. */
+/* Звёзды фона лобби: полёт из верхнего-левого в правый-нижний угол. */
+void ds_init_stars(int count, uint32_t colour);
+void ds_update_stars(void);
+void ds_draw_stars(void);
+
 int ds_graphics_init(AAssetManager *assets);
 int ds_graphics_begin_frame(Buffer *buffer);
 void ds_graphics_end_frame(void);

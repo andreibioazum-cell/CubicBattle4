@@ -3,16 +3,6 @@
   "version": "1.0.0",
   "description": "DimScript language for Gig1.0",
   "language": "DimScript",
-  "extensions": [
-    ".ds"
-  ],
-  "aliases": [
-    "dimscript",
-    "ds"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-username/Gig1.0"
-  },
-  "libraries": []
+  "extensions": [".ds"],
+  "aliases": ["dimscript", "ds"]
 }
