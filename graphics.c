@@ -45,7 +45,7 @@ void ds_font_destroy(DSFont *font);
 #define DS_FONT_ATLAS_WIDTH  1024
 #define DS_FONT_ATLAS_HEIGHT 1024
 #define DS_FONT_SUPERSAMPLE  4
-#define DS_FONT_MAX_GLYPHS   128
+#define DS_FONT_MAX_GLYPHS   256
 
 #define TAG(a, b, c, d) ((uint32_t)(a) << 24 | (uint32_t)(b) << 16 | \
                          (uint32_t)(c) << 8 | (uint32_t)(d))
@@ -847,6 +847,10 @@ DSFont *ds_font_create(const unsigned char *data, size_t size, int pixel_height)
     if (font->line_height < pixel_height) font->line_height = (float)pixel_height;
 
     for (codepoint = 32; codepoint <= 126; ++codepoint) add_codepoint(font, (uint32_t)codepoint);
+    /* Russian title "Кубик Батл" uses Cyrillic letters. */
+    for (codepoint = 0x0410; codepoint <= 0x044F; ++codepoint) add_codepoint(font, (uint32_t)codepoint);
+    add_codepoint(font, 0x0401);
+    add_codepoint(font, 0x0451);
     for (i = 0; extra_codepoints[i]; ++i) add_codepoint(font, extra_codepoints[i]);
     add_codepoint(font, '?');
 
