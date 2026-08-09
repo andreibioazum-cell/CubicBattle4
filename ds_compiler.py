@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Compile DimScript source into typed C.
 
-Script variables become typed C globals/locals (no hash-table lookup),
-string ``+`` compiles to real ``ds_concat`` composition, ``for`` loops are
-parsed into C, and ``object``/``class`` declarations become direct structs
-with constructors, methods and destructors.
+Variables become typed C globals/locals (no hash lookup), string ``+`` is
+real ``ds_concat``, ``for`` loops are parsed, and ``object`` declarations
+become structs with constructors, methods and destructors.
 """
 
 from collections import OrderedDict
@@ -13,23 +12,124 @@ import re
 import sys
 
 
-_INCLUDE_RE = re.compile(
-    r'^(?:#\s*)?include\s*(?:"([^"]+)"|<([^>]+)>)\s*;?\s*$'
-)
-_INCLUDE_PREFIX_RE = re.compile(r'^(?:#\s*)?include\b')
+_INCLUDE_RE = re.compile(r'^(?:#\s*)?include\s*(?:"([^"]+)"|<([^>]+)>)\s*;?\s*$')
 _DECL_RE = re.compile(
     r'^(?P<type>[A-Za-z_][A-Za-z0-9_]*\*?)\s+'
     r'(?P<name>[A-Za-z_][A-Za-z0-9_]*)'
-    r'(?:\s*=\s*(?P<value>.*))?$'
-)
+    r'(?:\s*=\s*(?P<value>.*))?$')
 _FN_RE = re.compile(
     r'^fn\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*'
-    r'\((?P<params>.*)\)\s*(?P<brace>\{)?\s*$'
-)
+    r'\((?P<params>.*)\)\s*(?P<brace>\{)?\s*$')
 _OBJECT_RE = re.compile(
-    r'^(?:object|class)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*(?P<brace>\{)?\s*$'
-)
+    r'^(?:object|class)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*(?P<brace>\{)?\s*$')
 _NUMBER_RE = re.compile(r'^(?:[-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?|0[xX][0-9a-fA-F]+)$')
+
+
+def _scan(line):
+    """Per-character (depth, in-string) state for splitting expressions."""
+    n = len(line)
+    depth = [0]*n; quoted = [False]*n
+    quote = None; escaped = False; level = 0
+    for i, c in enumerate(line):
+        quoted[i] = quote is not None
+        if escaped: escaped = False; continue
+        if c == '\\' and quote: escaped = True; continue
+        if quote:
+            if c == quote: quote = None
+            continue
+        if c in ('"', "'"): quote = c
+        elif c in '([{': level += 1
+        elif c in ')]}': level = max(0, level - 1)
+        depth[i] = level
+    return depth, quoted
+
+
+def _strip_inline_comment(line):
+    _, q = _scan(line)
+    for i in range(len(line)-1):
+        if not q[i] and line[i:i+2] == '//': return line[:i]
+    return line
+
+
+def _brace_counts(line):
+    depth, q = _scan(line)
+    return (sum(1 for i, c in enumerate(line) if c == '{' and not q[i]),
+            sum(1 for i, c in enumerate(line) if c == '}' and not q[i]))
+
+
+def _is_string_literal(v):
+    v = v.strip(); return len(v) >= 2 and v[0] == '"' and v[-1] == '"'
+
+
+def _strip_semicolon(v):
+    v = v.rstrip(); return v[:-1].rstrip() if v.endswith(';') else v
+
+
+def _split_top_level(text, delimiter):
+    parts = []; start = 0; depth, q = _scan(text)
+    for i, c in enumerate(text):
+        if depth[i] == 0 and not q[i] and c == delimiter:
+            parts.append(text[start:i].strip()); start = i+1
+    parts.append(text[start:].strip())
+    return parts
+
+
+def _strip_outer_parens(expr):
+    expr = expr.strip()
+    while expr.startswith('(') and expr.endswith(')'):
+        _, q = _scan(expr); depth = 0; ok = True
+        for i in range(len(expr)):
+            if q[i]: continue
+            if expr[i] == '(': depth += 1
+            elif expr[i] == ')':
+                depth -= 1
+                if depth == 0 and i != len(expr)-1: ok = False; break
+        if not ok or depth: break
+        expr = expr[1:-1].strip()
+    return expr
+
+
+def _whole_call(expr):
+    expr = expr.strip()
+    m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s*\(', expr)
+    if not m: return None
+    _, q = _scan(expr)
+    oa = expr.find('(', m.start()); depth = 0
+    for i in range(oa, len(expr)):
+        if q[i]: continue
+        if expr[i] == '(': depth += 1
+        elif expr[i] == ')':
+            depth -= 1
+            if depth == 0:
+                return (m.group(1), expr[oa+1:i]) if i == len(expr)-1 else None
+    return None
+
+
+def _text_writes_identifier(text, identifier):
+    """True if ``identifier`` is assigned anywhere outside string literals."""
+    pat = re.compile(r'(?<![.>])\b' + re.escape(identifier) + r'\b\s*(?:\+=|-=|\*=|/=|=)(?!\s*=)')
+    _, q = _scan(text)
+    return any(not q[m.start()] for m in pat.finditer(text))
+
+
+def _text_uses_identifier(text, identifier):
+    pat = re.compile(r'\b' + re.escape(identifier) + r'\b')
+    _, q = _scan(text)
+    return any(not q[m.start()] for m in pat.finditer(text))
+
+
+def _rewrite_outside_strings(text, pattern, repl):
+    """Apply a substitution only outside string literals."""
+    _, q = _scan(text)
+    if not any(q): return re.sub(pattern, repl, text)
+    out = []; start = 0; pat = re.compile(pattern)
+    for m in pat.finditer(text):
+        if q[m.start()]: continue
+        out.append(text[start:m.start()])
+        out.append(m.expand(repl) if isinstance(repl, str) else repl(m))
+        start = m.end()
+    out.append(text[start:])
+    return ''.join(out)
 
 
 class DimScriptCompiler:
@@ -37,125 +137,15 @@ class DimScriptCompiler:
         'num': 'double', 'int': 'int', 'bool': 'int', 'str': 'const char *',
         'byte*': 'unsigned char *', 'size': 'size_t', 'col': 'uint32_t',
     }
-    STRING_FUNCTIONS = {
-        'ds_concat', 'ds_num_to_string', 'ds_bool_to_string',
-    }
+    STRING_FUNCTIONS = {'ds_concat', 'ds_num_to_string', 'ds_bool_to_string'}
     NUMBER_FUNCTIONS = {
         'floor', 'ceil', 'round', 'sqrt', 'sin', 'cos', 'tan', 'atan2',
         'fabs', 'abs', 'rand', 'text_width', 'text_height',
         'text_ink_width', 'text_ink_height',
-        'ds_len', 'ds_find', 'ds_contains', 'ds_starts_with',
-        'ds_ends_with',
+        'ds_len', 'ds_find', 'ds_contains', 'ds_starts_with', 'ds_ends_with',
     }
 
-    @staticmethod
-    def _scan(line):
-        """Per-character (depth, in-string) state for splitting expressions."""
-        length = len(line)
-        depth = [0] * length
-        quoted = [False] * length
-        quote = None
-        escaped = False
-        level = 0
-        for i, char in enumerate(line):
-            quoted[i] = quote is not None
-            if escaped:
-                escaped = False
-                continue
-            if char == '\\' and quote:
-                escaped = True
-                continue
-            if quote:
-                if char == quote:
-                    quote = None
-                continue
-            if char in ('"', "'"):
-                quote = char
-            elif char in '([{':
-                level += 1
-            elif char in ')]}':
-                level = max(0, level - 1)
-            depth[i] = level
-        return depth, quoted
-
-    @staticmethod
-    def _strip_inline_comment(line):
-        _, quoted = DimScriptCompiler._scan(line)
-        for i in range(len(line) - 1):
-            if not quoted[i] and line[i:i + 2] == '//':
-                return line[:i]
-        return line
-
-    @staticmethod
-    def _brace_counts(line):
-        depth, quoted = DimScriptCompiler._scan(line)
-        open_count = sum(1 for i, c in enumerate(line) if c == '{' and not quoted[i])
-        close_count = sum(1 for i, c in enumerate(line) if c == '}' and not quoted[i])
-        return open_count, close_count
-
-    @staticmethod
-    def _is_string_literal(value):
-        value = value.strip()
-        return len(value) >= 2 and value[0] == '"' and value[-1] == '"'
-
-    @staticmethod
-    def _strip_semicolon(value):
-        value = value.rstrip()
-        return value[:-1].rstrip() if value.endswith(';') else value
-
-    def _error(self, message):
-        self.errors += 1
-        print(f"DimScript error: {message}", file=sys.stderr)
-
-    def _load_source(self, path, included_from=None, include_line=0):
-        canonical = os.path.realpath(os.path.abspath(os.fspath(path)))
-        if canonical in self._include_stack:
-            start = self._include_stack.index(canonical)
-            cycle = self._include_stack[start:] + [canonical]
-            self._error("cyclic include: " + " -> ".join(os.path.basename(p) for p in cycle))
-            return False
-        if canonical in self._loaded_paths:
-            return True
-        if len(self._include_stack) >= 128:
-            self._error(f"include nesting is too deep near '{canonical}'")
-            return False
-        if not os.path.isfile(canonical):
-            where = f"{included_from}:{include_line}: " if included_from else ""
-            self._error(f"{where}source file not found: {path}")
-            return False
-
-        self._include_stack.append(canonical)
-        self.loaded_sources.append(canonical)
-        success = True
-        try:
-            with open(canonical, 'r', encoding='utf-8-sig') as source:
-                for line_number, raw in enumerate(source, 1):
-                    line = self._strip_inline_comment(raw).strip()
-                    if not line:
-                        continue
-                    include = _INCLUDE_RE.fullmatch(line)
-                    if include:
-                        include_name = include.group(1) or include.group(2)
-                        include_path = os.path.join(os.path.dirname(canonical), include_name)
-                        if not self._load_source(include_path, canonical, line_number):
-                            success = False
-                        continue
-                    if _INCLUDE_PREFIX_RE.match(line):
-                        self._error(f"{canonical}:{line_number}: malformed include; "
-                                    'use #include "file.ds"')
-                        success = False
-                        continue
-                    self.src.append(line)
-        except (OSError, UnicodeError) as error:
-            self._error(f"cannot read '{canonical}': {error}")
-            success = False
-        finally:
-            self._include_stack.pop()
-        if success:
-            self._loaded_paths.add(canonical)
-        return success
-
-    def parse(self, paths):
+    def __init__(self):
         self.vars = OrderedDict()
         self.functions = OrderedDict()
         self.objects = OrderedDict()
@@ -172,819 +162,522 @@ class DimScriptCompiler:
         self.current_function = None
         self.object_vars = {}
 
-        for path in paths:
-            if not self._load_source(path):
-                return False
+    def _error(self, msg):
+        self.errors += 1
+        print(f"DimScript error: {msg}", file=sys.stderr)
 
+    def _load_source(self, path, included_from=None, include_line=0):
+        canonical = os.path.realpath(os.path.abspath(os.fspath(path)))
+        if canonical in self._include_stack:
+            cycle = self._include_stack[self._include_stack.index(canonical):] + [canonical]
+            self._error("cyclic include: " + " -> ".join(os.path.basename(p) for p in cycle))
+            return False
+        if canonical in self._loaded_paths: return True
+        if len(self._include_stack) >= 128:
+            self._error(f"include nesting is too deep near '{canonical}'"); return False
+        if not os.path.isfile(canonical):
+            where = f"{included_from}:{include_line}: " if included_from else ""
+            self._error(f"{where}source file not found: {path}"); return False
+        self._include_stack.append(canonical); self.loaded_sources.append(canonical)
+        success = True
+        try:
+            with open(canonical, 'r', encoding='utf-8-sig') as src:
+                for ln, raw in enumerate(src, 1):
+                    line = _strip_inline_comment(raw).strip()
+                    if not line: continue
+                    inc = _INCLUDE_RE.fullmatch(line)
+                    if inc:
+                        ip = os.path.join(os.path.dirname(canonical), inc.group(1) or inc.group(2))
+                        if not self._load_source(ip, canonical, ln): success = False
+                        continue
+                    if line.startswith('include'):
+                        self._error(f"{canonical}:{ln}: malformed include; use #include \"file.ds\"")
+                        success = False; continue
+                    self.src.append(line)
+        except (OSError, UnicodeError) as e:
+            self._error(f"cannot read '{canonical}': {e}"); success = False
+        finally:
+            self._include_stack.pop()
+        if success: self._loaded_paths.add(canonical)
+        return success
+
+    def parse(self, paths):
+        for p in paths:
+            if not self._load_source(p): return False
         i = 0
         while i < len(self.src):
             line = self.src[i]
-            if _OBJECT_RE.match(line):
-                i = self.parse_object(i)
-            elif _FN_RE.match(line):
-                i = self.parse_func(i)
-            elif 'Main(' in line:
-                i = self.parse_main(i)
+            if _OBJECT_RE.match(line): i = self.parse_object(i)
+            elif _FN_RE.match(line): i = self.parse_func(i)
+            elif 'Main(' in line: i = self.parse_main(i)
             elif self._looks_like_declaration(line):
-                self.parse_var(line)
-                i += 1
-            else:
-                i += 1  # unknown top-level lines are ignored
-        self._collect_object_variables()
+                self.parse_var(line); i += 1
+            else: i += 1
+        self.object_vars = {n: t.rstrip('*') for n, (t, _) in self.vars.items() if t.rstrip('*') in self.objects}
         return self.errors == 0
 
     def _looks_like_declaration(self, line):
-        match = _DECL_RE.match(self._strip_semicolon(line.strip()))
-        if not match:
-            return False
-        type_name = match.group('type')
-        return type_name in self.BUILTIN_TYPES or type_name.rstrip('*') in self.objects
+        m = _DECL_RE.match(_strip_semicolon(line.strip()))
+        if not m: return False
+        t = m.group('type')
+        return t in self.BUILTIN_TYPES or t.rstrip('*') in self.objects
 
     @staticmethod
-    def _parse_params(params_text):
+    def _parse_params(text):
         params = []
-        for part in DimScriptCompiler._split_top_level(params_text, ','):
-            part = part.strip()
-            if not part:
-                continue
-            words = part.split()
-            params.append(('num', words[0]) if len(words) == 1 else (words[0], words[-1]))
+        for p in _split_top_level(text, ','):
+            p = p.strip()
+            if not p: continue
+            w = p.split()
+            params.append(('num', w[0]) if len(w) == 1 else (w[0], w[-1]))
         return params
 
     def parse_var(self, line, target=None):
-        match = _DECL_RE.match(self._strip_semicolon(line.strip()))
-        if not match:
-            self._error(f"invalid variable declaration: {line}")
-            return None
-        vtype, name, value = match.group('type'), match.group('name'), match.group('value')
+        m = _DECL_RE.match(_strip_semicolon(line.strip()))
+        if not m: self._error(f"invalid variable declaration: {line}"); return None
+        t, n, v = m.group('type'), m.group('name'), m.group('value')
         target = self.vars if target is None else target
-        if name in target:
-            self._error(f"duplicate variable '{name}'")
-        else:
-            target[name] = (vtype, value.strip() if value is not None else None)
-        return name, vtype, value.strip() if value is not None else None
+        if n in target: self._error(f"duplicate variable '{n}'")
+        else: target[n] = (t, v.strip() if v is not None else None)
+        return n, t, v.strip() if v is not None else None
 
     def _extract_block(self, lines, start, header):
-        """Return (body, index after closing brace).  A ``} else {`` line is
-        kept in the body so compile_line can emit the C transition."""
-        opening, closing = self._brace_counts(header)
-        depth = opening - closing
-        i = start + 1
-        body = []
+        op, cl = _brace_counts(header); depth = op - cl
+        i = start + 1; body = []
         if depth <= 0:
-            if i < len(lines) and lines[i].strip() == '{':  # ``fn f()`` + ``{``
-                depth = 1
-                i += 1
-            else:
-                return body, i
+            if i < len(lines) and lines[i].strip() == '{': depth = 1; i += 1
+            else: return body, i
         while i < len(lines) and depth > 0:
-            current = lines[i]
-            op, cl = self._brace_counts(current)
-            if depth == 1 and current.strip() == '}' and op == 0 and cl == 1:
-                i += 1
-                break
-            body.append(current)
-            depth += op - cl
-            i += 1
+            cur = lines[i]; o, c = _brace_counts(cur)
+            if depth == 1 and cur.strip() == '}' and o == 0 and c == 1: i += 1; break
+            body.append(cur); depth += o - c; i += 1
         return body, i
 
     def parse_func(self, i):
-        match = _FN_RE.match(self.src[i])
-        if not match:
-            self._error(f"invalid function declaration: {self.src[i]}")
-            return i + 1
-        name = match.group('name')
-        params = self._parse_params(match.group('params'))
-        body, next_index = self._extract_block(self.src, i, self.src[i])
-        depth = sum(a - b for a, b in map(self._brace_counts, self.src[i:next_index]))
-        if depth != 0:
-            self._error(f"function '{name}' has no closing '}}'")
-        elif name in self.functions:
-            self._error(f"duplicate function '{name}'")
-        else:
-            self.functions[name] = (params, body)
-        return next_index
+        m = _FN_RE.match(self.src[i])
+        if not m: self._error(f"invalid function declaration: {self.src[i]}"); return i+1
+        name = m.group('name'); params = self._parse_params(m.group('params'))
+        body, ni = self._extract_block(self.src, i, self.src[i])
+        depth = sum(a-b for a, b in map(_brace_counts, self.src[i:ni]))
+        if depth: self._error(f"function '{name}' has no closing '}}'")
+        elif name in self.functions: self._error(f"duplicate function '{name}'")
+        else: self.functions[name] = (params, body)
+        return ni
 
     def parse_object(self, i):
-        match = _OBJECT_RE.match(self.src[i])
-        if not match:
-            self._error(f"invalid object declaration: {self.src[i]}")
-            return i + 1
-        name = match.group('name')
-        lines, next_index = self._extract_block(self.src, i, self.src[i])
-        fields = OrderedDict()
-        methods = OrderedDict()
-        j = 0
+        m = _OBJECT_RE.match(self.src[i])
+        if not m: self._error(f"invalid object declaration: {self.src[i]}"); return i+1
+        name = m.group('name'); lines, ni = self._extract_block(self.src, i, self.src[i])
+        fields, methods = OrderedDict(), OrderedDict(); j = 0
         while j < len(lines):
-            line = lines[j]
-            fn_match = _FN_RE.match(line)
-            if fn_match:
-                method_name = fn_match.group('name')
-                params = self._parse_params(fn_match.group('params'))
+            line = lines[j]; fm = _FN_RE.match(line)
+            if fm:
+                mn = fm.group('name'); params = self._parse_params(fm.group('params'))
                 body, after = self._extract_block(lines, j, line)
-                if method_name in methods:
-                    self._error(f"duplicate method '{name}.{method_name}'")
-                else:
-                    methods[method_name] = (params, body)
-                j = after
-                continue
+                if mn in methods: self._error(f"duplicate method '{name}.{mn}'")
+                else: methods[mn] = (params, body)
+                j = after; continue
             if self._looks_like_declaration(line):
-                parsed = self.parse_var(line, fields)
-                if parsed and parsed[1].rstrip('*') in self.objects:
-                    self._error(f"nested object fields are not supported yet: {name}.{parsed[0]}")
-                j += 1
-                continue
-            if line not in ('{', '}'):
-                self._error(f"unknown line in object '{name}': {line}")
+                p = self.parse_var(line, fields)
+                if p and p[1].rstrip('*') in self.objects:
+                    self._error(f"nested object fields are not supported yet: {name}.{p[0]}")
+                j += 1; continue
+            if line not in ('{', '}'): self._error(f"unknown line in object '{name}': {line}")
             j += 1
-        if name in self.objects:
-            self._error(f"duplicate object '{name}'")
-        else:
-            self.objects[name] = {'fields': fields, 'methods': methods}
-        return next_index
+        if name in self.objects: self._error(f"duplicate object '{name}'")
+        else: self.objects[name] = {'fields': fields, 'methods': methods}
+        return ni
 
     def parse_main(self, i):
-        body, next_index = self._extract_block(self.src, i, self.src[i])
-        self.main_body = body
-        return next_index
-
-    def _collect_object_variables(self):
-        self.object_vars = {
-            name: vtype.rstrip('*')
-            for name, (vtype, _value) in self.vars.items()
-            if vtype.rstrip('*') in self.objects
-        }
-
-    @staticmethod
-    def _split_top_level(text, delimiter):
-        parts = []
-        start = 0
-        depth, quoted = DimScriptCompiler._scan(text)
-        for i, char in enumerate(text):
-            if depth[i] == 0 and not quoted[i] and char == delimiter:
-                parts.append(text[start:i].strip())
-                start = i + 1
-        parts.append(text[start:].strip())
-        return parts
-
-    @classmethod
-    def _split_plus(cls, expression):
-        parts = cls._split_top_level(expression, '+')
-        if len(parts) <= 1 or any(not part for part in parts):
-            return None  # reject ++ or a leading unary +
-        return parts
-
-    @staticmethod
-    def _strip_outer_parens(expression):
-        expression = expression.strip()
-        while expression.startswith('(') and expression.endswith(')'):
-            _, quoted = DimScriptCompiler._scan(expression)
-            depth = 0
-            ok = True
-            for i in range(len(expression)):
-                if quoted[i]:
-                    continue
-                if expression[i] == '(':
-                    depth += 1
-                elif expression[i] == ')':
-                    depth -= 1
-                    if depth == 0 and i != len(expression) - 1:
-                        ok = False
-                        break
-            if not ok or depth != 0:
-                break
-            expression = expression[1:-1].strip()
-        return expression
-
-    @staticmethod
-    def _whole_call(expression):
-        expression = expression.strip()
-        match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s*\(', expression)
-        if not match:
-            return None
-        _, quoted = DimScriptCompiler._scan(expression)
-        open_at = expression.find('(', match.start())
-        depth = 0
-        for i in range(open_at, len(expression)):
-            if quoted[i]:
-                continue
-            if expression[i] == '(':
-                depth += 1
-            elif expression[i] == ')':
-                depth -= 1
-                if depth == 0:
-                    if i == len(expression) - 1:
-                        return match.group(1), expression[open_at + 1:i]
-                    return None
-        return None
+        body, ni = self._extract_block(self.src, i, self.src[i])
+        self.main_body = body; return ni
 
     def _symbol_type(self, name):
         name = name.strip()
-        if name in self.current_scope:
-            return self.current_scope[name]
-        if name in self.vars:
-            return self.vars[name][0]
-        if name in self.object_vars:
-            return self.object_vars[name]
-        field_match = re.match(r'^([A-Za-z_]\w*)\s*(?:\.|->)\s*([A-Za-z_]\w*)$', name)
-        if field_match:
-            owner, field = field_match.groups()
-            object_type = self.current_object if (owner == 'self' and self.current_object) else (
-                self.current_scope.get(owner) or self.object_vars.get(owner))
-            if object_type in self.objects:
-                field_info = self.objects[object_type]['fields'].get(field)
-                if field_info:
-                    return field_info[0]
-        if name in ('true', 'false'):
-            return 'bool'
-        if name.startswith('"'):
-            return 'str'
-        if name in self.STRING_FUNCTIONS:
-            return 'str'
+        if name in self.current_scope: return self.current_scope[name]
+        if name in self.vars: return self.vars[name][0]
+        if name in self.object_vars: return self.object_vars[name]
+        m = re.match(r'^([A-Za-z_]\w*)\s*(?:\.|->)\s*([A-Za-z_]\w*)$', name)
+        if m:
+            o, f = m.groups()
+            ot = self.current_object if (o == 'self' and self.current_object) else (
+                self.current_scope.get(o) or self.object_vars.get(o))
+            if ot in self.objects:
+                fi = self.objects[ot]['fields'].get(f)
+                if fi: return fi[0]
+        if name in ('true', 'false'): return 'bool'
+        if name.startswith('"'): return 'str'
+        if name in self.STRING_FUNCTIONS: return 'str'
         return None
 
-    def infer_expr_type(self, expression):
-        expression = self._strip_outer_parens(expression.strip())
-        if not expression:
-            return None
-        if self._is_string_literal(expression):
-            return 'str'
-        plus_parts = self._split_plus(expression)
-        if plus_parts:
-            return 'str' if any(self.infer_expr_type(p) == 'str' for p in plus_parts) else 'num'
-        if re.search(r'(^|\s)(==|!=|<=|>=|<|>)(\s|$)', expression):
-            return 'bool'
-        call = self._whole_call(expression)
+    def infer_expr_type(self, expr):
+        expr = _strip_outer_parens(expr.strip())
+        if not expr: return None
+        if _is_string_literal(expr): return 'str'
+        parts = _split_top_level(expr, '+')
+        if len(parts) > 1 and all(parts):
+            return 'str' if any(self.infer_expr_type(p) == 'str' for p in parts) else 'num'
+        if re.search(r'(^|\s)(==|!=|<=|>=|<|>)(\s|$)', expr): return 'bool'
+        call = _whole_call(expr)
         if call:
             bare = call[0].split('.')[-1]
-            if bare in self.STRING_FUNCTIONS:
-                return 'str'
-            if bare in self.NUMBER_FUNCTIONS or bare in self.functions:
-                return 'num'
-        symbol = self._symbol_type(expression)
-        if symbol:
-            return symbol
-        return 'num'
+            if bare in self.STRING_FUNCTIONS: return 'str'
+            if bare in self.NUMBER_FUNCTIONS or bare in self.functions: return 'num'
+        s = self._symbol_type(expr)
+        return s or 'num'
 
-    @staticmethod
-    def _rewrite_outside_strings(text, pattern, repl):
-        """Apply a substitution only outside string literals.
-
-        Without this, an object-access rewrite would also corrupt quoted text
-        such as the texture name ``"player.png"`` (``player.`` -> ``player->``).
-        """
-        _, quoted = DimScriptCompiler._scan(text)
-        if not any(quoted):
-            return re.sub(pattern, repl, text)
-        result = []
-        start = 0
-        pattern = re.compile(pattern)
-        for match in pattern.finditer(text):
-            if quoted[match.start()]:
-                continue
-            result.append(text[start:match.start()])
-            result.append(match.expand(repl) if isinstance(repl, str) else repl(match))
-            start = match.end()
-        result.append(text[start:])
-        return ''.join(result)
-
-    def _translate_object_access(self, expression):
-        expression = self._rewrite_outside_strings(expression, r'\btrue\b', '1')
-        expression = self._rewrite_outside_strings(expression, r'\bfalse\b', '0')
-        known_objects = dict(self.object_vars)
-        for variable, script_type in self.current_scope.items():
-            if script_type.rstrip('*') in self.objects:
-                known_objects[variable] = script_type.rstrip('*')
-        for variable, object_type in sorted(known_objects.items(), key=lambda item: -len(item[0])):
-            expression = self._rewrite_outside_strings(
-                expression,
-                rf'\b{re.escape(variable)}\.([A-Za-z_]\w*)',
-                rf'{variable}->\1')
+    def _translate_object_access(self, expr):
+        expr = _rewrite_outside_strings(expr, r'\btrue\b', '1')
+        expr = _rewrite_outside_strings(expr, r'\bfalse\b', '0')
+        ko = dict(self.object_vars)
+        for v, st in self.current_scope.items():
+            if st.rstrip('*') in self.objects: ko[v] = st.rstrip('*')
+        for v, ot in sorted(ko.items(), key=lambda it: -len(it[0])):
+            expr = _rewrite_outside_strings(
+                expr, rf'\b{re.escape(v)}\.([A-Za-z_]\w*)', rf'{v}->\1')
         if self.current_object:
-            expression = self._rewrite_outside_strings(
-                expression, r'\bself\.([A-Za-z_]\w*)', r'self->\1')
-        return expression
+            expr = _rewrite_outside_strings(expr, r'\bself\.([A-Za-z_]\w*)', r'self->\1')
+        return expr
 
-    def _as_string_expression(self, expression):
-        expression = self.translate_expression(expression)
-        expr_type = self.infer_expr_type(expression)
-        if expr_type == 'str':
-            return expression
-        if expr_type == 'bool':
-            return f'ds_bool_to_string((int)({expression}))'
-        return f'ds_num_to_string((double)({expression}))'
+    def _as_string_expression(self, expr):
+        expr = self.translate_expression(expr); t = self.infer_expr_type(expr)
+        if t == 'str': return expr
+        if t == 'bool': return f'ds_bool_to_string((int)({expr}))'
+        return f'ds_num_to_string((double)({expr}))'
 
-    def translate_expression(self, expression):
-        expression = expression.strip()
-        if not expression:
-            return expression
-        stripped = self._strip_outer_parens(expression)
-        plus_parts = self._split_plus(stripped)
-        if plus_parts:
-            types = [self.infer_expr_type(part) for part in plus_parts]
-            if any(value_type == 'str' for value_type in types):
-                result = self._as_string_expression(plus_parts[0])
-                for part in plus_parts[1:]:
-                    result = f'ds_concat({result}, {self._as_string_expression(part)})'
-                return result
-            return self._translate_object_access(expression)
-        call = self._whole_call(stripped)
+    def translate_expression(self, expr):
+        expr = expr.strip()
+        if not expr: return expr
+        stripped = _strip_outer_parens(expr)
+        parts = _split_top_level(stripped, '+')
+        if len(parts) > 1 and all(parts):
+            types = [self.infer_expr_type(p) for p in parts]
+            if any(t == 'str' for t in types):
+                out = self._as_string_expression(parts[0])
+                for p in parts[1:]: out = f'ds_concat({out}, {self._as_string_expression(p)})'
+                return out
+            return self._translate_object_access(expr)
+        call = _whole_call(stripped)
         if call:
-            name, args_text = call
-            args = [self.translate_expression(arg)
-                    for arg in self._split_top_level(args_text, ',')]
-            return self._translate_object_access(f'{name}({", ".join(args)})')
-        return self._translate_object_access(expression)
+            name, args = call
+            return self._translate_object_access(
+                f'{name}({", ".join(self.translate_expression(a) for a in _split_top_level(args, ","))})')
+        return self._translate_object_access(expr)
 
-    def c_type(self, script_type):
-        if script_type in self.BUILTIN_TYPES:
-            return self.BUILTIN_TYPES[script_type]
-        object_type = script_type.rstrip('*')
-        return f'{object_type} *' if object_type in self.objects else script_type
+    def c_type(self, st):
+        if st in self.BUILTIN_TYPES: return self.BUILTIN_TYPES[st]
+        ot = st.rstrip('*')
+        return f'{ot} *' if ot in self.objects else st
 
-    def _default_c_value(self, script_type, value=None):
-        if value is not None and value.strip():
-            return self.translate_expression(value)
-        if script_type in ('str',) or script_type.endswith('*') or script_type.rstrip('*') in self.objects:
-            return 'NULL'
+    def _default_c_value(self, st, value=None):
+        if value and value.strip(): return self.translate_expression(value)
+        if st in ('str',) or st.endswith('*') or st.rstrip('*') in self.objects: return 'NULL'
         return '0'
 
-    def _is_c_static_expression(self, value):
-        value = value.strip()
-        return (self._is_string_literal(value) or _NUMBER_RE.match(value)
-                or value in ('NULL', 'true', 'false'))
+    def _is_c_static_expression(self, v):
+        v = v.strip()
+        return _is_string_literal(v) or bool(_NUMBER_RE.match(v)) or v in ('NULL', 'true', 'false')
+
+    @staticmethod
+    def _declaration(c_type, name, prefix=''):
+        if prefix: c_type = f'{prefix} {c_type}'
+        return f'{c_type}{name}' if c_type.endswith('*') else f'{c_type} {name}'
+
+    @staticmethod
+    def _param_c(c_type, name, is_const):
+        if is_const and '*' not in c_type and 'const' not in c_type:
+            return DimScriptCompiler._declaration(c_type, name, 'const')
+        return DimScriptCompiler._declaration(c_type, name)
+
+    def _params_c(self, params, const_names=None):
+        if not params: return 'void'
+        const_names = const_names or set()
+        return ', '.join(self._param_c(self.c_type(t), n, n in const_names) for t, n in params)
+
+    def _object_signature(self, on, mn, params, const_names=None):
+        const_names = const_names or set()
+        ps = [f'{on} *self'] + [self._param_c(self.c_type(t), n, n in const_names) for t, n in params]
+        return f'static void ds_obj_{on}_{mn}({", ".join(ps)})'
+
+    def _const_param_names(self, params, body):
+        body_text = '\n'.join(body)
+        return {n for pt, n in params
+                if '*' not in self.c_type(pt) and 'const' not in self.c_type(pt)
+                and not _text_writes_identifier(body_text, n)}
+
+    def _emit_body(self, body, params, object_name, function_name):
+        ps, po, pf = self.current_scope, self.current_object, self.current_function
+        self.current_scope = dict(params); self.current_object = object_name; self.current_function = function_name
+        # (void) только для неиспользуемых параметров.
+        bt = '\n'.join(body)
+        for p in params:
+            if not _text_uses_identifier(bt, p): self._indent(f'(void){p};')
+        for line in body: self.compile_line(line)
+        self.current_scope, self.current_object, self.current_function = ps, po, pf
+
+    def _indent(self, line): self.output.append(f'    {line}')
+    def emit(self, line): self.output.append(line)
 
     def generate(self):
-        self.output = []
-        self.emit('#include "runtime.h"')
-        self.emit('#include <math.h>')
-        self.emit('')
+        self.output = ['#include "runtime.h"', '#include <math.h>', '']
+        fc = {n: self._const_param_names(p, b) for n, (p, b) in self.functions.items()}
+        mc = {on: {m: self._const_param_names(p, b)
+                   for m, (p, b) in d['methods'].items()}
+              for on, d in self.objects.items()}
 
-        fn_consts = {
-            name: self._const_param_names(params, body)
-            for name, (params, body) in self.functions.items()
-        }
-        method_consts = {}
-        for object_name, definition in self.objects.items():
-            method_consts[object_name] = {
-                method: self._const_param_names(params, body)
-                for method, (params, body) in definition['methods'].items()
-            }
-
-        for name in self.objects:
-            self.emit(f'typedef struct {name} {name};')
-        if self.objects:
-            self.emit('')
-        for name, definition in self.objects.items():
-            self.emit(f'struct {name} {{')
-            fields = definition['fields']
-            if not fields:
-                self.emit('    unsigned char _ds_empty;')
-            for field, (field_type, _value) in fields.items():
-                self.emit(f'    {self.c_type(field_type)} {field};')
+        for n in self.objects: self.emit(f'typedef struct {n} {n};')
+        if self.objects: self.emit('')
+        for n, d in self.objects.items():
+            self.emit(f'struct {n} {{')
+            if not d['fields']: self.emit('    unsigned char _ds_empty;')
+            for f, (ft, _) in d['fields'].items(): self.emit(f'    {self.c_type(ft)} {f};')
             self.emit('};')
-        if self.objects:
-            self.emit('')
+        if self.objects: self.emit('')
 
-        for name, definition in self.objects.items():
-            for method, (params, _body) in definition['methods'].items():
-                self.emit(f'{self._object_signature(name, method, params, method_consts[name].get(method))};')
-            init_consts = method_consts[name].get('init', set())
-            self.emit(f'static {name} *ds_new_{name}(' +
-                      self._params_c(params_for_new(definition), init_consts) + ');')
-            self.emit(f'static void ds_free_{name}({name} *self);')
-        if self.objects:
-            self.emit('')
+        for n, d in self.objects.items():
+            for m, (p, _) in d['methods'].items():
+                self.emit(f'{self._object_signature(n, m, p, mc[n].get(m))};')
+            self.emit(f'static {n} *ds_new_{n}(' +
+                      self._params_c(self._ctor_params(d), mc[n].get("init")) + ');')
+            self.emit(f'static void ds_free_{n}({n} *self);')
+        if self.objects: self.emit('')
 
-        for name, (script_type, value) in self.vars.items():
-            c_type = self.c_type(script_type)
-            if script_type.rstrip('*') in self.objects:
+        for n, (st, v) in self.vars.items():
+            c_type = self.c_type(st)
+            if st.rstrip('*') in self.objects:
                 initial = 'NULL'
-                if value:
-                    self.global_initializers.append((name, value))
+                if v: self.global_initializers.append((n, v))
             else:
-                string_needs_conversion = (
-                    script_type == 'str' and value is not None and value.strip() and
-                    self.infer_expr_type(value) != 'str')
-                if value is not None and value.strip() and self._is_c_static_expression(value) and not string_needs_conversion:
-                    initial = self.translate_expression(value)
+                sconv = st == 'str' and v and v.strip() and self.infer_expr_type(v) != 'str'
+                if v and v.strip() and self._is_c_static_expression(v) and not sconv:
+                    initial = self.translate_expression(v)
                 else:
-                    initial = self._default_c_value(script_type)
-                    if value:
-                        self.global_initializers.append((name, value))
-            self.emit(f'{self._declaration(c_type, name)} = {initial};')
-        if self.vars:
-            self.emit('')
+                    initial = self._default_c_value(st)
+                    if v: self.global_initializers.append((n, v))
+            self.emit(f'{self._declaration(c_type, n)} = {initial};')
+        if self.vars: self.emit('')
 
-        for name, (params, _body) in self.functions.items():
-            self.emit(f'static void ds_fn_{name}({self._params_c(params, fn_consts[name])});')
-        if self.functions:
-            self.emit('')
+        for n, (p, _) in self.functions.items():
+            self.emit(f'static void ds_fn_{n}({self._params_c(p, fc[n])});')
+        if self.functions: self.emit('')
 
-        for name, definition in self.objects.items():
-            for method, (params, body) in definition['methods'].items():
-                self.emit(self._object_signature(name, method, params, method_consts[name].get(method)) + ' {')
-                method_scope = {'self': name}
-                method_scope.update({p: t for t, p in params})
-                self._emit_body(body, method_scope, name, method)
-                self.emit('}')
-                self.emit('')
-            self.emit(f'static {name} *ds_new_{name}(' + self._params_c(params_for_new(definition), method_consts[name].get('init')) + ') {')
-            self.emit(f'    {name} *self = ({name} *)calloc(1, sizeof(*self));')
-            self.emit(f'    if (!self) {{ ds_runtime_error("out of memory creating object {name}"); return NULL; }}')
-            for field, (field_type, value) in definition['fields'].items():
-                if value is not None and value.strip():
-                    field_value = (self._as_string_expression(value)
-                                   if field_type == 'str' and self.infer_expr_type(value) != 'str'
-                                   else self.translate_expression(value))
-                    self.emit(f'    self->{field} = {field_value};')
-            if 'init' in definition['methods']:
-                args = ', '.join(p for _t, p in params_for_new(definition))
-                call = f'ds_obj_{name}_init(self' + (f', {args}' if args else '') + ');'
-                self.emit(f'    {call}')
-            self.emit('    return self;')
-            self.emit('}')
-            self.emit(f'static void ds_free_{name}({name} *self) {{')
-            self.emit('    free(self);')
-            self.emit('}')
-            self.emit('')
+        for n, d in self.objects.items():
+            for m, (p, b) in d['methods'].items():
+                self.emit(self._object_signature(n, m, p, mc[n].get(m)) + ' {')
+                ms = {'self': n}; ms.update({pp: t for t, pp in p})
+                self._emit_body(b, ms, n, m); self.emit('}'); self.emit('')
+            self.emit(f'static {n} *ds_new_{n}(' + self._params_c(self._ctor_params(d), mc[n].get('init')) + ') {')
+            self.emit(f'    {n} *self = ({n} *)calloc(1, sizeof(*self));')
+            self.emit(f'    if (!self) {{ ds_runtime_error("out of memory creating object {n}"); return NULL; }}')
+            for f, (ft, v) in d['fields'].items():
+                if v and v.strip():
+                    fv = (self._as_string_expression(v)
+                          if ft == 'str' and self.infer_expr_type(v) != 'str'
+                          else self.translate_expression(v))
+                    self.emit(f'    self->{f} = {fv};')
+            if 'init' in d['methods']:
+                args = ', '.join(p for _t, p in self._ctor_params(d))
+                self.emit(f'    ds_obj_{n}_init(self' + (f', {args}' if args else '') + ');')
+            self.emit('    return self;\n}\n')
+            self.emit(f'static void ds_free_{n}({n} *self) {{\n    free(self);\n}}\n')
 
-        for name, (params, body) in self.functions.items():
-            self.emit(f'static void ds_fn_{name}({self._params_c(params, fn_consts[name])}) {{')
-            function_scope = {p: t for t, p in params}
-            self._emit_body(body, function_scope, None, name)
-            self.emit('}')
-            self.emit('')
+        for n, (p, b) in self.functions.items():
+            self.emit(f'static void ds_fn_{n}({self._params_c(p, fc[n])}) {{')
+            self._emit_body(b, {pp: t for t, pp in p}, None, n); self.emit('}\n')
 
-        # ds_main is only a real entry point when there is something to run:
-        # non-constant global initialisers or an explicit Main() body.  An
-        # empty ds_main would just be dead scaffolding in the output.
+        # ds_main существует только при неконстантных глобальных инициализаторах
+        # или явном Main(); иначе это просто мёртвый код.
         has_main = bool(self.global_initializers or self.main_body)
         if has_main:
             self.emit('static int ds_main(void) {')
-            for name, value in self.global_initializers:
-                self.compile_line(f'{name} = {value}')
-            for line in self.main_body:
-                self.compile_line(line)
-            self.emit('    return 0;')
-            self.emit('}')
-            self.emit('')
+            for n, v in self.global_initializers: self.compile_line(f'{n} = {v}')
+            for line in self.main_body: self.compile_line(line)
+            self.emit('    return 0;\n}\n')
 
         self.emit('void reset(void) {')
-        for name, (script_type, value) in self.vars.items():
-            if script_type.rstrip('*') in self.objects:
-                self.emit(f'    if ({name}) ds_free_{script_type.rstrip("*")}({name});')
-                self.emit(f'    {name} = NULL;')
-            elif value is not None and self._is_c_static_expression(value):
-                self.emit(f'    {name} = {self.translate_expression(value)};')
+        for n, (st, v) in self.vars.items():
+            ot = st.rstrip('*')
+            if ot in self.objects:
+                self.emit(f'    if ({n}) ds_free_{ot}({n});\n    {n} = NULL;')
+            elif v and self._is_c_static_expression(v):
+                self.emit(f'    {n} = {self.translate_expression(v)};')
             else:
-                self.emit(f'    {name} = {self._default_c_value(script_type)};')
-        self.emit('}')
-        self.emit('')
-
+                self.emit(f'    {n} = {self._default_c_value(st)};')
+        self.emit('}\n')
         self.emit('void init(AAssetManager *assets) {')
         self.emit('    ds_set_asset_manager(assets);')
-        if has_main:
-            self.emit('    ds_main();')
-        if 'init' in self.functions:
-            self.emit('    ds_fn_init();')
-        self.emit('}')
-        self.emit('')
+        if has_main: self.emit('    ds_main();')
+        if 'init' in self.functions: self.emit('    ds_fn_init();')
+        self.emit('}\n')
         self.emit('void update(void) {')
-        if 'update' in self.functions:
-            self.emit('    ds_fn_update();')
-        if 'update_touch' in self.functions:
-            self.emit('    ds_fn_update_touch();')
-        self.emit('}')
-        self.emit('')
-        self.emit('void draw(Buffer *buffer) {')
-        self.emit('    (void)buffer;')
-        if 'draw' in self.functions:
-            self.emit('    ds_fn_draw();')
-        self.emit('}')
-        self.emit('')
+        if 'update' in self.functions: self.emit('    ds_fn_update();')
+        if 'update_touch' in self.functions: self.emit('    ds_fn_update_touch();')
+        self.emit('}\n')
+        self.emit('void draw(Buffer *buffer) {\n    (void)buffer;')
+        if 'draw' in self.functions: self.emit('    ds_fn_draw();')
+        self.emit('}\n')
         self.emit('void touch(float x, float y, int action) {')
         if 'touch' in self.functions:
-            # Cast each runtime value to the type the script declared, so an
-            # `int action` parameter is not forced through double first.
+            # Приводим runtime-значения к типам параметров, чтобы int не шёл через double.
             params = self.functions['touch'][0]
-            runtime_values = ('x', 'y', 'action')
-            args = ', '.join(
-                f'({self.c_type(ptype)}){runtime_values[index]}'
-                for index, (ptype, _pname) in enumerate(params[:len(runtime_values)]))
+            rv = ('x', 'y', 'action')
+            args = ', '.join(f'({self.c_type(pt)}){rv[i]}' for i, (pt, _) in enumerate(params[:len(rv)]))
             self.emit(f'    ds_fn_touch({args});')
         else:
             self.emit('    (void)x; (void)y; (void)action;')
         self.emit('}')
 
     @staticmethod
-    def _declaration(c_type, name, prefix=''):
-        """A C declaration ``type name`` (pointer types hug the name: ``T *p``)."""
-        if prefix:
-            c_type = f'{prefix} {c_type}'
-        return f'{c_type}{name}' if c_type.endswith('*') else f'{c_type} {name}'
+    def _ctor_params(definition):
+        """Constructor parameters match the user-defined init method, if any."""
+        init = definition['methods'].get('init')
+        return init[0] if init else []
 
-    @staticmethod
-    def _param_c(c_type, name, is_const):
-        """C declaration for one parameter, with const for read-only scalars."""
-        if is_const and '*' not in c_type and 'const' not in c_type:
-            return DimScriptCompiler._declaration(c_type, name, 'const')
-        return DimScriptCompiler._declaration(c_type, name)
-
-    def _params_c(self, params, const_names=None):
-        if not params:
-            return 'void'
-        const_names = const_names or set()
-        return ', '.join(self._param_c(self.c_type(t), n, n in const_names)
-                         for t, n in params)
-
-    def _object_signature(self, object_name, method_name, params, const_names=None):
-        const_names = const_names or set()
-        parameters = [f'{object_name} *self'] + [
-            self._param_c(self.c_type(t), n, n in const_names) for t, n in params
-        ]
-        return f'static void ds_obj_{object_name}_{method_name}({", ".join(parameters)})'
-
-    @staticmethod
-    def _text_writes_identifier(text, identifier):
-        """True if ``identifier`` is assigned anywhere outside string literals.
-
-        Matches whole-word assignments (``x = v``, ``x += v``, ...) but not
-        comparisons (``x == v``, ``x <= v``) and not field writes such as
-        ``self.x = v`` or ``enemy->x = v``.
-        """
-        pattern = re.compile(r'(?<![.>])\b' + re.escape(identifier) +
-                             r'\b\s*(?:\+=|-=|\*=|/=|=)(?!\s*=)')
-        _, quoted = DimScriptCompiler._scan(text)
-        return any(not quoted[match.start()] for match in pattern.finditer(text))
-
-    def _const_param_names(self, params, body):
-        """Parameters that the body only reads (never assigns).
-
-        Generated C declares such parameters ``const``, so an accidental write
-        from a script becomes a compile-time error instead of silent state
-        corruption.  Pointer and string parameters keep their declared type.
-        """
-        body_text = '\n'.join(body)
-        return {
-            name for ptype, name in params
-            if '*' not in self.c_type(ptype) and 'const' not in self.c_type(ptype)
-            and not self._text_writes_identifier(body_text, name)
-        }
-
-    def _emit_body(self, body, params, object_name, function_name):
-        previous_scope = self.current_scope
-        previous_object = self.current_object
-        previous_function = self.current_function
-        self.current_scope = dict(params)
-        self.current_object = object_name
-        self.current_function = function_name
-        # Only suppress warnings for parameters that are actually unused. A
-        # parameter that appears in the body needs no (void) cast, and emitting
-        # one before every body is dead, misleading code.
-        body_text = '\n'.join(body)
-        for parameter in params:
-            if not self._text_uses_identifier(body_text, parameter):
-                self._indent(f'(void){parameter};')
-        for line in body:
-            self.compile_line(line)
-        self.current_scope = previous_scope
-        self.current_object = previous_object
-        self.current_function = previous_function
-
-    @staticmethod
-    def _text_uses_identifier(text, identifier):
-        """True if identifier appears as a whole word outside string literals.
-
-        Matches only standalone tokens (word boundaries on both sides), so a
-        parameter named ``x`` is not reported as used by ``btn_x`` or by the
-        same letters inside a quoted string.
-        """
-        pattern = re.compile(r'\b' + re.escape(identifier) + r'\b')
-        _, quoted = DimScriptCompiler._scan(text)
-        return any(not quoted[match.start()] for match in pattern.finditer(text))
-
-    def _indent(self, line):
-        self.emit(f'    {line}')
-
-    def compile_line(self, raw_line):
-        line = self._strip_semicolon(raw_line.strip())
-        if not line:
-            return
-
-        declaration = _DECL_RE.match(line)
-        if declaration and (declaration.group('type') in self.BUILTIN_TYPES or
-                            declaration.group('type').rstrip('*') in self.objects):
-            self._compile_declaration(declaration, line)
-            return
-
+    def compile_line(self, raw):
+        line = _strip_semicolon(raw.strip())
+        if not line: return
+        decl = _DECL_RE.match(line)
+        if decl and (decl.group('type') in self.BUILTIN_TYPES or decl.group('type').rstrip('*') in self.objects):
+            self._compile_declaration(decl, line); return
         if line.startswith('for'):
-            match = re.match(r'^for\s*\((.*)\)\s*\{?$', line)
-            if match:
-                parts = self._split_top_level(match.group(1), ';')
+            m = re.match(r'^for\s*\((.*)\)\s*\{?$', line)
+            if m:
+                parts = _split_top_level(m.group(1), ';')
                 if len(parts) == 3:
-                    init, condition, step = (p.strip() for p in parts)
+                    init, cond, step = (p.strip() for p in parts)
                     self._indent(f'for ({self._translate_for_init(init)}; '
-                                 f'{self.translate_expression(condition)}; '
+                                 f'{self.translate_expression(cond)}; '
                                  f'{self.translate_expression(step)}) {{')
                     return
-            self._error(f"invalid for loop: {raw_line}")
-            return
-
-        for keyword, offset in (('if', 2), ('while', 5), ('loop', 5)):
-            if line.startswith(keyword + ' '):
-                condition = line[offset:].strip()
-                if condition.endswith('{'):
-                    condition = condition[:-1].strip()
-                c_keyword = 'while' if keyword == 'loop' else keyword
-                self._indent(f'{c_keyword} ({self.translate_expression(self._strip_outer_parens(condition))}) {{')
-                return
-
-        if line == 'else' or line == 'else {':
-            self._indent('else {')
-            return
+            self._error(f"invalid for loop: {raw}"); return
+        for kw, off in (('if', 2), ('while', 5), ('loop', 5)):
+            if line.startswith(kw + ' '):
+                cond = line[off:].strip()
+                if cond.endswith('{'): cond = cond[:-1].strip()
+                ck = 'while' if kw == 'loop' else kw
+                self._indent(f'{ck} ({self.translate_expression(_strip_outer_parens(cond))}) {{'); return
+        if line == 'else' or line == 'else {': self._indent('else {'); return
         if line.startswith('else if '):
-            condition = line[8:].strip()
-            if condition.endswith('{'):
-                condition = condition[:-1].strip()
-            self._indent(f'else if ({self.translate_expression(self._strip_outer_parens(condition))}) {{')
-            return
-
+            cond = line[8:].strip()
+            if cond.endswith('{'): cond = cond[:-1].strip()
+            self._indent(f'else if ({self.translate_expression(_strip_outer_parens(cond))}) {{'); return
         if line.startswith('return') and (line == 'return' or line[6:7] in (' ', ';')):
-            value = line[6:].strip()
-            self._indent(f'return {self.translate_expression(value)};' if value else 'return;')
-            return
-
-        new_assignment = re.match(
-            r'^([A-Za-z_]\w*)\s*=\s*new\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?$', line)
-        if new_assignment and new_assignment.group(2) in self.objects:
-            variable, object_type = new_assignment.group(1), new_assignment.group(2)
-            self._indent(f'{variable} = ds_new_{object_type}({self._translate_args(new_assignment.group(3) or "")});')
-            self.current_scope[variable] = object_type
-            return
-
+            v = line[6:].strip()
+            self._indent(f'return {self.translate_expression(v)};' if v else 'return;'); return
+        new = re.match(r'^([A-Za-z_]\w*)\s*=\s*new\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?$', line)
+        if new and new.group(2) in self.objects:
+            var, ot = new.group(1), new.group(2)
+            self._indent(f'{var} = ds_new_{ot}({self._translate_args(new.group(3) or "")});')
+            self.current_scope[var] = ot; return
         if line.startswith('delete '):
-            variable = line[7:].strip()
-            object_type = self.current_scope.get(variable) or self.object_vars.get(variable)
-            self._indent(f'ds_free_{object_type}({variable}); {variable} = NULL;'
-                         if object_type in self.objects
-                         else f'free({variable}); {variable} = NULL;')
+            v = line[7:].strip()
+            ot = self.current_scope.get(v) or self.object_vars.get(v)
+            if ot in self.objects:
+                self._indent(f'ds_free_{ot}({v}); {v} = NULL;')
+            else: self._indent(f'free({v}); {v} = NULL;')
             return
-
         if line.startswith('}'):
             self._indent('}')
             rest = line[1:].strip()
-            if rest:
-                self.compile_line(rest)
+            if rest: self.compile_line(rest)
             return
-        if line.endswith('{'):
-            self._indent(line)
-            return
-
-        call = self._whole_call(line)
-        if call:
-            self._compile_call(call[0], call[1])
-            return
-
-        if self._find_assignment(line):
-            self.compile_assign(line)
-            return
-
+        if line.endswith('{'): self._indent(line); return
+        call = _whole_call(line)
+        if call: self._compile_call(call[0], call[1]); return
+        if self._find_assignment(line): self.compile_assign(line); return
         self._indent(self.translate_expression(line) + ';')
 
-    def _compile_declaration(self, declaration, line):
-        script_type = declaration.group('type')
-        name = declaration.group('name')
-        value = declaration.group('value')
-        if script_type.rstrip('*') in self.objects:
-            object_type = script_type.rstrip('*')
-            self.current_scope[name] = object_type
-            new_match = re.match(r'new\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?$', value.strip()) if value and value.strip().startswith('new ') else None
-            if new_match and new_match.group(1) == object_type:
-                args = self._translate_args(new_match.group(2) or '')
-                self._indent(f'{object_type} *{name} = ds_new_{object_type}({args});')
-            else:
-                self._indent(f'{object_type} *{name} = NULL;')
+    def _compile_declaration(self, decl, line):
+        st, n, v = decl.group('type'), decl.group('name'), decl.group('value')
+        ot = st.rstrip('*')
+        if ot in self.objects:
+            self.current_scope[n] = ot
+            nm = re.match(r'new\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?$', v.strip()) if v and v.strip().startswith('new ') else None
+            if nm and nm.group(1) == ot:
+                self._indent(f'{ot} *{n} = ds_new_{ot}({self._translate_args(nm.group(2) or "")});')
+            else: self._indent(f'{ot} *{n} = NULL;')
             return
-        self.current_scope[name] = script_type
-        c_line = self._declaration(self.c_type(script_type), name)
-        if value is not None and value.strip():
-            translated_value = (self._as_string_expression(value)
-                                if script_type == 'str' and self.infer_expr_type(value) != 'str'
-                                else self.translate_expression(value))
-            c_line += f' = {translated_value}'
-        self._indent(c_line + ';')
+        self.current_scope[n] = st
+        c = self._declaration(self.c_type(st), n)
+        if v and v.strip():
+            c += ' = ' + (self._as_string_expression(v)
+                          if st == 'str' and self.infer_expr_type(v) != 'str'
+                          else self.translate_expression(v))
+        self._indent(c + ';')
 
     def _translate_for_init(self, init):
-        declaration = _DECL_RE.match(init)
-        if declaration and declaration.group('type') in self.BUILTIN_TYPES:
-            script_type, name, value = (declaration.group('type'),
-                                        declaration.group('name'), declaration.group('value'))
-            self.current_scope[name] = script_type
-            result = self._declaration(self.c_type(script_type), name)
-            if value:
-                result += f' = {self.translate_expression(value)}'
-            return result
+        decl = _DECL_RE.match(init)
+        if decl and decl.group('type') in self.BUILTIN_TYPES:
+            t, n, v = decl.group('type'), decl.group('name'), decl.group('value')
+            self.current_scope[n] = t
+            r = self._declaration(self.c_type(t), n)
+            if v: r += f' = {self.translate_expression(v)}'
+            return r
         return self.translate_expression(init)
 
-    def _translate_args(self, args_text):
-        if not args_text.strip():
-            return ''
-        return ', '.join(self.translate_expression(arg)
-                         for arg in self._split_top_level(args_text, ','))
+    def _translate_args(self, args):
+        if not args.strip(): return ''
+        return ', '.join(self.translate_expression(a) for a in _split_top_level(args, ','))
 
     def _compile_call(self, name, args_text):
         args = self._translate_args(args_text)
-        bare_name = name.split('.')[-1]
+        bare = name.split('.')[-1]
         if '.' in name:
-            object_name, method = name.split('.', 1)
-            object_type = self.current_scope.get(object_name) or self.object_vars.get(object_name)
-            if object_type in self.objects and method in self.objects[object_type]['methods']:
-                call = f'ds_obj_{object_type}_{method}({object_name}'
-                if args:
-                    call += f', {args}'
-                self._indent(call + ');')
-                return
-        if bare_name in self.functions:
-            self._indent(f'ds_fn_{bare_name}({args});')
-        else:
-            self._indent(f'{self._translate_object_access(name)}({args});')
+            on, m = name.split('.', 1)
+            ot = self.current_scope.get(on) or self.object_vars.get(on)
+            if ot in self.objects and m in self.objects[ot]['methods']:
+                call = f'ds_obj_{ot}_{m}({on}'
+                if args: call += f', {args}'
+                self._indent(call + ');'); return
+        if bare in self.functions: self._indent(f'ds_fn_{bare}({args});')
+        else: self._indent(f'{self._translate_object_access(name)}({args});')
 
     @staticmethod
     def _find_assignment(line):
-        depth, quoted = DimScriptCompiler._scan(line)
-        for i, char in enumerate(line):
-            if quoted[i] or depth[i]:
-                continue
-            if char == '=' and (i == 0 or line[i - 1] not in '<>!=') and \
-                    (i + 1 >= len(line) or line[i + 1] != '='):
+        depth, q = _scan(line)
+        for i, c in enumerate(line):
+            if q[i] or depth[i]: continue
+            if c == '=' and (i == 0 or line[i-1] not in '<>!=') and (i+1 >= len(line) or line[i+1] != '='):
                 return True
-            if char in '+-*/' and i + 1 < len(line) and line[i + 1] == '=':
-                return True
+            if c in '+-*/' and i+1 < len(line) and line[i+1] == '=': return True
         return False
 
     @staticmethod
     def _assignment_parts(line):
-        match = re.match(r'^(.+?)\s*(\+=|-=|\*=|/=|=)\s*(.*)$', line)
-        return match.groups() if match else None
+        m = re.match(r'^(.+?)\s*(\+=|-=|\*=|/=|=)\s*(.*)$', line)
+        return m.groups() if m else None
 
     def compile_assign(self, line):
         parts = self._assignment_parts(line)
-        if not parts:
-            self._indent(self.translate_expression(line) + ';')
-            return
-        left, operator, right = (p.strip() for p in parts)
-        left_type = self.infer_expr_type(left)
-        right_type = self.infer_expr_type(right)
+        if not parts: self._indent(self.translate_expression(line) + ';'); return
+        left, op, right = (p.strip() for p in parts)
+        lt, rt = self.infer_expr_type(left), self.infer_expr_type(right)
         left = self._translate_object_access(left)
-        if operator == '+=' and (left_type == 'str' or right_type == 'str'):
-            self._indent(f'{left} = ds_concat({left}, {self._as_string_expression(right)});')
-            return
-        if operator == '=' and left_type == 'str' and right_type != 'str':
-            self._indent(f'{left} = {self._as_string_expression(right)};')
-            return
-        self._indent(f'{left} {operator} {self.translate_expression(right)};')
-
-    def emit(self, line):
-        self.output.append(line)
+        if op == '+=' and (lt == 'str' or rt == 'str'):
+            self._indent(f'{left} = ds_concat({left}, {self._as_string_expression(right)});'); return
+        if op == '=' and lt == 'str' and rt != 'str':
+            self._indent(f'{left} = {self._as_string_expression(right)};'); return
+        self._indent(f'{left} {op} {self.translate_expression(right)};')
 
     def compile(self, sources, output):
-        if not self.parse(sources):
-            return False
+        if not self.parse(sources): return False
         self.generate()
-        if self.errors == 0:
-            with open(output, 'w', encoding='utf-8') as generated:
-                generated.write('\n'.join(self.output) + '\n')
-            return True
-        return False
-
-
-def params_for_new(definition):
-    """Constructor parameters match the user-defined init method, if any."""
-    init = definition['methods'].get('init')
-    return init[0] if init else []
+        if self.errors: return False
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(self.output) + '\n')
+        return True
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python ds_compiler.py file.ds -o output.c")
-        sys.exit(2)
-
-    output = 'game/game.c'
-    sources = []
-    i = 1
+        print("Usage: python ds_compiler.py file.ds -o output.c"); sys.exit(2)
+    output = 'game/game.c'; sources = []; i = 1
     while i < len(sys.argv):
         if sys.argv[i] in ('-o', '--output'):
-            output = sys.argv[i + 1] if i + 1 < len(sys.argv) else 'game/game.c'
-            i += 2
-        else:
-            sources.append(sys.argv[i])
-            i += 1
-    if not sources:
-        print("Error: no input files")
-        sys.exit(2)
-    compiler = DimScriptCompiler()
-    sys.exit(0 if compiler.compile(sources, output) else 1)
+            output = sys.argv[i+1] if i+1 < len(sys.argv) else 'game/game.c'; i += 2
+        else: sources.append(sys.argv[i]); i += 1
+    if not sources: print("Error: no input files"); sys.exit(2)
+    sys.exit(0 if DimScriptCompiler().compile(sources, output) else 1)
 
 
 if __name__ == '__main__':

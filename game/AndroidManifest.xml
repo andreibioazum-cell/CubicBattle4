@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.dimscript.gamedemo">
 
-    <!-- Change android:label and package when starting a new game. -->
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
     <application

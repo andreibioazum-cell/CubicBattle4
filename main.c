@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <time.h>
 
+/* main.c владеет только окном Android и жизненным циклом скрипта;
+ * graphics.c владеет command buffer и растеризацией. */
+
 static int init_done = 0;
 static int script_active = 0;
 static AAssetManager *script_assets = NULL;
@@ -15,8 +18,6 @@ static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
 static unsigned int frame_count = 0;
 
-/* This file owns only the Android window lock and script lifecycle;
- * graphics.c owns the software command buffer and rasterisation. */
 void ds_log(const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -30,30 +31,12 @@ static uint64_t monotonic_ns(void) {
     return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
 }
 
-static void protected_init(void *userdata) {
-    init((AAssetManager *)userdata);
-}
+static void protected_init(void *userdata) { init((AAssetManager *)userdata); }
+static void protected_reset(void *userdata) { (void)userdata; reset(); }
+static void protected_update(void *userdata) { (void)userdata; update(); }
+static void protected_draw(void *userdata) { draw((Buffer *)userdata); }
 
-static void protected_reset(void *userdata) {
-    (void)userdata;
-    reset();
-}
-
-static void protected_update(void *userdata) {
-    (void)userdata;
-    update();
-}
-
-static void protected_draw(void *userdata) {
-    draw((Buffer *)userdata);
-}
-
-typedef struct {
-    float x;
-    float y;
-    int action;
-} TouchCall;
-
+typedef struct { float x; float y; int action; } TouchCall;
 static void protected_touch(void *userdata) {
     TouchCall *call = (TouchCall *)userdata;
     touch(call->x, call->y, call->action);
@@ -76,23 +59,16 @@ static void mark_script_failed(const char *hook) {
 
 static int start_script(int reset_state) {
     int ok;
-
     ds_clear_runtime_error();
     ds_clear_script_restart();
     ds_string_pool_reset();
     if (reset_state) {
         ok = ds_call_protected(protected_reset, NULL, "reset");
-        if (!ok) {
-            mark_script_failed("reset");
-            return 0;
-        }
+        if (!ok) { mark_script_failed("reset"); return 0; }
     }
     ds_clear_runtime_error();
     ok = ds_call_protected(protected_init, script_assets, "init");
-    if (!ok) {
-        mark_script_failed("init");
-        return 0;
-    }
+    if (!ok) { mark_script_failed("init"); return 0; }
     ds_clear_runtime_error();
     restart_failures = 0;
     script_active = 1;
@@ -112,7 +88,6 @@ static void handle_cmd(struct android_app *app, int32_t command) {
         ds_runtime_error("received an Android command without an app instance");
         return;
     }
-
     switch (command) {
         case APP_CMD_INIT_WINDOW:
             if (!app->window) {
@@ -143,17 +118,13 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             script_active = 0;
             restart_failures = 0;
             ds_clear_script_restart();
-            /* On failure start_script marks the hook inactive and schedules
-             * a bounded, exponentially backed-off retry. */
             (void)start_script(0);
             break;
-
         case APP_CMD_TERM_WINDOW:
             init_done = 0;
             script_active = 0;
             ds_graphics_shutdown();
             break;
-
         default:
             break;
     }
@@ -175,20 +146,16 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
 
 void android_main(struct android_app *app) {
     Buffer frame = {0};
-
     if (!app) {
         ds_runtime_error("android_main received a null app instance");
         return;
     }
-
     app->onAppCmd = handle_cmd;
     app->onInputEvent = handle_input;
     ds_log("DimScript application started");
-
     for (;;) {
         struct android_poll_source *source = NULL;
         int ident;
-
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL,
                                          (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
@@ -199,20 +166,16 @@ void android_main(struct android_app *app) {
                 return;
             }
         }
-
         if (!app->window || !init_done || app->destroyRequested) continue;
         restart_script_if_due();
-
         if (script_active) {
             if (!ds_call_protected(protected_update, NULL, "update")) {
                 mark_script_failed("update");
             } else if (ds_script_restart_requested()) {
-                /* A healthy script may request a clean reload explicitly. */
                 script_active = 0;
                 restart_after_ns = monotonic_ns();
             }
         }
-
         {
             ANativeWindow_Buffer native_buffer;
             if (ANativeWindow_lock(app->window, &native_buffer, NULL) == 0) {
@@ -237,9 +200,6 @@ void android_main(struct android_app *app) {
                     }
                     if (!script_active) {
                         if (draw_failed || ds_script_has_error()) {
-                            /* Draw the diagnostic while the frame is still
-                             * attached, then discard the failed script's
-                             * queued commands. */
                             ds_graphics_error_screen(ds_runtime_error_message());
                         }
                         ds_graphics_cancel_frame();
@@ -258,7 +218,6 @@ void android_main(struct android_app *app) {
     }
 }
 
-/* The repository's original Android workflow lists only main.c and runtime.c.
- * Embed the software renderer here so that workflow remains usable without
- * requiring a workflow-file permission just to add translation units. */
+/* graphics.c встраивается в main.c, чтобы workflow остался без правок
+ * (собираем только main.c + runtime.c + game/game.c). */
 #include "graphics.c"

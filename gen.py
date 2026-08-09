@@ -9,9 +9,8 @@ from ds_compiler import DimScriptCompiler
 
 
 def find_ds_files(directory):
-    """Keep the legacy directory mode: compile every top-level .ds file."""
-    pattern = os.path.join(directory, '*.ds')
-    return sorted(glob.glob(pattern))
+    """Legacy directory mode: compile every top-level .ds file."""
+    return sorted(glob.glob(os.path.join(directory, '*.ds')))
 
 
 def usage(stream=sys.stdout):
@@ -67,10 +66,7 @@ def main():
         print("Compilation failed", file=sys.stderr)
         return 1
 
-    print(
-        f"{output_path} generated from "
-        f"{len(compiler.loaded_sources)} DimScript file(s)"
-    )
+    print(f"{output_path} generated from {len(compiler.loaded_sources)} DimScript file(s)")
 
     if dump_c:
         print("\n" + "=" * 60)

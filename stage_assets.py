@@ -10,21 +10,15 @@ from pathlib import Path
 
 
 def stage_assets(source: Path, destination: Path) -> list[Path]:
-    """Replace *destination* with a clean copy of *source*.
-
-    Paths are returned relative to the destination so callers can report what
-    will be stored at the APK asset root.
-    """
+    """Replace *destination* with a clean copy of *source*."""
     source = source.resolve()
     destination = destination.resolve()
 
     if not source.is_dir():
         raise ValueError(f"asset directory not found: {source}")
-    if (
-        source == destination
+    if (source == destination
         or source in destination.parents
-        or destination in source.parents
-    ):
+        or destination in source.parents):
         raise ValueError("the asset and staging directories must not overlap")
 
     shutil.rmtree(destination, ignore_errors=True)
@@ -48,9 +42,7 @@ def stage_assets(source: Path, destination: Path) -> list[Path]:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Copy game assets into an APK staging directory."
-    )
+    parser = argparse.ArgumentParser(description="Copy game assets into an APK staging directory.")
     parser.add_argument("source", nargs="?", default="game/assets")
     parser.add_argument("destination", nargs="?", default="staging/assets")
     return parser.parse_args(argv)
@@ -70,5 +62,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -1,34 +1,33 @@
-// Главный файл - инициализация и управление состоянием
+// Точка входа. game_state: 0 - лобби, 1 - игра.
+// Плавный переход между сценами: затемнение → смена сцены → осветление.
 
-// Глобальное состояние игры.
-// game_state и score — целые по смыслу: используются только с целочисленными
-// значениями и сравниваются через ==. Тип int исключает ошибки floating-point.
-int game_state = 0  // 0 - лобби, 1 - игра
+int game_state = 0
 int score = 0
+int transition_state = 0  // 0 - нет, 1 - затемнение, 2 - осветление
+int transition_target = 0
+int transition_level = 0
+int transition_len = 15
 
-// Плавный переход между сценами: чёрная заливка плавно нарастает (затемнение),
-// в полной темноте сцена переключается, затем заливка плавно спадает
-// (осветление). Непрозрачность задаётся уровнем 0..15: цвет заливки
-// level * 0x11000000 (alpha-байт = level * 17, 15 * 17 = 255).
-int transition_state = 0    // 0 - нет перехода, 1 - затемнение, 2 - осветление
-int transition_target = 0   // сцена после затемнения: 0 - лобби, 1 - игра
-int transition_level = 0    // текущий уровень непрозрачности 0..15
-int transition_len = 15     // длительность фазы в кадрах (~0.25 c при 60 FPS)
-
-// Подключаем модули игры. Пути указаны относительно этого файла.
 #include "lobby.ds"
 #include "game_logic.ds"
 #include "ui.ds"
 
+str GRASS = "grass.png"
+str PLAYER_TEX = "player.png"
+str FONT_FILE = "fonts/ChillRoundGothic_Heavy.ttf"
+
 fn init() {
-    // Инициализация
+    png_load(GRASS)
+    png_load(PLAYER_TEX)
     cls(0x2C2C2C)
     score = 0
     game_state = 0
+    init_stars()
 }
 
 fn update() {
     update_transition()
+    update_stars()
     if (game_state == 0) {
         update_lobby()
     } else {
@@ -41,11 +40,9 @@ fn update_transition() {
         return
     }
     if (transition_state == 1) {
-        // Затемнение: чёрный экран нарастает
         transition_level = transition_level + 1
         if (transition_level >= transition_len) {
             transition_level = transition_len
-            // Сцена переключается в полной темноте
             game_state = transition_target
             if (transition_target == 1) {
                 init_game()
@@ -53,7 +50,6 @@ fn update_transition() {
             transition_state = 2
         }
     } else {
-        // Осветление: чёрный экран уходит
         transition_level = transition_level - 1
         if (transition_level <= 0) {
             transition_level = 0
@@ -69,28 +65,41 @@ fn start_transition(int target) {
 }
 
 fn draw() {
+    draw_background()
     if (game_state == 0) {
         draw_lobby()
     } else {
         draw_game()
     }
-    // Чёрная заливка поверх сцены во время перехода
+    // Чёрная заливка поверх во время перехода
     if (transition_state != 0 && transition_level > 0) {
         rect(0, 0, screen_w, screen_h, transition_level * 0x11000000)
     }
 }
 
+// Текстура травы во весь экран + звёзды (поверх — лобби или игра).
+fn draw_background() {
+    num grass_size = 256
+    num scale = screen_w / grass_size
+    if (screen_h > screen_w) {
+        scale = screen_h / grass_size
+    }
+    num gw = grass_size * scale
+    num gh = grass_size * scale
+    tex((screen_w - gw) / 2, (screen_h - gh) / 2, GRASS, 0, scale)
+    // Тёмная подложка, чтобы белые звёзды и текст читались.
+    rect(0, 0, screen_w, screen_h, 0xB4000000)
+    draw_stars()
+}
+
 fn touch(x, y, int action) {
     set_touch(x, y)
-    // Пока идёт переход, события не доходят до сцен
     if (transition_state != 0) {
         return
     }
     if (game_state == 0) {
         touch_lobby(x, y, action)
     } else {
-        // В игре передаём все события: 0 - нажатие, 1 - отпускание,
-        // 2 - движение пальца (нужно джойстику), 3 - отмена
         touch_game(x, y, action)
     }
 }
