@@ -42,9 +42,6 @@ fn draw_lobby() {
     
     // Текст на кнопке
     text("▶ PLAY", btn_x + 72, btn_y + 27, btn_text_color)
-    
-    // Информация внизу экрана
-    text("v1.1 | Joystick", screen_w / 2 - 50, screen_h - 40, 0x777788)
 }
 
 fn touch_lobby(x, y) {

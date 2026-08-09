@@ -568,13 +568,23 @@ static void render_text_now(Buffer *buffer, const char *string, float x, float y
     int atlas_width;
     int atlas_height;
     const unsigned char *atlas;
+    float cap_ascent;
+    float left_bearing;
+    const DSFontGlyph *ref_glyph;
     if (!buffer || !font || !string || !isfinite(x) || !isfinite(y) ||
         !isfinite(scale) || scale <= 0.0f) return;
     atlas_width = ds_font_atlas_width(font);
     atlas_height = ds_font_atlas_height(font);
     atlas = ds_font_atlas_alpha(font);
-    pen_x = x;
-    baseline = y + ds_font_ascent(font) * scale;
+    cap_ascent = ds_font_ascent(font);
+    left_bearing = 0.0f;
+    ref_glyph = ds_font_glyph(font, 'S');
+    if (ref_glyph) {
+        cap_ascent = ref_glyph->bearing_top;
+        left_bearing = ref_glyph->bearing_x;
+    }
+    pen_x = x - left_bearing * scale;
+    baseline = y + cap_ascent * scale;
     cursor = string;
     while (*cursor) {
         int codepoint = utf8_next_graphics(&cursor);
@@ -587,7 +597,7 @@ static void render_text_now(Buffer *buffer, const char *string, float x, float y
         int dest_y;
         int sy;
         if (codepoint == '\n') {
-            pen_x = x;
+            pen_x = x - left_bearing * scale;
             baseline += ds_font_line_height(font) * scale;
             continue;
         }
