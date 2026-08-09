@@ -165,7 +165,7 @@ fn draw_game() {
     }
     circle(attack.x, attack.y, attack.r, atk_color)
     ring(attack.x, attack.y, attack.r, 6, 0x000000)
-    num a_w = text_width("ATTACK") * 0.55
+    num a_w = text_ink_width("ATTACK") * 0.55
     text_scaled("ATTACK", attack.x - a_w / 2, attack.y - 7, 0xFFFFFF, 0.55)
 
     // Кнопка назад (справа сверху), текст отцентрирован по кнопке
@@ -173,7 +173,7 @@ fn draw_game() {
     rect(back_x + 2, back_y + 2, back_w, back_h, 0x0f0f1c)
     rect(back_x - 1, back_y - 1, back_w + 2, back_h + 2, 0xFF6B81)
     rect(back_x, back_y, back_w, back_h, 0xE94560)
-    draw_button_label("◀ Back", back_x, back_y, back_w, back_h, 0xFFFFFF)
+    draw_button_label("Back", back_x, back_y, back_w, back_h, 0xFFFFFF)
 }
 
 fn draw_joystick() {
@@ -184,11 +184,11 @@ fn draw_joystick() {
 }
 
 fn touch_game(x, y, int action) {
-    // Кнопка Back — только по нажатию
+    // Кнопка Back — только по нажатию; возврат в лобби с плавным переходом
     back_x = screen_w - back_w - 14
     if (action == 0) {
         if (x >= back_x - 4 && x <= back_x + back_w + 4 && y >= back_y - 4 && y <= back_y + back_h + 4) {
-            game_state = 0
+            start_transition(0)
             return
         }
     }

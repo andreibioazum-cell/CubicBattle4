@@ -1136,8 +1136,21 @@ static void render_rect(Buffer *buffer, float x, float y, float width, float hei
     top = clamp_floor(floorf(y), buffer->height);
     right = clamp_ceil(ceilf(x + width), buffer->width);
     bottom = clamp_ceil(ceilf(y + height), buffer->height);
-    for (row = top; row < bottom; ++row) {
-        fill_span(buffer->pixels + row * buffer->stride + left, right - left, colour);
+    if (channel_alpha(colour) >= 255) {
+        /* Fully opaque: the tight unrolled fill. */
+        for (row = top; row < bottom; ++row) {
+            fill_span(buffer->pixels + row * buffer->stride + left, right - left, colour);
+        }
+    } else {
+        /* Semi-transparent (e.g. the scene-transition fade overlay):
+         * blend every covered pixel instead of overwriting it. */
+        for (row = top; row < bottom; ++row) {
+            uint32_t *destination = buffer->pixels + row * buffer->stride + left;
+            int column;
+            for (column = 0; column < right - left; ++column) {
+                destination[column] = blend_pixel(destination[column], colour);
+            }
+        }
     }
 }
 
@@ -1615,6 +1628,73 @@ void text_scaled(const char *string, float x, float y, uint32_t colour, float sc
 int text_width(const char *string) {
     if (!string || !ensure_font()) return 0;
     return (int)(ds_font_measure(font, string) + 0.5f);
+}
+
+/* Ink bounding box of a string, mirroring exactly how draw_text positions
+ * glyphs (pen starts at x - 'S'.bearing_x, baseline at y + 'S'.bearing_top).
+ * text_width() sums advances, which is what the advance-based layout needs,
+ * but it is not the visible width: centring a label with it leaves an error
+ * equal to the side bearings.  These two functions return the real ink box,
+ * so `screen_w / 2 - text_ink_width(label) / 2` centres the visible text. */
+int text_ink_width(const char *string) {
+    const char *cursor;
+    const DSFontGlyph *ref;
+    float pen;
+    int first;
+    float min_left;
+    float max_right;
+    if (!string || !ensure_font()) return 0;
+    ref = ds_font_glyph(font, 'S');
+    pen = -(ref ? ref->bearing_x : 0.0f);
+    cursor = string;
+    first = 1;
+    min_left = 0.0f;
+    max_right = 0.0f;
+    while (*cursor) {
+        int codepoint = utf8_next_graphics(&cursor);
+        const DSFontGlyph *glyph = ds_font_glyph(font, (uint32_t)codepoint);
+        float dleft;
+        float dright;
+        if (!glyph) continue;
+        dleft = pen + glyph->bearing_x;
+        dright = dleft + (float)glyph->width;
+        if (first || dleft < min_left) min_left = dleft;
+        if (first || dright > max_right) max_right = dright;
+        first = 0;
+        pen += glyph->advance;
+    }
+    if (first) return 0;
+    return (int)(max_right - min_left + 0.5f);
+}
+
+int text_ink_height(const char *string) {
+    const char *cursor;
+    const DSFontGlyph *ref;
+    float baseline;
+    int first;
+    float min_top;
+    float max_bottom;
+    if (!string || !ensure_font()) return 0;
+    ref = ds_font_glyph(font, 'S');
+    baseline = ref ? ref->bearing_top : 0.0f;
+    cursor = string;
+    first = 1;
+    min_top = 0.0f;
+    max_bottom = 0.0f;
+    while (*cursor) {
+        int codepoint = utf8_next_graphics(&cursor);
+        const DSFontGlyph *glyph = ds_font_glyph(font, (uint32_t)codepoint);
+        float dtop;
+        float dbottom;
+        if (!glyph) continue;
+        dtop = baseline - glyph->bearing_top;
+        dbottom = dtop + (float)glyph->height;
+        if (first || dtop < min_top) min_top = dtop;
+        if (first || dbottom > max_bottom) max_bottom = dbottom;
+        first = 0;
+    }
+    if (first) return 0;
+    return (int)(max_bottom - min_top + 0.5f);
 }
 
 int text_height(void) {

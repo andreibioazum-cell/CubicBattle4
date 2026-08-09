@@ -43,6 +43,7 @@ class DimScriptCompiler:
     NUMBER_FUNCTIONS = {
         'floor', 'ceil', 'round', 'sqrt', 'sin', 'cos', 'tan', 'atan2',
         'fabs', 'abs', 'rand', 'text_width', 'text_height',
+        'text_ink_width', 'text_ink_height',
         'ds_len', 'ds_find', 'ds_contains', 'ds_starts_with',
         'ds_ends_with',
     }

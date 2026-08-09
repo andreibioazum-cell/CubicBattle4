@@ -163,6 +163,17 @@ class CompilerRegressionTests(unittest.TestCase):
         self.assertIn('tex(player->x, 0, "player.png", 0, 1)', generated)
         self.assertNotIn("player->png", generated)
 
+    def test_ink_width_calls_are_emitted_as_is(self):
+        generated = self.compile_source(
+            """
+            fn draw() {
+                text("AB", screen_w / 2 - text_ink_width("AB") / 2, 10, 0xFFFFFF)
+                text("CD", 0, 0, 0xFFFFFF)
+            }
+            """
+        )
+        self.assertIn('text("AB", screen_w / 2 - text_ink_width("AB") / 2, 10, 0xFFFFFF);', generated)
+
     def test_col_maps_to_uint32_t(self):
         generated = self.compile_source(
             """

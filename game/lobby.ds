@@ -8,8 +8,10 @@ object Button {
     num w = 220
     num h = 70
     col color = 0x5F10A0       // цвета — это битовая маска, а не число с плавающей точкой
-    col hover_color = 0x7A22C9
+    col pressed_color = 0x470C78  // темнее, пока кнопка зажата
     col text_color = 0xFFFFFF
+    int pressed = 0            // 1, пока палец держит кнопку
+    num press_scale = 1.08     // во сколько раз кнопка увеличивается при нажатии
 }
 
 Button play_btn = new Button()
@@ -28,34 +30,52 @@ fn update_lobby() {
 fn draw_lobby() {
     cls(0x1a1a2e)
 
-    // Заголовок игры — отцентрован по реальной ширине текста (text_width),
-    // а не по магической константе вроде -45 или -40.
-    text("🎮 GAME DS", screen_w / 2 - text_width("🎮 GAME DS") / 2, title_y, 0xE94560)
+    // Заголовок — отцентрован по реальным границам отрисовки текста
+    // (text_ink_width), а не по магической константе.
+    text("GAME DS", screen_w / 2 - text_ink_width("GAME DS") / 2, title_y, 0xE94560)
 
-    // Кнопка "Play"
-    int hover = 0
-    if (touch_x >= play_btn.x && touch_x <= play_btn.x + play_btn.w && touch_y >= play_btn.y && touch_y <= play_btn.y + play_btn.h) {
-        hover = 1
+    // Кнопка Play: без тени, рамки и hover-эффекта. При нажатии кнопка
+    // увеличивается (press_scale) и темнеет (pressed_color), при отпускании
+    // возвращается к обычному размеру и цвету.
+    num scale = 1
+    if (play_btn.pressed == 1) {
+        scale = play_btn.press_scale
     }
+    num bw = play_btn.w * scale
+    num bh = play_btn.h * scale
+    num bx = play_btn.x + (play_btn.w - bw) / 2
+    num by = play_btn.y + (play_btn.h - bh) / 2
     col color = play_btn.color
-    if (hover == 1) {
-        color = play_btn.hover_color
+    if (play_btn.pressed == 1) {
+        color = play_btn.pressed_color
     }
 
-    // Стильная кнопка с тенью, рамкой и заливкой (скруглённая, фиолетовая)
-    roundrect(play_btn.x + 3, play_btn.y + 4, play_btn.w, play_btn.h, 20, 0x0f0f1c)
-    roundrect(play_btn.x - 2, play_btn.y - 2, play_btn.w + 4, play_btn.h + 4, 22, 0x9C27B0)
-    roundrect(play_btn.x, play_btn.y, play_btn.w, play_btn.h, 20, color)
-
-    // Текст на кнопке, отцентрирован по кнопке
-    draw_button_label("PLAY", play_btn.x, play_btn.y, play_btn.w, play_btn.h, play_btn.text_color)
+    // Одна аккуратная заливка скруглённым прямоугольником
+    roundrect(bx, by, bw, bh, 20 * scale, color)
+    draw_button_label("PLAY", bx, by, bw, bh, play_btn.text_color)
 }
 
-fn touch_lobby(x, y) {
+fn touch_lobby(x, y, int action) {
+    // Нажатие на кнопку: увеличиваем и затемняем. Отпускание внутри кнопки:
+    // возвращаем размер/цвет и запускаем плавный переход в игру.
     if (x >= play_btn.x && x <= play_btn.x + play_btn.w && y >= play_btn.y && y <= play_btn.y + play_btn.h) {
-        game_state = 1
-        score = 0
-        init_game()
+        if (action == 0) {
+            play_btn.pressed = 1
+            return
+        }
+        if (action == 1 || action == 3) {
+            if (play_btn.pressed == 1) {
+                play_btn.pressed = 0
+                score = 0
+                start_transition(1)
+            }
+            return
+        }
+        return  // движение пальца внутри кнопки — кнопка остаётся нажатой
+    }
+    // Палец ушёл с кнопки: если был зажат или отпущен/отменён — сбрасываем
+    if (action == 2 || action == 1 || action == 3) {
+        play_btn.pressed = 0
     }
 }
 
