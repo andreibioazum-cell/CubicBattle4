@@ -4,6 +4,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__GNUC__) || defined(__clang__)
+/* runtime.c supplies this hook in the Android build.  The weak declaration
+ * keeps text.c independently testable on a desktop with `cc test_text.c
+ * text.c`. */
+#  ifdef DIMSCRIPT_TEXT_EMBEDDED
+extern char *ds_track_string(char *string);
+#  else
+extern char *ds_track_string(char *string) __attribute__((weak));
+#  endif
+#else
+extern char *ds_track_string(char *string);
+#endif
+
 /* --------------------------------------------------------------------- */
 /* Helpers                                                                */
 /* --------------------------------------------------------------------- */
@@ -79,7 +92,12 @@ char *ds_concat(const char *left, const char *right) {
     if (la) memcpy(out, left, la);
     if (lb) memcpy(out + la, right, lb);
     out[la + lb] = '\0';
+#ifdef DIMSCRIPT_TEXT_EMBEDDED
+    return ds_track_string(out);
+#else
+    if (ds_track_string) return ds_track_string(out);
     return out;
+#endif
 }
 
 /* --------------------------------------------------------------------- */
@@ -213,3 +231,21 @@ char *ds_replace(const char *string, const char *from, const char *to) {
     out[out_len] = '\0';
     return out;
 }
+
+/* The legacy Android workflow embeds text.c through runtime.c.  Weak
+ * standalone definitions keep builds which also list text.c as a separate
+ * translation unit link without duplicate symbols. */
+#if !defined(DIMSCRIPT_TEXT_EMBEDDED) && (defined(__GNUC__) || defined(__clang__))
+#pragma weak ds_len
+#pragma weak ds_ulen
+#pragma weak ds_substr
+#pragma weak ds_concat
+#pragma weak ds_find
+#pragma weak ds_upper
+#pragma weak ds_lower
+#pragma weak ds_trim
+#pragma weak ds_contains
+#pragma weak ds_starts_with
+#pragma weak ds_ends_with
+#pragma weak ds_replace
+#endif

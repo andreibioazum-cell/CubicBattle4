@@ -15,6 +15,7 @@
     "url": "https://github.com/your-username/Gig1.0"
   },
   "libraries": [
-    "third_party/font_library.h"
+    "ttf_font.c",
+    "ttf_font.h"
   ]
 }

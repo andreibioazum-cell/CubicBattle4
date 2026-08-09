@@ -6,6 +6,7 @@
 - `player.ds` хранит состояние и функции игрока;
 - `assets/player.png` предварительно загружается через `png_load` и рисуется
   через `tex`;
+- `assets/fonts/DejaVuSans.ttf` используется GPU-рендерером для текста;
 - `AndroidManifest.xml` задаёт название приложения и Android package.
 
 Из корня репозитория:
@@ -25,6 +26,6 @@ python3 gen.py examples/game_template/game.ds examples/game_template/game.c
 раскладывать по подпапкам. Один файл загружается только один раз; циклические
 include считаются ошибкой.
 
-PNG кладутся в `assets/`, но в скрипте указывается путь относительно неё:
-`"player.png"` или `"sprites/player.png"`. Сгенерированный `game.c` добавлять в
-Git не нужно.
+PNG кладутся в `assets/`, а TTF — в `assets/fonts/`; в скрипте указывается путь
+относительно корня assets: `"player.png"` или `"sprites/player.png"`.
+Сгенерированный `game.c` добавлять в Git не нужно.

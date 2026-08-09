@@ -29,7 +29,10 @@ int ds_ulen(const char *string);
  * raising, which keeps script code predictable. */
 char *ds_substr(const char *string, int start, int length);
 
-/* Concatenation of two strings.  The caller frees the result. */
+/* Concatenation of two strings.  In the Android runtime the result is put in
+ * the script string pool and is released by ds_string_release or when the
+ * script restarts; the standalone text.c test build returns a normal malloc
+ * buffer that the caller may free. */
 char *ds_concat(const char *left, const char *right);
 
 /* Search for the first occurrence of needle inside haystack starting at
