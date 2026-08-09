@@ -643,13 +643,30 @@ class DimScriptCompiler:
         self.current_scope = dict(params)
         self.current_object = object_name
         self.current_function = function_name
+        # Only suppress warnings for parameters that are actually unused. A
+        # parameter that appears in the body needs no (void) cast, and emitting
+        # one before every body is dead, misleading code.
+        body_text = '\n'.join(body)
         for parameter in params:
-            self._indent(f'(void){parameter};')
+            if not self._text_uses_identifier(body_text, parameter):
+                self._indent(f'(void){parameter};')
         for line in body:
             self.compile_line(line)
         self.current_scope = previous_scope
         self.current_object = previous_object
         self.current_function = previous_function
+
+    @staticmethod
+    def _text_uses_identifier(text, identifier):
+        """True if identifier appears as a whole word outside string literals.
+
+        Matches only standalone tokens (word boundaries on both sides), so a
+        parameter named ``x`` is not reported as used by ``btn_x`` or by the
+        same letters inside a quoted string.
+        """
+        pattern = re.compile(r'\b' + re.escape(identifier) + r'\b')
+        _, quoted = DimScriptCompiler._scan(text)
+        return any(not quoted[match.start()] for match in pattern.finditer(text))
 
     def _indent(self, line):
         self.emit(f'    {line}')
