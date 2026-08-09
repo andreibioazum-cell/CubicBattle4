@@ -19,6 +19,9 @@ int lobby_w = 0
 int lobby_h = 0
 int stars_started = 0
 
+num btn_pulse = 0
+num play_scale = 1
+
 int touch_x = 0
 int touch_y = 0
 
@@ -52,6 +55,13 @@ fn update_lobby() {
     play_btn.h = 70
     play_btn.x = (screen_w / 2) - (play_btn.w / 2)
     play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
+    // Плавная пульсация кнопки: медленно растёт и сжимается по синусоиде.
+    btn_pulse = btn_pulse + 0.12
+    num target = 1 + 0.05 * sin(btn_pulse)
+    if (play_btn.pressed == 1) {
+        target = target + 0.07
+    }
+    play_scale = play_scale + (target - play_scale) * 0.18
 }
 
 fn draw_lobby() {
@@ -61,10 +71,7 @@ fn draw_lobby() {
     num title_y = play_btn.y - title_h - title_gap
     text(title, screen_w / 2 - text_ink_width(title) / 2, title_y, 0xFFFFFF)
 
-    num scale = 1
-    if (play_btn.pressed == 1) {
-        scale = play_btn.press_scale
-    }
+    num scale = play_scale
     num bw = play_btn.w * scale
     num bh = play_btn.h * scale
     num bx = play_btn.x + (play_btn.w - bw) / 2

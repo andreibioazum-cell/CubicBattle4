@@ -6,7 +6,7 @@ int score = 0
 int transition_state = 0  // 0 - нет, 1 - затемнение, 2 - осветление
 int transition_target = 0
 int transition_level = 0
-int transition_len = 15
+int transition_len = 5
 
 #include "lobby.ds"
 #include "game_logic.ds"
@@ -65,20 +65,27 @@ fn start_transition(int target) {
 }
 
 fn draw() {
-    draw_background()
     if (game_state == 0) {
+        draw_lobby_bg()
         draw_lobby()
     } else {
+        draw_game_bg()
         draw_game()
     }
     // Чёрная заливка поверх во время перехода
     if (transition_state != 0 && transition_level > 0) {
-        rect(0, 0, screen_w, screen_h, transition_level * 0x11000000)
+        rect(0, 0, screen_w, screen_h, transition_level * 0x33000000)
     }
 }
 
-// Текстура травы во весь экран + звёзды (поверх — лобби или игра).
-fn draw_background() {
+// Фон лобби: тёмная подложка + звёзды. Без травы — она только в игре.
+fn draw_lobby_bg() {
+    rect(0, 0, screen_w, screen_h, 0x1a1a2e)
+    draw_stars()
+}
+
+// Фон игры: текстура травы во весь экран.
+fn draw_game_bg() {
     num grass_size = 256
     num scale = screen_w / grass_size
     if (screen_h > screen_w) {
@@ -87,9 +94,8 @@ fn draw_background() {
     num gw = grass_size * scale
     num gh = grass_size * scale
     tex((screen_w - gw) / 2, (screen_h - gh) / 2, GRASS, 0, scale)
-    // Тёмная подложка, чтобы белые звёзды и текст читались.
-    rect(0, 0, screen_w, screen_h, 0xB4000000)
-    draw_stars()
+    // Лёгкая подложка, чтобы белый текст и HUD читались.
+    rect(0, 0, screen_w, screen_h, 0x33000000)
 }
 
 fn touch(x, y, int action) {
