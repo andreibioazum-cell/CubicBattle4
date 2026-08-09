@@ -14,25 +14,277 @@ object Button {
     num press_scale = 1.08     // во сколько раз кнопка увеличивается при нажатии
 }
 
+object Star {
+    num x = 0
+    num y = 0
+    num vx = 0
+    num vy = 0
+    num r = 1.4
+}
+
 Button play_btn = new Button()
 
-int title_y = 0
+Star s0 = new Star()
+Star s1 = new Star()
+Star s2 = new Star()
+Star s3 = new Star()
+Star s4 = new Star()
+Star s5 = new Star()
+Star s6 = new Star()
+Star s7 = new Star()
+Star s8 = new Star()
+Star s9 = new Star()
+Star s10 = new Star()
+Star s11 = new Star()
+Star s12 = new Star()
+Star s13 = new Star()
+Star s14 = new Star()
+Star s15 = new Star()
+Star s16 = new Star()
+Star s17 = new Star()
+Star s18 = new Star()
+Star s19 = new Star()
+Star s20 = new Star()
+Star s21 = new Star()
+Star s22 = new Star()
+Star s23 = new Star()
+Star s24 = new Star()
+Star s25 = new Star()
+Star s26 = new Star()
+Star s27 = new Star()
+Star s28 = new Star()
+Star s29 = new Star()
+Star s30 = new Star()
+Star s31 = new Star()
+Star s32 = new Star()
+Star s33 = new Star()
+Star s34 = new Star()
+Star s35 = new Star()
+Star s36 = new Star()
+Star s37 = new Star()
+Star s38 = new Star()
+Star s39 = new Star()
+Star s40 = new Star()
+Star s41 = new Star()
+
+int lobby_w = 0
+int lobby_h = 0
+int stars_started = 0
+
+fn reset_star(Star star, int seed, num start_offset) {
+    // Звёзды появляются сверху/слева и летят по диагонали вправо-вниз.
+    // start_offset растягивает их цепочку по экрану, чтобы было видно сразу.
+    star.x = -120 - ((seed * 71) % 220) + start_offset * 0.65
+    star.y = -120 - ((seed * 97) % 260) + start_offset * 0.95
+    star.vx = 1.0 + ((seed * 17) % 19) * 0.09
+    star.vy = 1.7 + ((seed * 29) % 23) * 0.11
+    star.r = 1.0 + ((seed * 31) % 19) * 0.09
+}
+
+fn init_stars() {
+    num travel = screen_w
+    if (screen_h > travel) {
+        travel = screen_h
+    }
+    num step = (travel + 300) / 42
+    reset_star(s0, 1, step * 0)
+    reset_star(s1, 2, step * 1)
+    reset_star(s2, 3, step * 2)
+    reset_star(s3, 4, step * 3)
+    reset_star(s4, 5, step * 4)
+    reset_star(s5, 6, step * 5)
+    reset_star(s6, 7, step * 6)
+    reset_star(s7, 8, step * 7)
+    reset_star(s8, 9, step * 8)
+    reset_star(s9, 10, step * 9)
+    reset_star(s10, 11, step * 10)
+    reset_star(s11, 12, step * 11)
+    reset_star(s12, 13, step * 12)
+    reset_star(s13, 14, step * 13)
+    reset_star(s14, 15, step * 14)
+    reset_star(s15, 16, step * 15)
+    reset_star(s16, 17, step * 16)
+    reset_star(s17, 18, step * 17)
+    reset_star(s18, 19, step * 18)
+    reset_star(s19, 20, step * 19)
+    reset_star(s20, 21, step * 20)
+    reset_star(s21, 22, step * 21)
+    reset_star(s22, 23, step * 22)
+    reset_star(s23, 24, step * 23)
+    reset_star(s24, 25, step * 24)
+    reset_star(s25, 26, step * 25)
+    reset_star(s26, 27, step * 26)
+    reset_star(s27, 28, step * 27)
+    reset_star(s28, 29, step * 28)
+    reset_star(s29, 30, step * 29)
+    reset_star(s30, 31, step * 30)
+    reset_star(s31, 32, step * 31)
+    reset_star(s32, 33, step * 32)
+    reset_star(s33, 34, step * 33)
+    reset_star(s34, 35, step * 34)
+    reset_star(s35, 36, step * 35)
+    reset_star(s36, 37, step * 36)
+    reset_star(s37, 38, step * 37)
+    reset_star(s38, 39, step * 38)
+    reset_star(s39, 40, step * 39)
+    reset_star(s40, 41, step * 40)
+    reset_star(s41, 42, step * 41)
+    stars_started = 1
+}
+
+fn update_star(Star star) {
+    star.x = star.x + star.vx
+    star.y = star.y + star.vy
+    if (star.x > screen_w + 40 || star.y > screen_h + 40) {
+        reset_star(star, rand() % 900 + 1, 0)
+        // Возвращаем звезду за верхний/левый край экрана.
+        if ((rand() % 2) == 0) {
+            star.x = -30 - (rand() % 120)
+            star.y = rand() % (screen_h / 2)
+        } else {
+            star.x = rand() % (screen_w / 2)
+            star.y = -30 - (rand() % 120)
+        }
+    }
+}
+
+fn update_stars() {
+    update_star(s0)
+    update_star(s1)
+    update_star(s2)
+    update_star(s3)
+    update_star(s4)
+    update_star(s5)
+    update_star(s6)
+    update_star(s7)
+    update_star(s8)
+    update_star(s9)
+    update_star(s10)
+    update_star(s11)
+    update_star(s12)
+    update_star(s13)
+    update_star(s14)
+    update_star(s15)
+    update_star(s16)
+    update_star(s17)
+    update_star(s18)
+    update_star(s19)
+    update_star(s20)
+    update_star(s21)
+    update_star(s22)
+    update_star(s23)
+    update_star(s24)
+    update_star(s25)
+    update_star(s26)
+    update_star(s27)
+    update_star(s28)
+    update_star(s29)
+    update_star(s30)
+    update_star(s31)
+    update_star(s32)
+    update_star(s33)
+    update_star(s34)
+    update_star(s35)
+    update_star(s36)
+    update_star(s37)
+    update_star(s38)
+    update_star(s39)
+    update_star(s40)
+    update_star(s41)
+}
+
+fn draw_star(Star star) {
+    circle(star.x, star.y, star.r, 0xFFFFFF)
+}
+
+fn draw_stars() {
+    draw_star(s0)
+    draw_star(s1)
+    draw_star(s2)
+    draw_star(s3)
+    draw_star(s4)
+    draw_star(s5)
+    draw_star(s6)
+    draw_star(s7)
+    draw_star(s8)
+    draw_star(s9)
+    draw_star(s10)
+    draw_star(s11)
+    draw_star(s12)
+    draw_star(s13)
+    draw_star(s14)
+    draw_star(s15)
+    draw_star(s16)
+    draw_star(s17)
+    draw_star(s18)
+    draw_star(s19)
+    draw_star(s20)
+    draw_star(s21)
+    draw_star(s22)
+    draw_star(s23)
+    draw_star(s24)
+    draw_star(s25)
+    draw_star(s26)
+    draw_star(s27)
+    draw_star(s28)
+    draw_star(s29)
+    draw_star(s30)
+    draw_star(s31)
+    draw_star(s32)
+    draw_star(s33)
+    draw_star(s34)
+    draw_star(s35)
+    draw_star(s36)
+    draw_star(s37)
+    draw_star(s38)
+    draw_star(s39)
+    draw_star(s40)
+    draw_star(s41)
+}
+
+fn draw_lobby_background() {
+    // Текстура травы масштабируется на весь экран.
+    num grass_size = 256
+    num scale = screen_w / grass_size
+    if (screen_h > screen_w) {
+        scale = screen_h / grass_size
+    }
+    num grass_w = grass_size * scale
+    num grass_h = grass_size * scale
+    num grass_x = (screen_w - grass_w) / 2
+    num grass_y = (screen_h - grass_h) / 2
+    tex(grass_x, grass_y, "grass.png", 0, scale)
+
+    // Затемняем фон, чтобы белые звёзды и заголовок читались лучше.
+    rect(0, 0, screen_w, screen_h, 0xB4000000)
+}
 
 fn update_lobby() {
-    // Центрируем кнопку
+    // Центрируем кнопку.
     play_btn.w = 220
     play_btn.h = 70
     play_btn.x = (screen_w / 2) - (play_btn.w / 2)
     play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
-    title_y = play_btn.y - 110
+
+    if (stars_started == 0 || lobby_w != screen_w || lobby_h != screen_h) {
+        lobby_w = screen_w
+        lobby_h = screen_h
+        init_stars()
+    }
+    update_stars()
 }
 
 fn draw_lobby() {
-    cls(0x1a1a2e)
+    draw_lobby_background()
+    draw_stars()
 
-    // Заголовок — отцентрован по реальным границам отрисовки текста
-    // (text_ink_width), а не по магической константе.
-    text("Cubic Battle 4", screen_w / 2 - text_ink_width("Cubic Battle 4") / 2, title_y, 0xE94560)
+    // Заголовок стоит ровно над кнопкой Play (центрируется по реальным
+    // границам текста, поэтому больше не уезжает вверх).
+    str title = "Кубик Батл"
+    num title_h = text_ink_height(title)
+    num title_gap = 20
+    num title_y = play_btn.y - title_h - title_gap
+    text(title, screen_w / 2 - text_ink_width(title) / 2, title_y, 0xFFFFFF)
 
     // Кнопка Play: без тени, рамки и hover-эффекта. При нажатии кнопка
     // увеличивается (press_scale) и темнеет (pressed_color), при отпускании
