@@ -53,6 +53,54 @@ class CompilerRegressionTests(unittest.TestCase):
         self.assertIn("ds_obj_Player_move(player, 2)", generated)
         self.assertNotIn("ds_read(", generated)
 
+    def _fn_body(self, generated, signature):
+        """Return the body of the first generated static fn with this signature."""
+        start = generated.index(signature)
+        brace = generated.index('{', start)
+        close = generated.index('\n}\n', brace)
+        return generated[brace:close]
+
+    def test_only_unused_parameters_get_void_cast(self):
+        generated = self.compile_source(
+            """
+            fn draw(x, y, w, h, size) {
+                rect(x, y, w, h)
+            }
+            """
+        )
+        body = self._fn_body(generated, "static void ds_fn_draw(double x,")
+        # Used parameters must not be cast to (void) (dead code).
+        for name in ("x", "y", "w", "h"):
+            self.assertNotIn(f"(void){name};", body, f"{name} is used")
+        # A genuinely unused parameter still suppresses the warning.
+        self.assertIn("(void)size;", body)
+
+    def test_used_parameter_is_not_reported_by_similar_identifier(self):
+        # `x` inside `btn_x` or inside a string literal is not a use of `x`,
+        # so the parameter genuinely needs the warning suppressed.
+        generated = self.compile_source(
+            """
+            num btn_x = 10
+            fn update(t, x) {
+                btn_x = btn_x + 1
+                ds_log("x")
+            }
+            """
+        )
+        body = self._fn_body(generated, "static void ds_fn_update(double t,")
+        self.assertIn("(void)t;", body)
+        self.assertIn("(void)x;", body)
+        # ...a genuinely used parameter keeps its (void) cast off.
+        generated = self.compile_source(
+            """
+            fn draw(x) {
+                circle(x, x, 5, 0xFF0000)
+            }
+            """
+        )
+        body = self._fn_body(generated, "static void ds_fn_draw(double x)")
+        self.assertNotIn("(void)x;", body)
+
 
 if __name__ == "__main__":
     unittest.main()
