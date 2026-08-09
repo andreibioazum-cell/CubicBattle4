@@ -6,6 +6,9 @@ object Player {
     num size = 30
     col color = 0xFF8844
     num angle = 0
+    // Скорость сглаживается, поэтому игрок не дёргается при движении джойстика.
+    num vx = 0
+    num vy = 0
 }
 
 object Enemy {
@@ -36,7 +39,10 @@ int game_frames = 1800  // 30 c при 60 FPS
 int joy_active = 0
 num joy_knob_r = 34
 num joy_hit_r = 150
-num joy_speed = 9
+// 9 пикселей за кадр было слишком быстро. Целевая скорость ниже,
+// а разгон и торможение выполняются постепенно.
+num joy_speed = 4.8
+num movement_smoothing = 0.18
 int back_w = 132
 int back_h = 46
 int back_x = 0
@@ -46,6 +52,8 @@ int survival_frames = 0
 fn init_game() {
     player.x = screen_w / 2
     player.y = screen_h / 2
+    player.vx = 0
+    player.vy = 0
     frames_left = game_frames
     survival_frames = 0
     init_joystick()
@@ -74,8 +82,14 @@ fn update_game() {
         game_state = 0
         return
     }
-    player.x = player.x + joy.dx * joy_speed
-    player.y = player.y + joy.dy * joy_speed
+    // Плавно приближаем текущую скорость к направлению джойстика.
+    // При отпускании joy.dx/dy становятся нулём, поэтому игрок мягко тормозит.
+    num target_vx = joy.dx * joy_speed
+    num target_vy = joy.dy * joy_speed
+    player.vx = player.vx + (target_vx - player.vx) * movement_smoothing
+    player.vy = player.vy + (target_vy - player.vy) * movement_smoothing
+    player.x = player.x + player.vx
+    player.y = player.y + player.vy
     if (joy.dx != 0 || joy.dy != 0) {
         player.angle = atan2(joy.dy, joy.dx)
     }
