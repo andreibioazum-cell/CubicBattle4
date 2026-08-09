@@ -131,6 +131,7 @@ void ds_string_pool_reset(void);
 
 void cls(uint32_t color);
 void rect(float x, float y, float w, float h, uint32_t color);
+void roundrect(float x, float y, float w, float h, float r, uint32_t color);
 void circle(float x, float y, float r, uint32_t color);
 void ring(float x, float y, float r, float t, uint32_t color);
 

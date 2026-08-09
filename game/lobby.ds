@@ -4,8 +4,8 @@ num btn_x = 0
 num btn_y = 0
 num btn_w = 220
 num btn_h = 70
-num btn_color = 0x2E7D32
-num btn_hover_color = 0x388E3C
+num btn_color = 0x5F10A0
+num btn_hover_color = 0x7A22C9
 num btn_text_color = 0xFFFFFF
 
 num title_y = 0
@@ -35,13 +35,13 @@ fn draw_lobby() {
         color = btn_hover_color
     }
     
-    // Стильная кнопка с тенью, рамкой и заливкой
-    rect(btn_x + 3, btn_y + 4, btn_w, btn_h, 0x0f0f1c)
-    rect(btn_x - 2, btn_y - 2, btn_w + 4, btn_h + 4, 0x4CAF50)
-    rect(btn_x, btn_y, btn_w, btn_h, color)
+    // Стильная кнопка с тенью, рамкой и заливкой (скруглённая, фиолетовая)
+    roundrect(btn_x + 3, btn_y + 4, btn_w, btn_h, 20, 0x0f0f1c)
+    roundrect(btn_x - 2, btn_y - 2, btn_w + 4, btn_h + 4, 22, 0x9C27B0)
+    roundrect(btn_x, btn_y, btn_w, btn_h, 20, color)
     
     // Текст на кнопке, отцентрирован по кнопке
-    draw_button_label("▶ PLAY", btn_x, btn_y, btn_w, btn_h, btn_text_color)
+    draw_button_label("PLAY", btn_x, btn_y, btn_w, btn_h, btn_text_color)
 }
 
 fn touch_lobby(x, y) {
