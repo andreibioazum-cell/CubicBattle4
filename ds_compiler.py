@@ -552,9 +552,28 @@ class DimScriptCompiler:
             self._error(f"invalid for loop: {raw}"); return
         for kw, off in (('if', 2), ('while', 5), ('loop', 5)):
             if line.startswith(kw + ' '):
+                ck = 'while' if kw == 'loop' else kw
+                # Однострочная форма if/while (cond) stmt — без фигурных скобок.
+                if not line.endswith('{'):
+                    rest = line[off:].strip()
+                    # cond — это balanced-выражение в скобках
+                    if not rest.startswith('('):
+                        self._error(f"invalid {kw} syntax: {raw}"); return
+                    depth, q = _scan(rest)
+                    end = 0
+                    for i in range(len(rest)):
+                        if q[i]: continue
+                        if rest[i] == '(': depth[i] += 1
+                        elif rest[i] == ')': depth[i] -= 1
+                        if depth[i] == 0 and i > 0:
+                            end = i; break
+                    cond = rest[:end+1]
+                    body = rest[end+1:].strip()
+                    body_c = self.translate_expression(body) if body else '(void)0'
+                    self._indent(f'{ck} ({self.translate_expression(cond)}) {{ {body_c}; }}'); return
+                # Многострочная форма cond { ... } — cond до {
                 cond = line[off:].strip()
                 if cond.endswith('{'): cond = cond[:-1].strip()
-                ck = 'while' if kw == 'loop' else kw
                 self._indent(f'{ck} ({self.translate_expression(_strip_outer_parens(cond))}) {{'); return
         if line == 'else' or line == 'else {': self._indent('else {'); return
         if line.startswith('else if '):

@@ -3,15 +3,6 @@
  * Включается прямо в graphics.c — никаких отдельных translation units. */
 
 typedef struct DSFont DSFont;
-typedef struct {
-    uint32_t codepoint;
-    float advance;
-    float bearing_x;
-    float bearing_top;
-    int width;
-    int height;
-    float u0, v0, u1, v1;
-} DSFontGlyph;
 
 void ds_font_destroy(DSFont *font);
 
