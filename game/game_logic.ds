@@ -36,7 +36,7 @@ int game_frames = 1800  // 30 c при 60 FPS
 int joy_active = 0
 num joy_knob_r = 34
 num joy_hit_r = 150
-num joy_speed = 5
+num joy_speed = 9
 int back_w = 132
 int back_h = 46
 int back_x = 0
@@ -105,7 +105,6 @@ fn update_game() {
 }
 
 fn draw_game() {
-    cls(0x1a1a2e)
     text("Score: " + score, 20, 24, 0xFFFFFF)
     text("Time: " + ((frames_left + 59) / 60), 20, 48, 0x4FC3F7)
 
