@@ -7,13 +7,8 @@ object Button {
     num w = 220
     num h = 70
     col color = 0x5F10A0
-    col pressed_color = 0x470C78
     col text_color = 0xFFFFFF
-    // Текст тоже приглушается вместе с кнопкой, чтобы нажатое состояние
-    // выглядело как единый фильтр, а не только как смена фона.
-    col pressed_text_color = 0xC7B4D6
     int pressed = 0
-    num press_scale = 1.08
 }
 
 Button play_btn = new Button()
@@ -58,13 +53,8 @@ fn update_lobby() {
     play_btn.h = 70
     play_btn.x = (screen_w / 2) - (play_btn.w / 2)
     play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
-    // В покое размер постоянный. При нажатии Play сразу становится больше;
-    // цвет для нажатия задаётся в draw_lobby.
-    if (play_btn.pressed == 1) {
-        play_scale = play_btn.press_scale
-    } else {
-        play_scale = 1
-    }
+    // Эффект нажатия убран — кнопка всегда одного размера и цвета
+    play_scale = 1
 }
 
 fn draw_lobby() {
@@ -81,10 +71,6 @@ fn draw_lobby() {
     num by = play_btn.y + (play_btn.h - bh) / 2
     col color = play_btn.color
     col label_color = play_btn.text_color
-    if (play_btn.pressed == 1) {
-        color = play_btn.pressed_color
-        label_color = play_btn.pressed_text_color
-    }
     roundrect(bx, by, bw, bh, 20 * scale, color)
     draw_button_label("Play", bx, by, bw, bh, label_color)
 }
