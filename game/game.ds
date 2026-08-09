@@ -84,16 +84,21 @@ fn draw_lobby_bg() {
     draw_stars()
 }
 
-// Фон игры: текстура травы во весь экран.
+// Фон игры: повторяем исходную 256px-текстуру без масштабирования.
+// Для непрозрачного PNG движок копирует такие тайлы строками, вместо дорогого
+// пересчёта и смешивания каждого пикселя полноэкранной увеличенной текстуры.
+// Это заметно уменьшает задержку управления на слабых устройствах.
 fn draw_game_bg() {
     num grass_size = 256
-    num scale = screen_w / grass_size
-    if (screen_h > screen_w) {
-        scale = screen_h / grass_size
+    num y = 0
+    loop (y < screen_h) {
+        num x = 0
+        loop (x < screen_w) {
+            tex(x, y, GRASS, 0, 1)
+            x = x + grass_size
+        }
+        y = y + grass_size
     }
-    num gw = grass_size * scale
-    num gh = grass_size * scale
-    tex((screen_w - gw) / 2, (screen_h - gh) / 2, GRASS, 0, scale)
     // Лёгкая подложка, чтобы белый текст и HUD читались.
     rect(0, 0, screen_w, screen_h, 0x33000000)
 }
