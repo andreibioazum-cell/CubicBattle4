@@ -1,8 +1,19 @@
 // Главный файл - инициализация и управление состоянием
 
-// Глобальное состояние игры
-num game_state = 0  // 0 - лобби, 1 - игра
-num score = 0
+// Глобальное состояние игры.
+// game_state и score — целые по смыслу: используются только с целочисленными
+// значениями и сравниваются через ==. Тип int исключает ошибки floating-point.
+int game_state = 0  // 0 - лобби, 1 - игра
+int score = 0
+
+// Плавный переход между сценами: чёрная заливка плавно нарастает (затемнение),
+// в полной темноте сцена переключается, затем заливка плавно спадает
+// (осветление). Непрозрачность задаётся уровнем 0..15: цвет заливки
+// level * 0x11000000 (alpha-байт = level * 17, 15 * 17 = 255).
+int transition_state = 0    // 0 - нет перехода, 1 - затемнение, 2 - осветление
+int transition_target = 0   // сцена после затемнения: 0 - лобби, 1 - игра
+int transition_level = 0    // текущий уровень непрозрачности 0..15
+int transition_len = 15     // длительность фазы в кадрах (~0.25 c при 60 FPS)
 
 // Подключаем модули игры. Пути указаны относительно этого файла.
 #include "lobby.ds"
@@ -17,11 +28,44 @@ fn init() {
 }
 
 fn update() {
+    update_transition()
     if (game_state == 0) {
         update_lobby()
     } else {
         update_game()
     }
+}
+
+fn update_transition() {
+    if (transition_state == 0) {
+        return
+    }
+    if (transition_state == 1) {
+        // Затемнение: чёрный экран нарастает
+        transition_level = transition_level + 1
+        if (transition_level >= transition_len) {
+            transition_level = transition_len
+            // Сцена переключается в полной темноте
+            game_state = transition_target
+            if (transition_target == 1) {
+                init_game()
+            }
+            transition_state = 2
+        }
+    } else {
+        // Осветление: чёрный экран уходит
+        transition_level = transition_level - 1
+        if (transition_level <= 0) {
+            transition_level = 0
+            transition_state = 0
+        }
+    }
+}
+
+fn start_transition(int target) {
+    transition_target = target
+    transition_level = 0
+    transition_state = 1
 }
 
 fn draw() {
@@ -30,14 +74,20 @@ fn draw() {
     } else {
         draw_game()
     }
+    // Чёрная заливка поверх сцены во время перехода
+    if (transition_state != 0 && transition_level > 0) {
+        rect(0, 0, screen_w, screen_h, transition_level * 0x11000000)
+    }
 }
 
-fn touch(x, y, action) {
+fn touch(x, y, int action) {
     set_touch(x, y)
+    // Пока идёт переход, события не доходят до сцен
+    if (transition_state != 0) {
+        return
+    }
     if (game_state == 0) {
-        if (action == 0) {  // нажатие
-            touch_lobby(x, y)
-        }
+        touch_lobby(x, y, action)
     } else {
         // В игре передаём все события: 0 - нажатие, 1 - отпускание,
         // 2 - движение пальца (нужно джойстику), 3 - отмена

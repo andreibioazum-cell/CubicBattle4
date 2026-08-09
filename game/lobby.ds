@@ -1,60 +1,87 @@
 // Лобби - главное меню
 
-num btn_x = 0
-num btn_y = 0
-num btn_w = 220
-num btn_h = 70
-num btn_color = 0x5F10A0
-num btn_hover_color = 0x7A22C9
-num btn_text_color = 0xFFFFFF
+// Кнопка сгруппирована в объект (struct в C), а не в 8 отдельных глобальных
+// переменных btn_x, btn_y, btn_w, ... — так проще масштабировать интерфейс.
+object Button {
+    num x = 0
+    num y = 0
+    num w = 220
+    num h = 70
+    col color = 0x5F10A0       // цвета — это битовая маска, а не число с плавающей точкой
+    col pressed_color = 0x470C78  // темнее, пока кнопка зажата
+    col text_color = 0xFFFFFF
+    int pressed = 0            // 1, пока палец держит кнопку
+    num press_scale = 1.08     // во сколько раз кнопка увеличивается при нажатии
+}
 
-num title_y = 0
+Button play_btn = new Button()
+
+int title_y = 0
 
 fn update_lobby() {
     // Центрируем кнопку
-    btn_w = 220
-    btn_h = 70
-    btn_x = (screen_w / 2) - (btn_w / 2)
-    btn_y = (screen_h / 2) - (btn_h / 2) + 40
-    title_y = btn_y - 110
+    play_btn.w = 220
+    play_btn.h = 70
+    play_btn.x = (screen_w / 2) - (play_btn.w / 2)
+    play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
+    title_y = play_btn.y - 110
 }
 
 fn draw_lobby() {
     cls(0x1a1a2e)
-    
-    // Заголовок игры
-    text("🎮 GAME DS", screen_w / 2 - 45, title_y, 0xE94560)
-    
-    // Кнопка "Play"
-    num hover = 0
-    if (touch_x >= btn_x && touch_x <= btn_x + btn_w && touch_y >= btn_y && touch_y <= btn_y + btn_h) {
-        hover = 1
+
+    // Заголовок — отцентрован по реальным границам отрисовки текста
+    // (text_ink_width), а не по магической константе.
+    text("GAME DS", screen_w / 2 - text_ink_width("GAME DS") / 2, title_y, 0xE94560)
+
+    // Кнопка Play: без тени, рамки и hover-эффекта. При нажатии кнопка
+    // увеличивается (press_scale) и темнеет (pressed_color), при отпускании
+    // возвращается к обычному размеру и цвету.
+    num scale = 1
+    if (play_btn.pressed == 1) {
+        scale = play_btn.press_scale
     }
-    num color = btn_color
-    if (hover == 1) {
-        color = btn_hover_color
+    num bw = play_btn.w * scale
+    num bh = play_btn.h * scale
+    num bx = play_btn.x + (play_btn.w - bw) / 2
+    num by = play_btn.y + (play_btn.h - bh) / 2
+    col color = play_btn.color
+    if (play_btn.pressed == 1) {
+        color = play_btn.pressed_color
     }
-    
-    // Стильная кнопка с тенью, рамкой и заливкой (скруглённая, фиолетовая)
-    roundrect(btn_x + 3, btn_y + 4, btn_w, btn_h, 20, 0x0f0f1c)
-    roundrect(btn_x - 2, btn_y - 2, btn_w + 4, btn_h + 4, 22, 0x9C27B0)
-    roundrect(btn_x, btn_y, btn_w, btn_h, 20, color)
-    
-    // Текст на кнопке, отцентрирован по кнопке
-    draw_button_label("PLAY", btn_x, btn_y, btn_w, btn_h, btn_text_color)
+
+    // Одна аккуратная заливка скруглённым прямоугольником
+    roundrect(bx, by, bw, bh, 20 * scale, color)
+    draw_button_label("PLAY", bx, by, bw, bh, play_btn.text_color)
 }
 
-fn touch_lobby(x, y) {
-    if (x >= btn_x && x <= btn_x + btn_w && y >= btn_y && y <= btn_y + btn_h) {
-        game_state = 1
-        score = 0
-        init_game()
+fn touch_lobby(x, y, int action) {
+    // Нажатие на кнопку: увеличиваем и затемняем. Отпускание внутри кнопки:
+    // возвращаем размер/цвет и запускаем плавный переход в игру.
+    if (x >= play_btn.x && x <= play_btn.x + play_btn.w && y >= play_btn.y && y <= play_btn.y + play_btn.h) {
+        if (action == 0) {
+            play_btn.pressed = 1
+            return
+        }
+        if (action == 1 || action == 3) {
+            if (play_btn.pressed == 1) {
+                play_btn.pressed = 0
+                score = 0
+                start_transition(1)
+            }
+            return
+        }
+        return  // движение пальца внутри кнопки — кнопка остаётся нажатой
+    }
+    // Палец ушёл с кнопки: если был зажат или отпущен/отменён — сбрасываем
+    if (action == 2 || action == 1 || action == 3) {
+        play_btn.pressed = 0
     }
 }
 
 // Глобальные переменные для touch
-num touch_x = 0
-num touch_y = 0
+int touch_x = 0
+int touch_y = 0
 
 fn set_touch(x, y) {
     touch_x = x

@@ -143,6 +143,8 @@ void text(const char *string, float x, float y, uint32_t color);
 void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
 int text_width(const char *string);
 int text_height(void);
+int text_ink_width(const char *string);
+int text_ink_height(const char *string);
 
 /* Software frame lifecycle.  Scripts only call the drawing primitives; the
  * host locks/posts ANativeWindow and the renderer flushes its command list into
