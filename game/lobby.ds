@@ -1,51 +1,58 @@
 // Лобби - главное меню
 
-num btn_x = 0
-num btn_y = 0
-num btn_w = 220
-num btn_h = 70
-num btn_color = 0x5F10A0
-num btn_hover_color = 0x7A22C9
-num btn_text_color = 0xFFFFFF
+// Кнопка сгруппирована в объект (struct в C), а не в 8 отдельных глобальных
+// переменных btn_x, btn_y, btn_w, ... — так проще масштабировать интерфейс.
+object Button {
+    num x = 0
+    num y = 0
+    num w = 220
+    num h = 70
+    col color = 0x5F10A0       // цвета — это битовая маска, а не число с плавающей точкой
+    col hover_color = 0x7A22C9
+    col text_color = 0xFFFFFF
+}
 
-num title_y = 0
+Button play_btn = new Button()
+
+int title_y = 0
 
 fn update_lobby() {
     // Центрируем кнопку
-    btn_w = 220
-    btn_h = 70
-    btn_x = (screen_w / 2) - (btn_w / 2)
-    btn_y = (screen_h / 2) - (btn_h / 2) + 40
-    title_y = btn_y - 110
+    play_btn.w = 220
+    play_btn.h = 70
+    play_btn.x = (screen_w / 2) - (play_btn.w / 2)
+    play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
+    title_y = play_btn.y - 110
 }
 
 fn draw_lobby() {
     cls(0x1a1a2e)
-    
-    // Заголовок игры
-    text("🎮 GAME DS", screen_w / 2 - 45, title_y, 0xE94560)
-    
+
+    // Заголовок игры — отцентрован по реальной ширине текста (text_width),
+    // а не по магической константе вроде -45 или -40.
+    text("🎮 GAME DS", screen_w / 2 - text_width("🎮 GAME DS") / 2, title_y, 0xE94560)
+
     // Кнопка "Play"
-    num hover = 0
-    if (touch_x >= btn_x && touch_x <= btn_x + btn_w && touch_y >= btn_y && touch_y <= btn_y + btn_h) {
+    int hover = 0
+    if (touch_x >= play_btn.x && touch_x <= play_btn.x + play_btn.w && touch_y >= play_btn.y && touch_y <= play_btn.y + play_btn.h) {
         hover = 1
     }
-    num color = btn_color
+    col color = play_btn.color
     if (hover == 1) {
-        color = btn_hover_color
+        color = play_btn.hover_color
     }
-    
+
     // Стильная кнопка с тенью, рамкой и заливкой (скруглённая, фиолетовая)
-    roundrect(btn_x + 3, btn_y + 4, btn_w, btn_h, 20, 0x0f0f1c)
-    roundrect(btn_x - 2, btn_y - 2, btn_w + 4, btn_h + 4, 22, 0x9C27B0)
-    roundrect(btn_x, btn_y, btn_w, btn_h, 20, color)
-    
+    roundrect(play_btn.x + 3, play_btn.y + 4, play_btn.w, play_btn.h, 20, 0x0f0f1c)
+    roundrect(play_btn.x - 2, play_btn.y - 2, play_btn.w + 4, play_btn.h + 4, 22, 0x9C27B0)
+    roundrect(play_btn.x, play_btn.y, play_btn.w, play_btn.h, 20, color)
+
     // Текст на кнопке, отцентрирован по кнопке
-    draw_button_label("PLAY", btn_x, btn_y, btn_w, btn_h, btn_text_color)
+    draw_button_label("PLAY", play_btn.x, play_btn.y, play_btn.w, play_btn.h, play_btn.text_color)
 }
 
 fn touch_lobby(x, y) {
-    if (x >= btn_x && x <= btn_x + btn_w && y >= btn_y && y <= btn_y + btn_h) {
+    if (x >= play_btn.x && x <= play_btn.x + play_btn.w && y >= play_btn.y && y <= play_btn.y + play_btn.h) {
         game_state = 1
         score = 0
         init_game()
@@ -53,8 +60,8 @@ fn touch_lobby(x, y) {
 }
 
 // Глобальные переменные для touch
-num touch_x = 0
-num touch_y = 0
+int touch_x = 0
+int touch_y = 0
 
 fn set_touch(x, y) {
     touch_x = x

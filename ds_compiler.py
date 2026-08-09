@@ -425,18 +425,43 @@ class DimScriptCompiler:
             return symbol
         return 'num'
 
+    @staticmethod
+    def _rewrite_outside_strings(text, pattern, repl):
+        """Apply a substitution only outside string literals.
+
+        Without this, an object-access rewrite would also corrupt quoted text
+        such as the texture name ``"player.png"`` (``player.`` -> ``player->``).
+        """
+        _, quoted = DimScriptCompiler._scan(text)
+        if not any(quoted):
+            return re.sub(pattern, repl, text)
+        result = []
+        start = 0
+        pattern = re.compile(pattern)
+        for match in pattern.finditer(text):
+            if quoted[match.start()]:
+                continue
+            result.append(text[start:match.start()])
+            result.append(match.expand(repl) if isinstance(repl, str) else repl(match))
+            start = match.end()
+        result.append(text[start:])
+        return ''.join(result)
+
     def _translate_object_access(self, expression):
-        expression = re.sub(r'\btrue\b', '1', expression)
-        expression = re.sub(r'\bfalse\b', '0', expression)
+        expression = self._rewrite_outside_strings(expression, r'\btrue\b', '1')
+        expression = self._rewrite_outside_strings(expression, r'\bfalse\b', '0')
         known_objects = dict(self.object_vars)
         for variable, script_type in self.current_scope.items():
             if script_type.rstrip('*') in self.objects:
                 known_objects[variable] = script_type.rstrip('*')
         for variable, object_type in sorted(known_objects.items(), key=lambda item: -len(item[0])):
-            expression = re.sub(rf'\b{re.escape(variable)}\.([A-Za-z_]\w*)',
-                                rf'{variable}->\1', expression)
+            expression = self._rewrite_outside_strings(
+                expression,
+                rf'\b{re.escape(variable)}\.([A-Za-z_]\w*)',
+                rf'{variable}->\1')
         if self.current_object:
-            expression = re.sub(r'\bself\.([A-Za-z_]\w*)', r'self->\1', expression)
+            expression = self._rewrite_outside_strings(
+                expression, r'\bself\.([A-Za-z_]\w*)', r'self->\1')
         return expression
 
     def _as_string_expression(self, expression):
@@ -494,6 +519,17 @@ class DimScriptCompiler:
         self.emit('#include <math.h>')
         self.emit('')
 
+        fn_consts = {
+            name: self._const_param_names(params, body)
+            for name, (params, body) in self.functions.items()
+        }
+        method_consts = {}
+        for object_name, definition in self.objects.items():
+            method_consts[object_name] = {
+                method: self._const_param_names(params, body)
+                for method, (params, body) in definition['methods'].items()
+            }
+
         for name in self.objects:
             self.emit(f'typedef struct {name} {name};')
         if self.objects:
@@ -511,9 +547,10 @@ class DimScriptCompiler:
 
         for name, definition in self.objects.items():
             for method, (params, _body) in definition['methods'].items():
-                self.emit(f'{self._object_signature(name, method, params)};')
+                self.emit(f'{self._object_signature(name, method, params, method_consts[name].get(method))};')
+            init_consts = method_consts[name].get('init', set())
             self.emit(f'static {name} *ds_new_{name}(' +
-                      self._params_c(params_for_new(definition)) + ');')
+                      self._params_c(params_for_new(definition), init_consts) + ');')
             self.emit(f'static void ds_free_{name}({name} *self);')
         if self.objects:
             self.emit('')
@@ -534,26 +571,26 @@ class DimScriptCompiler:
                     initial = self._default_c_value(script_type)
                     if value:
                         self.global_initializers.append((name, value))
-            self.emit(f'{c_type} {name} = {initial};')
+            self.emit(f'{self._declaration(c_type, name)} = {initial};')
         if self.vars:
             self.emit('')
 
         for name, (params, _body) in self.functions.items():
-            self.emit(f'static void ds_fn_{name}({self._params_c(params)});')
+            self.emit(f'static void ds_fn_{name}({self._params_c(params, fn_consts[name])});')
         if self.functions:
             self.emit('')
 
         for name, definition in self.objects.items():
             for method, (params, body) in definition['methods'].items():
-                self.emit(self._object_signature(name, method, params) + ' {')
+                self.emit(self._object_signature(name, method, params, method_consts[name].get(method)) + ' {')
                 method_scope = {'self': name}
                 method_scope.update({p: t for t, p in params})
                 self._emit_body(body, method_scope, name, method)
                 self.emit('}')
                 self.emit('')
-            self.emit(f'static {name} *ds_new_{name}(' + self._params_c(params_for_new(definition)) + ') {')
+            self.emit(f'static {name} *ds_new_{name}(' + self._params_c(params_for_new(definition), method_consts[name].get('init')) + ') {')
             self.emit(f'    {name} *self = ({name} *)calloc(1, sizeof(*self));')
-            self.emit(f'    if (!self) {{ ds_runtime_error(\\"out of memory creating object {name}\\"); return NULL; }}')
+            self.emit(f'    if (!self) {{ ds_runtime_error("out of memory creating object {name}"); return NULL; }}')
             for field, (field_type, value) in definition['fields'].items():
                 if value is not None and value.strip():
                     field_value = (self._as_string_expression(value)
@@ -572,20 +609,25 @@ class DimScriptCompiler:
             self.emit('')
 
         for name, (params, body) in self.functions.items():
-            self.emit(f'static void ds_fn_{name}({self._params_c(params)}) {{')
+            self.emit(f'static void ds_fn_{name}({self._params_c(params, fn_consts[name])}) {{')
             function_scope = {p: t for t, p in params}
             self._emit_body(body, function_scope, None, name)
             self.emit('}')
             self.emit('')
 
-        self.emit('static int ds_main(void) {')
-        for name, value in self.global_initializers:
-            self.compile_line(f'{name} = {value}')
-        for line in self.main_body:
-            self.compile_line(line)
-        self.emit('    return 0;')
-        self.emit('}')
-        self.emit('')
+        # ds_main is only a real entry point when there is something to run:
+        # non-constant global initialisers or an explicit Main() body.  An
+        # empty ds_main would just be dead scaffolding in the output.
+        has_main = bool(self.global_initializers or self.main_body)
+        if has_main:
+            self.emit('static int ds_main(void) {')
+            for name, value in self.global_initializers:
+                self.compile_line(f'{name} = {value}')
+            for line in self.main_body:
+                self.compile_line(line)
+            self.emit('    return 0;')
+            self.emit('}')
+            self.emit('')
 
         self.emit('void reset(void) {')
         for name, (script_type, value) in self.vars.items():
@@ -601,7 +643,8 @@ class DimScriptCompiler:
 
         self.emit('void init(AAssetManager *assets) {')
         self.emit('    ds_set_asset_manager(assets);')
-        self.emit('    ds_main();')
+        if has_main:
+            self.emit('    ds_main();')
         if 'init' in self.functions:
             self.emit('    ds_fn_init();')
         self.emit('}')
@@ -621,20 +664,72 @@ class DimScriptCompiler:
         self.emit('')
         self.emit('void touch(float x, float y, int action) {')
         if 'touch' in self.functions:
-            self.emit('    ds_fn_touch((double)x, (double)y, (double)action);')
+            # Cast each runtime value to the type the script declared, so an
+            # `int action` parameter is not forced through double first.
+            params = self.functions['touch'][0]
+            runtime_values = ('x', 'y', 'action')
+            args = ', '.join(
+                f'({self.c_type(ptype)}){runtime_values[index]}'
+                for index, (ptype, _pname) in enumerate(params[:len(runtime_values)]))
+            self.emit(f'    ds_fn_touch({args});')
         else:
             self.emit('    (void)x; (void)y; (void)action;')
         self.emit('}')
 
-    def _params_c(self, params):
+    @staticmethod
+    def _declaration(c_type, name, prefix=''):
+        """A C declaration ``type name`` (pointer types hug the name: ``T *p``)."""
+        if prefix:
+            c_type = f'{prefix} {c_type}'
+        return f'{c_type}{name}' if c_type.endswith('*') else f'{c_type} {name}'
+
+    @staticmethod
+    def _param_c(c_type, name, is_const):
+        """C declaration for one parameter, with const for read-only scalars."""
+        if is_const and '*' not in c_type and 'const' not in c_type:
+            return DimScriptCompiler._declaration(c_type, name, 'const')
+        return DimScriptCompiler._declaration(c_type, name)
+
+    def _params_c(self, params, const_names=None):
         if not params:
             return 'void'
-        return ', '.join(f'{self.c_type(t)} {n}' for t, n in params)
+        const_names = const_names or set()
+        return ', '.join(self._param_c(self.c_type(t), n, n in const_names)
+                         for t, n in params)
 
-    def _object_signature(self, object_name, method_name, params):
-        params_c = ', '.join([f'{object_name} *self'] +
-                             [f'{self.c_type(t)} {n}' for t, n in params])
-        return f'static void ds_obj_{object_name}_{method_name}({params_c})'
+    def _object_signature(self, object_name, method_name, params, const_names=None):
+        const_names = const_names or set()
+        parameters = [f'{object_name} *self'] + [
+            self._param_c(self.c_type(t), n, n in const_names) for t, n in params
+        ]
+        return f'static void ds_obj_{object_name}_{method_name}({", ".join(parameters)})'
+
+    @staticmethod
+    def _text_writes_identifier(text, identifier):
+        """True if ``identifier`` is assigned anywhere outside string literals.
+
+        Matches whole-word assignments (``x = v``, ``x += v``, ...) but not
+        comparisons (``x == v``, ``x <= v``) and not field writes such as
+        ``self.x = v`` or ``enemy->x = v``.
+        """
+        pattern = re.compile(r'(?<![.>])\b' + re.escape(identifier) +
+                             r'\b\s*(?:\+=|-=|\*=|/=|=)(?!\s*=)')
+        _, quoted = DimScriptCompiler._scan(text)
+        return any(not quoted[match.start()] for match in pattern.finditer(text))
+
+    def _const_param_names(self, params, body):
+        """Parameters that the body only reads (never assigns).
+
+        Generated C declares such parameters ``const``, so an accidental write
+        from a script becomes a compile-time error instead of silent state
+        corruption.  Pointer and string parameters keep their declared type.
+        """
+        body_text = '\n'.join(body)
+        return {
+            name for ptype, name in params
+            if '*' not in self.c_type(ptype) and 'const' not in self.c_type(ptype)
+            and not self._text_writes_identifier(body_text, name)
+        }
 
     def _emit_body(self, body, params, object_name, function_name):
         previous_scope = self.current_scope
@@ -771,7 +866,7 @@ class DimScriptCompiler:
                 self._indent(f'{object_type} *{name} = NULL;')
             return
         self.current_scope[name] = script_type
-        c_line = f'{self.c_type(script_type)} {name}'
+        c_line = self._declaration(self.c_type(script_type), name)
         if value is not None and value.strip():
             translated_value = (self._as_string_expression(value)
                                 if script_type == 'str' and self.infer_expr_type(value) != 'str'
@@ -785,7 +880,7 @@ class DimScriptCompiler:
             script_type, name, value = (declaration.group('type'),
                                         declaration.group('name'), declaration.group('value'))
             self.current_scope[name] = script_type
-            result = f'{self.c_type(script_type)} {name}'
+            result = self._declaration(self.c_type(script_type), name)
             if value:
                 result += f' = {self.translate_expression(value)}'
             return result

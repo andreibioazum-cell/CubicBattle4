@@ -68,7 +68,7 @@ class CompilerRegressionTests(unittest.TestCase):
             }
             """
         )
-        body = self._fn_body(generated, "static void ds_fn_draw(double x,")
+        body = self._fn_body(generated, "static void ds_fn_draw(const double x,")
         # Used parameters must not be cast to (void) (dead code).
         for name in ("x", "y", "w", "h"):
             self.assertNotIn(f"(void){name};", body, f"{name} is used")
@@ -87,7 +87,7 @@ class CompilerRegressionTests(unittest.TestCase):
             }
             """
         )
-        body = self._fn_body(generated, "static void ds_fn_update(double t,")
+        body = self._fn_body(generated, "static void ds_fn_update(const double t,")
         self.assertIn("(void)t;", body)
         self.assertIn("(void)x;", body)
         # ...a genuinely used parameter keeps its (void) cast off.
@@ -98,8 +98,93 @@ class CompilerRegressionTests(unittest.TestCase):
             }
             """
         )
-        body = self._fn_body(generated, "static void ds_fn_draw(double x)")
+        body = self._fn_body(generated, "static void ds_fn_draw(const double x)")
         self.assertNotIn("(void)x;", body)
+
+    def test_read_only_params_are_const_written_params_are_not(self):
+        generated = self.compile_source(
+            """
+            fn move(x, y) {
+                x = x + 1
+                rect(x, y, 10, 10)
+            }
+            """
+        )
+        # `x` is assigned, so it stays mutable; `y` is only read -> const.
+        self.assertIn("static void ds_fn_move(double x, const double y)", generated)
+
+    def test_empty_main_is_not_emitted(self):
+        generated = self.compile_source(
+            """
+            fn init() {
+                cls(0xFFFFFF)
+            }
+            """
+        )
+        self.assertNotIn("ds_main", generated)
+        self.assertIn("ds_fn_init();", generated)
+
+    def test_main_is_emitted_when_global_initialisers_exist(self):
+        generated = self.compile_source(
+            """
+            num level = 3 * 2
+            fn init() {
+                cls(0xFFFFFF)
+            }
+            """
+        )
+        self.assertIn("static int ds_main(void) {", generated)
+        self.assertIn("level = 3 * 2;", generated)
+        self.assertIn("ds_main();", generated)
+
+    def test_touch_hook_casts_to_declared_param_types(self):
+        generated = self.compile_source(
+            """
+            fn touch(x, y, int action) {
+                ds_log("touched")
+            }
+            """
+        )
+        self.assertIn("ds_fn_touch((double)x, (double)y, (int)action);", generated)
+
+    def test_object_access_rewrite_skips_string_literals(self):
+        # `player.` -> `player->` must not touch the texture name "player.png".
+        generated = self.compile_source(
+            """
+            object Player {
+                num x = 0
+            }
+            Player player = new Player()
+            fn draw() {
+                tex(player.x, 0, "player.png", 0, 1)
+            }
+            """
+        )
+        self.assertIn('tex(player->x, 0, "player.png", 0, 1)', generated)
+        self.assertNotIn("player->png", generated)
+
+    def test_col_maps_to_uint32_t(self):
+        generated = self.compile_source(
+            """
+            col bg = 0x1a1a2e
+            fn draw() {
+                cls(bg)
+            }
+            """
+        )
+        self.assertIn("uint32_t bg = 0x1a1a2e;", generated)
+
+    def test_int_variables_stay_integers(self):
+        generated = self.compile_source(
+            """
+            int lives = 3
+            fn update() {
+                lives = lives - 1
+            }
+            """
+        )
+        self.assertIn("int lives = 3;", generated)
+        self.assertIn("lives = lives - 1;", generated)
 
 
 if __name__ == "__main__":
