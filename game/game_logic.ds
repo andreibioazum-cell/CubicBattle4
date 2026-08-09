@@ -165,8 +165,8 @@ fn draw_game() {
     }
     circle(attack.x, attack.y, attack.r, atk_color)
     ring(attack.x, attack.y, attack.r, 6, 0x000000)
-    num a_w = text_ink_width("ATTACK") * 0.55
-    text_scaled("ATTACK", attack.x - a_w / 2, attack.y - 7, 0xFFFFFF, 0.55)
+    num a_w = text_ink_width("Attack") * 0.55
+    text_scaled("Attack", attack.x - a_w / 2, attack.y - 7, 0xFFFFFF, 0.55)
 
     // Кнопка назад (справа сверху), текст отцентрирован по кнопке
     back_x = screen_w - back_w - 14

@@ -6,7 +6,7 @@
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
     <application
-        android:label="Game DS"
+        android:label="Cubic Battle 4"
         android:hasCode="false"
         android:extractNativeLibs="true">
 

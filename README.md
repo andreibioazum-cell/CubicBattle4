@@ -9,7 +9,7 @@ game/
 ├── game.ds                 # точка входа
 ├── player.ds               # дополнительные модули (необязательно)
 ├── assets/
-│   ├── fonts/DejaVuSans.ttf # TTF шрифт игры
+│   ├── fonts/ChillRoundGothic_Heavy.ttf # TTF шрифт игры
 │   └── player.png          # PNG и другие ресурсы
 └── AndroidManifest.xml
 ```
@@ -91,7 +91,7 @@ Player player = new Player(100)
 целые строки через `memcpy`. Нет generic-операции на каждом пикселе для обычных
 примитивов и нет зависимости от OpenGL/EGL.
 
-Шрифт по умолчанию — `assets/fonts/DejaVuSans.ttf`. Для другой игры положите
+Шрифт по умолчанию — `assets/fonts/ChillRoundGothic_Heavy.ttf`. Для другой игры положите
 свой TTF по этому пути или измените путь в `graphics.c`. TTF разбирается и
 растеризуется в сглаженный атлас один раз при первом вызове `text`; кадры используют
 готовые glyph-ы и батч команд. `stage_assets.py` копирует вложенную папку `fonts/`
@@ -131,7 +131,7 @@ python3 stage_assets.py game/assets staging/assets
 `staging/assets` недостаточно: без копирования PNG/TTF `png_load` и `text` не
 найдут ресурсы внутри установленного приложения.
 
-Готовый многофайловый пример находится в `examples/game_template`.
+Готовый многофайловый пример можно создать скопировав папку `game`.
 
 ## Обработка ошибок и перезапуск
 
