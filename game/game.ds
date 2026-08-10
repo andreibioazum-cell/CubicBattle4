@@ -6,7 +6,7 @@ int score = 0
 int transition_state = 0  // 0 - нет, 1 - затемнение, 2 - осветление
 int transition_target = 0
 int transition_level = 0
-int transition_len = 5
+int transition_len = 30
 
 #include "lobby.ds"
 #include "game_logic.ds"
