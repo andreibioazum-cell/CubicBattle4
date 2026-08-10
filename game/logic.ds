@@ -121,9 +121,6 @@ fn finish_game(int result) {
     game_finished = result
     attack.active = 0
     bullet.active = 0
-    if (result == 1) {
-        score = score + 10
-    }
 }
 
 fn spawn_enemy() {

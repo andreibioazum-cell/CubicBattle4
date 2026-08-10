@@ -1,4 +1,4 @@
-// Весь пользовательский интерфейс: лобби, HUD, кнопки, джойстик и прицел.
+// Весь пользовательский интерфейс: лобби, HUD, джойстик и прицел.
 
 object Button {
     num x = 0
@@ -6,7 +6,6 @@ object Button {
     num w = 220
     num h = 70
     col color = 0x5F10A0
-    col text_color = 0xFFFFFF
     int pressed = 0
 }
 
@@ -14,7 +13,7 @@ object AttackButton {
     num x = 0
     num y = 0
     num r = 70
-    // Пока кнопку удерживают, UI показывает прицел. Урона при нажатии нет.
+    // Пока кнопку удерживают, UI показывает прицел. Выстрел — при отпускании.
     int active = 0
     num range = 360
 }
@@ -25,82 +24,47 @@ AttackButton attack = new AttackButton()
 int joy_active = 0
 num joy_knob_r = 34
 num joy_hit_r = 150
-int back_w = 220
-int back_h = 70
 int back_x = 0
-int back_y = 12
-int touch_x = 0
-int touch_y = 0
-
-fn set_touch(x, y) {
-    touch_x = x
-    touch_y = y
-}
 
 fn draw_button_label(str label, x, y, w, h, col color) {
     text(label, x + (w - text_ink_width(label)) / 2, y + (h - text_ink_height(label)) / 2, color)
 }
 
-fn draw_button(x, y, w, h, str label, col color, col text_color) {
-    rect(x + 2, y + 3, w, h, 0x0f0f1c)
-    rect(x - 2, y - 2, w + 4, h + 4, 0x334455)
-    rect(x, y, w, h, color)
-    draw_button_label(label, x, y, w, h, text_color)
-}
-
-fn draw_panel(x, y, w, h, col color, col border_color) {
-    if (border_color != 0) {
-        rect(x - 2, y - 2, w + 4, h + 4, border_color)
-    }
-    rect(x, y, w, h, color)
-}
-
-fn draw_centered_text(str label, y, col color, size) {
+fn draw_centered_text(str label, y, col color) {
     text(label, screen_w / 2 - text_ink_width(label) / 2, y, color)
 }
 
-// --- Лобби: интерактивные элементы поверх фона из lobby.ds. ---
+// --- Лобби ---
 
 fn update_lobby_ui() {
-    play_btn.w = 220
-    play_btn.h = 70
-    play_btn.x = (screen_w / 2) - (play_btn.w / 2)
-    play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
+    play_btn.x = (screen_w - play_btn.w) / 2
+    play_btn.y = (screen_h - play_btn.h) / 2 + 40
 }
 
 fn draw_lobby_ui() {
     str title = "Cubic Battle 4"
-    num title_h = text_ink_height(title)
-    num title_gap = 20
-    num title_y = play_btn.y - title_h - title_gap
-    text(title, screen_w / 2 - text_ink_width(title) / 2, title_y, 0xFFFFFF)
-
+    text(title, screen_w / 2 - text_ink_width(title) / 2, play_btn.y - text_ink_height(title) - 20, 0xFFFFFF)
     roundrect(play_btn.x, play_btn.y, play_btn.w, play_btn.h, 20, play_btn.color)
-    draw_button_label("Play", play_btn.x, play_btn.y, play_btn.w, play_btn.h, play_btn.text_color)
+    draw_button_label("Play", play_btn.x, play_btn.y, play_btn.w, play_btn.h, 0xFFFFFF)
 }
 
+// Нажатие на Play засчитывается при отпускании пальца внутри кнопки.
 fn touch_lobby_ui(x, y, int action) {
     if (x >= play_btn.x && x <= play_btn.x + play_btn.w && y >= play_btn.y && y <= play_btn.y + play_btn.h) {
         if (action == 0) {
             play_btn.pressed = 1
-            return
-        }
-        if (action == 1 || action == 3) {
+        } else if (action == 1 || action == 3) {
             if (play_btn.pressed == 1) {
                 play_btn.pressed = 0
-                score = 0
                 start_transition(1)
             }
-            return
         }
         return
     }
-    if (action == 2 || action == 1 || action == 3) {
-        play_btn.pressed = 0
-    }
+    play_btn.pressed = 0
 }
 
-// --- Игровой интерфейс. ---
+// --- Игровой интерфейс ---
 
 fn init_game_ui() {
     init_joystick_ui()
@@ -149,7 +113,7 @@ fn draw_attack_aim_ui() {
     num aim_x = player.x + dx * attack.range
     num aim_y = player.y + dy * attack.range
 
-    // Чёрная полупрозрачная линия показывает, куда вылетит пуля.
+    // Полупрозрачная линия показывает, куда вылетит пуля.
     line(start_x, start_y, aim_x, aim_y, 12, 0x66000000)
     line(aim_x - 12, aim_y, aim_x + 12, aim_y, 3, 0x99000000)
     line(aim_x, aim_y - 12, aim_x, aim_y + 12, 3, 0x99000000)
@@ -158,11 +122,10 @@ fn draw_attack_aim_ui() {
 
 fn draw_enemy_health_ui() {
     num bar_w = 44
-    num bar_h = 6
     num bar_x = enemy.x - bar_w / 2
     num bar_y = enemy.y - enemy.size - 14
-    rect(bar_x, bar_y, bar_w, bar_h, 0xCC000000)
-    rect(bar_x, bar_y, bar_w * enemy.hp / enemy.max_hp, bar_h, 0xE94560)
+    rect(bar_x, bar_y, bar_w, 6, 0xCC000000)
+    rect(bar_x, bar_y, bar_w * enemy.hp / enemy.max_hp, 6, 0xE94560)
 }
 
 fn draw_joystick_ui() {
@@ -171,36 +134,32 @@ fn draw_joystick_ui() {
 }
 
 fn draw_attack_button_ui() {
-    // Кнопка не меняется при нажатии: выстрел происходит только при отпускании.
-    col atk_color = 0xE94560
-    circle(attack.x, attack.y, attack.r, atk_color)
+    circle(attack.x, attack.y, attack.r, 0xE94560)
     ring(attack.x, attack.y, attack.r, 4, 0x000000)
     num a_w = text_ink_width("Attack") * 0.55
     text_scaled("Attack", attack.x - a_w / 2, attack.y - 7, 0xFFFFFF, 0.55)
 }
 
 fn draw_back_button_ui() {
-    back_x = screen_w - back_w - 14
-    roundrect(back_x, back_y, back_w, back_h, 20, 0x5F10A0)
-    draw_button_label("Back", back_x, back_y, back_w, back_h, 0xFFFFFF)
+    back_x = screen_w - 234
+    roundrect(back_x, 12, 220, 70, 20, 0x5F10A0)
+    draw_button_label("Back", back_x, 12, 220, 70, 0xFFFFFF)
 }
 
 fn draw_game_result_ui() {
     rect(0, 0, screen_w, screen_h, 0x99000000)
-    num panel_w = 330
-    num panel_h = 170
-    num panel_x = screen_w / 2 - panel_w / 2
-    num panel_y = screen_h / 2 - panel_h / 2
-    roundrect(panel_x, panel_y, panel_w, panel_h, 24, 0x5F10A0)
+    num panel_x = screen_w / 2 - 165
+    num panel_y = screen_h / 2 - 85
+    roundrect(panel_x, panel_y, 330, 170, 24, 0x5F10A0)
 
     if (game_finished == 1) {
-        draw_centered_text("Victory!", panel_y + 34, 0xFFFFFF, 1)
-        draw_centered_text("Enemy defeated", panel_y + 75, 0xFFFFFF, 1)
+        draw_centered_text("Victory!", panel_y + 34, 0xFFFFFF)
+        draw_centered_text("Enemy defeated", panel_y + 75, 0xFFFFFF)
     } else {
-        draw_centered_text("Defeat", panel_y + 34, 0xFFFFFF, 1)
-        draw_centered_text("The enemy caught you", panel_y + 75, 0xFFFFFF, 1)
+        draw_centered_text("Defeat", panel_y + 34, 0xFFFFFF)
+        draw_centered_text("The enemy caught you", panel_y + 75, 0xFFFFFF)
     }
-    draw_centered_text("Tap to return", panel_y + 118, 0xFFCDD2, 1)
+    draw_centered_text("Tap to return", panel_y + 118, 0xFFCDD2)
 }
 
 fn touch_game_ui(x, y, int action) {
@@ -211,26 +170,21 @@ fn touch_game_ui(x, y, int action) {
         return
     }
 
-    back_x = screen_w - back_w - 14
+    back_x = screen_w - 234
     if (action == 0) {
-        if (x >= back_x - 4 && x <= back_x + back_w + 4 && y >= back_y - 4 && y <= back_y + back_h + 4) {
+        if (x >= back_x - 4 && x <= back_x + 224 && y >= 8 && y <= 86) {
             start_transition(0)
             return
         }
-    }
-
-    if (action == 0) {
         num adx = x - attack.x
         num ady = y - attack.y
         if (sqrt(adx*adx + ady*ady) <= attack.r + 8) {
-            // Нажатие лишь включает прицел — без урона и анимации кнопки.
+            // Нажатие лишь включает прицел — выстрел при отпускании.
             attack.active = 1
             return
         }
     }
-
     if (action == 1 && attack.active == 1) {
-        // Пуля появляется только после отпускания Attack.
         attack.active = 0
         fire_bullet()
         return

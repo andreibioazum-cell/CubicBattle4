@@ -17,6 +17,7 @@ static AAssetManager *script_assets = NULL;
 static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
 static unsigned int frame_count = 0;
+static uint64_t prev_frame_ns = 0;
 
 void ds_log(const char *format, ...) {
     va_list args;
@@ -169,6 +170,11 @@ void android_main(struct android_app *app) {
         if (!app->window || !init_done || app->destroyRequested) continue;
         restart_script_if_due();
         if (script_active) {
+            uint64_t now = monotonic_ns();
+            dt = prev_frame_ns ? (double)(now - prev_frame_ns) / 1000000000.0 : 0.0;
+            if (dt < 0.0) dt = 0.0;
+            if (dt > 0.1) dt = 0.1;
+            prev_frame_ns = now;
             if (!ds_call_protected(protected_update, NULL, "update")) {
                 mark_script_failed("update");
             } else if (ds_script_restart_requested()) {

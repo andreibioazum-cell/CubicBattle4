@@ -21,7 +21,7 @@ _FN_RE = re.compile(
     r'^fn\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*'
     r'\((?P<params>.*)\)\s*(?P<brace>\{)?\s*$')
 _OBJECT_RE = re.compile(
-    r'^(?:object|class)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*(?P<brace>\{)?\s*$')
+    r'^object\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*(?P<brace>\{)?\s*$')
 _NUMBER_RE = re.compile(r'^(?:[-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?|0[xX][0-9a-fA-F]+)$')
 
 
@@ -135,21 +135,18 @@ def _rewrite_outside_strings(text, pattern, repl):
 class DimScriptCompiler:
     BUILTIN_TYPES = {
         'num': 'double', 'int': 'int', 'bool': 'int', 'str': 'const char *',
-        'byte*': 'unsigned char *', 'size': 'size_t', 'col': 'uint32_t',
+        'col': 'uint32_t',
     }
     STRING_FUNCTIONS = {'ds_concat', 'ds_num_to_string', 'ds_bool_to_string'}
     NUMBER_FUNCTIONS = {
         'floor', 'ceil', 'round', 'sqrt', 'sin', 'cos', 'tan', 'atan2',
-        'fabs', 'abs', 'rand', 'text_width', 'text_height',
-        'text_ink_width', 'text_ink_height',
-        'ds_len', 'ds_find', 'ds_contains', 'ds_starts_with', 'ds_ends_with',
+        'fabs', 'abs', 'rand', 'text_ink_width', 'text_ink_height', 'ds_len',
     }
 
     def __init__(self):
         self.vars = OrderedDict()
         self.functions = OrderedDict()
         self.objects = OrderedDict()
-        self.main_body = []
         self.output = []
         self.src = []
         self.errors = 0
@@ -209,7 +206,6 @@ class DimScriptCompiler:
             line = self.src[i]
             if _OBJECT_RE.match(line): i = self.parse_object(i)
             elif _FN_RE.match(line): i = self.parse_func(i)
-            elif 'Main(' in line: i = self.parse_main(i)
             elif self._looks_like_declaration(line):
                 self.parse_var(line); i += 1
             else: i += 1
@@ -287,10 +283,6 @@ class DimScriptCompiler:
         if name in self.objects: self._error(f"duplicate object '{name}'")
         else: self.objects[name] = {'fields': fields, 'methods': methods}
         return ni
-
-    def parse_main(self, i):
-        body, ni = self._extract_block(self.src, i, self.src[i])
-        self.main_body = body; return ni
 
     def _symbol_type(self, name):
         name = name.strip()
@@ -485,13 +477,12 @@ class DimScriptCompiler:
             self.emit(f'static void ds_fn_{n}({self._params_c(p, fc[n])}) {{')
             self._emit_body(b, {pp: t for t, pp in p}, None, n); self.emit('}\n')
 
-        # ds_main существует только при неконстантных глобальных инициализаторах
-        # или явном Main(); иначе это просто мёртвый код.
-        has_main = bool(self.global_initializers or self.main_body)
+        # ds_main нужен только для неконстантных инициализаторов глобалов
+        # (например, object-переменных, создаваемых через new).
+        has_main = bool(self.global_initializers)
         if has_main:
             self.emit('static int ds_main(void) {')
             for n, v in self.global_initializers: self.compile_line(f'{n} = {v}')
-            for line in self.main_body: self.compile_line(line)
             self.emit('    return 0;\n}\n')
 
         self.emit('void reset(void) {')

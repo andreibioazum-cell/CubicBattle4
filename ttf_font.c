@@ -317,19 +317,6 @@ static int g_for(const DSFont *f, uint32_t cp) {
     return g;
 }
 
-static int utf8_next(const char **c) {
-    const unsigned char *p = (const unsigned char *)*c;
-    uint32_t cp;
-    if (!p || !*p) return -1;
-    if (*p < 0x80) cp = *p++;
-    else if ((*p & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) { cp = ((*p&0x1F)<<6)|(p[1]&0x3F); p+=2; }
-    else if ((*p & 0xF0) == 0xE0 && (p[1]&0xC0)==0x80 && (p[2]&0xC0)==0x80) { cp=((*p&0x0F)<<12)|((p[1]&0x3F)<<6)|(p[2]&0x3F); p+=3; }
-    else if ((*p & 0xF8) == 0xF0 && (p[1]&0xC0)==0x80 && (p[2]&0xC0)==0x80 && (p[3]&0xC0)==0x80) { cp=((*p&7)<<18)|((p[1]&0x3F)<<12)|((p[2]&0x3F)<<6)|(p[3]&0x3F); p+=4; }
-    else cp = *p++;
-    *c = (const char *)p;
-    return (int)cp;
-}
-
 static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
     int gi = g_for(f, g->codepoint);
     int adv_u = 0;
@@ -503,18 +490,6 @@ const DSFontGlyph *ds_font_glyph(const DSFont *f, uint32_t cp) {
         if (f->glyphs[i].codepoint == '?') fb = &f->glyphs[i];
     }
     return fb;
-}
-
-float ds_font_measure(const DSFont *f, const char *s) {
-    if (!f || !s) return 0;
-    float w = 0, lw = 0;
-    while (*s) {
-        int cp = utf8_next(&s);
-        if (cp == '\n') { if (lw > w) w = lw; lw = 0; continue; }
-        const DSFontGlyph *g = ds_font_glyph(f, (uint32_t)cp);
-        if (g) lw += g->advance;
-    }
-    return lw > w ? lw : w;
 }
 
 int ds_font_aw(const DSFont *f) { return f ? f->aw : 0; }
