@@ -1,27 +1,15 @@
-// Фон лобби: тёмная подложка и летающие звёзды.
+// Фон лобби: тёмная подложка и летящие звёзды.
 // Кнопки и текст лобби находятся в ui.ds.
-
-int lobby_w = 0
-int lobby_h = 0
-int stars_started = 0
+// Звёзды обновляются в draw — там уже открыт буфер кадра, поэтому они
+// действительно летят (из update буфер не виден).
 
 fn init_lobby_background() {
     // Много крупных звёзд, летящих из верхнего левого угла.
     ds_init_stars(90, 0xFFFFFF)
-    stars_started = 1
-}
-
-fn update_lobby_background() {
-    if (stars_started == 0 || lobby_w != screen_w || lobby_h != screen_h) {
-        lobby_w = screen_w
-        lobby_h = screen_h
-        ds_init_stars(90, 0xFFFFFF)
-        stars_started = 1
-    }
-    ds_update_stars()
 }
 
 fn draw_lobby_background() {
     rect(0, 0, screen_w, screen_h, 0x1a1a2e)
+    ds_update_stars()
     ds_draw_stars()
 }

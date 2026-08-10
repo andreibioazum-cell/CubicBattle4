@@ -19,19 +19,23 @@
     },
     {
       "name": "storage.type.dimscript",
-      "match": "\\b(num|int|bool|str|col|size|byte\\*)\\b"
+      "match": "\\b(num|int|bool|str|col)\\b"
     },
     {
       "name": "keyword.control.dimscript",
-      "match": "\\b(fn|if|else|while|loop|for|return|new|delete|object|class|Main)\\b"
+      "match": "\\b(fn|if|else|while|loop|for|return|new|delete|object)\\b"
     },
     {
       "name": "constant.language.dimscript",
       "match": "\\b(true|false|NULL)\\b"
     },
     {
+      "name": "support.variable.engine.dimscript",
+      "match": "\\b(screen_w|screen_h|dt|joy)\\b"
+    },
+    {
       "name": "support.function.builtin.dimscript",
-      "match": "\\b(cls|rect|circle|ring|line|tex|png_load|text|text_scaled|text_width|text_height|print|printn|prints|sqrt|sin|cos|atan2|ds_len|ds_ulen|ds_substr|ds_concat|ds_num_to_string|ds_bool_to_string|ds_restart_script|ds_find|ds_contains|ds_starts_with|ds_ends_with|ds_upper|ds_lower|ds_trim|ds_replace)\\b"
+      "match": "\\b(rect|roundrect|circle|ring|line|tex|png_load|text|text_scaled|text_ink_width|text_ink_height|sqrt|sin|cos|tan|atan2|floor|ceil|round|fabs|abs|rand|ds_log|ds_len|ds_concat|ds_num_to_string|ds_bool_to_string|ds_init_stars|ds_update_stars|ds_draw_stars|ds_request_script_restart)\\b"
     },
     {
       "name": "string.quoted.double.dimscript",

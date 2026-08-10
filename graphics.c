@@ -41,12 +41,11 @@ struct Texture {
 };
 
 typedef enum {
-    DC_CLEAR, DC_RECT, DC_ROUND, DC_CIRCLE, DC_RING, DC_LINE, DC_TEX, DC_TEXT
+    DC_RECT, DC_ROUND, DC_CIRCLE, DC_RING, DC_LINE, DC_TEX, DC_TEXT
 } DCCmd;
 typedef struct {
     DCCmd t;
     union {
-        struct { uint32_t c; } clr;
         struct { float x, y, w, h; uint32_t c; } rc;
         struct { float x, y, w, h, r; uint32_t c; } rr;
         struct { float x, y, r; uint32_t c; } ci;
@@ -229,7 +228,6 @@ static int font_tried;
 DSFont *ds_font_create(const uint8_t *data, size_t size, int ph);
 void ds_font_destroy(DSFont *font);
 const DSFontGlyph *ds_font_glyph(const DSFont *font, uint32_t cp);
-float ds_font_measure(const DSFont *font, const char *s);
 int ds_font_aw(const DSFont *font);
 int ds_font_ah(const DSFont *font);
 const uint8_t *ds_font_alpha(const DSFont *font);
@@ -484,7 +482,6 @@ static void flush(void) {
     for (size_t i = 0; i < cmd_n; i++) {
         DC *c = &cmds[i];
         switch (c->t) {
-            case DC_CLEAR: clear_buf(cur_buf, c->v.clr.c); break;
             case DC_RECT:  render_rect(cur_buf, c->v.rc.x, c->v.rc.y, c->v.rc.w, c->v.rc.h, c->v.rc.c); break;
             case DC_ROUND: render_roundrect(cur_buf, c->v.rr.x, c->v.rr.y, c->v.rr.w, c->v.rr.h, c->v.rr.r, c->v.rr.c); break;
             case DC_CIRCLE: render_circle(cur_buf, c->v.ci.x, c->v.ci.y, c->v.ci.r, c->v.ci.c); break;
@@ -511,7 +508,6 @@ void ds_set_asset_manager(AAssetManager *a) {
 }
 int png_load(const char *n) { return load_png(n) != NULL; }
 
-void cls(uint32_t c) { DC *x = push(DC_CLEAR); if (x) x->v.clr.c = pack_c(c); }
 void rect(float x, float y, float w, float h, uint32_t c) {
     DC *p = push(DC_RECT); if (!p) return;
     p->v.rc.x=x; p->v.rc.y=y; p->v.rc.w=w; p->v.rc.h=h; p->v.rc.c=pack_c(c);
@@ -546,11 +542,8 @@ void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
 }
 void text(const char *s, float x, float y, uint32_t c) { text_scaled(s, x, y, c, 1.0f); }
 
-int text_width(const char *s) { if (!s || !ensure_font()) return 0; return (int)(ds_font_measure(font, s) + 0.5f); }
-
 /* text_ink_width/height — реальные границы отрисовки (pen стартует
- * в x - 'S'.bearing_x, baseline в y + 'S'.bearing_top). text_width суммирует
- * advance и не равен видимой ширине. */
+ * в x - 'S'.bearing_x, baseline в y + 'S'.bearing_top). */
 int text_ink_width(const char *s) {
     if (!s || !ensure_font()) return 0;
     const DSFontGlyph *ref = ds_font_glyph(font, 'S');
@@ -583,14 +576,12 @@ int text_ink_height(const char *s) {
     }
     return first ? 0 : (int)(maxB - minT + 0.5f);
 }
-int text_height(void) { if (!ensure_font()) return 32; return (int)(ds_font_lineh(font) + 0.5f); }
 
 int ds_graphics_init(AAssetManager *a) { if (amgr != a) { ds_release_assets(); amgr = a; } return 1; }
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || !b->pixels || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;
     cur_buf = b; frame_open = 1; cmd_n = 0;
-    /* Очистка раз в кадр: старое содержимое буфера не должно светиться.
-     * Последующий cls() не ломает порядок отрисовки. */
+    /* Очистка раз в кадр: старое содержимое буфера не должно светиться. */
     clear_buf(b, pack_c(0x00000000));
     return 1;
 }
