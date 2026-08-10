@@ -1,0 +1,20 @@
+// Куб игрока: его текстура, параметры и отрисовка.
+// Вся информация о визуальном представлении игрока находится в этом файле.
+
+str PLAYER_TEX = "player.png"
+
+object Player {
+    num x = 0
+    num y = 0
+    num size = 30
+    col color = 0xFF8844
+    // Последнее направление движения используется для текстуры, прицела и пули.
+    num angle = 0
+}
+
+Player player = new Player()
+
+fn draw_player_cube() {
+    circle(player.x, player.y, 15, player.color)
+    tex(player.x - 20, player.y - 20, PLAYER_TEX, player.angle, 1)
+}

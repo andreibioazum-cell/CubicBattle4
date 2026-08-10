@@ -41,7 +41,7 @@ struct Texture {
 };
 
 typedef enum {
-    DC_CLEAR, DC_RECT, DC_ROUND, DC_CIRCLE, DC_RING, DC_TEX, DC_TEXT
+    DC_CLEAR, DC_RECT, DC_ROUND, DC_CIRCLE, DC_RING, DC_LINE, DC_TEX, DC_TEXT
 } DCCmd;
 typedef struct {
     DCCmd t;
@@ -51,6 +51,7 @@ typedef struct {
         struct { float x, y, w, h, r; uint32_t c; } rr;
         struct { float x, y, r; uint32_t c; } ci;
         struct { float x, y, r, th; uint32_t c; } rg;
+        struct { float x1, y1, x2, y2, th; uint32_t c; } ln;
         struct { float x, y, a, sc; Texture *tx; } tx;
         struct { const char *s; float x, y, sc; uint32_t c; } tt;
     } v;
@@ -96,6 +97,10 @@ static char *strdup_safe(const char *s) {
 static void fill_span(uint32_t *d, int n, uint32_t c) {
     while (n >= 8) { d[0]=c; d[1]=c; d[2]=c; d[3]=c; d[4]=c; d[5]=c; d[6]=c; d[7]=c; d+=8; n-=8; }
     while (n-- > 0) *d++ = c;
+}
+static void paint_span(uint32_t *d, int n, uint32_t c) {
+    if ((c >> 24) >= 255) { fill_span(d, n, c); return; }
+    while (n-- > 0) { *d = blend(*d, c); d++; }
 }
 
 /* --- Примитивы рендерера (forward, чтобы их могли видеть звёзды). --- */
@@ -148,7 +153,7 @@ static void render_circle(Buffer *b, float x, float y, float rad, uint32_t c) {
         int hw = (int)sqrt((double)(r2 - (long long)dy*dy));
         int l = cx-hw, rr = cx+hw+1;
         if (l < 0) l = 0; if (rr > b->width) rr = b->width;
-        if (l < rr) fill_span(b->pixels + sy*b->stride + l, rr-l, c);
+        if (l < rr) paint_span(b->pixels + sy*b->stride + l, rr-l, c);
     }
 }
 static void render_ring(Buffer *b, float x, float y, float rad, float th, uint32_t c) {
@@ -165,12 +170,47 @@ static void render_ring(Buffer *b, float x, float y, float rad, float th, uint32
         int l = cx-oh, rr = cx+oh+1;
         if (l < 0) l = 0; if (rr > b->width) rr = b->width;
         if (ih < 0) {
-            if (l < rr) fill_span(b->pixels + sy*b->stride + l, rr-l, c);
+            if (l < rr) paint_span(b->pixels + sy*b->stride + l, rr-l, c);
         } else {
             int il = cx-ih, ir = cx+ih+1;
             int lr = il < rr ? il : rr, rl = ir > l ? ir : l;
-            if (l < lr) fill_span(b->pixels + sy*b->stride + l, lr-l, c);
-            if (rl < rr) fill_span(b->pixels + sy*b->stride + rl, rr-rl, c);
+            if (l < lr) paint_span(b->pixels + sy*b->stride + l, lr-l, c);
+            if (rl < rr) paint_span(b->pixels + sy*b->stride + rl, rr-rl, c);
+        }
+    }
+}
+
+/* Растрируем толстый отрезок через расстояние до ближайшей точки сегмента.
+ * В отличие от circle/ring, каждый пиксель смешивается с фоном, поэтому
+ * полупрозрачный чёрный прицел действительно остаётся полупрозрачным. */
+static void render_line(Buffer *b, float x1, float y1, float x2, float y2, float th, uint32_t c) {
+    if (!b || !isfinite(x1+y1+x2+y2+th) || th <= 0) return;
+    float dx = x2-x1, dy = y2-y1, len2 = dx*dx + dy*dy;
+    float rad = th * 0.5f, rad2 = rad * rad;
+    if (len2 <= 0.0001f) { render_circle(b, x1, y1, rad, c); return; }
+
+    float minx = (x1 < x2 ? x1 : x2) - rad;
+    float maxx = (x1 > x2 ? x1 : x2) + rad;
+    float miny = (y1 < y2 ? y1 : y2) - rad;
+    float maxy = (y1 > y2 ? y1 : y2) + rad;
+    int left = cl_floor(floorf(minx), b->width);
+    int right = cl_ceil(ceilf(maxx), b->width);
+    int top = cl_floor(floorf(miny), b->height);
+    int bottom = cl_ceil(ceilf(maxy), b->height);
+
+    for (int py = top; py < bottom; py++) {
+        float fy = (float)py + 0.5f;
+        for (int px = left; px < right; px++) {
+            float fx = (float)px + 0.5f;
+            float u = ((fx-x1)*dx + (fy-y1)*dy) / len2;
+            if (u < 0) u = 0;
+            else if (u > 1) u = 1;
+            float ox = x1 + u*dx - fx;
+            float oy = y1 + u*dy - fy;
+            if (ox*ox + oy*oy <= rad2) {
+                uint32_t *pixel = &b->pixels[py*b->stride + px];
+                *pixel = blend(*pixel, c);
+            }
         }
     }
 }
@@ -449,6 +489,7 @@ static void flush(void) {
             case DC_ROUND: render_roundrect(cur_buf, c->v.rr.x, c->v.rr.y, c->v.rr.w, c->v.rr.h, c->v.rr.r, c->v.rr.c); break;
             case DC_CIRCLE: render_circle(cur_buf, c->v.ci.x, c->v.ci.y, c->v.ci.r, c->v.ci.c); break;
             case DC_RING:   render_ring(cur_buf, c->v.rg.x, c->v.rg.y, c->v.rg.r, c->v.rg.th, c->v.rg.c); break;
+            case DC_LINE:   render_line(cur_buf, c->v.ln.x1, c->v.ln.y1, c->v.ln.x2, c->v.ln.y2, c->v.ln.th, c->v.ln.c); break;
             case DC_TEX:    draw_tx(cur_buf, c->v.tx.tx, c->v.tx.x, c->v.tx.y, c->v.tx.a, c->v.tx.sc); break;
             case DC_TEXT:   render_text_now(cur_buf, c->v.tt.s, c->v.tt.x, c->v.tt.y, c->v.tt.c, c->v.tt.sc); break;
         }
@@ -486,6 +527,11 @@ void circle(float x, float y, float r, uint32_t c) {
 void ring(float x, float y, float r, float t, uint32_t c) {
     DC *p = push(DC_RING); if (!p) return;
     p->v.rg.x=x; p->v.rg.y=y; p->v.rg.r=r; p->v.rg.th=t; p->v.rg.c=pack_c(c);
+}
+void line(float x1, float y1, float x2, float y2, float thickness, uint32_t c) {
+    DC *p = push(DC_LINE); if (!p) return;
+    p->v.ln.x1=x1; p->v.ln.y1=y1; p->v.ln.x2=x2; p->v.ln.y2=y2;
+    p->v.ln.th=thickness; p->v.ln.c=pack_c(c);
 }
 void tex(float x, float y, const char *name, float a, float s) {
     if (!frame_open) return;

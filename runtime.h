@@ -113,6 +113,8 @@ void rect(float x, float y, float w, float h, uint32_t color);
 void roundrect(float x, float y, float w, float h, float r, uint32_t color);
 void circle(float x, float y, float r, uint32_t color);
 void ring(float x, float y, float r, float t, uint32_t color);
+/* Толстая линия с альфа-смешиванием — нужна для траектории прицела. */
+void line(float x1, float y1, float x2, float y2, float thickness, uint32_t color);
 
 void ds_set_asset_manager(AAssetManager *assets);
 void ds_release_assets(void);

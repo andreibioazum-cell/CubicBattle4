@@ -1,40 +1,17 @@
-// Лобби: кнопка Play + летающие звёзды поверх фона-травы.
-// Звёзды агрессивно летят из верхнего левого угла в правый нижний.
-
-object Button {
-    num x = 0
-    num y = 0
-    num w = 220
-    num h = 70
-    col color = 0x5F10A0
-    col text_color = 0xFFFFFF
-    int pressed = 0
-}
-
-Button play_btn = new Button()
+// Фон лобби: тёмная подложка и летающие звёзды.
+// Кнопки и текст лобби находятся в ui.ds.
 
 int lobby_w = 0
 int lobby_h = 0
 int stars_started = 0
 
-// Кнопка не анимируется сама по себе: увеличение — только пока её удерживают.
-num play_scale = 1
-
-int touch_x = 0
-int touch_y = 0
-
-fn set_touch(x, y) {
-    touch_x = x
-    touch_y = y
-}
-
-fn init_stars() {
-    // Много крупных звёзд (90), агрессивный полёт из верхнего-левого угла.
+fn init_lobby_background() {
+    // Много крупных звёзд, летящих из верхнего левого угла.
     ds_init_stars(90, 0xFFFFFF)
     stars_started = 1
 }
 
-fn update_stars() {
+fn update_lobby_background() {
     if (stars_started == 0 || lobby_w != screen_w || lobby_h != screen_h) {
         lobby_w = screen_w
         lobby_h = screen_h
@@ -44,54 +21,7 @@ fn update_stars() {
     ds_update_stars()
 }
 
-fn draw_stars() {
+fn draw_lobby_background() {
+    rect(0, 0, screen_w, screen_h, 0x1a1a2e)
     ds_draw_stars()
-}
-
-fn update_lobby() {
-    play_btn.w = 220
-    play_btn.h = 70
-    play_btn.x = (screen_w / 2) - (play_btn.w / 2)
-    play_btn.y = (screen_h / 2) - (play_btn.h / 2) + 40
-    // Эффект нажатия убран — кнопка всегда одного размера и цвета
-    play_scale = 1
-}
-
-fn draw_lobby() {
-    str title = "Cubic Battle 4"
-    num title_h = text_ink_height(title)
-    num title_gap = 20
-    num title_y = play_btn.y - title_h - title_gap
-    text(title, screen_w / 2 - text_ink_width(title) / 2, title_y, 0xFFFFFF)
-
-    num scale = play_scale
-    num bw = play_btn.w * scale
-    num bh = play_btn.h * scale
-    num bx = play_btn.x + (play_btn.w - bw) / 2
-    num by = play_btn.y + (play_btn.h - bh) / 2
-    col color = play_btn.color
-    col label_color = play_btn.text_color
-    roundrect(bx, by, bw, bh, 20 * scale, color)
-    draw_button_label("Play", bx, by, bw, bh, label_color)
-}
-
-fn touch_lobby(x, y, int action) {
-    if (x >= play_btn.x && x <= play_btn.x + play_btn.w && y >= play_btn.y && y <= play_btn.y + play_btn.h) {
-        if (action == 0) {
-            play_btn.pressed = 1
-            return
-        }
-        if (action == 1 || action == 3) {
-            if (play_btn.pressed == 1) {
-                play_btn.pressed = 0
-                score = 0
-                start_transition(1)
-            }
-            return
-        }
-        return
-    }
-    if (action == 2 || action == 1 || action == 3) {
-        play_btn.pressed = 0
-    }
 }
