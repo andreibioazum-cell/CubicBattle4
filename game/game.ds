@@ -1,20 +1,21 @@
-// Точка входа. game_state: 0 - лобби, 1 - игра.
-// Плавный переход между сценами: затемнение → смена сцены → осветление.
+// Точка входа и фоны сцен.
+// game.ds отвечает за состояние сцен, переходы и фон игры;
+// lobby.ds — фон лобби, ui.ds — интерфейс, logic.ds — правила боя,
+// cubes.ds — куб игрока и его текстура.
 
-int game_state = 0
+int game_state = 0  // 0 — лобби, 1 — игра
 int score = 0
-int transition_state = 0  // 0 - нет, 1 - затемнение, 2 - осветление
+int transition_state = 0  // 0 — нет, 1 — затемнение, 2 — осветление
 int transition_target = 0
 int transition_level = 0
 int transition_len = 30
 
-#include "lobby.ds"
-#include "game_logic.ds"
-#include "ui.ds"
-
 str GRASS = "grass.png"
-str PLAYER_TEX = "player.png"
-str FONT_FILE = "fonts/ChillRoundGothic_Heavy.ttf"
+
+#include "cubes.ds"
+#include "ui.ds"
+#include "logic.ds"
+#include "lobby.ds"
 
 fn init() {
     png_load(GRASS)
@@ -22,17 +23,22 @@ fn init() {
     cls(0x2C2C2C)
     score = 0
     game_state = 0
-    init_stars()
+    init_lobby_background()
 }
 
 fn update() {
     update_transition()
-    update_stars()
+    update_lobby_background()
     if (game_state == 0) {
-        update_lobby()
+        update_lobby_ui()
     } else {
-        update_game()
+        update_game_logic()
     }
+}
+
+fn init_game_scene() {
+    init_game_logic()
+    init_game_ui()
 }
 
 fn update_transition() {
@@ -45,7 +51,7 @@ fn update_transition() {
             transition_level = transition_len
             game_state = transition_target
             if (transition_target == 1) {
-                init_game()
+                init_game_scene()
             }
             transition_state = 2
         }
@@ -66,29 +72,22 @@ fn start_transition(int target) {
 
 fn draw() {
     if (game_state == 0) {
-        draw_lobby_bg()
-        draw_lobby()
+        draw_lobby_background()
+        draw_lobby_ui()
     } else {
-        draw_game_bg()
-        draw_game()
+        draw_game_background()
+        draw_game_ui_underlay()
+        draw_game_entities()
+        draw_game_ui()
     }
-    // Чёрная заливка поверх во время перехода
+    // Чёрная заливка поверх во время перехода.
     if (transition_state != 0 && transition_level > 0) {
         rect(0, 0, screen_w, screen_h, transition_level * 0x33000000)
     }
 }
 
-// Фон лобби: тёмная подложка + звёзды. Без травы — она только в игре.
-fn draw_lobby_bg() {
-    rect(0, 0, screen_w, screen_h, 0x1a1a2e)
-    draw_stars()
-}
-
-// Фон игры: повторяем исходную 256px-текстуру без масштабирования.
-// Для непрозрачного PNG движок копирует такие тайлы строками, вместо дорогого
-// пересчёта и смешивания каждого пикселя полноэкранной увеличенной текстуры.
-// Это заметно уменьшает задержку управления на слабых устройствах.
-fn draw_game_bg() {
+// Фон игры: повторяем 256px-текстуру травы без масштабирования.
+fn draw_game_background() {
     num grass_size = 256
     num y = 0
     loop (y < screen_h) {
@@ -99,7 +98,7 @@ fn draw_game_bg() {
         }
         y = y + grass_size
     }
-    // Лёгкая подложка, чтобы белый текст и HUD читались.
+    // Подложка, чтобы игровой HUD оставался читаемым.
     rect(0, 0, screen_w, screen_h, 0x33000000)
 }
 
@@ -109,8 +108,8 @@ fn touch(x, y, int action) {
         return
     }
     if (game_state == 0) {
-        touch_lobby(x, y, action)
+        touch_lobby_ui(x, y, action)
     } else {
-        touch_game(x, y, action)
+        touch_game_ui(x, y, action)
     }
 }
