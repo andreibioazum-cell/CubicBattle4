@@ -73,8 +73,11 @@ fn draw() {
         draw_game_ui()
     }
     // Чёрная заливка поверх во время перехода; alpha = fade * 255.
+    // Меняем только старший (альфа) байт: умножение всего 0xFF000000 на
+    // дробный fade портит RGB-каналы (красочное мигание вместо затемнения),
+    // поэтому alpha сначала округляем в целое, а потом сдвигаем в старший байт.
     if (transition_fade > 0) {
-        rect(0, 0, screen_w, screen_h, transition_fade * 0xFF000000)
+        rect(0, 0, screen_w, screen_h, floor(transition_fade * 255) * 0x1000000)
     }
 }
 
