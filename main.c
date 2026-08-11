@@ -37,10 +37,10 @@ static void protected_reset(void *userdata) { (void)userdata; reset(); }
 static void protected_update(void *userdata) { (void)userdata; update(); }
 static void protected_draw(void *userdata) { draw((Buffer *)userdata); }
 
-typedef struct { float x; float y; int action; } TouchCall;
+typedef struct { float x; float y; int action; int id; } TouchCall;
 static void protected_touch(void *userdata) {
     TouchCall *call = (TouchCall *)userdata;
-    touch(call->x, call->y, call->action);
+    touch(call->x, call->y, call->action, call->id);
 }
 
 static void mark_script_failed(const char *hook) {
@@ -131,17 +131,35 @@ static void handle_cmd(struct android_app *app, int32_t command) {
     }
 }
 
+/* Мультитач: скрипт получает координаты, действие и id пальца.
+ * Вторичные пальцы приходят как POINTER_DOWN/UP — приводим их к DOWN/UP,
+ * а событие MOVE отдаём отдельно для каждого активного пальца. */
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     TouchCall call;
-    int action;
+    size_t count, index, i;
+    int raw, action;
     (void)app;
     if (!script_active || !event || AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION) return 0;
-    if (AMotionEvent_getPointerCount(event) <= 0) return 0;
-    action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
-    call.x = AMotionEvent_getX(event, 0);
-    call.y = AMotionEvent_getY(event, 0);
-    call.action = action;
-    if (!ds_call_protected(protected_touch, &call, "touch")) mark_script_failed("touch");
+    count = AMotionEvent_getPointerCount(event);
+    if (count == 0) return 0;
+    raw = AMotionEvent_getAction(event);
+    action = raw & AMOTION_EVENT_ACTION_MASK;
+    if (action == AMOTION_EVENT_ACTION_POINTER_DOWN) action = AMOTION_EVENT_ACTION_DOWN;
+    else if (action == AMOTION_EVENT_ACTION_POINTER_UP) action = AMOTION_EVENT_ACTION_UP;
+    index = (size_t)((raw & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+    if (index >= count) index = 0;
+    i = (action == AMOTION_EVENT_ACTION_MOVE) ? 0 : index;
+    count = (action == AMOTION_EVENT_ACTION_MOVE) ? count : index + 1;
+    for (; i < count; i++) {
+        call.x = AMotionEvent_getX(event, i);
+        call.y = AMotionEvent_getY(event, i);
+        call.action = action;
+        call.id = AMotionEvent_getPointerId(event, i);
+        if (!ds_call_protected(protected_touch, &call, "touch")) {
+            mark_script_failed("touch");
+            break;
+        }
+    }
     return 1;
 }
 

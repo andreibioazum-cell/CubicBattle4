@@ -179,9 +179,11 @@ static void render_ring(Buffer *b, float x, float y, float rad, float th, uint32
     }
 }
 
-/* Растрируем толстый отрезок через расстояние до ближайшей точки сегмента.
- * В отличие от circle/ring, каждый пиксель смешивается с фоном, поэтому
- * полупрозрачный чёрный прицел действительно остаётся полупрозрачным. */
+/* Растрируем толстый отрезок через расстояние до сегмента. Концы прямые:
+ * пиксели, чья проекция лежит за пределами [0, 1], не рисуются, поэтому
+ * линия выглядит ровной, а не «таблеткой» с круглыми срезами.
+ * Каждый пиксель смешивается с фоном, поэтому полупрозрачный прицел
+ * действительно остаётся полупрозрачным. */
 static void render_line(Buffer *b, float x1, float y1, float x2, float y2, float th, uint32_t c) {
     if (!b || !isfinite(x1+y1+x2+y2+th) || th <= 0) return;
     float dx = x2-x1, dy = y2-y1, len2 = dx*dx + dy*dy;
@@ -202,8 +204,7 @@ static void render_line(Buffer *b, float x1, float y1, float x2, float y2, float
         for (int px = left; px < right; px++) {
             float fx = (float)px + 0.5f;
             float u = ((fx-x1)*dx + (fy-y1)*dy) / len2;
-            if (u < 0) u = 0;
-            else if (u > 1) u = 1;
+            if (u < 0 || u > 1) continue;
             float ox = x1 + u*dx - fx;
             float oy = y1 + u*dy - fy;
             if (ox*ox + oy*oy <= rad2) {
