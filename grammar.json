@@ -4,30 +4,16 @@
   "fileTypes": ["ds"],
   "patterns": [
     {
-      "name": "meta.preprocessor.include.dimscript",
-      "match": "^\\s*(#\\s*include)\\s*([\\\"<])([^\\\">]+)([\\\">])",
-      "captures": {
-        "1": {"name": "keyword.control.directive.include.dimscript"},
-        "2": {"name": "punctuation.definition.string.begin.dimscript"},
-        "3": {"name": "string.quoted.other.include.dimscript"},
-        "4": {"name": "punctuation.definition.string.end.dimscript"}
-      }
-    },
-    {
       "name": "comment.line.double-slash.dimscript",
       "match": "//.*$"
     },
     {
       "name": "storage.type.dimscript",
-      "match": "\\b(num|int|bool|str|col)\\b"
+      "match": "\\b(num|str|col)\\b"
     },
     {
       "name": "keyword.control.dimscript",
-      "match": "\\b(fn|if|else|while|loop|for|return|new|delete|object)\\b"
-    },
-    {
-      "name": "constant.language.dimscript",
-      "match": "\\b(true|false|NULL)\\b"
+      "match": "\\b(object|function|if|else|loop|end|return|new)\\b"
     },
     {
       "name": "support.variable.engine.dimscript",
@@ -35,7 +21,21 @@
     },
     {
       "name": "support.function.builtin.dimscript",
-      "match": "\\b(rect|roundrect|circle|ring|line|tex|png_load|text|text_scaled|text_ink_width|text_ink_height|sqrt|sin|cos|tan|atan2|floor|ceil|round|fabs|abs|rand|ds_log|ds_len|ds_concat|ds_num_to_string|ds_bool_to_string|ds_init_stars|ds_update_stars|ds_draw_stars|ds_request_script_restart)\\b"
+      "match": "\\b(rect|roundrect|circle|ring|line|tex|png_load|text|text_scaled|text_ink_width|text_ink_height|sqrt|sin|cos|atan2|floor|rand|init_stars|update_stars|draw_stars)\\b"
+    },
+    {
+      "name": "entity.name.function.dimscript",
+      "match": "\\bfunction\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": {"name": "entity.name.function.dimscript"}
+      }
+    },
+    {
+      "name": "entity.name.type.object.dimscript",
+      "match": "\\bobject\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": {"name": "entity.name.type.object.dimscript"}
+      }
     },
     {
       "name": "string.quoted.double.dimscript",
@@ -51,13 +51,6 @@
     {
       "name": "constant.numeric.dimscript",
       "match": "\\b(?:0[xX][0-9a-fA-F]+|\\d+(?:\\.\\d+)?)\\b"
-    },
-    {
-      "name": "entity.name.function.dimscript",
-      "match": "\\bfn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
-      "captures": {
-        "1": {"name": "entity.name.function.dimscript"}
-      }
     },
     {
       "name": "variable.other.dimscript",

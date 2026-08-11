@@ -6,13 +6,10 @@
 
 ```
 game/
-├── game.ds                 # точка входа, переходы между сценами и фон игры
-├── lobby.ds                # фон лобби
-├── ui.ds                   # весь интерфейс: HUD, кнопки, джойстик и прицел
-├── logic.ds                # игровая логика: враг, пули, столкновения и победа
-├── cubes.ds                # куб игрока, его текстура и параметры
+├── game.ds                 # весь скрипт: лобби, интерфейс, логика боя
 ├── assets/
 │   ├── fonts/ChillRoundGothic_Heavy.ttf
+│   ├── grass.png
 │   └── player.png
 └── AndroidManifest.xml
 ```
@@ -24,67 +21,80 @@ python3 gen.py            # по умолчанию из ./game
 python3 gen.py --dump     # показать сгенерированный C-код
 ```
 
-## Многофайловые игры
+## Язык
 
-Поддержка `#include "file.ds"` (путь относительно файла, где записан include). Include может быть вложенным, каждый файл подключается один раз, цикл — ошибка. Старый режим тоже работает: при передаче папки все верхнеуровневые `*.ds` компилируются вместе.
-
-## Строки, циклы и объекты
-
-`+` компилируется в реальную конкатенацию. Переменные — типизированные C-поля, без хэш-таблицы.
+Три типа — `num`, `str`, `col` — и ничего лишнего: вызовы без скобок,
+блоки закрываются словом `end`.
 
 ```text
-str title = "Score: " + floor(score)
-for (num i = 0; i <= 10; i += 1) {
-    ds_log("i: " + i)
-}
+str TEX = "player.png"
 
-object Player {
+object Player              // структура с полями
     num x = 0
-    str name = "player"
-    fn init(num start) { self.x = start }
-    fn move(num dx) { self.x += dx }
-}
+    num y = 0
+    num size = 30
+    col color = 0xFF8844
+    num angle = 0
+end
 
-Player player = new Player(100)
+Player player = new Player()
+player.x = 100
+
+function move_player num dx, num dy
+    player.x = player.x + dx
+    player.y = player.y + dy
+end
+
+function draw_player_cube
+    circle player.x, player.y, player.size / 2, player.color
+    tex player.x - player.size, player.y - player.size, TEX, player.angle, 1
+end
+
+move_player 10, 0
+draw_player_cube
 ```
 
-Компилятор генерирует `struct Player`, `ds_new_Player`, `ds_free_Player` и прямые вызовы методов. Поля объекта не хранятся в хэш-таблице.
+- переменные: `num x = 0`, `str name = "text"`, `col c = 0xFF8844`
+- объекты: `object Name` … `end` (только поля), создание `Name v = new Name()`
+- функции: `function name тип параметр, …` … `end`; вызов `name a, b`
+- ветки и циклы: `if условие` / `else if` / `else` / `loop условие` … `end`
+- `return` — выход из функции
+- в выражениях вызовы пишутся со скобками: `sqrt(x*x + y*y)`, `atan2(y, x)`,
+  `floor(a * 255)`; строки склеиваются через `+`: `"HP: " + enemy.hp`
+- комментарии — `//`
 
-## Время и размеры экрана
+Встроенные функции: `rect`, `roundrect`, `circle`, `ring`, `line`, `tex`,
+`text`, `text_scaled`, `text_ink_width`, `text_ink_height`, `png_load`,
+`sqrt`, `sin`, `cos`, `atan2`, `floor`, `rand`, `init_stars`,
+`update_stars`, `draw_stars`.
 
-Хост каждый кадр обновляет `screen_w`, `screen_h` и `dt` — длительность прошлого кадра в секундах (ограничена 0.1 с). Анимации и таймеры считайте через `dt`, а не через счётчики кадров: скорость игрового цикла не фиксирована, иначе при высоком FPS эффекты превращаются в мигание.
+## Хуки и время
 
-## Software Renderer и TTF
+Хост вызывает `init`, `update`, `draw`, `touch` и обновляет `screen_w`,
+`screen_h`, `dt` (секунды прошлого кадра, ограничено 0.1 с) и `joy` —
+джойстик с полями `x, y, dx, dy, ox, oy, r`. Считайте анимации и таймеры
+через `dt`, а не через счётчики кадров: FPS не фиксирован.
 
-Окно Android лочится один раз на кадр, скрипт собирает команды, `graphics.c` растеризует их в правильном порядке. `rect`/`circle`/`ring` и полупрозрачная толстая `line` — быстрые span-заливки; непрозрачные PNG в масштабе 1:1 копируются через `memcpy`. Никаких OpenGL/EGL. Для линии используйте `line(x1, y1, x2, y2, thickness, color)`; альфа-канал цвета смешивается с фоном.
+## Рендер и ресурсы
 
-Шрифт по умолчанию `assets/fonts/ChillRoundGothic_Heavy.ttf`. TTF разбирается и растеризуется в сглаженный атлас один раз при первом `text`; кадры используют готовые glyph-ы и батч команд.
+Окно лочится один раз на кадр, скрипт собирает команды, `graphics.c`
+растеризует их в правильном порядке. Никаких OpenGL/EGL.
 
-## PNG
-
-Положите файл в `game/assets`, имя в скрипте — относительно этой папки:
-
-```text
-str PLAYER = "player.png"
-
-fn init() { png_load(PLAYER) }  // необязательная предзагрузка
-fn draw() { tex(100, 80, PLAYER, 0, 1) }
-```
-
-`tex(x, y, name, angle, scale)` — загружает/кэширует, поддерживает прозрачность, масштаб, поворот. Подпапки: `"sprites/enemy.png"`.
-
-Перед `aapt` ресурсы нужно скопировать:
+PNG кладите в `game/assets`, имя в скрипте — относительно этой папки:
+`tex x, y, "player.png", 0, 1` или через константу `str`. Перед `aapt`
+ресурсы копируются в `staging/assets`:
 
 ```sh
 python3 stage_assets.py game/assets staging/assets
 ```
 
-Без этого `png_load` и `text` не найдут ресурсы в APK.
-
 ## Ошибки и перезапуск
 
-Каждый хук `init`/`update`/`draw`/`touch` запускается через `ds_call_protected`. `ds_runtime_error` сохраняет сообщение и делает контролируемый переход к границе вызова. Хост показывает безопасный экран ошибки и через секунду вызывает `reset`, затем `init`. UI может вызвать `ds_request_script_restart()` для ручного рестарта.
+Каждый хук запускается через `ds_call_protected`: при ошибке хост показывает
+безопасный экран ошибки и через секунду вызывает `reset`, затем `init`.
 
 ## Сборка
 
-Воркфлоу `.github/workflows/main.yml` перед `aapt` копирует ресурсы в `staging/assets`, NDK собирает `game/game.c`, `runtime.c`, `main.c` (graphics.c встроен в main.c через `#include`). `libEGL` и `libGLESv2` не нужны.
+Воркфлоу `.github/workflows/main.yml` копирует ресурсы в `staging/assets`,
+NDK собирает `game/game.c`, `runtime.c`, `main.c` (graphics.c встроен в
+main.c через `#include`). `libEGL` и `libGLESv2` не нужны.

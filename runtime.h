@@ -43,10 +43,8 @@ void ds_request_script_restart(void);
 int ds_script_restart_requested(void);
 void ds_clear_script_restart(void);
 
-int ds_len(const char *string);
 char *ds_concat(const char *left, const char *right);
 char *ds_num_to_string(double number);
-char *ds_bool_to_string(int value);
 void ds_string_pool_reset(void);
 
 void rect(float x, float y, float w, float h, uint32_t color);
@@ -66,9 +64,9 @@ int text_ink_width(const char *string);
 int text_ink_height(const char *string);
 
 /* Звёзды фона лобби: полёт из верхнего-левого в правый-нижний угол. */
-void ds_init_stars(int count, uint32_t color);
-void ds_update_stars(void);
-void ds_draw_stars(void);
+void init_stars(int count, uint32_t color);
+void update_stars(void);
+void draw_stars(void);
 
 int ds_graphics_init(AAssetManager *assets);
 int ds_graphics_begin_frame(Buffer *buffer);
