@@ -241,7 +241,7 @@ static int star_n;
 static uint32_t star_col;
 static int stars_on;
 
-void ds_init_stars(int n, uint32_t c) {
+void init_stars(int n, uint32_t c) {
     if (n < 1) n = 1;
     free(stars);
     stars = (Star *)calloc((size_t)n, sizeof(*stars));
@@ -257,7 +257,7 @@ void ds_init_stars(int n, uint32_t c) {
         stars[i].r  = 2.0f  + (float)(rand() % 35)  / 10.0f;
     }
 }
-void ds_update_stars(void) {
+void update_stars(void) {
     if (!stars_on || !stars || !cur_buf) return;
     for (int i = 0; i < star_n; i++) {
         Star *s = &stars[i];
@@ -268,7 +268,7 @@ void ds_update_stars(void) {
         }
     }
 }
-void ds_draw_stars(void) {
+void draw_stars(void) {
     if (!stars_on || !stars || !cur_buf) return;
     for (int i = 0; i < star_n; i++) {
         Star *s = &stars[i];

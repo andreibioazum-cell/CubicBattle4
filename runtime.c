@@ -112,10 +112,6 @@ char *ds_num_to_string(double number) {
     return ds_track_string(ds_strdup(buffer));
 }
 
-char *ds_bool_to_string(int value) {
-    return ds_track_string(ds_strdup(value ? "true" : "false"));
-}
-
 void ds_string_pool_reset(void) {
     DSStringNode *node = ds_strings;
     while (node) {
@@ -125,10 +121,6 @@ void ds_string_pool_reset(void) {
         node = next;
     }
     ds_strings = NULL;
-}
-
-int ds_len(const char *string) {
-    return string ? (int)strlen(string) : 0;
 }
 
 char *ds_concat(const char *left, const char *right) {
