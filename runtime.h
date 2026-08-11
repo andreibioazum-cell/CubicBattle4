@@ -78,7 +78,9 @@ void ds_graphics_error_screen(const char *message);
 void init(AAssetManager *assets);
 void update(void);
 void draw(Buffer *buffer);
-void touch(float x, float y, int action);
+/* Мультитач: pointer_id — стабильный id пальца внутри жеста;
+ * действия: 0 — down, 1 — up, 2 — move, 3 — cancel. */
+void touch(float x, float y, int action, int pointer_id);
 void reset(void);
 
 #endif

@@ -590,20 +590,20 @@ class DimScriptCompiler:
             self._out('ds_fn_draw();')
         self._emit('}')
         self._emit('')
-        self._emit('void touch(float x, float y, int action) {')
+        self._emit('void touch(float x, float y, int action, int pointer_id) {')
         self.indent = 1
         if 'touch' in self.functions:
             args = []
             for i, (pt, _pn) in enumerate(self.functions['touch'][0]):
-                if i >= 3:
+                if i >= 4:
                     break
                 if pt == 'str':
                     self._error("'touch' parameters cannot be 'str'")
                     break
-                args.append(f'({self.c_type(pt)}){("x", "y", "action")[i]}')
+                args.append(f'({self.c_type(pt)}){("x", "y", "action", "pointer_id")[i]}')
             self._out(f'ds_fn_touch({", ".join(args)});')
         else:
-            self._out('(void)x; (void)y; (void)action;')
+            self._out('(void)x; (void)y; (void)action; (void)pointer_id;')
         self._emit('}')
 
     def _params_c(self, params):
