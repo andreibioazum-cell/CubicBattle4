@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.dimscript.gamedemo">
 
-    <!-- Только Android 10 (API 29), arm64 и arm32 -->
-    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
+    <!-- Android 10 (API 29) до Android 14 (API 34), arm64 и arm32 -->
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
 
     <!-- Онлайн-режим ходит в Firebase Realtime Database по HTTPS. -->
     <uses-permission android:name="android.permission.INTERNET" />
