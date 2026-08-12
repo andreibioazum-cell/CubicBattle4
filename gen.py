@@ -9,8 +9,24 @@ from ds_compiler import DimScriptCompiler
 
 
 def find_ds_files(directory):
-    """Legacy directory mode: compile every top-level .ds file."""
-    return sorted(glob.glob(os.path.join(directory, '*.ds')))
+    files = glob.glob(os.path.join(directory, '*.ds'))
+    # Новый порядок без цифр: config -> entities -> ui -> menu -> battle -> engine
+    # Если старые файлы с цифрами — сортируем как раньше.
+    order = ["config.ds", "entities.ds", "ui.ds", "menu.ds", "battle.ds", "engine.ds",
+             "core.ds", "game.ds"]
+    # Если есть файлы без цифр в имени, используем order
+    has_plain = any(os.path.basename(f) in order or not os.path.basename(f)[0].isdigit() for f in files)
+    if has_plain:
+        def key(p):
+            b = os.path.basename(p)
+            try:
+                idx = order.index(b)
+                return (0, idx)
+            except ValueError:
+                # остальные после ordered, по алфавиту
+                return (1, b)
+        return sorted(files, key=key)
+    return sorted(files)
 
 
 def usage(stream=sys.stdout):

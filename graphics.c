@@ -235,49 +235,6 @@ const uint8_t *ds_font_alpha(const DSFont *font);
 float ds_font_lineh(const DSFont *font);
 float ds_font_ascent(const DSFont *font);
 
-/* --- Звёзды фона лобби: полёт из верхнего-левого в правый-нижний угол. --- */
-typedef struct { float x, y, vx, vy, r; } Star;
-static Star *stars;
-static int star_n;
-static uint32_t star_col;
-static int stars_on;
-
-void init_stars(int n, uint32_t c) {
-    if (n < 1) n = 1;
-    free(stars);
-    stars = (Star *)calloc((size_t)n, sizeof(*stars));
-    if (!stars) { star_n = 0; stars_on = 0; return; }
-    star_n = n;
-    star_col = pack_c(c);
-    stars_on = 1;
-    for (int i = 0; i < n; i++) {
-        stars[i].x = -120.0f - (float)(rand() % 220);
-        stars[i].y = -120.0f - (float)(rand() % 220);
-        stars[i].vx = 3.0f + (float)(rand() % 180) / 30.0f;
-        stars[i].vy = 3.0f + (float)(rand() % 180) / 30.0f;
-        stars[i].r  = 2.0f  + (float)(rand() % 35)  / 10.0f;
-    }
-}
-void update_stars(void) {
-    if (!stars_on || !stars || !cur_buf) return;
-    for (int i = 0; i < star_n; i++) {
-        Star *s = &stars[i];
-        s->x += s->vx; s->y += s->vy;
-        if (s->x > (float)cur_buf->width + 60.0f || s->y > (float)cur_buf->height + 60.0f) {
-            s->x = -120.0f - (float)(rand() % 220);
-            s->y = -120.0f - (float)(rand() % 220);
-        }
-    }
-}
-void draw_stars(void) {
-    if (!stars_on || !stars || !cur_buf) return;
-    for (int i = 0; i < star_n; i++) {
-        Star *s = &stars[i];
-        int r = (int)ceilf(s->r); if (r < 1) r = 1;
-        render_circle(cur_buf, s->x, s->y, (float)r, star_col);
-    }
-}
-
 /* --- Текстуры (PNG) --- */
 static Texture *find_tx(const char *n) {
     for (Texture *t = textures; t; t = t->next) if (strcmp(t->name, n) == 0) return t;
@@ -500,8 +457,7 @@ void ds_release_assets(void) {
     while (t) { Texture *n = t->next; free(t->pixels); free(t->name); free(t); t = n; }
     textures = NULL;
     ds_font_destroy(font); font = NULL; font_tried = 0;
-    free(stars); stars = NULL; star_n = 0; stars_on = 0;
-    amgr = NULL;
+        amgr = NULL;
 }
 void ds_set_asset_manager(AAssetManager *a) {
     if (amgr != a) { ds_release_assets(); amgr = a; }

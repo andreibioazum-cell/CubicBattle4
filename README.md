@@ -1,118 +1,67 @@
-# Gig1.0 / DimScript
+# Gig1.0 / DimScript — Android 10 only, без звёзд
 
-Минимальный Android-движок и компилятор DimScript в C.
+## Что исправлено по оценке 6/10
 
-## Структура игры
+**Слабые стороны были:**
+- Ограниченный типаж (нет массивов, словарей, bool, enum)
+- Минимальная stdlib (нет файлов, JSON, сети, таймеров)
+- Синтаксис без преимуществ
+- Привязка к одному движку (и кроссплатформенность была лишней)
+
+**Исправления:**
+
+### 1. Типы
+- `bool` с `true`/`false` → `int` 1/0
+- `arr` — динамический массив `num`: `arr_new()`, `arr_push()`, `arr_get()`, `arr_set()`, `arr_len()`, `arr_pop()`, `arr_clear()`, `arr_free()`
+- `dict` — словарь `str -> num`: `dict_new()`, `dict_set()`, `dict_get()`, `dict_has()`, `dict_del()`, `dict_free()`
+- `timer` — таймер: `timer_new()`, `timer_start()`, `timer_elapsed()`, `timer_reset()`, `timer_free()`
+- `enum` — `enum State Lobby=0, Game, Menu end` создаёт константы
+
+### 2. Стандартная библиотека
+- Файлы: `file_read()`, `file_write()`, `file_exists()`, `file_del()`
+- JSON: `json_get_str()`, `json_get_num()`, `json_get_bool()`
+- Сеть: `http_get()`, `http_post()` + уже существующие `net_connect()` для Firebase
+- Утилиты: `clamp()`, `lerp()`, `dist()`, `now()`, `ds_log()`
+- Онлайн по комнатам `room1..room3` — без бесконечного ожидания
+
+### 3. Синтаксис проще и компактнее
+- `;` — несколько операторов в строке: `x=0; y=0; hp=10`
+- `,` — несколько переменных: `num x=0, y=0, size=30`
+- Объекты в 3 строки: `object Player` / `num x=0, y=0...` / `end`
+- `then` / `do` и `:` в конце `if`/`loop` — более читаемо
+- `c` — inline C: `c printf("hi\n");` / `c ds_log("fire");`
+- Код игры сжат с 853 до 229 строк (-73%), 6 файлов без цифр
+
+### 4. Платформа — теперь только Android 10
+По запросу убрана кроссплатформенность:
+- Только `arm64-v8a` + `armeabi-v7a`
+- Только Android 10 API 29 (`minSdkVersion 29`, `targetSdkVersion 29`)
+- `runtime.h`, `graphics.c`, `main.c`, `net.c` — только Android, без desktop fallback и без `#ifdef __ANDROID__` веток
+- Звёзды полностью удалены: нет `init_stars`, `update_stars`, `draw_stars` ни в рантайме, ни в компиляторе
+
+## Структура
 
 ```
 game/
-├── 00_config.ds            # конфигурация и глобальное состояние
-├── 01_entities.ds          # игровые сущности
-├── 02_ui.ds                # общие элементы интерфейса
-├── 03_lobby.ds             # главный экран
-├── 04_modes.ds             # выбор режима
-├── 05_online_settings.ds   # комнаты, поиск и настройки
-├── 06_battle_logic.ds      # механика боя
-├── 07_battle_draw.ds       # отрисовка боя
-├── 08_controls.ds          # касания и управление
-├── 09_transitions.ds       # плавные переходы
-├── 10_hooks.ds             # хуки движка
-├── assets/
-│   ├── fonts/ChillRoundGothic_Heavy.ttf
-│   ├── grass.png
-│   └── player.png
-└── AndroidManifest.xml
+├── config.ds    2 строки — все num/str через запятую
+├── entities.ds  18 — объекты
+├── ui.ds        34 — кнопки 280x64, без обводки HP
+├── menu.ds      63 — лобби/режимы/комнаты/настройки без звёзд
+├── battle.ds    94 — соло + онлайн Firebase
+├── engine.ds    18 — переходы и хуки
 ```
-
-Игровой код разбит ровно на **11** модулей DimScript. `gen.py` собирает все
-верхнеуровневые файлы `.ds` в `game/` в алфавитном порядке.
-
-Генерация `game/game.c`:
-
-```sh
-python3 gen.py            # по умолчанию из ./game
-python3 gen.py --dump     # показать сгенерированный C-код
-```
-
-## Язык
-
-Три типа — `num`, `str`, `col` — и ничего лишнего: вызовы без скобок,
-блоки закрываются словом `end`.
-
-```text
-str TEX = "player.png"
-
-object Player              // структура с полями
-    num x = 0
-    num y = 0
-    num size = 30
-    col color = 0xFF8844
-    num angle = 0
-end
-
-Player player = new Player()
-player.x = 100
-
-function move_player num dx, num dy
-    player.x = player.x + dx
-    player.y = player.y + dy
-end
-
-function draw_player_cube
-    circle player.x, player.y, player.size / 2, player.color
-    tex player.x - player.size, player.y - player.size, TEX, player.angle, 1
-end
-
-move_player 10, 0
-draw_player_cube
-```
-
-- переменные: `num x = 0`, `str name = "text"`, `col c = 0xFF8844`
-- объекты: `object Name` … `end` (только поля), создание `Name v = new Name()`
-- функции: `function name тип параметр, …` … `end`; вызов `name a, b`
-- ветки и циклы: `if условие` / `else if` / `else` / `loop условие` … `end`
-- `return` — выход из функции
-- в выражениях вызовы пишутся со скобками: `sqrt(x*x + y*y)`, `atan2(y, x)`,
-  `floor(a * 255)`; строки склеиваются через `+`: `"HP: " + enemy.hp`
-- комментарии — `//`
-
-Встроенные функции: `rect`, `roundrect`, `circle`, `ring`, `line`, `tex`,
-`text`, `text_scaled`, `text_ink_width`, `text_ink_height`, `png_load`,
-`sqrt`, `sin`, `cos`, `atan2`, `floor`, `rand`, `init_stars`,
-`update_stars`, `draw_stars`.
-
-## Хуки и время
-
-Хост вызывает `init`, `update`, `draw`, `touch` и обновляет `screen_w`,
-`screen_h`, `dt` (секунды прошлого кадра, ограничено 0.1 с) и `joy` —
-джойстик с полями `x, y, dx, dy, ox, oy, r`. Считайте анимации и таймеры
-через `dt`, а не через счётчики кадров: FPS не фиксирован.
-
-`touch num x, num y, num action, num id` поддерживает мультитач: `id` —
-стабильный номер пальца внутри жеста, так что джойстик и кнопка атаки
-работают одновременно разными пальцами. Действия: `0` — нажатие,
-`1` — отпускание, `2` — движение, `3` — системная отмена жеста.
-
-## Рендер и ресурсы
-
-Окно лочится один раз на кадр, скрипт собирает команды, `graphics.c`
-растеризует их в правильном порядке. Никаких OpenGL/EGL.
-
-PNG кладите в `game/assets`, имя в скрипте — относительно этой папки:
-`tex x, y, "player.png", 0, 1` или через константу `str`. Перед `aapt`
-ресурсы копируются в `staging/assets`:
-
-```sh
-python3 stage_assets.py game/assets staging/assets
-```
-
-## Ошибки и перезапуск
-
-Каждый хук запускается через `ds_call_protected`: при ошибке хост показывает
-безопасный экран ошибки и через секунду вызывает `reset`, затем `init`.
 
 ## Сборка
 
-Воркфлоу `.github/workflows/main.yml` копирует ресурсы в `staging/assets`,
-NDK собирает `game/game.c`, `runtime.c`, `main.c` (graphics.c встроен в
-main.c через `#include`). `libEGL` и `libGLESv2` не нужны.
+```sh
+python3 gen.py
+```
+
+NDK (Android 10):
+```sh
+aarch64-linux-android29-clang -O3 -shared game.c runtime.c main.c glue -landroid -llog -lm -o lib/arm64-v8a/libds_game.so
+armv7a-linux-androideabi29-clang ... -o lib/armeabi-v7a/libds_game.so
+aapt package -M AndroidManifest.xml -I android-29/android.jar -F apk
+```
+
+APK только для Android 10 arm64/arm32, без звёзд, без кроссплатформы.

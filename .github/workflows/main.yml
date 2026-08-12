@@ -1,4 +1,4 @@
-name: Build DS Game (Fast)
+name: Build DS Game (Android 10 arm64+arm32)
 
 on:
   push:
@@ -27,39 +27,43 @@ jobs:
     - name: Show generated C code
       run: |
         echo "=========================================="
-        echo "GENERATED GAME.C:"
+        echo "GENERATED GAME.C (Android 10 only, no stars):"
         echo "=========================================="
-        cat game/game.c || echo "game.c not found!"
+        cat game/game.c | head -n 200
         echo "=========================================="
 
-    # Без этого шага в APK попадает ПУСТОЙ каталог assets: папка
-    # staging/assets создаётся, но player.png в неё не копируется,
-    # png_load("player.png") возвращает 0 и текстура игрока не рисуется
-    # (рисуется оранжевый прямоугольник-заглушка).
     - name: Stage assets
       run: |
         python3 stage_assets.py game/assets staging/assets
 
-    - name: Build NDK
+    - name: Build NDK (arm64-v8a + armeabi-v7a, Android 10 API 29)
       run: |
         NDK_ROOT=$ANDROID_NDK_ROOT
         TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
         GLUE="$NDK_ROOT/sources/android/native_app_glue"
         
-        mkdir -p staging/lib/arm64-v8a staging/assets
+        mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/assets
         
-        "$TOOLCHAIN/aarch64-linux-android21-clang" -O3 -s -fPIC -shared \
+        # arm64-v8a — Android 10
+        "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/arm64-v8a/libds_game.so
+        
+        # arm32 — armeabi-v7a — Android 10
+        "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
+          game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
+          -I. -I$GLUE -landroid -llog -lm \
+          -o staging/lib/armeabi-v7a/libds_game.so
 
-    - name: Package APK
+    - name: Package APK (Android 10 API 29 only)
       run: |
         SDK_ROOT=$ANDROID_HOME
-        BT="$SDK_ROOT/build-tools/34.0.0"
+        # пробуем 29.0.3, если нет — 34.0.0
+        if [ -d "$SDK_ROOT/build-tools/29.0.3" ]; then BT="$SDK_ROOT/build-tools/29.0.3"; else BT="$SDK_ROOT/build-tools/34.0.0"; fi
         
         "$BT/aapt" package -f -M game/AndroidManifest.xml \
-          -I "$SDK_ROOT/platforms/android-34/android.jar" \
+          -I "$SDK_ROOT/platforms/android-29/android.jar" \
           -F unsigned.apk ./staging/
         
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
@@ -71,5 +75,5 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: Game-APK
+        name: Game-APK-Android10-arm64-arm32
         path: Game.apk
