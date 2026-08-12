@@ -533,6 +533,23 @@ int text_ink_height(const char *s) {
     }
     return first ? 0 : (int)(maxB - minT + 0.5f);
 }
+/* Смещение верхней кромки чернил относительно y отрисовки.
+ * У кириллицы глифы выше латиницы — без компенсации текст уезжает вверх. */
+int text_ink_top(const char *s) {
+    if (!s || !ensure_font()) return 0;
+    const DSFontGlyph *ref = ds_font_glyph(font, 'S');
+    float base = ref ? ref->bearing_top : 0;
+    int first = 1; float minT = 0;
+    for (const char *c = s; *c;) {
+        int cp = utf8_dec(&c);
+        const DSFontGlyph *g = ds_font_glyph(font, (uint32_t)cp);
+        if (!g) continue;
+        float dt = base - g->bearing_top;
+        if (first || dt < minT) minT = dt;
+        first = 0;
+    }
+    return first ? 0 : (int)floorf(minT);
+}
 
 int ds_graphics_init(AAssetManager *a) { if (amgr != a) { ds_release_assets(); amgr = a; } return 1; }
 int ds_graphics_begin_frame(Buffer *b) {

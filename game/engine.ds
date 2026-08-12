@@ -11,7 +11,7 @@ function update
 update_transition; if game_state==1; update_game; else if game_state==5; update_online; end
 end
 function draw
-if game_state==0; draw_lobby; else if game_state==1; draw_game; else if game_state==2; draw_modes; else if game_state==3; draw_rooms; else if game_state==4; draw_settings; else; draw_online; end; if t_fade>0; rect 0, 0, screen_w, screen_h, floor(t_fade*255)*0x1000000; end
+if game_state==0; draw_lobby; else if game_state==1; draw_game; else if game_state==2; draw_modes; else if game_state==4; draw_settings; else; draw_online; end; if t_fade>0; rect 0, 0, screen_w, screen_h, floor(t_fade*255)*0x1000000; end
 end
 function touch num x, num y, num action, num id
 if t_dir!=0; return; end; if game_state==0; touch_lobby x, y, action; else if game_state==1||game_state==5; touch_game x, y, action, id; else; touch_menu x, y, action; end

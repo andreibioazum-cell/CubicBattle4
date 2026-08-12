@@ -46,7 +46,7 @@ TYPES = {
 BUILTINS = frozenset({
     # отрисовка
     'rect', 'roundrect', 'circle', 'ring', 'line', 'tex', 'text',
-    'text_scaled', 'text_ink_width', 'text_ink_height', 'png_load',
+    'text_scaled', 'text_ink_width', 'text_ink_height', 'text_ink_top', 'png_load',
     # математика
     'sqrt', 'sin', 'cos', 'atan2', 'floor', 'rand',
     # звёзды (совместимость)
