@@ -5,11 +5,10 @@ object Enemy
 num x=0, y=0, size=22, hp=3, max_hp=3, angle=0
 end
 object Bullet
-num x=0, y=0, dx=0, dy=0, r=12, traveled=0, active=0, owner=-1
+num x=0, y=0, dx=0, dy=0, r=12, traveled=0, active=0
 end
 Player player=new Player()
 Enemy enemy=new Enemy()
 Bullet bullet=new Bullet()
 num finished=0, aiming=0, atk_x=0, atk_y=0, joy_id=-1, aim_id=-1
-arr remotes=arr_new()
-arr rbullets=arr_new()
+arr remotes=arr_new(), rbullets=arr_new()

@@ -18,7 +18,7 @@
 #define RESP 4096
 #define TICK 100
 #define TIMEOUT 3000
-#define STALE 5000
+#define STALE 12000
 
 typedef struct { double x,y,a,hp,alive; int online; } Actor;
 typedef struct { double x,y,dx,dy,active,shot; } Bullet;
@@ -47,11 +47,13 @@ static void status(int s) { lock(); net.status=s; unlock(); }
 
 void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
 
-static int http(const char *method, const char *url, const char *body, char *out, size_t cap) {
+static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
+                   const char *header,const char *value,char *etag,size_t etag_cap) {
     JNIEnv *env=NULL; jobject conn=NULL, stream=NULL, urlobj=NULL;
     jclass urlc, connc, streamc; jbyteArray buf; jstring ju, jm;
     int code=0, attached=0, ok=0; size_t total=0;
-    if (out&&cap) out[0]='\0';
+    if(out&&cap)out[0]='\0';
+    if(etag&&etag_cap)etag[0]='\0';
     if (!net.vm) return 0;
     if ((*net.vm)->GetEnv(net.vm,(void**)&env,JNI_VERSION_1_6)!=JNI_OK) {
         if ((*net.vm)->AttachCurrentThread(net.vm,&env,NULL)!=JNI_OK) return 0;
@@ -72,8 +74,10 @@ static int http(const char *method, const char *url, const char *body, char *out
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),4000);
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setUseCaches","(Z)V"),JNI_FALSE);
     {
+        jmethodID set_header=(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V");
         jstring k=(*env)->NewStringUTF(env,"Content-Type"), v=(*env)->NewStringUTF(env,"application/json");
-        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V"),k,v);
+        (*env)->CallVoidMethod(env,conn,set_header,k,v);
+        if(header&&value) { k=(*env)->NewStringUTF(env,header); v=(*env)->NewStringUTF(env,value); (*env)->CallVoidMethod(env,conn,set_header,k,v); }
     }
     if (body&&*body) {
         jobject os; jbyteArray data; jsize len=(jsize)strlen(body);
@@ -88,6 +92,11 @@ static int http(const char *method, const char *url, const char *body, char *out
     }
     code=(int)(*env)->CallIntMethod(env,conn,(*env)->GetMethodID(env,connc,"getResponseCode","()I"));
     if ((*env)->ExceptionCheck(env)) { code=0; goto done; }
+    if(etag&&etag_cap) {
+        jstring key=(*env)->NewStringUTF(env,"ETag");
+        jstring val=(jstring)(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,"getHeaderField","(Ljava/lang/String;)Ljava/lang/String;"),key);
+        if(val&&!(*env)->ExceptionCheck(env)) { const char *s=(*env)->GetStringUTFChars(env,val,NULL); if(s){snprintf(etag,etag_cap,"%s",s);(*env)->ReleaseStringUTFChars(env,val,s);} }
+    }
     stream=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,code>=400?"getErrorStream":"getInputStream","()Ljava/io/InputStream;"));
     if (!stream||(*env)->ExceptionCheck(env)) goto closeconn;
     streamc=(*env)->GetObjectClass(env,stream);
@@ -107,6 +116,9 @@ done:
     if (attached) (*net.vm)->DetachCurrentThread(net.vm);
     return ok ? code : 0;
 }
+static int http(const char *method,const char *url,const char *body,char *out,size_t cap) {
+    return http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
+}
 
 static const char *skip_ws(const char *p) { while(p&&*p&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r')) p++; return p; }
 static const char *skip_str(const char *p) { if(!p||*p!='"') return NULL; for(p++;*p;p++){ if(*p=='\\'&&p[1]){p++;continue;} if(*p=='"') return p+1; } return NULL; }
@@ -122,9 +134,27 @@ static const char *member(const char *o,const char *key) {
     }
     return NULL;
 }
+/* Firebase serializes dense numeric children (players/0, players/1, ...)
+ * as JSON arrays.  Treat an array index like an object path component. */
+static const char *element(const char *a,size_t wanted) {
+    const char *p=skip_ws(a); size_t index=0;
+    if(!p||*p!='[')return NULL;
+    for(p=skip_ws(p+1);p&&*p&&*p!=']';index++) {
+        if(index==wanted)return p;
+        p=skip_val(p); p=skip_ws(p); if(p&&*p==',')p=skip_ws(p+1); else break;
+    }
+    return NULL;
+}
 static const char *path_val(const char *json,const char *path) {
-    char part[48]; const char *v=json;
-    while(path&&*path&&v) { const char *slash=strchr(path,'/'); size_t n=slash?(size_t)(slash-path):strlen(path); if(!n||n>=sizeof(part))return NULL; memcpy(part,path,n); part[n]=0; v=member(v,part); path=slash?slash+1:path+n; }
+    char part[48],*end; const char *v=json;
+    while(path&&*path&&v) {
+        const char *slash=strchr(path,'/'); size_t n=slash?(size_t)(slash-path):strlen(path),index;
+        if(!n||n>=sizeof(part))return NULL;
+        memcpy(part,path,n); part[n]=0; v=skip_ws(v);
+        if(*v=='[') { index=strtoul(part,&end,10); if(!*part||*end)return NULL; v=element(v,index); }
+        else v=member(v,part);
+        path=slash?slash+1:path+n;
+    }
     return v;
 }
 static double num(const char *json,const char *path,double fb) { const char *v=path_val(json,path); if(!v||!strncmp(v,"null",4))return fb; if(*v=='t')return 1; if(*v=='f')return 0; if(*v=='"')v++; return atof(v); }
@@ -148,22 +178,25 @@ static void release_slot(void) {
     snprintf(url,sizeof(url),"%s/rooms/%s/bullets/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
 }
 static int claim_slot(void) {
-    static long long watch; static unsigned long wseq[NET_SLOTS]; static int wvalid;
-    char resp[RESP],url[URL],body[BODY],uid[24]; long long t=now_ms(); int slot,changed=0; unsigned long seq[NET_SLOTS];
-    if(!pull_state(resp,sizeof(resp))) return -1;
-    for(slot=0;slot<NET_SLOTS;slot++){ char p[32]; snprintf(p,sizeof(p),"players/%d/uid",slot); strv(resp,p,uid,sizeof(uid)); if(!uid[0]||!strcmp(uid,net.uid))break; }
-    if(slot==NET_SLOTS) {
-        for(slot=0;slot<NET_SLOTS;slot++){ char p[32]; snprintf(p,sizeof(p),"players/%d/seq",slot); seq[slot]=(unsigned long)num(resp,p,0); if(!wvalid||seq[slot]!=wseq[slot])changed=1; }
-        if(changed){ memcpy(wseq,seq,sizeof(seq)); watch=t; wvalid=1; return -1; }
-        if(t-watch<STALE) return -1;
-        slot=0; wvalid=0;
+    static unsigned long seen_seq[NET_SLOTS]; static long long seen_at[NET_SLOTS]; static char seen_uid[NET_SLOTS][24];
+    char resp[RESP],url[URL],body[BODY],uid[24],etag[96]; long long t=now_ms(); int slot;
+    for(slot=0;slot<NET_SLOTS;slot++) {
+        unsigned long seq; int claim=0,code;
+        snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
+        code=http_ex("GET",url,NULL,resp,sizeof(resp),"X-Firebase-ETag","true",etag,sizeof(etag));
+        if(code!=200||!etag[0])continue;
+        strv(resp,"uid",uid,sizeof(uid));
+        if(uid[0]&&!strcmp(uid,net.uid))return slot;
+        seq=(unsigned long)num(resp,"seq",0);
+        if(!uid[0])claim=1;
+        else if(strcmp(uid,seen_uid[slot])||seq!=seen_seq[slot]) { snprintf(seen_uid[slot],sizeof(seen_uid[slot]),"%s",uid); seen_seq[slot]=seq; seen_at[slot]=t; }
+        else if(t-seen_at[slot]>=STALE)claim=1;
+        if(!claim)continue;
+        snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid);
+        code=http_ex("PUT",url,body,NULL,0,"if-match",etag,NULL,0);
+        if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
     }
-    snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid);
-    if(http("PUT",url,body,NULL,0)!=200) return -1;
-    if(http("GET",url,NULL,resp,sizeof(resp))!=200) return -1;
-    strv(resp,"uid",uid,sizeof(uid)); if(strcmp(uid,net.uid)) return -1;
-    LOG("slot %d uid %s",slot,net.uid); return slot;
+    return -1;
 }
 static void read_players(const char *resp) {
     static unsigned long lseq[NET_SLOTS]; static long long lch[NET_SLOTS];
