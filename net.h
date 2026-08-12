@@ -14,7 +14,7 @@ void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_shutdown(void);
 void net_publish(double x, double y, double a, double hp, double alive);
-void net_publish_bullet(double x, double y, double dx, double dy, double active, double shot);
+void net_publish_bullet(double x, double y, double dx, double dy, double active, double shot, double tr);
 double net_status(void);
 double net_slot(void);
 double net_count(void);
@@ -30,5 +30,6 @@ double net_player_bullet_y(double slot);
 double net_player_bullet_dx(double slot);
 double net_player_bullet_dy(double slot);
 double net_player_bullet_shot(double slot);
+double net_player_bullet_tr(double slot);
 
 #endif
