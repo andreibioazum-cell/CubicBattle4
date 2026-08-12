@@ -9,6 +9,46 @@
 
 #define DS_ERROR_MESSAGE_SIZE 1024
 
+/* --- Консоль (показ лога и ошибок в игре) --- */
+#define DS_CONSOLE_MAX 256
+#define DS_CONSOLE_LINE_MAX 192
+static char ds_console_buf[DS_CONSOLE_MAX][DS_CONSOLE_LINE_MAX];
+static int ds_console_type_buf[DS_CONSOLE_MAX];
+static int ds_console_head = 0;   /* индекс следующей записи (кольцо) */
+static int ds_console_count = 0;  /* сколько всего строк хранится */
+
+static void console_add(const char *line, int is_error) {
+    if (!line) return;
+    char tmp[DS_CONSOLE_LINE_MAX];
+    /* одна строка — без переводов */
+    size_t n = strlen(line);
+    size_t w = 0;
+    for (size_t i = 0; i < n && w + 1 < sizeof(tmp); i++) {
+        char c = line[i];
+        tmp[w++] = (c == '\n' || c == '\r') ? ' ' : c;
+    }
+    tmp[w] = '\0';
+    snprintf(ds_console_buf[ds_console_head], DS_CONSOLE_LINE_MAX, "%s", tmp);
+    ds_console_type_buf[ds_console_head] = is_error ? 1 : 0;
+    ds_console_head = (ds_console_head + 1) % DS_CONSOLE_MAX;
+    if (ds_console_count < DS_CONSOLE_MAX) ds_console_count++;
+}
+
+int console_count(void) { return ds_console_count; }
+int console_type(int index) {
+    if (index < 0 || index >= ds_console_count) return 0;
+    int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
+    if (pos < 0) pos += DS_CONSOLE_MAX;
+    return ds_console_type_buf[pos];
+}
+const char *console_line(int index) {
+    if (index < 0 || index >= ds_console_count) return "";
+    int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
+    if (pos < 0) pos += DS_CONSOLE_MAX;
+    return ds_console_buf[pos];
+}
+void console_clear(void) { ds_console_count = 0; ds_console_head = 0; }
+
 Joy joy = {0};
 int screen_w = 0;
 int screen_h = 0;
@@ -25,13 +65,19 @@ struct DSStringNode { DSStringNode *next; char *string; };
 static DSStringNode *ds_strings = NULL;
 
 void ds_log(const char *format, ...) {
+    char tmp[DS_CONSOLE_LINE_MAX];
     va_list args;
     va_start(args, format);
     __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, args);
     va_end(args);
+    va_start(args, format);
+    vsnprintf(tmp, sizeof(tmp), format, args);
+    va_end(args);
+    console_add(tmp, 0);
 }
 
 void ds_runtime_error(const char *format, ...) {
+    char tmp[DS_CONSOLE_LINE_MAX];
     va_list args, copy;
     va_start(args, format);
     va_copy(copy, args);
@@ -39,6 +85,10 @@ void ds_runtime_error(const char *format, ...) {
     va_end(copy);
     __android_log_vprint(ANDROID_LOG_ERROR, "DimScript", format, args);
     va_end(args);
+    va_start(args, format);
+    vsnprintf(tmp, sizeof(tmp), format, args);
+    va_end(args);
+    console_add(tmp, 1);
     ds_has_error = 1;
     if (ds_error_handler_active) longjmp(ds_error_jump, 1);
 }

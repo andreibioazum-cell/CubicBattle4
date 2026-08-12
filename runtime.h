@@ -40,6 +40,12 @@ char *ds_concat(const char *left, const char *right);
 char *ds_num_to_string(double number);
 void ds_string_pool_reset(void);
 
+/* --- Консоль: кольцевой буфер лога/ошибок, виден в настройках --- */
+int console_count(void);
+const char *console_line(int index);
+int console_type(int index);   /* 1 = ошибка, 0 = обычный лог */
+void console_clear(void);
+
 /* --- Типы для расширенной стандартной библиотеки --- */
 typedef struct DSArray DSArray;
 typedef struct DSDict DSDict;

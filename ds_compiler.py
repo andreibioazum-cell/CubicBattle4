@@ -60,6 +60,8 @@ BUILTINS = frozenset({
     'net_player_bullet_tr',
     # лог
     'ds_log',
+    # --- консоль (показ ошибок и лога в игре)
+    'console_count', 'console_line', 'console_type', 'console_clear',
     # --- новые типы: массивы
     'arr_new', 'arr_push', 'arr_pop', 'arr_get', 'arr_set', 'arr_len', 'arr_clear', 'arr_free',
     # словари
@@ -78,6 +80,12 @@ BUILTINS = frozenset({
 
 # Глобальные переменные хоста (read-only, кроме joy).
 ENGINE_VARS = {'screen_w': 'num', 'screen_h': 'num', 'dt': 'num', 'joy': 'joy'}
+
+# Встроенные функции, возвращающие строку (нужно для правильной склейки '+'
+# и для передачи в text / ds_log без числового преобразования).
+STR_BUILTINS = frozenset({
+    'console_line', 'file_read', 'json_get_str', 'http_get', 'http_post',
+})
 
 _NAME = r'[A-Za-z_]\w*'
 _DECL_RE = re.compile(r'^(' + _NAME + r')\s+(' + _NAME + r')\s*(?:=\s*(.*))?$')
@@ -187,6 +195,8 @@ class DimScriptCompiler:
         self.lines = []          # все строки исходника после include-склейки
         self.loaded_sources = [] # прочитанные файлы
         self.errors = 0
+        self.warnings = 0
+        self.warning_msgs = []   # тексты предупреждений (для вставки в game.c)
         # состояние генерации
         self.output = []
         self.indent = 0
@@ -198,6 +208,12 @@ class DimScriptCompiler:
     def _error(self, msg):
         self.errors += 1
         print(f"DimScript error: {msg}", file=sys.stderr)
+
+    def _warn(self, msg):
+        """Предупреждение: игра всё равно соберётся, но в консоли будет видно."""
+        self.warnings += 1
+        self.warning_msgs.append(msg)
+        print(f"DimScript warning: {msg}", file=sys.stderr)
 
     def _load(self, paths):
         for path in paths:
@@ -472,7 +488,10 @@ class DimScriptCompiler:
             return TYPES[t]
         if t in self.objects:
             return t + ' *'
-        return t
+        # Защита: неизвестный тип не должен ломать сборку — считаем его числом.
+        if t:
+            self._warn(f"unknown type '{t}', treated as num")
+        return 'double'
 
     def default_value(self, t):
         return 'NULL' if t == 'str' else '0'
@@ -500,9 +519,98 @@ class DimScriptCompiler:
         if expr in self.vars:
             return self.vars[expr][0]
         call = re.match(r'^(' + _NAME + r')\s*\(.*\)$', expr)
-        if call and call.group(1) in self.func_ret:
-            return self.func_ret[call.group(1)]
+        if call:
+            if call.group(1) in self.func_ret:
+                return self.func_ret[call.group(1)]
+            if call.group(1) in STR_BUILTINS:
+                return 'str'
         return ENGINE_VARS.get(expr, 'num')
+
+    def _match_paren(self, text, open_idx, depth):
+        """Индекс закрывающей скобки для '(' на open_idx (или -1)."""
+        target = depth[open_idx] - 1
+        for k in range(open_idx + 1, len(text)):
+            if text[k] == ')' and depth[k] == target:
+                return k
+        return -1
+
+    def _valid_field_chain(self, holder, chain_text):
+        """Проверяет цепочку полей 'holder.a.b' против типа объекта."""
+        ot = ENGINE_VARS.get(holder)
+        if ot is None:
+            ot = self.scope.get(holder) or self.vars.get(holder, ('', None))[0]
+        fields = self.objects.get(ot)
+        if ot == 'joy':
+            fields = {'x', 'y', 'dx', 'dy', 'ox', 'oy', 'r'}
+        if not fields:
+            return False
+        parts = chain_text.split('.')[1:]
+        for p in parts:
+            if p not in fields:
+                return False
+        return True
+
+    def _safe_expr(self, e):
+        """Защита сборки: неизвестные имена в выражениях не должны ломать C.
+
+        - неизвестный идентификатор -> предупреждение + 0
+        - неизвестная функция foo(...) -> предупреждение + 0 (целиком)
+        - функция без аргументов, использованная как значение -> вызов foo()
+        - неизвестное поле obj.xxx -> предупреждение + 0
+        """
+        depth, quoted = scan(e)
+        out = []
+        last = 0
+        for m in re.finditer(r'\b(' + _NAME + r')\b', e):
+            i, j = m.start(), m.end()
+            if quoted[i]:
+                continue
+            name = m.group(1)
+            prev = e[i - 1] if i > 0 else ''
+            if prev == '.':
+                # часть цепочки полей — обрабатывается вместе с holder'ом
+                continue
+            nxt = e[j] if j < len(e) else ''
+            if nxt == '(':
+                if name in self.functions or name in BUILTINS:
+                    continue
+                self._warn(f"unknown function '{name}' — call replaced with 0")
+                k = self._match_paren(e, j, depth)
+                out.append(e[last:i])
+                out.append('0')
+                last = k + 1 if k != -1 else j
+                continue
+            if name in self.vars or name in self.scope or name in ENGINE_VARS:
+                if nxt == '.':
+                    cm = re.match(r'(?:\.' + _NAME + r')+', e[j:])
+                    chain_text = e[i:j] + (cm.group(0) if cm else '')
+                    if not self._valid_field_chain(name, chain_text):
+                        self._warn(f"unknown field in '{chain_text}' — replaced with 0")
+                        out.append(e[last:i])
+                        out.append('0')
+                        last = i + len(chain_text)
+                continue
+            if name in self.functions:
+                if not self.functions[name][0]:
+                    self._warn(f"function '{name}' used as a value — calling it")
+                    out.append(e[last:i])
+                    out.append('ds_fn_' + name + '()')
+                    last = j
+                else:
+                    self._warn(f"function '{name}' needs arguments — replaced with 0")
+                    out.append(e[last:i])
+                    out.append('0')
+                    last = j
+                continue
+            # неизвестный идентификатор (+ возможная цепочка полей)
+            cm = re.match(r'(?:\.' + _NAME + r')*', e[j:])
+            chain_len = cm.end() if cm else 0
+            self._warn(f"unknown identifier '{name}' — replaced with 0")
+            out.append(e[last:i])
+            out.append('0')
+            last = j + chain_len
+        out.append(e[last:])
+        return ''.join(out)
 
     def expr(self, e):
         """Переводит выражение в C."""
@@ -518,7 +626,7 @@ class DimScriptCompiler:
             for p in parts[1:]:
                 out = f'ds_concat({out}, {self.as_str(p)})'
             return out
-        return self._fields(e)
+        return self._fields(self._safe_expr(e))
 
     def _fields(self, e):
         """Превращает obj.field в obj->field вне строковых литералов.
@@ -662,23 +770,23 @@ class DimScriptCompiler:
             return
         m = _CALL_RE.match(line)
         if not m:
-            self._error(f"invalid statement: {line}")
+            self._warn(f"invalid statement skipped: {line}")
             return
         name, rest = m.group(1), m.group(2) or ''
         args = split_top(rest, ',') if rest else []
         if name in self.functions:
             if len(args) != len(self.functions[name][0]):
-                self._error(f"function '{name}' expects "
-                            f"{len(self.functions[name][0])} argument(s), got {len(args)}")
+                self._warn(f"function '{name}' expects "
+                          f"{len(self.functions[name][0])} argument(s), got {len(args)} — call skipped")
                 return
             fn = f'ds_fn_{name}'
         elif name in BUILTINS:
             fn = name
         elif name in ENGINE_VARS or name in self.vars or name in self.scope:
-            self._error(f"'{name}' is a variable, not a function")
+            self._warn(f"'{name}' is a variable, not a function — statement skipped")
             return
         else:
-            self._error(f"unknown function '{name}'")
+            self._warn(f"unknown function '{name}' — statement skipped")
             return
         args_c = ', '.join(self.expr(a) for a in args)
         self._out(f'{fn}({args_c});')
@@ -686,19 +794,20 @@ class DimScriptCompiler:
     def _emit_assign(self, lhs, rhs):
         m = _LHS_RE.match(lhs)
         if not m:
-            self._error(f"invalid assignment target: {lhs}")
+            self._warn(f"invalid assignment target skipped: {lhs}")
             return
         name, field = m.group(1), m.group(2)
         if rhs.startswith('new '):
-            self._error(f"'{lhs} = {rhs}': use 'Type name = new Type()'")
+            self._warn(f"'{lhs} = {rhs}': use 'Type name = new Type()' — assignment skipped")
             return
         if field:
             t = self.scope.get(name) or self.vars.get(name, ('', None))[0]
             if t not in self.objects and ENGINE_VARS.get(name) != 'joy':
-                self._error(f"unknown object '{name}'")
+                self._warn(f"unknown object '{name}' — assignment skipped")
                 return
         elif name not in self.scope and name not in self.vars and name not in ENGINE_VARS:
-            self._error(f"unknown variable '{name}'")
+            self._warn(f"unknown variable '{name}' — assignment skipped")
+            return
         holder_type = self.scope.get(name) or self.vars.get(name, ('', None))[0]
         if field and holder_type in self.objects:
             lhs = self._fields(lhs)
@@ -857,16 +966,66 @@ class DimScriptCompiler:
             return 'void'
         return ', '.join(f'{self.c_type(t)} {n}' for t, n in params)
 
+    def _stub_code(self):
+        """Минимальная заглушка: даже при полном сбое генерации игра собирается
+        и запускается (в консоли будет видна ошибка)."""
+        return (
+            '#include "runtime.h"\n'
+            '#include "net.h"\n'
+            '#include <math.h>\n'
+            'static int ds_stub_active = 1;\n'
+            'void reset(void) { (void)ds_stub_active; }\n'
+            'void init(AAssetManager *assets) {\n'
+            '    (void)assets; ds_set_asset_manager(assets);\n'
+            '    ds_log("DimScript: generation failed, stub game active");\n'
+            '}\n'
+            'void update(void) {}\n'
+            'void draw(Buffer *buffer) { (void)buffer; }\n'
+            'void touch(float x, float y, int action, int pointer_id) {\n'
+            '    (void)x; (void)y; (void)action; (void)pointer_id;\n'
+            '}\n'
+        )
+
+    def _inject_warnings(self):
+        """Вставляет предупреждения компилятора как ds_log() в начало ds_main,
+        чтобы они были видны в игровой консоли."""
+        if not self.warning_msgs:
+            return
+        try:
+            marker = 'static int ds_main(void) {'
+            idx = next(i for i, ln in enumerate(self.output)
+                       if ln == marker)
+        except StopIteration:
+            return
+        inject = []
+        for msg in self.warning_msgs[:6]:
+            lit = msg.replace('\\', '\\\\').replace('"', '\\"')
+            inject.append(f'    ds_log("DimScript warning: {lit}");')
+        extra = len(self.warning_msgs) - 6
+        if extra > 0:
+            inject.append(f'    ds_log("DimScript: ... and {extra} more warning(s)");')
+        if self.errors:
+            inject.append(f'    ds_log("DimScript: {self.errors} error(s) — game built with safety fallbacks");')
+        self.output[idx + 1:idx + 1] = inject
+
     def compile(self, sources, output):
         if not self._load(sources):
             return False
-        if not self.parse():
-            return False
-        self.generate()
-        if self.errors:
-            return False
+        self.parse()
+        try:
+            self.generate()
+        except Exception as exc:  # защита: сбой генератора не рушит сборку
+            self._error(f"internal compiler error: {exc}")
+            self.output = []
+        if self.output:
+            self._inject_warnings()
+            with open(output, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(self.output) + '\n')
+            return True
+        # ничего не сгенерировалось — пишем заглушку, чтобы игра собралась
         with open(output, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(self.output) + '\n')
+            f.write(self._stub_code())
+        self._error("generation produced no code — stub game.c written")
         return True
 
 

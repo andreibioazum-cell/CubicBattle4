@@ -564,10 +564,32 @@ void ds_graphics_end_frame(void) {
     flush(); cmd_n = 0; frame_open = 0; cur_buf = NULL;
 }
 void ds_graphics_cancel_frame(void) { cmd_n = 0; frame_open = 0; cur_buf = NULL; }
+/* Экран ошибки: показывает не только последнее сообщение, а всю консоль
+ * (лог + ошибки) — чтобы было видно, что именно пошло не так. */
 void ds_graphics_error_screen(const char *m) {
     if (!cur_buf) return;
-    clear_buf(cur_buf, pack_c(0xff2e070b));
-    if (font && m) render_text_now(cur_buf, m, 16, 16, pack_c(0xffffff), 0.65f);
+    clear_buf(cur_buf, pack_c(0xff1c0b10));
+    if (!font) return;
+    int y = 12;
+    render_text_now(cur_buf, "=== DIMSCRIPT ERROR ===", 16, y, pack_c(0xffffffff), 0.7f);
+    y += 30;
+    if (m && *m) {
+        render_text_now(cur_buf, m, 16, y, pack_c(0xffffb0b0), 0.6f);
+        y += 28;
+    }
+    y += 4;
+    render_text_now(cur_buf, "--- console (last lines) ---", 16, y, pack_c(0xff9aa0b0), 0.55f);
+    y += 24;
+    int n = console_count();
+    int start = n > 16 ? n - 16 : 0;
+    for (int i = start; i < n; i++) {
+        const char *line = console_line(i);
+        if (!line || !*line) { y += 19; continue; }
+        uint32_t col = console_type(i) ? pack_c(0xffff8a80) : pack_c(0xffc8d0dc);
+        render_text_now(cur_buf, line, 16, y, col, 0.55f);
+        y += 19;
+        if (y > cur_buf->height - 8) break;
+    }
 }
 void ds_graphics_shutdown(void) {
     ds_graphics_cancel_frame();

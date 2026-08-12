@@ -9,15 +9,44 @@ if language_ru==1; button "Соло",(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_
 else; button "Solo",(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h; button "Online",(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h; end; draw_back
 end
 function draw_settings
-rect 0,0,screen_w,screen_h,0x1a1a2e; button "English",(screen_w-btn_w)/2,screen_h/2-80,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2,btn_w,btn_h; draw_back
+rect 0,0,screen_w,screen_h,0x1a1a2e
+if language_ru==1; button "English",(screen_w-btn_w)/2,screen_h/2-110,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2-30,btn_w,btn_h; button "Консоль",(screen_w-btn_w)/2,screen_h/2+50,btn_w,btn_h
+else; button "English",(screen_w-btn_w)/2,screen_h/2-110,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2-30,btn_w,btn_h; button "Console",(screen_w-btn_w)/2,screen_h/2+50,btn_w,btn_h; end; draw_back
+end
+function draw_console
+rect 0,0,screen_w,screen_h,0x0B0B14
+if language_ru==1; ctext "Консоль",48,0xFFFFFF; else; ctext "Console",48,0xFFFFFF; end
+num total=console_count(), lh=32, max=floor((screen_h-230)/lh)
+if max<3; max=3; end; if max>22; max=22; end
+num cy=100, i=0, li=0, col=0
+loop i<max
+if console_scroll+i<total
+li=total-1-(console_scroll+i); col=0x9FE8A0
+if console_type(li)==1; col=0xFF8A80; end
+text console_line(li),18,cy,col
+end
+cy=cy+lh; i=i+1
+end
+num bw=(screen_w-76)/3, by=screen_h-78
+if language_ru==1; button "Вверх",16,by,bw,btn_h; button "Вниз",screen_w/2-bw/2,by,bw,btn_h; button "Очистить",screen_w-bw-16,by,bw,btn_h
+else; button "Up",16,by,bw,btn_h; button "Down",screen_w/2-bw/2,by,bw,btn_h; button "Clear",screen_w-bw-16,by,bw,btn_h; end
+draw_back
 end
 function touch_lobby num x, num y, num action
 if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end
 if y>=screen_h/2-28&&y<=screen_h/2+52; start_transition 2; return; end; if y>=screen_h/2+52&&y<=screen_h/2+132; start_transition 4; end
 end
 function touch_menu num x, num y, num action
-if action!=0; return; end; if back_hit(x,y)==1; start_transition 0; return; end
+if action!=0; return; end
+if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end
+if game_state==6
+num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1
+if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
+if x>=screen_w/2-bw/2&&x<=screen_w/2+bw/2&&y>=by&&y<=by+btn_h; console_scroll=console_scroll-10; if console_scroll<0; console_scroll=0; end; return; end
+if x>=screen_w-bw-16&&x<=screen_w-16&&y>=by&&y<=by+btn_h; console_clear; console_scroll=0; end
+return
+end
 num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end
 if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 5; end
-else if game_state==4; if y>=screen_h/2-88&&y<=screen_h/2-8; language_ru=0; else if y>=screen_h/2-8&&y<=screen_h/2+72; language_ru=1; end; end
+else if game_state==4; if y>=screen_h/2-150&&y<=screen_h/2-70; language_ru=0; else if y>=screen_h/2-70&&y<=screen_h/2+10; language_ru=1; else if y>=screen_h/2+10&&y<=screen_h/2+90; start_transition 6; end; end
 end
