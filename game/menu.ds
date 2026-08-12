@@ -1,6 +1,5 @@
 function draw_lobby
 rect 0, 0, screen_w, screen_h, 0x1a1a2e
-ctext "Cubic Battle 4", screen_h/2-110, 0xFFFFFF
 if language_ru==1
 button "Играть", (screen_w-btn_w)/2, screen_h/2-20, btn_w, btn_h; button "Настройки", (screen_w-btn_w)/2, screen_h/2+60, btn_w, btn_h
 else
@@ -10,9 +9,9 @@ end
 function draw_modes
 rect 0, 0, screen_w, screen_h, 0x1a1a2e
 if language_ru==1
-ctext "Выберите режим", screen_h/2-120, 0xFFFFFF; button "Соло", (screen_w-btn_w)/2, screen_h/2-40, btn_w, btn_h; button "Онлайн", (screen_w-btn_w)/2, screen_h/2+40, btn_w, btn_h
+button "Соло", (screen_w-btn_w)/2, screen_h/2-40, btn_w, btn_h; button "Онлайн", (screen_w-btn_w)/2, screen_h/2+40, btn_w, btn_h
 else
-ctext "Choose mode", screen_h/2-120, 0xFFFFFF; button "Solo", (screen_w-btn_w)/2, screen_h/2-40, btn_w, btn_h; button "Online", (screen_w-btn_w)/2, screen_h/2+40, btn_w, btn_h
+button "Solo", (screen_w-btn_w)/2, screen_h/2-40, btn_w, btn_h; button "Online", (screen_w-btn_w)/2, screen_h/2+40, btn_w, btn_h
 end
 draw_back
 end
