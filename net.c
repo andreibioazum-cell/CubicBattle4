@@ -7,7 +7,8 @@
  *   2. Крошечный разборщик JSON: нужны только числа и строки по пути
  *      вида "players/1/x", полноценный парсер тут ни к чему.
  *   3. Поток синхронизации: раз в 100 мс отправляет своё состояние
- *      и забирает чужое. Игровой цикл в сеть никогда не блокируется.
+ *      и забирает состояние остальных игроков. Игровой цикл в сеть
+ *      никогда не блокируется.
  */
 
 #include "net.h"
@@ -34,6 +35,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #define NET_LOG(...) do { \
     if (getenv("NET_DEBUG")) { fprintf(stderr, "[net] " __VA_ARGS__); fputc('\n', stderr); } \
@@ -43,7 +45,7 @@
 #define NET_URL_SIZE      512
 #define NET_BASE_SIZE     256    /* корень базы: URL с запасом на путь */
 #define NET_BODY_SIZE     1024
-#define NET_RESPONSE_SIZE 4096
+#define NET_RESPONSE_SIZE 8192
 #define NET_TICK_MS       100    /* 10 обновлений в секунду */
 #define NET_PEER_TIMEOUT  3000   /* молчит дольше — считаем, что вышел */
 #define NET_TAKEOVER_MS   5000   /* столько ждём, прежде чем занять чужой слот */
@@ -395,6 +397,7 @@ static void js_string(const char *json, const char *path, char *out, size_t out_
 
 typedef struct {
     double x, y, angle, hp, alive;
+    int online;
 } NetActor;
 
 typedef struct {
@@ -417,9 +420,9 @@ static struct {
     NetBullet local_bullet;
     unsigned long seq;
 
-    int peer_online;
-    NetActor peer;
-    NetBullet peer_bullet;
+    int player_count;
+    NetActor players[NET_MAX_SLOTS];
+    NetBullet bullets[NET_MAX_SLOTS];
 } net;
 
 /* Уникальный id клиента. Только time() мало: два устройства, запущенные
@@ -489,7 +492,7 @@ static int net_push_state(void) {
     return net_http("PATCH", url, body, NULL, 0) == 200;
 }
 
-/* Чужой слот читаем целиком одним GET комнаты. */
+/* Читаем комнату целиком одним GET. */
 static int net_pull_state(char *response, size_t size) {
     char url[NET_URL_SIZE];
     snprintf(url, sizeof(url), "%s/rooms/%s.json", net.base, net.room);
@@ -515,35 +518,38 @@ static void net_release_slot(void) {
  * одновременно, проигравший увидит чужой uid и возьмёт другой слот. */
 static int net_claim_slot(void) {
     static long long watch_since = 0;
-    static unsigned long watch_seq[2] = {0, 0};
+    static unsigned long watch_seq[NET_MAX_SLOTS] = {0};
     static int watch_valid = 0;
     char response[NET_RESPONSE_SIZE], url[NET_URL_SIZE], body[NET_BODY_SIZE], uid[24];
     long long now = net_now_ms();
-    int slot;
+    int slot, changed = 0;
 
     if (!net_pull_state(response, sizeof(response))) return -1;
 
-    for (slot = 0; slot < 2; slot++) {
+    for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
         char path[32];
         snprintf(path, sizeof(path), "players/%d/uid", slot);
         js_string(response, path, uid, sizeof(uid));
         if (uid[0] == '\0' || strcmp(uid, net.uid) == 0) break;
     }
 
-    if (slot == 2) {
-        /* Оба слота заняты. Смотрим, не бросил ли кто игру. */
-        unsigned long seq[2];
-        seq[0] = (unsigned long)js_number(response, "players/0/seq", 0);
-        seq[1] = (unsigned long)js_number(response, "players/1/seq", 0);
-        if (!watch_valid || seq[0] != watch_seq[0] || seq[1] != watch_seq[1]) {
-            watch_seq[0] = seq[0];
-            watch_seq[1] = seq[1];
+    if (slot == NET_MAX_SLOTS) {
+        /* Все слоты заняты. Смотрим, не бросил ли кто игру. */
+        unsigned long seq[NET_MAX_SLOTS];
+        for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
+            char path[32];
+            snprintf(path, sizeof(path), "players/%d/seq", slot);
+            seq[slot] = (unsigned long)js_number(response, path, 0);
+            if (!watch_valid || seq[slot] != watch_seq[slot]) changed = 1;
+        }
+        if (changed) {
+            memcpy(watch_seq, seq, sizeof(watch_seq));
             watch_since = now;
             watch_valid = 1;
             return -1;
         }
         if (now - watch_since < NET_TAKEOVER_MS) return -1;
-        slot = 0;   /* оба молчат — комната брошена, занимаем первый слот */
+        slot = 0;   /* все молчат — комната брошена, занимаем первый слот */
         watch_valid = 0;
     }
 
@@ -562,64 +568,89 @@ static int net_claim_slot(void) {
     return slot;
 }
 
-/* Разбираем чужой слот и решаем, на связи ли он. */
-static void net_read_peer(const char *response) {
-    static unsigned long last_seq = 0;
-    static long long last_change = 0;
-    char base_path[32], path[48], uid[24];
-    unsigned long seq;
+/* Разбираем все слоты и решаем, кто из игроков на связи. */
+static void net_read_players(const char *response) {
+    static unsigned long last_seq[NET_MAX_SLOTS] = {0};
+    static long long last_change[NET_MAX_SLOTS] = {0};
+    NetActor actors[NET_MAX_SLOTS];
+    NetBullet bullets[NET_MAX_SLOTS];
     long long now = net_now_ms();
-    int peer = net.slot == 0 ? 1 : 0;
-    NetActor actor;
-    NetBullet bullet;
-    int online;
+    int local_slot, count = 0, slot;
 
-    snprintf(base_path, sizeof(base_path), "players/%d", peer);
-    snprintf(path, sizeof(path), "%s/uid", base_path);
-    js_string(response, path, uid, sizeof(uid));
-    if (uid[0] == '\0' || strcmp(uid, net.uid) == 0) {
-        net_lock();
-        net.peer_online = 0;
-        net_unlock();
-        last_seq = 0;
-        return;
-    }
-
-    snprintf(path, sizeof(path), "%s/seq", base_path);
-    seq = (unsigned long)js_number(response, path, 0);
-    if (seq != last_seq) { last_seq = seq; last_change = now; }
-    else if (last_change == 0) last_change = now;
-    online = (now - last_change) < NET_PEER_TIMEOUT;
-
-    snprintf(path, sizeof(path), "%s/x", base_path);
-    actor.x = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/y", base_path);
-    actor.y = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/angle", base_path);
-    actor.angle = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/hp", base_path);
-    actor.hp = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/alive", base_path);
-    actor.alive = js_number(response, path, 0);
-
-    snprintf(base_path, sizeof(base_path), "bullets/%d", peer);
-    snprintf(path, sizeof(path), "%s/x", base_path);
-    bullet.x = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/y", base_path);
-    bullet.y = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/dx", base_path);
-    bullet.dx = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/dy", base_path);
-    bullet.dy = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/active", base_path);
-    bullet.active = js_number(response, path, 0);
-    snprintf(path, sizeof(path), "%s/shot", base_path);
-    bullet.shot = js_number(response, path, 0);
+    memset(actors, 0, sizeof(actors));
+    memset(bullets, 0, sizeof(bullets));
 
     net_lock();
-    net.peer = actor;
-    net.peer_bullet = bullet;
-    net.peer_online = online;
+    local_slot = net.slot;
+    net_unlock();
+
+    for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
+        char base_path[32], path[48], uid[24];
+        unsigned long seq;
+        int online;
+
+        if (slot == local_slot) {
+            net_lock();
+            actors[slot] = net.local;
+            bullets[slot] = net.local_bullet;
+            actors[slot].online = (local_slot >= 0);
+            net_unlock();
+            if (local_slot >= 0) count++;
+            continue;
+        }
+
+        snprintf(base_path, sizeof(base_path), "players/%d", slot);
+        snprintf(path, sizeof(path), "%s/uid", base_path);
+        js_string(response, path, uid, sizeof(uid));
+        if (uid[0] == '\0' || strcmp(uid, net.uid) == 0) {
+            last_seq[slot] = 0;
+            last_change[slot] = 0;
+            continue;
+        }
+
+        snprintf(path, sizeof(path), "%s/seq", base_path);
+        seq = (unsigned long)js_number(response, path, 0);
+        if (seq != last_seq[slot]) {
+            last_seq[slot] = seq;
+            last_change[slot] = now;
+        } else if (last_change[slot] == 0) {
+            last_change[slot] = now;
+        }
+        online = (now - last_change[slot]) < NET_PEER_TIMEOUT;
+        if (!online) continue;
+
+        snprintf(path, sizeof(path), "%s/x", base_path);
+        actors[slot].x = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/y", base_path);
+        actors[slot].y = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/angle", base_path);
+        actors[slot].angle = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/hp", base_path);
+        actors[slot].hp = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/alive", base_path);
+        actors[slot].alive = js_number(response, path, 0);
+        actors[slot].online = 1;
+
+        snprintf(base_path, sizeof(base_path), "bullets/%d", slot);
+        snprintf(path, sizeof(path), "%s/x", base_path);
+        bullets[slot].x = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/y", base_path);
+        bullets[slot].y = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/dx", base_path);
+        bullets[slot].dx = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/dy", base_path);
+        bullets[slot].dy = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/active", base_path);
+        bullets[slot].active = js_number(response, path, 0);
+        snprintf(path, sizeof(path), "%s/shot", base_path);
+        bullets[slot].shot = js_number(response, path, 0);
+        count++;
+    }
+
+    net_lock();
+    memcpy(net.players, actors, sizeof(net.players));
+    memcpy(net.bullets, bullets, sizeof(net.bullets));
+    net.player_count = count;
     net_unlock();
 }
 
@@ -649,6 +680,9 @@ static void *net_thread_main(void *unused) {
             net_lock();
             net.slot = slot;
             net.seq = 0;
+            net.players[slot] = net.local;
+            net.bullets[slot] = net.local_bullet;
+            net.players[slot].online = 1;
             net_unlock();
             failures = 0;
         }
@@ -659,8 +693,8 @@ static void *net_thread_main(void *unused) {
             continue;
         }
         failures = 0;
-        net_read_peer(response);
-        net_set_status(net.peer_online ? NET_PLAYING : NET_WAITING);
+        net_read_players(response);
+        net_set_status(NET_PLAYING);
 
         {
             long long spent = net_now_ms() - started;
@@ -682,9 +716,9 @@ void net_connect(const char *base_url, const char *room) {
 
     memset(&net.local, 0, sizeof(net.local));
     memset(&net.local_bullet, 0, sizeof(net.local_bullet));
-    memset(&net.peer, 0, sizeof(net.peer));
-    memset(&net.peer_bullet, 0, sizeof(net.peer_bullet));
-    net.peer_online = 0;
+    memset(net.players, 0, sizeof(net.players));
+    memset(net.bullets, 0, sizeof(net.bullets));
+    net.player_count = 0;
     net.slot = -1;
     net.seq = 0;
 
@@ -722,7 +756,9 @@ void net_disconnect(void) {
     pthread_join(net.thread, NULL);
     net.status = NET_OFFLINE;
     net.slot = -1;
-    net.peer_online = 0;
+    net.player_count = 0;
+    memset(net.players, 0, sizeof(net.players));
+    memset(net.bullets, 0, sizeof(net.bullets));
 }
 
 void net_shutdown(void) { net_disconnect(); }
@@ -735,6 +771,14 @@ void net_publish(double x, double y, double angle, double hp, double alive) {
     net.local.angle = angle;
     net.local.hp = hp;
     net.local.alive = alive;
+    if (net.slot >= 0) {
+        net.players[net.slot].x = x;
+        net.players[net.slot].y = y;
+        net.players[net.slot].angle = angle;
+        net.players[net.slot].hp = hp;
+        net.players[net.slot].alive = alive;
+        net.players[net.slot].online = 1;
+    }
     net_unlock();
 }
 
@@ -748,7 +792,14 @@ void net_publish_bullet(double x, double y, double dx, double dy,
     net.local_bullet.dy = dy;
     net.local_bullet.active = active;
     net.local_bullet.shot = shot;
+    if (net.slot >= 0) net.bullets[net.slot] = net.local_bullet;
     net_unlock();
+}
+
+static int net_slot_index(double slot) {
+    int index = (int)slot;
+    if (index < 0 || index >= NET_MAX_SLOTS) return -1;
+    return index;
 }
 
 /* Читатели состояния: короткие, чтобы скрипт мог звать их каждый кадр. */
@@ -763,19 +814,164 @@ void net_publish_bullet(double x, double y, double dx, double dy,
     }
 
 NET_READER(net_status, (double)net.status)
-NET_READER(net_online, net.status == NET_PLAYING ? 1 : 0)
+NET_READER(net_online, net.slot >= 0 ? 1 : 0)
 NET_READER(net_slot, (double)net.slot)
-NET_READER(net_peer_online, net.peer_online ? 1 : 0)
-NET_READER(net_peer_x, net.peer.x)
-NET_READER(net_peer_y, net.peer.y)
-NET_READER(net_peer_angle, net.peer.angle)
-NET_READER(net_peer_hp, net.peer.hp)
-NET_READER(net_peer_alive, net.peer.alive)
-NET_READER(net_peer_bullet_active, net.peer_bullet.active)
-NET_READER(net_peer_bullet_x, net.peer_bullet.x)
-NET_READER(net_peer_bullet_y, net.peer_bullet.y)
-NET_READER(net_peer_bullet_dx, net.peer_bullet.dx)
-NET_READER(net_peer_bullet_dy, net.peer_bullet.dy)
-NET_READER(net_peer_bullet_shot, net.peer_bullet.shot)
+NET_READER(net_player_count, (double)net.player_count)
 
+double net_player_online(double slot) {
+    int index = net_slot_index(slot);
+    int value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.players[index].online;
+    net_unlock();
+    return value ? 1 : 0;
+}
+
+double net_player_x(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.players[index].x;
+    net_unlock();
+    return value;
+}
+
+double net_player_y(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.players[index].y;
+    net_unlock();
+    return value;
+}
+
+double net_player_angle(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.players[index].angle;
+    net_unlock();
+    return value;
+}
+
+double net_player_hp(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.players[index].hp;
+    net_unlock();
+    return value;
+}
+
+double net_player_alive(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.players[index].alive;
+    net_unlock();
+    return value;
+}
+
+double net_player_bullet_active(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.bullets[index].active;
+    net_unlock();
+    return value;
+}
+
+double net_player_bullet_x(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.bullets[index].x;
+    net_unlock();
+    return value;
+}
+
+double net_player_bullet_y(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.bullets[index].y;
+    net_unlock();
+    return value;
+}
+
+double net_player_bullet_dx(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.bullets[index].dx;
+    net_unlock();
+    return value;
+}
+
+double net_player_bullet_dy(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.bullets[index].dy;
+    net_unlock();
+    return value;
+}
+
+double net_player_bullet_shot(double slot) {
+    int index = net_slot_index(slot);
+    double value;
+    if (!net.started || index < 0) return 0;
+    net_lock();
+    value = net.bullets[index].shot;
+    net_unlock();
+    return value;
+}
+
+/* Первый соперник для старого API и экрана с одной полоской HP. */
+static int net_peer_slot_locked(void) {
+    int slot;
+    if (net.slot < 0) return -1;
+    for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
+        if (slot != net.slot && net.players[slot].online) return slot;
+    }
+    return -1;
+}
+
+#define NET_PEER_READER(name, expression)         \
+    double name(void) {                           \
+        double value = 0;                         \
+        int slot;                                 \
+        if (!net.started) return 0;               \
+        net_lock();                               \
+        slot = net_peer_slot_locked();            \
+        if (slot >= 0) value = (expression);      \
+        net_unlock();                             \
+        return value;                             \
+    }
+
+NET_PEER_READER(net_peer_online, 1)
+NET_PEER_READER(net_peer_x, net.players[slot].x)
+NET_PEER_READER(net_peer_y, net.players[slot].y)
+NET_PEER_READER(net_peer_angle, net.players[slot].angle)
+NET_PEER_READER(net_peer_hp, net.players[slot].hp)
+NET_PEER_READER(net_peer_alive, net.players[slot].alive)
+NET_PEER_READER(net_peer_bullet_active, net.bullets[slot].active)
+NET_PEER_READER(net_peer_bullet_x, net.bullets[slot].x)
+NET_PEER_READER(net_peer_bullet_y, net.bullets[slot].y)
+NET_PEER_READER(net_peer_bullet_dx, net.bullets[slot].dx)
+NET_PEER_READER(net_peer_bullet_dy, net.bullets[slot].dy)
+NET_PEER_READER(net_peer_bullet_shot, net.bullets[slot].shot)
+
+#undef NET_PEER_READER
 #undef NET_READER

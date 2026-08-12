@@ -52,7 +52,11 @@ BUILTINS = frozenset({
     # звёзды (совместимость)
     # онлайн Firebase
     'net_connect', 'net_disconnect', 'net_publish', 'net_publish_bullet',
-    'net_status', 'net_online', 'net_slot',
+    'net_status', 'net_online', 'net_slot', 'net_player_count',
+    'net_player_online', 'net_player_x', 'net_player_y', 'net_player_angle',
+    'net_player_hp', 'net_player_alive',
+    'net_player_bullet_active', 'net_player_bullet_x', 'net_player_bullet_y',
+    'net_player_bullet_dx', 'net_player_bullet_dy', 'net_player_bullet_shot',
     'net_peer_online', 'net_peer_x', 'net_peer_y', 'net_peer_angle',
     'net_peer_hp', 'net_peer_alive',
     'net_peer_bullet_active', 'net_peer_bullet_x', 'net_peer_bullet_y',
@@ -830,6 +834,12 @@ class DimScriptCompiler:
             if t in self.objects:
                 self._out(f'if ({n}) ds_free_{t}({n});')
                 self._out(f'{n} = NULL;')
+            elif t == 'arr':
+                self._out(f'if ({n}) arr_free({n});')
+                self._out(f'{n} = arr_new();')
+            elif t == 'dict':
+                self._out(f'if ({n}) dict_free({n});')
+                self._out(f'{n} = dict_new();')
             elif v and self.static_expr(v):
                 self._out(f'{n} = {self.expr(v)};')
             else:
