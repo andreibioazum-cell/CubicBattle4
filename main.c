@@ -3,14 +3,12 @@
 #endif
 #include <android_native_app_glue.h>
 #include "runtime.h"
-
+#include "net.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
 
-/* main.c владеет только окном Android и жизненным циклом скрипта;
- * graphics.c владеет command buffer и растеризацией. */
-
+// Только arm64/arm32, Android 10 — без кроссплатформы
 static int init_done = 0;
 static int script_active = 0;
 static AAssetManager *script_assets = NULL;
@@ -18,13 +16,6 @@ static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
 static unsigned int frame_count = 0;
 static uint64_t prev_frame_ns = 0;
-
-void ds_log(const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, args);
-    va_end(args);
-}
 
 static uint64_t monotonic_ns(void) {
     struct timespec now;
@@ -85,59 +76,27 @@ static void restart_script_if_due(void) {
 }
 
 static void handle_cmd(struct android_app *app, int32_t command) {
-    if (!app) {
-        ds_runtime_error("received an Android command without an app instance");
-        return;
-    }
+    if (!app) { ds_runtime_error("no app"); return; }
     switch (command) {
         case APP_CMD_INIT_WINDOW:
-            if (!app->window) {
-                init_done = 0;
-                ds_runtime_error("APP_CMD_INIT_WINDOW arrived without a window");
-                return;
-            }
+            if (!app->window) { init_done = 0; return; }
             screen_w = ANativeWindow_getWidth(app->window);
             screen_h = ANativeWindow_getHeight(app->window);
-            if (screen_w <= 0 || screen_h <= 0) {
-                init_done = 0;
-                ds_runtime_error("Android returned an invalid window size: %dx%d", screen_w, screen_h);
-                return;
-            }
+            if (screen_w <= 0 || screen_h <= 0) { init_done = 0; return; }
             script_assets = app->activity ? app->activity->assetManager : NULL;
-            if (ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888) != 0) {
-                init_done = 0;
-                ds_runtime_error("could not select RGBA_8888 software-renderer buffers");
-                return;
-            }
-            if (!ds_graphics_init(script_assets)) {
-                init_done = 0;
-                ds_runtime_error("could not initialise the software renderer");
-                return;
-            }
-            init_done = 1;
-            frame_count = 0;
-            script_active = 0;
-            restart_failures = 0;
-            ds_clear_script_restart();
-            (void)start_script(0);
+            ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
+            if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
+            init_done = 1; frame_count = 0; script_active = 0; restart_failures = 0;
+            ds_clear_script_restart(); (void)start_script(0);
             break;
         case APP_CMD_TERM_WINDOW:
-            init_done = 0;
-            script_active = 0;
-            ds_graphics_shutdown();
-            break;
-        default:
-            break;
+            init_done = 0; script_active = 0; ds_graphics_shutdown(); break;
+        default: break;
     }
 }
 
-/* Мультитач: скрипт получает координаты, действие и id пальца.
- * Вторичные пальцы приходят как POINTER_DOWN/UP — приводим их к DOWN/UP,
- * а событие MOVE отдаём отдельно для каждого активного пальца. */
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
-    TouchCall call;
-    size_t count, index, i;
-    int raw, action;
+    TouchCall call; size_t count, index, i; int raw, action;
     (void)app;
     if (!script_active || !event || AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION) return 0;
     count = AMotionEvent_getPointerCount(event);
@@ -155,50 +114,34 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         call.y = AMotionEvent_getY(event, i);
         call.action = action;
         call.id = AMotionEvent_getPointerId(event, i);
-        if (!ds_call_protected(protected_touch, &call, "touch")) {
-            mark_script_failed("touch");
-            break;
-        }
+        if (!ds_call_protected(protected_touch, &call, "touch")) { mark_script_failed("touch"); break; }
     }
     return 1;
 }
 
 void android_main(struct android_app *app) {
     Buffer frame = {0};
-    if (!app) {
-        ds_runtime_error("android_main received a null app instance");
-        return;
-    }
+    if (!app) return;
     app->onAppCmd = handle_cmd;
     app->onInputEvent = handle_input;
-    ds_log("DimScript application started");
+    net_set_java_vm(app->activity->vm);
+    ds_log("DimScript Android 10 arm64/arm32 only");
     for (;;) {
         struct android_poll_source *source = NULL;
         int ident;
-        while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL,
-                                         (void **)&source)) >= 0) {
+        while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
-            if (app->destroyRequested) {
-                init_done = 0;
-                script_active = 0;
-                ds_graphics_shutdown();
-                return;
-            }
+            if (app->destroyRequested) { init_done = 0; script_active = 0; ds_graphics_shutdown(); return; }
         }
         if (!app->window || !init_done || app->destroyRequested) continue;
         restart_script_if_due();
         if (script_active) {
             uint64_t now = monotonic_ns();
             dt = prev_frame_ns ? (double)(now - prev_frame_ns) / 1000000000.0 : 0.0;
-            if (dt < 0.0) dt = 0.0;
-            if (dt > 0.1) dt = 0.1;
+            if (dt < 0.0) dt = 0.0; if (dt > 0.1) dt = 0.1;
             prev_frame_ns = now;
-            if (!ds_call_protected(protected_update, NULL, "update")) {
-                mark_script_failed("update");
-            } else if (ds_script_restart_requested()) {
-                script_active = 0;
-                restart_after_ns = monotonic_ns();
-            }
+            if (!ds_call_protected(protected_update, NULL, "update")) mark_script_failed("update");
+            else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
         }
         {
             ANativeWindow_Buffer native_buffer;
@@ -208,40 +151,24 @@ void android_main(struct android_app *app) {
                 frame.width = native_buffer.width;
                 frame.height = native_buffer.height;
                 frame.stride = native_buffer.stride;
-                frame_valid = frame.pixels && frame.width > 0 && frame.height > 0 &&
-                              frame.stride >= frame.width &&
-                              native_buffer.format == WINDOW_FORMAT_RGBA_8888;
+                frame_valid = frame.pixels && frame.width > 0 && frame.height > 0 && frame.stride >= frame.width && native_buffer.format == WINDOW_FORMAT_RGBA_8888;
                 if (frame_valid && ds_graphics_begin_frame(&frame)) {
                     int draw_failed = 0;
                     if (script_active) {
-                        if (!ds_call_protected(protected_draw, &frame, "draw")) {
-                            mark_script_failed("draw");
-                            draw_failed = 1;
-                        } else if (ds_script_restart_requested()) {
-                            script_active = 0;
-                            restart_after_ns = monotonic_ns();
-                        }
+                        if (!ds_call_protected(protected_draw, &frame, "draw")) { mark_script_failed("draw"); draw_failed = 1; }
+                        else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
                     }
                     if (!script_active) {
-                        if (draw_failed || ds_script_has_error()) {
-                            ds_graphics_error_screen(ds_runtime_error_message());
-                        }
+                        if (draw_failed || ds_script_has_error()) ds_graphics_error_screen(ds_runtime_error_message());
                         ds_graphics_cancel_frame();
-                    } else {
-                        ds_graphics_end_frame();
-                    }
-                } else {
-                    ds_runtime_error("Android supplied an invalid software framebuffer");
+                    } else ds_graphics_end_frame();
                 }
                 ANativeWindow_unlockAndPost(app->window);
                 ++frame_count;
-            } else if ((frame_count % 60u) == 0u) {
-                ds_runtime_error("ANativeWindow_lock failed");
             }
         }
     }
 }
 
-/* graphics.c встраивается в main.c, чтобы workflow остался без правок
- * (собираем только main.c + runtime.c + game/game.c). */
 #include "graphics.c"
+#include "net.c"

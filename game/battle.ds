@@ -1,0 +1,94 @@
+function reset_battle
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; finished=0; bullet.active=0; peer_bullet.active=0; aiming=0; aim_id=-1; joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
+end
+function init_game
+reset_battle; enemy.hp=enemy.max_hp; spawn_enemy; c ds_log("solo");
+end
+function init_online
+reset_battle; placed=0; peer.ready=0; peer.hp=peer.max_hp; peer.x=screen_w-screen_w/4; peer.y=screen_h/2; peer.draw_x=peer.x; peer.draw_y=peer.y; peer.angle=0; peer.draw_angle=0; my_shot=0; peer_shot=0; net_connect FIREBASE, ROOM; c ds_log("online");
+end
+function spawn_enemy
+num i=0; loop i<50; enemy.x=50+rand()%(screen_w-100); enemy.y=50+rand()%(screen_h-100); if sqrt((enemy.x-player.x)*(enemy.x-player.x)+(enemy.y-player.y)*(enemy.y-player.y))>250; return; end; i=i+1; end; enemy.x=50; enemy.y=50
+end
+function move_player
+player.x=player.x+joy.dx*joy_speed*dt; player.y=player.y+joy.dy*joy_speed*dt; if joy.dx!=0||joy.dy!=0; player.angle=atan2(joy.dy,joy.dx); end; if player.x<player.size; player.x=player.size; end; if player.x>screen_w-player.size; player.x=screen_w-player.size; end; if player.y<player.size; player.y=player.size; end; if player.y>screen_h-player.size; player.y=screen_h-player.size; end
+end
+function move_bullet Bullet b
+b.x=b.x+b.dx*bullet_speed*dt; b.y=b.y+b.dy*bullet_speed*dt; b.traveled=b.traveled+bullet_speed*dt; if b.traveled>=aim_range||b.x<-b.r||b.x>screen_w+b.r||b.y<-b.r||b.y>screen_h+b.r; b.active=0; end
+end
+function bullet_hit_r Bullet b
+num l=aim_range-b.traveled; if l<aim_fade; return b.r*l/aim_fade; end; return b.r
+end
+function update_game
+if finished!=0; return; end; move_player
+num dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
+if d>1; enemy.x=enemy.x+dx/d*bot_speed*dt; enemy.y=enemy.y+dy/d*bot_speed*dt; end; enemy.angle=atan2(dy,dx)
+if d<player.size+enemy.size; player.hp=player.hp-1; if player.hp<=0; finish_game 2; return; end; spawn_enemy; end
+if bullet.active==0; return; end; move_bullet bullet; if bullet.active==0; return; end
+dx=enemy.x-bullet.x; dy=enemy.y-bullet.y; d=sqrt(dx*dx+dy*dy)
+if d<=enemy.size+bullet_hit_r(bullet); bullet.active=0; enemy.hp=enemy.hp-1; if enemy.hp<=0; finish_game 1; end; end
+end
+function update_online
+if placed==0; num s=net_slot(); if s>=0; if s==0; player.x=screen_w/4; else; player.x=screen_w-screen_w/4; end; player.y=screen_h/2; placed=1; end; end
+num a=1; if player.hp<=0; a=0; end; net_publish player.x, player.y, player.angle, player.hp, a; net_publish_bullet bullet.x, bullet.y, bullet.dx, bullet.dy, bullet.active, my_shot; read_peer
+if finished!=0||peer.ready==0; return; end; move_player
+if bullet.active==1; move_bullet bullet; if sqrt((peer.draw_x-bullet.x)*(peer.draw_x-bullet.x)+(peer.draw_y-bullet.y)*(peer.draw_y-bullet.y))<=peer.size+bullet_hit_r(bullet); bullet.active=0; end; end
+num sh=net_peer_bullet_shot(); if sh!=peer_shot&&net_peer_bullet_active()==1; peer_shot=sh; peer_bullet.x=net_peer_bullet_x(); peer_bullet.y=net_peer_bullet_y(); peer_bullet.dx=net_peer_bullet_dx(); peer_bullet.dy=net_peer_bullet_dy(); peer_bullet.traveled=0; peer_bullet.active=1; end
+if peer_bullet.active==1; move_bullet peer_bullet; if sqrt((player.x-peer_bullet.x)*(player.x-peer_bullet.x)+(player.y-peer_bullet.y)*(player.y-peer_bullet.y))<=player.size+bullet_hit_r(peer_bullet); peer_bullet.active=0; player.hp=player.hp-1; if player.hp<=0; player.hp=0; net_publish player.x, player.y, player.angle, 0, 0; finish_game 2; return; end; end; end
+if peer.hp<=0; finish_game 1; end
+end
+function read_peer
+if net_peer_online()==0; return; end; if net_peer_alive()==1; peer.ready=1; end; if peer.ready==0; return; end
+peer.x=net_peer_x(); peer.y=net_peer_y(); peer.angle=net_peer_angle(); peer.hp=net_peer_hp()
+num k=dt*12; if k>1; k=1; end; peer.draw_x=peer.draw_x+(peer.x-peer.draw_x)*k; peer.draw_y=peer.draw_y+(peer.y-peer.draw_y)*k
+num da=peer.angle-peer.draw_angle; loop da>3.14159265; da=da-6.2831853; end; loop da<-3.14159265; da=da+6.2831853; end; peer.draw_angle=peer.draw_angle+da*k
+end
+function fire_bullet
+num dx=cos(player.angle), dy=sin(player.angle); bullet.x=player.x+dx*(player.size+bullet.r+4); bullet.y=player.y+dy*(player.size+bullet.r+4); bullet.dx=dx; bullet.dy=dy; bullet.traveled=0; bullet.active=1; my_shot=my_shot+1
+if game_state==5; net_publish_bullet bullet.x, bullet.y, dx, dy, 1, my_shot; end; c ds_log("fire");
+end
+function finish_game num r
+finished=r; aiming=0; aim_id=-1; bullet.active=0; peer_bullet.active=0; drop_joy
+end
+function draw_bullet Bullet b
+if b.active==0; return; end; num left=aim_range-b.traveled, a=255, sc=1; if left<aim_fade; sc=left/aim_fade; a=floor(255*sc); end; if a<1; a=1; end; num rr=b.r*sc; circle b.x, b.y, rr, a*0x1000000+0xFFF176; ring b.x, b.y, rr+2*sc, 2*sc, a*0x1000000+0xFFB300
+end
+function draw_field
+num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x, y, GRASS, 0, 1; x=x+256; end; y=y+256; end; rect 0, 0, screen_w, screen_h, 0x33000000
+if aiming==1&&finished==0; num ax=cos(player.angle), ay=sin(player.angle); line player.x, player.y, player.x+ax*aim_range, player.y+ay*aim_range, 18, 0x66000000; end; circle player.x, player.y, player.size/2, 0xFF8844; tex player.x-20, player.y-20, TEX, player.angle, 1
+end
+function draw_controls
+ring joy.x, joy.y, joy.r, 4, 0x000000; circle joy.x+joy.ox, joy.y+joy.oy, 34, 0x000000; if aiming==1; circle atk_x, atk_y, 76, 0xC73750; else; circle atk_x, atk_y, 70, 0xE94560; end; ring atk_x, atk_y, 70, 4, 0x000000
+if language_ru==1; text_scaled "Атака", atk_x-text_ink_width("Атака")*0.275, atk_y-7, 0xFFFFFF, 0.55; else; text_scaled "Attack", atk_x-text_ink_width("Attack")*0.275, atk_y-7, 0xFFFFFF, 0.55; end; draw_back
+end
+function draw_result str t, str n
+rect 0, 0, screen_w, screen_h, 0x99000000; num py=screen_h/2-85; roundrect screen_w/2-165, py, 330, 170, 24, 0x5F10A0; ctext t, py+34, 0xFFFFFF; ctext n, py+75, 0xFFFFFF
+if language_ru==1; ctext "Нажмите, чтобы выйти", py+118, 0xFFCDD2; else; ctext "Tap to return", py+118, 0xFFCDD2; end
+end
+function draw_game
+draw_field; tex enemy.x-20, enemy.y-20, TEX, enemy.angle, 1; ring enemy.x, enemy.y, 26, 3, 0xFF2020; draw_bullet bullet
+num hw=screen_w/4; hud_bar 20, 20, hw, 28, player.hp, player.max_hp, 0x7ED321, 0; hud_bar screen_w-hw-20, 20, hw, 28, enemy.hp, enemy.max_hp, 0xE94560, 1; draw_controls
+if finished==1; if language_ru==1; draw_result "Победа!", "Соперник побеждён"; else; draw_result "Victory!", "Opponent defeated"; end; else if finished==2; if language_ru==1; draw_result "Поражение", "Соперник победил"; else; draw_result "Defeat", "The opponent won"; end; end
+end
+function draw_online
+draw_field; if peer.ready==1; tex peer.draw_x-20, peer.draw_y-20, TEX, peer.draw_angle, 1; ring peer.draw_x, peer.draw_y, 26, 3, 0xFF2020; end; draw_bullet bullet; draw_bullet peer_bullet
+num hw=screen_w/4; hud_bar 20, 20, hw, 28, player.hp, player.max_hp, 0x7ED321, 0; hud_bar screen_w-hw-20, 20, hw, 28, peer.hp, peer.max_hp, 0xE94560, 1; draw_controls
+num st=net_status(); if st==4; if language_ru==1; ctext "Нет соединения", 76, 0xFF8A80; else; ctext "No connection", 76, 0xFF8A80; end; else if st==1; if language_ru==1; ctext "Подключение...", 76, 0xFFF176; else; ctext "Connecting...", 76, 0xFFF176; end; else if peer.ready==0; if language_ru==1; ctext "Ждём соперника... Комната "+selected_room, 76, 0xFFF176; else; ctext "Waiting... Room "+selected_room, 76, 0xFFF176; end; else if net_peer_online()==0; if language_ru==1; ctext "Соперник отключился", 76, 0xFF8A80; else; ctext "Opponent disconnected", 76, 0xFF8A80; end; end
+if finished==1; if language_ru==1; draw_result "Победа!", "Соперник повержен"; else; draw_result "Victory!", "Opponent defeated"; end; else if finished==2; if language_ru==1; draw_result "Поражение", "Соперник победил"; else; draw_result "Defeat", "The opponent won"; end; end
+end
+function drop_joy
+joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
+end
+function joy_touch num x, num y, num action, num id
+if action==1; if id==joy_id; drop_joy; end; return; end
+if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end
+if id!=joy_id; return; end; num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy)
+if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
+end
+function touch_game num x, num y, num action, num id
+if finished!=0; if action==0; start_transition 0; end; return; end
+if action==3; aiming=0; aim_id=-1; drop_joy; return; end
+if x>=(screen_w-btn_w)/2-12&&x<=(screen_w+btn_w)/2+12&&y>=6&&y<=86; if action==0||action==1; start_transition 0; return; end; end
+if action==0; num adx=x-atk_x, ady=y-atk_y; if sqrt(adx*adx+ady*ady)<=96; aiming=1; aim_id=id; if game_state==1||peer.ready==1; fire_bullet; end; return; end; end
+if action==1&&id==aim_id; aiming=0; aim_id=-1; return; end; joy_touch x, y, action, id
+end
