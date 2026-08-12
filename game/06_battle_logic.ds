@@ -1,0 +1,124 @@
+// Механика боя.
+function init_game
+    player.x = screen_w / 2
+    player.y = screen_h / 2
+    player.angle = 0
+    player.hp = player.max_hp
+    enemy.hp = enemy.max_hp
+    finished = 0
+    bullet.active = 0
+    aiming = 0
+    aim_id = -1
+    joy.x = 130
+    joy.y = screen_h - 150
+    joy.r = 70
+    atk_x = screen_w - 140
+    atk_y = screen_h - 150
+    drop_joy
+    spawn_enemy
+end
+
+function spawn_enemy
+    num tries = 0
+    loop tries < 50
+        enemy.x = 50 + rand() % (screen_w - 100)
+        enemy.y = 50 + rand() % (screen_h - 100)
+        num dx = enemy.x - player.x
+        num dy = enemy.y - player.y
+        if sqrt(dx * dx + dy * dy) > 250
+            return
+        end
+        tries = tries + 1
+    end
+    enemy.x = 50
+    enemy.y = 50
+end
+
+function update_game
+    if finished != 0
+        return
+    end
+    player.x = player.x + joy.dx * joy_speed
+    player.y = player.y + joy.dy * joy_speed
+    if joy.dx != 0 || joy.dy != 0
+        player.angle = atan2(joy.dy, joy.dx)
+    end
+    if player.x < player.size
+        player.x = player.size
+    end
+    if player.x > screen_w - player.size
+        player.x = screen_w - player.size
+    end
+    if player.y < player.size
+        player.y = player.size
+    end
+    if player.y > screen_h - player.size
+        player.y = screen_h - player.size
+    end
+
+    // враг догоняет игрока; касание -1 жизнь, враг перерождается
+    num dx = player.x - enemy.x
+    num dy = player.y - enemy.y
+    num dist = sqrt(dx * dx + dy * dy)
+    if dist > 1
+        enemy.x = enemy.x + dx / dist * enemy.speed
+        enemy.y = enemy.y + dy / dist * enemy.speed
+    end
+    enemy.angle = atan2(dy, dx)
+    if dist < player.size + enemy.size
+        player.hp = player.hp - 1
+        if player.hp <= 0
+            finish_game 2
+            return
+        end
+        spawn_enemy
+    end
+
+    // пуля
+    if bullet.active == 0
+        return
+    end
+    bullet.x = bullet.x + bullet.dx * bullet.speed
+    bullet.y = bullet.y + bullet.dy * bullet.speed
+    bullet.traveled = bullet.traveled + bullet.speed
+    if bullet.traveled >= aim_range || bullet.x < -bullet.r || bullet.x > screen_w + bullet.r || bullet.y < -bullet.r || bullet.y > screen_h + bullet.r
+        bullet.active = 0
+        return
+    end
+    dx = enemy.x - bullet.x
+    dy = enemy.y - bullet.y
+    dist = sqrt(dx * dx + dy * dy)
+    num hit_r = bullet.r
+    num bullet_left = aim_range - bullet.traveled
+    if bullet_left < aim_fade
+        hit_r = bullet.r * bullet_left / aim_fade
+    end
+    if dist <= enemy.size + hit_r
+        bullet.active = 0
+        enemy.hp = enemy.hp - 1
+        // Единственная победная цель — полностью победить врага, таймера нет.
+        if enemy.hp <= 0
+            finish_game 1
+        end
+        return
+    end
+end
+
+function fire_bullet
+    num dx = cos(player.angle)
+    num dy = sin(player.angle)
+    bullet.x = player.x + dx * (player.size + bullet.r + 4)
+    bullet.y = player.y + dy * (player.size + bullet.r + 4)
+    bullet.dx = dx
+    bullet.dy = dy
+    bullet.traveled = 0
+    bullet.active = 1
+end
+
+function finish_game num result
+    finished = result
+    aiming = 0
+    aim_id = -1
+    bullet.active = 0
+    drop_joy
+end

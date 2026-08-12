@@ -1,0 +1,17 @@
+// Выбор игрового режима.
+function draw_modes
+    rect 0, 0, screen_w, screen_h, 0x1a1a2e
+    update_stars
+    draw_stars
+    if language_ru == 1
+        ctext "Выберите режим", screen_h / 2 - 138, 0xFFFFFF
+        // Именно «Соло», а не прежнее неоднозначное название одиночного режима.
+        button "Соло", (screen_w - 260) / 2, screen_h / 2 - 55, 260, 70
+        button "Онлайн", (screen_w - 260) / 2, screen_h / 2 + 35, 260, 70
+    else
+        ctext "Choose mode", screen_h / 2 - 138, 0xFFFFFF
+        button "Solo", (screen_w - 260) / 2, screen_h / 2 - 55, 260, 70
+        button "Online", (screen_w - 260) / 2, screen_h / 2 + 35, 260, 70
+    end
+    draw_back
+end

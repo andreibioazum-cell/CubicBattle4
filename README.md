@@ -6,13 +6,26 @@
 
 ```
 game/
-├── game.ds                 # весь скрипт: лобби, интерфейс, логика боя
+├── 00_config.ds            # конфигурация и глобальное состояние
+├── 01_entities.ds          # игровые сущности
+├── 02_ui.ds                # общие элементы интерфейса
+├── 03_lobby.ds             # главный экран
+├── 04_modes.ds             # выбор режима
+├── 05_online_settings.ds   # комнаты, поиск и настройки
+├── 06_battle_logic.ds      # механика боя
+├── 07_battle_draw.ds       # отрисовка боя
+├── 08_controls.ds          # касания и управление
+├── 09_transitions.ds       # плавные переходы
+├── 10_hooks.ds             # хуки движка
 ├── assets/
 │   ├── fonts/ChillRoundGothic_Heavy.ttf
 │   ├── grass.png
 │   └── player.png
 └── AndroidManifest.xml
 ```
+
+Игровой код разбит ровно на **11** модулей DimScript. `gen.py` собирает все
+верхнеуровневые файлы `.ds` в `game/` в алфавитном порядке.
 
 Генерация `game/game.c`:
 
