@@ -57,6 +57,7 @@ BUILTINS = frozenset({
     'net_player_hp', 'net_player_alive',
     'net_player_bullet_active', 'net_player_bullet_x', 'net_player_bullet_y',
     'net_player_bullet_dx', 'net_player_bullet_dy', 'net_player_bullet_shot',
+    'net_player_bullet_tr',
     # лог
     'ds_log',
     # --- новые типы: массивы
@@ -335,54 +336,24 @@ class DimScriptCompiler:
         return lst
 
     def _parse_object(self, i):
-        m = re.match(r'^object\s+(' + _NAME + r')\s*$', self.lines[i])
+        # object Name  (num x=0, y=0  ...) end — поля могут быть и на той же строке.
+        m = re.match(r'^object\s+(' + _NAME + r')(?:\s+(.+))?$', self.lines[i])
         if not m:
-            # разрешаем поля на той же строке: object Player num x=0, y=0
-            mm = re.match(r'^object\s+(' + _NAME + r')\s+(.+)$', self.lines[i])
-            if mm:
-                name = mm.group(1)
-                rest = mm.group(2).strip()
-                if name in self.objects:
-                    self._error(f"duplicate object '{name}'")
-                    return i + 1
-                fields = {}
-                # rest может содержать поля
-                if rest and rest != 'end':
-                    lst = self._decl_list(rest)
-                    if lst:
-                        for t, n, v in lst:
-                            if t not in TYPES:
-                                self._error(f"object '{name}': expected type, got: {rest}")
-                            else:
-                                fields[n] = (t, v)
-                j = i + 1
-                while j < len(self.lines):
-                    line = self.lines[j]
-                    if line == 'end':
-                        self.objects[name] = fields
-                        return j + 1
-                    lst = self._decl_all(line)
-                    if not lst:
-                        self._error(f"object '{name}': expected 'type name = value', got: {line}")
-                    else:
-                        for t, n, v in lst:
-                            if t not in TYPES:
-                                self._error(f"object '{name}': expected type, got: {line}")
-                            else:
-                                if n in fields:
-                                    self._error(f"duplicate field '{name}.{n}'")
-                                else:
-                                    fields[n] = (t, v)
-                    j += 1
-                self._error(f"object '{name}' has no closing 'end'")
-                return j
             self._error(f"invalid object declaration: {self.lines[i]}")
             return i + 1
-        name = m.group(1)
+        name, rest = m.group(1), (m.group(2) or '').strip()
         if name in self.objects:
             self._error(f"duplicate object '{name}'")
             return i + 1
         fields = {}
+        if rest and rest != 'end':
+            lst = self._decl_list(rest)
+            if lst:
+                for t, n, v in lst:
+                    if t not in TYPES:
+                        self._error(f"object '{name}': expected type, got: {rest}")
+                    else:
+                        fields[n] = (t, v)
         j = i + 1
         while j < len(self.lines):
             line = self.lines[j]
@@ -396,11 +367,10 @@ class DimScriptCompiler:
                 for t, n, v in lst:
                     if t not in TYPES:
                         self._error(f"object '{name}': expected type, got: {line}")
+                    elif n in fields:
+                        self._error(f"duplicate field '{name}.{n}'")
                     else:
-                        if n in fields:
-                            self._error(f"duplicate field '{name}.{n}'")
-                        else:
-                            fields[n] = (t, v)
+                        fields[n] = (t, v)
             j += 1
         self._error(f"object '{name}' has no closing 'end'")
         return j

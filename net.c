@@ -16,15 +16,17 @@
 #define URL 384
 #define BODY 768
 #define RESP 4096
-#define TICK 100
+#define TICK 60
 #define TIMEOUT 3000
 #define STALE 12000
 
+/* Bullet: x,y = точка выстрела (origin), tr = пройденный путь.
+ * Текущая позиция = x + dx*tr. Это чинит «пули из ниоткуда» и промахи. */
 typedef struct { double x,y,a,hp,alive; int online; } Actor;
-typedef struct { double x,y,dx,dy,active,shot; } Bullet;
+typedef struct { double x,y,dx,dy,active,shot,tr; } Bullet;
 
 static struct {
-    pthread_t thread; pthread_mutex_t lock;
+    pthread_t thread, rthread; pthread_mutex_t lock;
     JavaVM *vm; int run, started, slot, status;
     char base[220], room[48], uid[24];
     Actor me; Bullet my_bullet; unsigned long seq, count;
@@ -168,7 +170,7 @@ static int push_state(void) {
     lock(); a=net.me; b=net.my_bullet; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
     snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
-    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"x\":%.1f,\"y\":%.1f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.1f,\"y\":%.1f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f}}",slot,net.uid,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot));
+    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"x\":%.1f,\"y\":%.1f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.1f,\"y\":%.1f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",slot,net.uid,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
     return http("PATCH",url,body,NULL,0)==200;
 }
 static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room); return http("GET",url,NULL,resp,cap)==200; }
@@ -224,12 +226,14 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/dy",bp); bs[slot].dy=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/active",bp); bs[slot].active=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/shot",bp); bs[slot].shot=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/tr",bp); bs[slot].tr=num(resp,p,0);
         count++;
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); memcpy(net.bullets,bs,sizeof(bs)); net.count=count; unlock();
 }
+/* Пишущий поток: держит слот и пушит своё состояние каждые TICK. */
 static void *thread_main(void *arg) {
-    char resp[RESP]; int fails=0; (void)arg;
+    int fails=0; (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
         lock(); slot=net.slot; unlock();
@@ -238,11 +242,24 @@ static void *thread_main(void *arg) {
             if(slot<0){ if(++fails>3)status(NET_ERROR); sleep_ms(500); continue; }
             lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.bullets[slot]=net.my_bullet; net.players[slot].online=1; unlock(); fails=0;
         }
-        if(!push_state()||!pull_state(resp,sizeof(resp))){ if(++fails>3)status(NET_ERROR); sleep_ms(300); continue; }
-        fails=0; read_players(resp); status(NET_PLAYING);
+        if(!push_state()){ if(++fails>3)status(NET_ERROR); sleep_ms(300); continue; }
+        fails=0; status(NET_PLAYING);
         long long spent=now_ms()-start; if(spent<TICK)sleep_ms((int)(TICK-spent));
     }
     release_slot(); status(NET_OFFLINE); return NULL;
+}
+/* Читающий поток: тянет комнату параллельно с записью — убирает лаг от
+ * последовательных HTTP round-trip'ов, обновления чаще и плавнее. */
+static void *reader_thread(void *arg) {
+    char resp[RESP]; (void)arg;
+    while(net.run) {
+        long long start=now_ms(); int slot;
+        lock(); slot=net.slot; unlock();
+        if(slot<0){ sleep_ms(50); continue; }
+        if(pull_state(resp,sizeof(resp))) read_players(resp);
+        long long spent=now_ms()-start; if(spent<TICK)sleep_ms((int)(TICK-spent));
+    }
+    return NULL;
 }
 static void make_uid(void) {
     struct timespec t; unsigned long a,b; int local=0;
@@ -262,18 +279,19 @@ void net_connect(const char *url,const char *room) {
     if(!net.started){ pthread_mutex_init(&net.lock,NULL); net.started=1; }
     net.status=NET_CONNECTING; net.run=1;
     if(pthread_create(&net.thread,NULL,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; return; }
+    if(pthread_create(&net.rthread,NULL,reader_thread,NULL)){ net.run=0; pthread_join(net.thread,NULL); net.status=NET_ERROR; return; }
     LOG("connect %s/%s",net.base,net.room);
 }
-void net_disconnect(void) { if(!net.run)return; net.run=0; pthread_join(net.thread,NULL); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
+void net_disconnect(void) { if(!net.run)return; net.run=0; pthread_join(net.thread,NULL); pthread_join(net.rthread,NULL); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
 void net_shutdown(void) { net_disconnect(); }
 void net_publish(double x,double y,double a,double hp,double alive) {
     if(!net.started) return;
     lock(); net.me.x=x; net.me.y=y; net.me.a=a; net.me.hp=hp; net.me.alive=alive;
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; } unlock();
 }
-void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot) {
+void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot,double tr) {
     if(!net.started) return;
-    lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
+    lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; net.my_bullet.tr=tr; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
 }
 static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
@@ -292,4 +310,5 @@ READER(net_player_bullet_y, net.bullets[i].y)
 READER(net_player_bullet_dx, net.bullets[i].dx)
 READER(net_player_bullet_dy, net.bullets[i].dy)
 READER(net_player_bullet_shot, net.bullets[i].shot)
+READER(net_player_bullet_tr, net.bullets[i].tr)
 #undef READER
