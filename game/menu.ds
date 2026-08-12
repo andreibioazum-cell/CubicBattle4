@@ -16,23 +16,10 @@ ctext "Choose mode", screen_h/2-120, 0xFFFFFF; button "Solo", (screen_w-btn_w)/2
 end
 draw_back
 end
-function draw_rooms
-rect 0, 0, screen_w, screen_h, 0x1a1a2e
-if language_ru==1
-ctext "Онлайн-комнаты", 92, 0xFFFFFF; ctext "Выберите комнату", 130, 0xC9C9D6; button "Комната 1", (screen_w-btn_w)/2, 180, btn_w, btn_h; button "Комната 2", (screen_w-btn_w)/2, 260, btn_w, btn_h; button "Комната 3", (screen_w-btn_w)/2, 340, btn_w, btn_h
-else
-ctext "Online rooms", 92, 0xFFFFFF; ctext "Choose a room", 130, 0xC9C9D6; button "Room 1", (screen_w-btn_w)/2, 180, btn_w, btn_h; button "Room 2", (screen_w-btn_w)/2, 260, btn_w, btn_h; button "Room 3", (screen_w-btn_w)/2, 340, btn_w, btn_h
-end
-draw_back
-end
 function draw_settings
 rect 0, 0, screen_w, screen_h, 0x1a1a2e
-if language_ru==1
-ctext "Настройки", 92, 0xFFFFFF; ctext "Язык", 148, 0xC9C9D6
-else
-ctext "Settings", 92, 0xFFFFFF; ctext "Language", 148, 0xC9C9D6
-end
-choice "English", (screen_w-btn_w)/2, 182, btn_w, btn_h, 1-language_ru; choice "Русский", (screen_w-btn_w)/2, 262, btn_w, btn_h, language_ru
+choice "English", (screen_w-btn_w)/2, screen_h/2-80, btn_w, btn_h, 1-language_ru
+choice "Русский", (screen_w-btn_w)/2, screen_h/2, btn_w, btn_h, language_ru
 draw_back
 end
 function touch_lobby num x, num y, num action
@@ -50,14 +37,9 @@ end
 if game_state==2
 num mx=(screen_w-btn_w)/2; if x<mx-12 || x>mx+btn_w+12; return; end
 if y>=screen_h/2-48 && y<=screen_h/2+32; game_mode=0; start_transition 1; return; end
-if y>=screen_h/2+32 && y<=screen_h/2+112; start_transition 3; end
-else if game_state==3
-num rx=(screen_w-btn_w)/2; if x<rx-12 || x>rx+btn_w+12; return; end
-if y>=172 && y<=252; selected_room=1; ROOM="room1"; start_transition 5; return; end
-if y>=252 && y<=332; selected_room=2; ROOM="room2"; start_transition 5; return; end
-if y>=332 && y<=412; selected_room=3; ROOM="room3"; start_transition 5; end
+if y>=screen_h/2+32 && y<=screen_h/2+112; ROOM="main"; start_transition 5; end
 else if game_state==4
 num sx=(screen_w-btn_w)/2; if x<sx-12 || x>sx+btn_w+12; return; end
-if y>=174 && y<=254; language_ru=0; else if y>=254 && y<=334; language_ru=1; end
+if y>=screen_h/2-88 && y<=screen_h/2-8; language_ru=0; else if y>=screen_h/2-8 && y<=screen_h/2+72; language_ru=1; end
 end
 end

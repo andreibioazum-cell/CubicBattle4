@@ -99,6 +99,7 @@ void text(const char *string, float x, float y, uint32_t color);
 void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
 int text_ink_width(const char *string);
 int text_ink_height(const char *string);
+int text_ink_top(const char *string);
 
 int ds_graphics_init(AAssetManager *assets);
 int ds_graphics_begin_frame(Buffer *buffer);
