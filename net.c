@@ -1,977 +1,262 @@
-/* Онлайн-слой: обмен состоянием через Firebase Realtime Database (REST).
- *
- * Здесь три части:
- *   1. HTTP-клиент. На Android — java.net.HttpURLConnection через JNI
- *      (даёт HTTPS без OpenSSL и лишних зависимостей), на Linux и прочих
- *      POSIX — обычные сокеты для http:// (используется в тестах).
- *   2. Крошечный разборщик JSON: нужны только числа и строки по пути
- *      вида "players/1/x", полноценный парсер тут ни к чему.
- *   3. Поток синхронизации: раз в 100 мс отправляет своё состояние
- *      и забирает состояние остальных игроков. Игровой цикл в сеть
- *      никогда не блокируется.
- */
-
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "net.h"
-
+#include <android/log.h>
 #include <math.h>
 #include <pthread.h>
-#include <stdarg.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
 #include <unistd.h>
 
-#ifdef __ANDROID__
-#include <android/log.h>
-#include <jni.h>
-#define NET_LOG(...) __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__)
-#else
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <unistd.h>
-#define NET_LOG(...) do { \
-    if (getenv("NET_DEBUG")) { fprintf(stderr, "[net] " __VA_ARGS__); fputc('\n', stderr); } \
-} while (0)
-#endif
+#define LOG(...) __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__)
+#define URL 384
+#define BODY 768
+#define RESP 4096
+#define TICK 100
+#define TIMEOUT 3000
+#define STALE 5000
 
-#define NET_URL_SIZE      512
-#define NET_BASE_SIZE     256    /* корень базы: URL с запасом на путь */
-#define NET_BODY_SIZE     1024
-#define NET_RESPONSE_SIZE 8192
-#define NET_TICK_MS       100    /* 10 обновлений в секунду */
-#define NET_PEER_TIMEOUT  3000   /* молчит дольше — считаем, что вышел */
-#define NET_TAKEOVER_MS   5000   /* столько ждём, прежде чем занять чужой слот */
-
-/* ---------------------------------------------------------------- время */
-
-static long long net_now_ms(void) {
-    struct timespec ts;
-#ifdef CLOCK_MONOTONIC
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
-        return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-#endif
-    return (long long)time(NULL) * 1000;
-}
-
-static void net_sleep_ms(int ms) {
-    struct timespec ts;
-    ts.tv_sec = ms / 1000;
-    ts.tv_nsec = (long)(ms % 1000) * 1000000L;
-    nanosleep(&ts, NULL);
-}
-
-/* ------------------------------------------------------------ HTTP: JNI */
-
-#ifdef __ANDROID__
-
-static JavaVM *net_jvm = NULL;
-
-void net_set_java_vm(JavaVM *vm) { net_jvm = vm; }
-
-/* Тело запроса уходит в HttpURLConnection, ответ читается целиком в out.
- * Возвращает HTTP-код или 0, если соединение не удалось. */
-static int net_http(const char *method, const char *url, const char *body,
-                    char *out, size_t out_size) {
-    JNIEnv *env = NULL;
-    jclass url_class, conn_class, stream_class;
-    jobject url_object, connection, stream;
-    jbyteArray buffer;
-    jstring jurl, jmethod;
-    int status = 0, attached = 0;
-    size_t total = 0;
-
-    if (out && out_size) out[0] = '\0';
-    if (!net_jvm) return 0;
-
-    if ((*net_jvm)->GetEnv(net_jvm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
-        if ((*net_jvm)->AttachCurrentThread(net_jvm, &env, NULL) != JNI_OK) return 0;
-        attached = 1;
-    }
-    if ((*env)->PushLocalFrame(env, 32) != 0) goto detach;
-
-    url_class = (*env)->FindClass(env, "java/net/URL");
-    conn_class = (*env)->FindClass(env, "java/net/HttpURLConnection");
-    if (!url_class || !conn_class) goto done;
-
-    jurl = (*env)->NewStringUTF(env, url);
-    url_object = (*env)->NewObject(env, url_class,
-        (*env)->GetMethodID(env, url_class, "<init>", "(Ljava/lang/String;)V"), jurl);
-    if (!url_object || (*env)->ExceptionCheck(env)) goto done;
-
-    connection = (*env)->CallObjectMethod(env, url_object,
-        (*env)->GetMethodID(env, url_class, "openConnection", "()Ljava/net/URLConnection;"));
-    if (!connection || (*env)->ExceptionCheck(env)) goto done;
-
-    jmethod = (*env)->NewStringUTF(env, method);
-    (*env)->CallVoidMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class, "setRequestMethod", "(Ljava/lang/String;)V"), jmethod);
-    (*env)->CallVoidMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class, "setConnectTimeout", "(I)V"), 4000);
-    (*env)->CallVoidMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class, "setReadTimeout", "(I)V"), 4000);
-    (*env)->CallVoidMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class, "setUseCaches", "(Z)V"), JNI_FALSE);
-    {
-        jstring key = (*env)->NewStringUTF(env, "Content-Type");
-        jstring value = (*env)->NewStringUTF(env, "application/json");
-        (*env)->CallVoidMethod(env, connection,
-            (*env)->GetMethodID(env, conn_class, "setRequestProperty",
-                                "(Ljava/lang/String;Ljava/lang/String;)V"), key, value);
-    }
-    if ((*env)->ExceptionCheck(env)) goto done;
-
-    if (body && *body) {
-        jobject out_stream;
-        jbyteArray data;
-        jsize length = (jsize)strlen(body);
-        (*env)->CallVoidMethod(env, connection,
-            (*env)->GetMethodID(env, conn_class, "setDoOutput", "(Z)V"), JNI_TRUE);
-        (*env)->CallVoidMethod(env, connection,
-            (*env)->GetMethodID(env, conn_class, "setFixedLengthStreamingMode", "(I)V"), (jint)length);
-        out_stream = (*env)->CallObjectMethod(env, connection,
-            (*env)->GetMethodID(env, conn_class, "getOutputStream", "()Ljava/io/OutputStream;"));
-        if (!out_stream || (*env)->ExceptionCheck(env)) goto done;
-        data = (*env)->NewByteArray(env, length);
-        (*env)->SetByteArrayRegion(env, data, 0, length, (const jbyte *)body);
-        {
-            jclass os_class = (*env)->GetObjectClass(env, out_stream);
-            (*env)->CallVoidMethod(env, out_stream,
-                (*env)->GetMethodID(env, os_class, "write", "([B)V"), data);
-            (*env)->CallVoidMethod(env, out_stream,
-                (*env)->GetMethodID(env, os_class, "close", "()V"));
-        }
-        if ((*env)->ExceptionCheck(env)) goto done;
-    }
-
-    status = (int)(*env)->CallIntMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class, "getResponseCode", "()I"));
-    if ((*env)->ExceptionCheck(env)) { status = 0; goto done; }
-
-    stream = (*env)->CallObjectMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class,
-            status >= 400 ? "getErrorStream" : "getInputStream", "()Ljava/io/InputStream;"));
-    if ((*env)->ExceptionCheck(env) || !stream) goto close;
-
-    stream_class = (*env)->GetObjectClass(env, stream);
-    buffer = (*env)->NewByteArray(env, 1024);
-    for (;;) {
-        jint read = (*env)->CallIntMethod(env, stream,
-            (*env)->GetMethodID(env, stream_class, "read", "([B)I"), buffer);
-        if ((*env)->ExceptionCheck(env) || read <= 0) break;
-        if (out && out_size && total + (size_t)read < out_size) {
-            (*env)->GetByteArrayRegion(env, buffer, 0, read, (jbyte *)(out + total));
-            total += (size_t)read;
-            out[total] = '\0';
-        }
-    }
-    (*env)->CallVoidMethod(env, stream,
-        (*env)->GetMethodID(env, stream_class, "close", "()V"));
-
-close:
-    (*env)->CallVoidMethod(env, connection,
-        (*env)->GetMethodID(env, conn_class, "disconnect", "()V"));
-done:
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
-    (*env)->PopLocalFrame(env, NULL);
-detach:
-    if (attached) (*net_jvm)->DetachCurrentThread(net_jvm);
-    return status;
-}
-
-#else /* -------------------------------------------------- HTTP: сокеты */
-
-/* Разбор "http://host:port/path" — на POSIX используется тестовым
- * сервером, поэтому TLS здесь не нужен. */
-static int net_parse_url(const char *url, char *host, size_t host_size,
-                         char *port, size_t port_size, const char **path) {
-    const char *p = url, *slash, *colon;
-    size_t length;
-    if (strncmp(p, "http://", 7) == 0) { p += 7; snprintf(port, port_size, "80"); }
-    else if (strncmp(p, "https://", 8) == 0) { p += 8; snprintf(port, port_size, "443"); }
-    else return 0;
-    slash = strchr(p, '/');
-    *path = slash ? slash : "/";
-    length = slash ? (size_t)(slash - p) : strlen(p);
-    colon = memchr(p, ':', length);
-    if (colon) {
-        size_t port_length = length - (size_t)(colon - p) - 1;
-        if (port_length >= port_size) return 0;
-        memcpy(port, colon + 1, port_length);
-        port[port_length] = '\0';
-        length = (size_t)(colon - p);
-    }
-    if (length == 0 || length >= host_size) return 0;
-    memcpy(host, p, length);
-    host[length] = '\0';
-    return 1;
-}
-
-static int net_http(const char *method, const char *url, const char *body,
-                    char *out, size_t out_size) {
-    char host[256], port[16], request[NET_URL_SIZE + NET_BODY_SIZE + 256];
-    char response[NET_RESPONSE_SIZE];
-    const char *path;
-    struct addrinfo hints, *list = NULL, *it;
-    struct timeval timeout;
-    int fd = -1, status = 0, length;
-    size_t total = 0;
-    char *header_end;
-
-    if (out && out_size) out[0] = '\0';
-    if (!net_parse_url(url, host, sizeof(host), port, sizeof(port), &path)) return 0;
-    if (strcmp(port, "443") == 0) {
-        NET_LOG("на этой платформе поддерживается только http:// (собран без TLS)");
-        return 0;
-    }
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host, port, &hints, &list) != 0) return 0;
-    for (it = list; it; it = it->ai_next) {
-        fd = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
-        if (fd < 0) continue;
-        timeout.tv_sec = 4; timeout.tv_usec = 0;
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-        if (connect(fd, it->ai_addr, it->ai_addrlen) == 0) break;
-        close(fd);
-        fd = -1;
-    }
-    freeaddrinfo(list);
-    if (fd < 0) return 0;
-
-    length = snprintf(request, sizeof(request),
-                      "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
-                      "Content-Type: application/json\r\nContent-Length: %u\r\n\r\n%s",
-                      method, path, host, (unsigned)(body ? strlen(body) : 0),
-                      body ? body : "");
-    if (length <= 0 || (size_t)length >= sizeof(request)) { close(fd); return 0; }
-    if (send(fd, request, (size_t)length, 0) != length) { close(fd); return 0; }
-
-    for (;;) {
-        ssize_t read_bytes = recv(fd, response + total, sizeof(response) - total - 1, 0);
-        if (read_bytes <= 0) break;
-        total += (size_t)read_bytes;
-        if (total + 1 >= sizeof(response)) break;
-    }
-    close(fd);
-    response[total] = '\0';
-    if (total == 0) return 0;
-    if (sscanf(response, "HTTP/1.%*d %d", &status) != 1) return 0;
-
-    header_end = strstr(response, "\r\n\r\n");
-    if (header_end && out && out_size) {
-        const char *payload = header_end + 4;
-        /* Firebase отдаёт ответ chunked, когда длина заранее неизвестна:
-         * первая строка — размер в hex, её нужно пропустить. */
-        if (strstr(response, "Transfer-Encoding: chunked")) {
-            const char *chunk = strstr(payload, "\r\n");
-            if (chunk) payload = chunk + 2;
-        }
-        snprintf(out, out_size, "%s", payload);
-        {   /* хвост chunked-ответа скрипту не нужен */
-            char *tail = strstr(out, "\r\n");
-            if (tail) *tail = '\0';
-        }
-    }
-    return status;
-}
-
-#endif
-
-/* --------------------------------------------------------- разбор JSON */
-
-static const char *js_skip_ws(const char *p) {
-    while (p && *p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
-    return p;
-}
-
-static const char *js_skip_value(const char *p);
-
-static const char *js_skip_string(const char *p) {
-    if (!p || *p != '"') return NULL;
-    for (p++; *p; p++) {
-        if (*p == '\\' && p[1]) { p++; continue; }
-        if (*p == '"') return p + 1;
-    }
-    return NULL;
-}
-
-static const char *js_skip_container(const char *p, char open, char close) {
-    int depth = 0;
-    if (!p || *p != open) return NULL;
-    for (; *p; p++) {
-        if (*p == '"') { p = js_skip_string(p); if (!p) return NULL; p--; continue; }
-        if (*p == open) depth++;
-        else if (*p == close && --depth == 0) return p + 1;
-    }
-    return NULL;
-}
-
-static const char *js_skip_value(const char *p) {
-    p = js_skip_ws(p);
-    if (!p || !*p) return NULL;
-    if (*p == '"') return js_skip_string(p);
-    if (*p == '{') return js_skip_container(p, '{', '}');
-    if (*p == '[') return js_skip_container(p, '[', ']');
-    while (*p && *p != ',' && *p != '}' && *p != ']') p++;
-    return p;
-}
-
-/* Значение поля key внутри объекта object (без рекурсии по вложенным). */
-static const char *js_member(const char *object, const char *key) {
-    size_t key_length = strlen(key);
-    const char *p = js_skip_ws(object);
-    if (!p || *p != '{') return NULL;
-    p = js_skip_ws(p + 1);
-    while (p && *p && *p != '}') {
-        const char *name = p;
-        const char *name_end = js_skip_string(p);
-        if (!name_end) return NULL;
-        p = js_skip_ws(name_end);
-        if (*p != ':') return NULL;
-        p = js_skip_ws(p + 1);
-        if ((size_t)(name_end - name - 2) == key_length &&
-            strncmp(name + 1, key, key_length) == 0) {
-            return p;
-        }
-        p = js_skip_value(p);
-        p = js_skip_ws(p);
-        if (p && *p == ',') p = js_skip_ws(p + 1);
-    }
-    return NULL;
-}
-
-/* Значение по пути "players/1/x". */
-static const char *js_path(const char *json, const char *path) {
-    char part[64];
-    const char *value = json;
-    while (path && *path && value) {
-        const char *slash = strchr(path, '/');
-        size_t length = slash ? (size_t)(slash - path) : strlen(path);
-        if (length == 0 || length >= sizeof(part)) return NULL;
-        memcpy(part, path, length);
-        part[length] = '\0';
-        value = js_member(value, part);
-        path = slash ? slash + 1 : path + length;
-    }
-    return value;
-}
-
-static int js_is_null(const char *value) {
-    return !value || strncmp(value, "null", 4) == 0;
-}
-
-static double js_number(const char *json, const char *path, double fallback) {
-    const char *value = js_path(json, path);
-    if (js_is_null(value)) return fallback;
-    if (*value == 't') return 1;             /* true  */
-    if (*value == 'f') return 0;             /* false */
-    if (*value == '"') value++;              /* число, записанное строкой */
-    return atof(value);
-}
-
-static void js_string(const char *json, const char *path, char *out, size_t out_size) {
-    const char *value = js_path(json, path);
-    size_t i = 0;
-    if (out_size == 0) return;
-    out[0] = '\0';
-    if (js_is_null(value) || *value != '"') return;
-    for (value++; *value && *value != '"' && i + 1 < out_size; value++) {
-        if (*value == '\\' && value[1]) value++;
-        out[i++] = *value;
-    }
-    out[i] = '\0';
-}
-
-/* -------------------------------------------------------- общее состояние */
-
-typedef struct {
-    double x, y, angle, hp, alive;
-    int online;
-} NetActor;
-
-typedef struct {
-    double x, y, dx, dy, active, shot;
-} NetBullet;
+typedef struct { double x,y,a,hp,alive; int online; } Actor;
+typedef struct { double x,y,dx,dy,active,shot; } Bullet;
 
 static struct {
-    pthread_t thread;
-    pthread_mutex_t lock;
-    int running;
-    int started;
-
-    char base[NET_BASE_SIZE];
-    char room[48];
-    char uid[24];
-    int slot;
-    int status;
-
-    NetActor local;
-    NetBullet local_bullet;
-    unsigned long seq;
-
-    int player_count;
-    NetActor players[NET_MAX_SLOTS];
-    NetBullet bullets[NET_MAX_SLOTS];
+    pthread_t thread; pthread_mutex_t lock;
+    JavaVM *vm; int run, started, slot, status;
+    char base[220], room[48], uid[24];
+    Actor me; Bullet my_bullet; unsigned long seq, count;
+    Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
 } net;
 
-/* Уникальный id клиента. Только time() мало: два устройства, запущенные
- * в одну секунду, получили бы один uid и подрались за слот. Подмешиваем
- * наносекунды, pid и адрес стека — этого достаточно, чтобы совпадений
- * на практике не было. */
-static void net_make_uid(void) {
-    struct timespec ts;
-    unsigned long a, b;
-    int local = 0;
-#ifdef CLOCK_MONOTONIC
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-#else
-    ts.tv_sec = time(NULL);
-    ts.tv_nsec = 0;
-#endif
-    a = (unsigned long)time(NULL) ^ ((unsigned long)ts.tv_nsec << 8);
-    b = (unsigned long)getpid() ^ (unsigned long)(uintptr_t)&local;
-    snprintf(net.uid, sizeof(net.uid), "%08lx%08lx",
-             a & 0xFFFFFFFFul, b & 0xFFFFFFFFul);
+static long long now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec*1000+t.tv_nsec/1000000;
 }
-
-static void net_lock(void) { pthread_mutex_lock(&net.lock); }
-static void net_unlock(void) { pthread_mutex_unlock(&net.lock); }
-
-static void net_set_status(int status) {
-    net_lock();
-    net.status = status;
-    net_unlock();
+static void sleep_ms(int ms) {
+    struct timespec t = { ms/1000, (long)(ms%1000)*1000000L };
+    nanosleep(&t, NULL);
 }
+static double safe(double v) { return isnan(v)||isinf(v) ? 0 : v; }
+static void lock(void) { pthread_mutex_lock(&net.lock); }
+static void unlock(void) { pthread_mutex_unlock(&net.lock); }
+static void status(int s) { lock(); net.status=s; unlock(); }
 
-/* Числа для Firebase печатаем сами: "%g" даёт короткий и валидный JSON,
- * а бесконечности и NaN в базу пускать нельзя. */
-static double net_safe(double value) {
-    if (isnan(value) || isinf(value)) return 0;
-    return value;
-}
+void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
 
-/* ------------------------------------------------------- запросы к базе */
-
-/* Одним PATCH пишем и себя, и свою пулю: меньше запросов — меньше лага. */
-static int net_push_state(void) {
-    char url[NET_URL_SIZE], body[NET_BODY_SIZE];
-    NetActor actor;
-    NetBullet bullet;
-    unsigned long seq;
-    int slot;
-
-    net_lock();
-    actor = net.local;
-    bullet = net.local_bullet;
-    slot = net.slot;
-    seq = ++net.seq;
-    net_unlock();
-    if (slot < 0) return 0;
-
-    snprintf(url, sizeof(url), "%s/rooms/%s.json", net.base, net.room);
-    snprintf(body, sizeof(body),
-             "{\"players/%d\":{\"uid\":\"%s\",\"x\":%.1f,\"y\":%.1f,\"angle\":%.4f,"
-             "\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},"
-             "\"bullets/%d\":{\"x\":%.1f,\"y\":%.1f,\"dx\":%.4f,\"dy\":%.4f,"
-             "\"active\":%.0f,\"shot\":%.0f}}",
-             slot, net.uid, net_safe(actor.x), net_safe(actor.y), net_safe(actor.angle),
-             net_safe(actor.hp), net_safe(actor.alive), seq,
-             slot, net_safe(bullet.x), net_safe(bullet.y), net_safe(bullet.dx),
-             net_safe(bullet.dy), net_safe(bullet.active), net_safe(bullet.shot));
-    return net_http("PATCH", url, body, NULL, 0) == 200;
-}
-
-/* Читаем комнату целиком одним GET. */
-static int net_pull_state(char *response, size_t size) {
-    char url[NET_URL_SIZE];
-    snprintf(url, sizeof(url), "%s/rooms/%s.json", net.base, net.room);
-    return net_http("GET", url, NULL, response, size) == 200;
-}
-
-static void net_release_slot(void) {
-    char url[NET_URL_SIZE];
-    int slot;
-    net_lock();
-    slot = net.slot;
-    net.slot = -1;
-    net_unlock();
-    if (slot < 0) return;
-    snprintf(url, sizeof(url), "%s/rooms/%s/players/%d.json", net.base, net.room, slot);
-    net_http("DELETE", url, NULL, NULL, 0);
-    snprintf(url, sizeof(url), "%s/rooms/%s/bullets/%d.json", net.base, net.room, slot);
-    net_http("DELETE", url, NULL, NULL, 0);
-}
-
-/* Занять слот: сначала свободный, потом — молчащий дольше NET_TAKEOVER_MS.
- * Занятие подтверждаем повторным чтением: если два клиента подключились
- * одновременно, проигравший увидит чужой uid и возьмёт другой слот. */
-static int net_claim_slot(void) {
-    static long long watch_since = 0;
-    static unsigned long watch_seq[NET_MAX_SLOTS] = {0};
-    static int watch_valid = 0;
-    char response[NET_RESPONSE_SIZE], url[NET_URL_SIZE], body[NET_BODY_SIZE], uid[24];
-    long long now = net_now_ms();
-    int slot, changed = 0;
-
-    if (!net_pull_state(response, sizeof(response))) return -1;
-
-    for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
-        char path[32];
-        snprintf(path, sizeof(path), "players/%d/uid", slot);
-        js_string(response, path, uid, sizeof(uid));
-        if (uid[0] == '\0' || strcmp(uid, net.uid) == 0) break;
+static int http(const char *method, const char *url, const char *body, char *out, size_t cap) {
+    JNIEnv *env=NULL; jobject conn=NULL, stream=NULL, urlobj=NULL;
+    jclass urlc, connc, streamc; jbyteArray buf; jstring ju, jm;
+    int code=0, attached=0, ok=0; size_t total=0;
+    if (out&&cap) out[0]='\0';
+    if (!net.vm) return 0;
+    if ((*net.vm)->GetEnv(net.vm,(void**)&env,JNI_VERSION_1_6)!=JNI_OK) {
+        if ((*net.vm)->AttachCurrentThread(net.vm,&env,NULL)!=JNI_OK) return 0;
+        attached=1;
     }
-
-    if (slot == NET_MAX_SLOTS) {
-        /* Все слоты заняты. Смотрим, не бросил ли кто игру. */
-        unsigned long seq[NET_MAX_SLOTS];
-        for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
-            char path[32];
-            snprintf(path, sizeof(path), "players/%d/seq", slot);
-            seq[slot] = (unsigned long)js_number(response, path, 0);
-            if (!watch_valid || seq[slot] != watch_seq[slot]) changed = 1;
-        }
-        if (changed) {
-            memcpy(watch_seq, seq, sizeof(watch_seq));
-            watch_since = now;
-            watch_valid = 1;
-            return -1;
-        }
-        if (now - watch_since < NET_TAKEOVER_MS) return -1;
-        slot = 0;   /* все молчат — комната брошена, занимаем первый слот */
-        watch_valid = 0;
+    if ((*env)->PushLocalFrame(env,24)!=0) goto done;
+    urlc=(*env)->FindClass(env,"java/net/URL");
+    connc=(*env)->FindClass(env,"java/net/HttpURLConnection");
+    if (!urlc||!connc) goto done;
+    ju=(*env)->NewStringUTF(env,url);
+    urlobj=(*env)->NewObject(env,urlc,(*env)->GetMethodID(env,urlc,"<init>","(Ljava/lang/String;)V"),ju);
+    if (!urlobj||(*env)->ExceptionCheck(env)) goto done;
+    conn=(*env)->CallObjectMethod(env,urlobj,(*env)->GetMethodID(env,urlc,"openConnection","()Ljava/net/URLConnection;"));
+    if (!conn||(*env)->ExceptionCheck(env)) goto done;
+    jm=(*env)->NewStringUTF(env,method);
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm);
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),4000);
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),4000);
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setUseCaches","(Z)V"),JNI_FALSE);
+    {
+        jstring k=(*env)->NewStringUTF(env,"Content-Type"), v=(*env)->NewStringUTF(env,"application/json");
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V"),k,v);
     }
-
-    snprintf(url, sizeof(url), "%s/rooms/%s/players/%d.json", net.base, net.room, slot);
-    snprintf(body, sizeof(body),
-             "{\"uid\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",
-             net.uid);
-    if (net_http("PUT", url, body, NULL, 0) != 200) return -1;
-
-    /* Проверяем, что слот действительно наш. */
-    if (net_http("GET", url, NULL, response, sizeof(response)) != 200) return -1;
-    js_string(response, "uid", uid, sizeof(uid));
-    if (strcmp(uid, net.uid) != 0) return -1;
-
-    NET_LOG("занят слот %d (uid %s)", slot, net.uid);
-    return slot;
+    if (body&&*body) {
+        jobject os; jbyteArray data; jsize len=(jsize)strlen(body);
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setDoOutput","(Z)V"),JNI_TRUE);
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setFixedLengthStreamingMode","(I)V"),len);
+        os=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,"getOutputStream","()Ljava/io/OutputStream;"));
+        if (!os||(*env)->ExceptionCheck(env)) goto done;
+        data=(*env)->NewByteArray(env,len);
+        (*env)->SetByteArrayRegion(env,data,0,len,(const jbyte*)body);
+        (*env)->CallVoidMethod(env,os,(*env)->GetMethodID(env,(*env)->GetObjectClass(env,os),"write","([B)V"),data);
+        (*env)->CallVoidMethod(env,os,(*env)->GetMethodID(env,(*env)->GetObjectClass(env,os),"close","()V"));
+    }
+    code=(int)(*env)->CallIntMethod(env,conn,(*env)->GetMethodID(env,connc,"getResponseCode","()I"));
+    if ((*env)->ExceptionCheck(env)) { code=0; goto done; }
+    stream=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,code>=400?"getErrorStream":"getInputStream","()Ljava/io/InputStream;"));
+    if (!stream||(*env)->ExceptionCheck(env)) goto closeconn;
+    streamc=(*env)->GetObjectClass(env,stream);
+    buf=(*env)->NewByteArray(env,1024);
+    for (;;) {
+        jint n=(*env)->CallIntMethod(env,stream,(*env)->GetMethodID(env,streamc,"read","([B)I"),buf);
+        if ((*env)->ExceptionCheck(env)||n<=0) break;
+        if (out&&cap&&total+(size_t)n<cap) { (*env)->GetByteArrayRegion(env,buf,0,n,(jbyte*)(out+total)); total+=(size_t)n; out[total]='\0'; }
+    }
+    (*env)->CallVoidMethod(env,stream,(*env)->GetMethodID(env,streamc,"close","()V"));
+closeconn:
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"disconnect","()V"));
+    ok=1;
+done:
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->PopLocalFrame(env,NULL);
+    if (attached) (*net.vm)->DetachCurrentThread(net.vm);
+    return ok ? code : 0;
 }
 
-/* Разбираем все слоты и решаем, кто из игроков на связи. */
-static void net_read_players(const char *response) {
-    static unsigned long last_seq[NET_MAX_SLOTS] = {0};
-    static long long last_change[NET_MAX_SLOTS] = {0};
-    NetActor actors[NET_MAX_SLOTS];
-    NetBullet bullets[NET_MAX_SLOTS];
-    long long now = net_now_ms();
-    int local_slot, count = 0, slot;
-
-    memset(actors, 0, sizeof(actors));
-    memset(bullets, 0, sizeof(bullets));
-
-    net_lock();
-    local_slot = net.slot;
-    net_unlock();
-
-    for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
-        char base_path[32], path[48], uid[24];
-        unsigned long seq;
-        int online;
-
-        if (slot == local_slot) {
-            net_lock();
-            actors[slot] = net.local;
-            bullets[slot] = net.local_bullet;
-            actors[slot].online = (local_slot >= 0);
-            net_unlock();
-            if (local_slot >= 0) count++;
-            continue;
-        }
-
-        snprintf(base_path, sizeof(base_path), "players/%d", slot);
-        snprintf(path, sizeof(path), "%s/uid", base_path);
-        js_string(response, path, uid, sizeof(uid));
-        if (uid[0] == '\0' || strcmp(uid, net.uid) == 0) {
-            last_seq[slot] = 0;
-            last_change[slot] = 0;
-            continue;
-        }
-
-        snprintf(path, sizeof(path), "%s/seq", base_path);
-        seq = (unsigned long)js_number(response, path, 0);
-        if (seq != last_seq[slot]) {
-            last_seq[slot] = seq;
-            last_change[slot] = now;
-        } else if (last_change[slot] == 0) {
-            last_change[slot] = now;
-        }
-        online = (now - last_change[slot]) < NET_PEER_TIMEOUT;
-        if (!online) continue;
-
-        snprintf(path, sizeof(path), "%s/x", base_path);
-        actors[slot].x = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/y", base_path);
-        actors[slot].y = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/angle", base_path);
-        actors[slot].angle = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/hp", base_path);
-        actors[slot].hp = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/alive", base_path);
-        actors[slot].alive = js_number(response, path, 0);
-        actors[slot].online = 1;
-
-        snprintf(base_path, sizeof(base_path), "bullets/%d", slot);
-        snprintf(path, sizeof(path), "%s/x", base_path);
-        bullets[slot].x = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/y", base_path);
-        bullets[slot].y = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/dx", base_path);
-        bullets[slot].dx = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/dy", base_path);
-        bullets[slot].dy = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/active", base_path);
-        bullets[slot].active = js_number(response, path, 0);
-        snprintf(path, sizeof(path), "%s/shot", base_path);
-        bullets[slot].shot = js_number(response, path, 0);
-        count++;
+static const char *skip_ws(const char *p) { while(p&&*p&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r')) p++; return p; }
+static const char *skip_str(const char *p) { if(!p||*p!='"') return NULL; for(p++;*p;p++){ if(*p=='\\'&&p[1]){p++;continue;} if(*p=='"') return p+1; } return NULL; }
+static const char *skip_box(const char *p,char open,char close) { int d=0; if(!p||*p!=open) return NULL; for(;*p;p++){ if(*p=='"'){p=skip_str(p); if(!p)return NULL; p--; continue;} if(*p==open)d++; else if(*p==close&&--d==0)return p+1;} return NULL; }
+static const char *skip_val(const char *p) { p=skip_ws(p); if(!p||!*p)return NULL; if(*p=='"')return skip_str(p); if(*p=='{')return skip_box(p,'{','}'); if(*p=='[')return skip_box(p,'[',']'); while(*p&&*p!=','&&*p!='}'&&*p!=']')p++; return p; }
+static const char *member(const char *o,const char *key) {
+    size_t n=strlen(key); const char *p=skip_ws(o);
+    if(!p||*p!='{') return NULL;
+    for(p=skip_ws(p+1);p&&*p&&*p!='}';) {
+        const char *name=p,*end=skip_str(p); if(!end)return NULL; p=skip_ws(end); if(*p!=':')return NULL; p=skip_ws(p+1);
+        if((size_t)(end-name-2)==n&&strncmp(name+1,key,n)==0) return p;
+        p=skip_val(p); p=skip_ws(p); if(p&&*p==',')p=skip_ws(p+1);
     }
-
-    net_lock();
-    memcpy(net.players, actors, sizeof(net.players));
-    memcpy(net.bullets, bullets, sizeof(net.bullets));
-    net.player_count = count;
-    net_unlock();
-}
-
-/* ------------------------------------------------------------ поток сети */
-
-static void *net_thread_main(void *unused) {
-    char response[NET_RESPONSE_SIZE];
-    int failures = 0;
-    (void)unused;
-
-    while (net.running) {
-        long long started = net_now_ms();
-        int slot;
-
-        net_lock();
-        slot = net.slot;
-        net_unlock();
-
-        if (slot < 0) {
-            net_set_status(NET_CONNECTING);
-            slot = net_claim_slot();
-            if (slot < 0) {
-                if (++failures > 3) net_set_status(NET_ERROR);
-                net_sleep_ms(500);
-                continue;
-            }
-            net_lock();
-            net.slot = slot;
-            net.seq = 0;
-            net.players[slot] = net.local;
-            net.bullets[slot] = net.local_bullet;
-            net.players[slot].online = 1;
-            net_unlock();
-            failures = 0;
-        }
-
-        if (!net_push_state() || !net_pull_state(response, sizeof(response))) {
-            if (++failures > 3) net_set_status(NET_ERROR);
-            net_sleep_ms(300);
-            continue;
-        }
-        failures = 0;
-        net_read_players(response);
-        net_set_status(NET_PLAYING);
-
-        {
-            long long spent = net_now_ms() - started;
-            if (spent < NET_TICK_MS) net_sleep_ms((int)(NET_TICK_MS - spent));
-        }
-    }
-
-    net_release_slot();
-    net_set_status(NET_OFFLINE);
     return NULL;
 }
-
-/* -------------------------------------------------------------- API игры */
-
-void net_connect(const char *base_url, const char *room) {
-    size_t length;
-    if (net.running) return;
-    if (!base_url || !*base_url) return;
-
-    memset(&net.local, 0, sizeof(net.local));
-    memset(&net.local_bullet, 0, sizeof(net.local_bullet));
-    memset(net.players, 0, sizeof(net.players));
-    memset(net.bullets, 0, sizeof(net.bullets));
-    net.player_count = 0;
-    net.slot = -1;
-    net.seq = 0;
-
-#ifndef __ANDROID__
-    /* Тестам нужен локальный сервер вместо боевой базы. */
-    {
-        const char *override = getenv("NET_BASE_URL");
-        if (override && *override) base_url = override;
-    }
-#endif
-    snprintf(net.base, sizeof(net.base), "%s", base_url);
-    length = strlen(net.base);
-    while (length && net.base[length - 1] == '/') net.base[--length] = '\0';
-    snprintf(net.room, sizeof(net.room), "%s", (room && *room) ? room : "main");
-
-    if (!net.uid[0]) net_make_uid();
-    if (!net.started) {
-        pthread_mutex_init(&net.lock, NULL);
-        net.started = 1;
-    }
-    net.status = NET_CONNECTING;
-    net.running = 1;
-    if (pthread_create(&net.thread, NULL, net_thread_main, NULL) != 0) {
-        net.running = 0;
-        net.status = NET_ERROR;
-        NET_LOG("не удалось запустить сетевой поток");
-        return;
-    }
-    NET_LOG("подключение к %s, комната %s", net.base, net.room);
+static const char *path_val(const char *json,const char *path) {
+    char part[48]; const char *v=json;
+    while(path&&*path&&v) { const char *slash=strchr(path,'/'); size_t n=slash?(size_t)(slash-path):strlen(path); if(!n||n>=sizeof(part))return NULL; memcpy(part,path,n); part[n]=0; v=member(v,part); path=slash?slash+1:path+n; }
+    return v;
+}
+static double num(const char *json,const char *path,double fb) { const char *v=path_val(json,path); if(!v||!strncmp(v,"null",4))return fb; if(*v=='t')return 1; if(*v=='f')return 0; if(*v=='"')v++; return atof(v); }
+static void strv(const char *json,const char *path,char *out,size_t cap) {
+    const char *v=path_val(json,path); size_t i=0; if(cap)out[0]=0; if(!v||*v!='"')return;
+    for(v++;*v&&*v!='"'&&i+1<cap;v++){ if(*v=='\\'&&v[1])v++; out[i++]=*v; } out[i]=0;
 }
 
-void net_disconnect(void) {
-    if (!net.running) return;
-    net.running = 0;
-    pthread_join(net.thread, NULL);
-    net.status = NET_OFFLINE;
-    net.slot = -1;
-    net.player_count = 0;
-    memset(net.players, 0, sizeof(net.players));
-    memset(net.bullets, 0, sizeof(net.bullets));
+static int push_state(void) {
+    Actor a; Bullet b; int slot; unsigned long seq; char url[URL], body[BODY];
+    lock(); a=net.me; b=net.my_bullet; slot=net.slot; seq=++net.seq; unlock();
+    if(slot<0) return 0;
+    snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
+    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"x\":%.1f,\"y\":%.1f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.1f,\"y\":%.1f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f}}",slot,net.uid,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot));
+    return http("PATCH",url,body,NULL,0)==200;
 }
-
+static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room); return http("GET",url,NULL,resp,cap)==200; }
+static void release_slot(void) {
+    int slot; char url[URL]; lock(); slot=net.slot; net.slot=-1; unlock(); if(slot<0)return;
+    snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
+    snprintf(url,sizeof(url),"%s/rooms/%s/bullets/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
+}
+static int claim_slot(void) {
+    static long long watch; static unsigned long wseq[NET_SLOTS]; static int wvalid;
+    char resp[RESP],url[URL],body[BODY],uid[24]; long long t=now_ms(); int slot,changed=0; unsigned long seq[NET_SLOTS];
+    if(!pull_state(resp,sizeof(resp))) return -1;
+    for(slot=0;slot<NET_SLOTS;slot++){ char p[32]; snprintf(p,sizeof(p),"players/%d/uid",slot); strv(resp,p,uid,sizeof(uid)); if(!uid[0]||!strcmp(uid,net.uid))break; }
+    if(slot==NET_SLOTS) {
+        for(slot=0;slot<NET_SLOTS;slot++){ char p[32]; snprintf(p,sizeof(p),"players/%d/seq",slot); seq[slot]=(unsigned long)num(resp,p,0); if(!wvalid||seq[slot]!=wseq[slot])changed=1; }
+        if(changed){ memcpy(wseq,seq,sizeof(seq)); watch=t; wvalid=1; return -1; }
+        if(t-watch<STALE) return -1;
+        slot=0; wvalid=0;
+    }
+    snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid);
+    if(http("PUT",url,body,NULL,0)!=200) return -1;
+    if(http("GET",url,NULL,resp,sizeof(resp))!=200) return -1;
+    strv(resp,"uid",uid,sizeof(uid)); if(strcmp(uid,net.uid)) return -1;
+    LOG("slot %d uid %s",slot,net.uid); return slot;
+}
+static void read_players(const char *resp) {
+    static unsigned long lseq[NET_SLOTS]; static long long lch[NET_SLOTS];
+    Actor ps[NET_SLOTS]; Bullet bs[NET_SLOTS]; long long t=now_ms(); int local,count=0,slot;
+    memset(ps,0,sizeof(ps)); memset(bs,0,sizeof(bs));
+    lock(); local=net.slot; unlock();
+    for(slot=0;slot<NET_SLOTS;slot++) {
+        char bp[24],p[40],uid[24]; unsigned long sq; int online;
+        if(slot==local) { lock(); ps[slot]=net.me; bs[slot]=net.my_bullet; ps[slot].online=local>=0; unlock(); if(local>=0)count++; continue; }
+        snprintf(bp,sizeof(bp),"players/%d",slot); snprintf(p,sizeof(p),"%s/uid",bp); strv(resp,p,uid,sizeof(uid));
+        if(!uid[0]||!strcmp(uid,net.uid)){ lseq[slot]=0; lch[slot]=0; continue; }
+        snprintf(p,sizeof(p),"%s/seq",bp); sq=(unsigned long)num(resp,p,0);
+        if(sq!=lseq[slot]){ lseq[slot]=sq; lch[slot]=t; } else if(!lch[slot]) lch[slot]=t;
+        online=t-lch[slot]<TIMEOUT; if(!online)continue;
+        snprintf(p,sizeof(p),"%s/x",bp); ps[slot].x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/y",bp); ps[slot].y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/angle",bp); ps[slot].a=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/hp",bp); ps[slot].hp=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/alive",bp); ps[slot].alive=num(resp,p,0);
+        ps[slot].online=1;
+        snprintf(bp,sizeof(bp),"bullets/%d",slot);
+        snprintf(p,sizeof(p),"%s/x",bp); bs[slot].x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/y",bp); bs[slot].y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/dx",bp); bs[slot].dx=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/dy",bp); bs[slot].dy=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/active",bp); bs[slot].active=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/shot",bp); bs[slot].shot=num(resp,p,0);
+        count++;
+    }
+    lock(); memcpy(net.players,ps,sizeof(ps)); memcpy(net.bullets,bs,sizeof(bs)); net.count=count; unlock();
+}
+static void *thread_main(void *arg) {
+    char resp[RESP]; int fails=0; (void)arg;
+    while(net.run) {
+        long long start=now_ms(); int slot;
+        lock(); slot=net.slot; unlock();
+        if(slot<0) {
+            status(NET_CONNECTING); slot=claim_slot();
+            if(slot<0){ if(++fails>3)status(NET_ERROR); sleep_ms(500); continue; }
+            lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.bullets[slot]=net.my_bullet; net.players[slot].online=1; unlock(); fails=0;
+        }
+        if(!push_state()||!pull_state(resp,sizeof(resp))){ if(++fails>3)status(NET_ERROR); sleep_ms(300); continue; }
+        fails=0; read_players(resp); status(NET_PLAYING);
+        long long spent=now_ms()-start; if(spent<TICK)sleep_ms((int)(TICK-spent));
+    }
+    release_slot(); status(NET_OFFLINE); return NULL;
+}
+static void make_uid(void) {
+    struct timespec t; unsigned long a,b; int local=0;
+    clock_gettime(CLOCK_MONOTONIC,&t);
+    a=(unsigned long)time(NULL)^((unsigned long)t.tv_nsec<<8);
+    b=(unsigned long)getpid()^(unsigned long)(uintptr_t)&local;
+    snprintf(net.uid,sizeof(net.uid),"%08lx%08lx",a&0xfffffffful,b&0xfffffffful);
+}
+void net_connect(const char *url,const char *room) {
+    size_t n;
+    if(net.run||!url||!*url)return;
+    memset(&net.me,0,sizeof(net.me)); memset(&net.my_bullet,0,sizeof(net.my_bullet)); memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
+    net.count=0; net.slot=-1; net.seq=0;
+    snprintf(net.base,sizeof(net.base),"%s",url); n=strlen(net.base); while(n&&net.base[n-1]=='/')net.base[--n]=0;
+    snprintf(net.room,sizeof(net.room),"%s",(room&&*room)?room:"main");
+    if(!net.uid[0])make_uid();
+    if(!net.started){ pthread_mutex_init(&net.lock,NULL); net.started=1; }
+    net.status=NET_CONNECTING; net.run=1;
+    if(pthread_create(&net.thread,NULL,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; return; }
+    LOG("connect %s/%s",net.base,net.room);
+}
+void net_disconnect(void) { if(!net.run)return; net.run=0; pthread_join(net.thread,NULL); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
 void net_shutdown(void) { net_disconnect(); }
-
-void net_publish(double x, double y, double angle, double hp, double alive) {
-    if (!net.started) return;
-    net_lock();
-    net.local.x = x;
-    net.local.y = y;
-    net.local.angle = angle;
-    net.local.hp = hp;
-    net.local.alive = alive;
-    if (net.slot >= 0) {
-        net.players[net.slot].x = x;
-        net.players[net.slot].y = y;
-        net.players[net.slot].angle = angle;
-        net.players[net.slot].hp = hp;
-        net.players[net.slot].alive = alive;
-        net.players[net.slot].online = 1;
-    }
-    net_unlock();
+void net_publish(double x,double y,double a,double hp,double alive) {
+    if(!net.started) return;
+    lock(); net.me.x=x; net.me.y=y; net.me.a=a; net.me.hp=hp; net.me.alive=alive;
+    if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; } unlock();
 }
-
-void net_publish_bullet(double x, double y, double dx, double dy,
-                        double active, double shot) {
-    if (!net.started) return;
-    net_lock();
-    net.local_bullet.x = x;
-    net.local_bullet.y = y;
-    net.local_bullet.dx = dx;
-    net.local_bullet.dy = dy;
-    net.local_bullet.active = active;
-    net.local_bullet.shot = shot;
-    if (net.slot >= 0) net.bullets[net.slot] = net.local_bullet;
-    net_unlock();
+void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot) {
+    if(!net.started) return;
+    lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
 }
-
-static int net_slot_index(double slot) {
-    int index = (int)slot;
-    if (index < 0 || index >= NET_MAX_SLOTS) return -1;
-    return index;
-}
-
-/* Читатели состояния: короткие, чтобы скрипт мог звать их каждый кадр. */
-#define NET_READER(name, expression)      \
-    double name(void) {                   \
-        double value;                     \
-        if (!net.started) return 0;       \
-        net_lock();                       \
-        value = (expression);             \
-        net_unlock();                     \
-        return value;                     \
-    }
-
-NET_READER(net_status, (double)net.status)
-NET_READER(net_online, net.slot >= 0 ? 1 : 0)
-NET_READER(net_slot, (double)net.slot)
-NET_READER(net_player_count, (double)net.player_count)
-
-double net_player_online(double slot) {
-    int index = net_slot_index(slot);
-    int value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.players[index].online;
-    net_unlock();
-    return value ? 1 : 0;
-}
-
-double net_player_x(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.players[index].x;
-    net_unlock();
-    return value;
-}
-
-double net_player_y(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.players[index].y;
-    net_unlock();
-    return value;
-}
-
-double net_player_angle(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.players[index].angle;
-    net_unlock();
-    return value;
-}
-
-double net_player_hp(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.players[index].hp;
-    net_unlock();
-    return value;
-}
-
-double net_player_alive(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.players[index].alive;
-    net_unlock();
-    return value;
-}
-
-double net_player_bullet_active(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.bullets[index].active;
-    net_unlock();
-    return value;
-}
-
-double net_player_bullet_x(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.bullets[index].x;
-    net_unlock();
-    return value;
-}
-
-double net_player_bullet_y(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.bullets[index].y;
-    net_unlock();
-    return value;
-}
-
-double net_player_bullet_dx(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.bullets[index].dx;
-    net_unlock();
-    return value;
-}
-
-double net_player_bullet_dy(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.bullets[index].dy;
-    net_unlock();
-    return value;
-}
-
-double net_player_bullet_shot(double slot) {
-    int index = net_slot_index(slot);
-    double value;
-    if (!net.started || index < 0) return 0;
-    net_lock();
-    value = net.bullets[index].shot;
-    net_unlock();
-    return value;
-}
-
-/* Первый соперник для старого API и экрана с одной полоской HP. */
-static int net_peer_slot_locked(void) {
-    int slot;
-    if (net.slot < 0) return -1;
-    for (slot = 0; slot < NET_MAX_SLOTS; slot++) {
-        if (slot != net.slot && net.players[slot].online) return slot;
-    }
-    return -1;
-}
-
-#define NET_PEER_READER(name, expression)         \
-    double name(void) {                           \
-        double value = 0;                         \
-        int slot;                                 \
-        if (!net.started) return 0;               \
-        net_lock();                               \
-        slot = net_peer_slot_locked();            \
-        if (slot >= 0) value = (expression);      \
-        net_unlock();                             \
-        return value;                             \
-    }
-
-NET_PEER_READER(net_peer_online, 1)
-NET_PEER_READER(net_peer_x, net.players[slot].x)
-NET_PEER_READER(net_peer_y, net.players[slot].y)
-NET_PEER_READER(net_peer_angle, net.players[slot].angle)
-NET_PEER_READER(net_peer_hp, net.players[slot].hp)
-NET_PEER_READER(net_peer_alive, net.players[slot].alive)
-NET_PEER_READER(net_peer_bullet_active, net.bullets[slot].active)
-NET_PEER_READER(net_peer_bullet_x, net.bullets[slot].x)
-NET_PEER_READER(net_peer_bullet_y, net.bullets[slot].y)
-NET_PEER_READER(net_peer_bullet_dx, net.bullets[slot].dx)
-NET_PEER_READER(net_peer_bullet_dy, net.bullets[slot].dy)
-NET_PEER_READER(net_peer_bullet_shot, net.bullets[slot].shot)
-
-#undef NET_PEER_READER
-#undef NET_READER
+static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
+double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
+double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
+double net_count(void){ double v; lock(); v=net.count; unlock(); return v; }
+#define READER(name, field) double name(double slot){ int i=sidx(slot); double v=0; if(i>=0){lock();v=field;unlock();} return v; }
+READER(net_player_online, net.players[i].online?1:0)
+READER(net_player_x, net.players[i].x)
+READER(net_player_y, net.players[i].y)
+READER(net_player_angle, net.players[i].a)
+READER(net_player_hp, net.players[i].hp)
+READER(net_player_alive, net.players[i].alive)
+READER(net_player_bullet_active, net.bullets[i].active)
+READER(net_player_bullet_x, net.bullets[i].x)
+READER(net_player_bullet_y, net.bullets[i].y)
+READER(net_player_bullet_dx, net.bullets[i].dx)
+READER(net_player_bullet_dy, net.bullets[i].dy)
+READER(net_player_bullet_shot, net.bullets[i].shot)
+#undef READER

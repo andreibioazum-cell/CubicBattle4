@@ -22,7 +22,7 @@
 - JSON: `json_get_str()`, `json_get_num()`, `json_get_bool()`
 - Сеть: `http_get()`, `http_post()` + уже существующие `net_connect()` для Firebase
 - Утилиты: `clamp()`, `lerp()`, `dist()`, `now()`, `ds_log()`
-- Онлайн — одна общая комната `main` в Firebase Realtime Database, до 8 игроков без экрана ожидания (см. `FIREBASE.md`)
+- Онлайн — одна общая комната `main` в Firebase Realtime Database, до 4 игроков без экрана ожидания (см. `FIREBASE.md`)
 
 ### 3. Синтаксис проще и компактнее
 - `;` — несколько операторов в строке: `x=0; y=0; hp=10`

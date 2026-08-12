@@ -1,2 +1,2 @@
-num game_state=0, game_mode=0, language_ru=0, t_dir=0, t_target=0, t_fade=0, aim_range=240, aim_fade=90, joy_speed=192, bullet_speed=780, bot_speed=132, btn_w=280, btn_h=64, placed=0, my_shot=0, online_ready=0, max_players=8
+num game_state=0, game_mode=0, language_ru=0, t_dir=0, t_target=0, t_fade=0, aim_range=240, aim_fade=90, joy_speed=192, bullet_speed=780, bot_speed=132, btn_w=280, btn_h=64, placed=0, my_shot=0, online_ready=0, max_players=4
 str GRASS="grass.png", TEX="player.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main"
