@@ -616,7 +616,13 @@ class DimScriptCompiler:
                     self._out(inner)
                 else:
                     if raw:
-                        self._out(raw)
+                        # `;` is consumed as a statement separator in _load, so
+                        # restore the trailing semicolon for C statements that
+                        # are not already terminated by ; { or }.
+                        if raw.endswith((';', '{', '}')):
+                            self._out(raw)
+                        else:
+                            self._out(raw + ';')
                 return
         if line == 'end':
             if not self.blocks:
