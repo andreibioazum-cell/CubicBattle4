@@ -1,0 +1,15 @@
+// Главный экран.
+function draw_lobby
+    rect 0, 0, screen_w, screen_h, 0x1a1a2e
+    update_stars
+    draw_stars
+    // Название одинаковое в обеих локализациях, как и в английской версии.
+    ctext "Cubic Battle 4", screen_h / 2 - 142, 0xFFFFFF
+    if language_ru == 1
+        button "Играть", (screen_w - 240) / 2, screen_h / 2 - 8, 240, 70
+        button "Настройки", (screen_w - 240) / 2, screen_h / 2 + 78, 240, 58
+    else
+        button "Play", (screen_w - 240) / 2, screen_h / 2 - 8, 240, 70
+        button "Settings", (screen_w - 240) / 2, screen_h / 2 + 78, 240, 58
+    end
+end

@@ -1,0 +1,107 @@
+// Комнаты, поиск соперника и настройки.
+function draw_rooms
+    rect 0, 0, screen_w, screen_h, 0x1a1a2e
+    update_stars
+    draw_stars
+    if language_ru == 1
+        ctext "Онлайн-комнаты", 92, 0xFFFFFF
+        ctext "Выберите комнату", 130, 0xC9C9D6
+        button "Комната 1", (screen_w - 280) / 2, 180, 280, 58
+        button "Комната 2", (screen_w - 280) / 2, 252, 280, 58
+        button "Комната 3", (screen_w - 280) / 2, 324, 280, 58
+    else
+        ctext "Online rooms", 92, 0xFFFFFF
+        ctext "Choose a room", 130, 0xC9C9D6
+        button "Room 1", (screen_w - 280) / 2, 180, 280, 58
+        button "Room 2", (screen_w - 280) / 2, 252, 280, 58
+        button "Room 3", (screen_w - 280) / 2, 324, 280, 58
+    end
+    draw_back
+end
+
+function draw_matchmaking
+    rect 0, 0, screen_w, screen_h, 0x1a1a2e
+    update_stars
+    draw_stars
+    if language_ru == 1
+        ctext "Комната " + selected_room, screen_h / 2 - 82, 0xFFFFFF
+        ctext "Ищем соперника...", screen_h / 2 - 36, 0xFFFFFF
+        ctext "Поиск отменится автоматически", screen_h / 2 + 2, 0xC9C9D6
+        button "Отмена", (screen_w - 200) / 2, screen_h / 2 + 58, 200, 58
+    else
+        ctext "Room " + selected_room, screen_h / 2 - 82, 0xFFFFFF
+        ctext "Finding an opponent...", screen_h / 2 - 36, 0xFFFFFF
+        ctext "Matchmaking starts automatically", screen_h / 2 + 2, 0xC9C9D6
+        button "Cancel", (screen_w - 200) / 2, screen_h / 2 + 58, 200, 58
+    end
+end
+
+function draw_settings
+    rect 0, 0, screen_w, screen_h, 0x1a1a2e
+    update_stars
+    draw_stars
+    if language_ru == 1
+        ctext "Настройки", 92, 0xFFFFFF
+        ctext "Язык", 148, 0xC9C9D6
+    else
+        ctext "Settings", 92, 0xFFFFFF
+        ctext "Language", 148, 0xC9C9D6
+    end
+    // Активный язык отмечен белой рамкой; зелёный цвет здесь не используется.
+    roundrect (screen_w - 280) / 2, 182, 280, 58, 18, 0x5F10A0
+    roundrect (screen_w - 280) / 2, 254, 280, 58, 18, 0x5F10A0
+    if language_ru == 0
+        ring screen_w / 2, 211, 154, 3, 0xFFFFFF
+    else
+        ring screen_w / 2, 283, 154, 3, 0xFFFFFF
+    end
+    ctext "English", 197, 0xFFFFFF
+    ctext "Русский", 269, 0xFFFFFF
+    draw_back
+end
+
+function touch_lobby num x, num y, num action
+    if action != 0
+        return
+    end
+    if y >= screen_h / 2 - 24 && y <= screen_h / 2 + 78
+        start_transition 2
+    else if y >= screen_h / 2 + 62 && y <= screen_h / 2 + 152
+        start_transition 4
+    end
+end
+
+function touch_menu num x, num y, num action
+    if action != 0
+        return
+    end
+    if y <= 72
+        start_transition 0
+        return
+    end
+    if game_state == 2
+        if y >= screen_h / 2 - 75 && y <= screen_h / 2 + 20
+            game_mode = 0
+            start_transition 1
+        else if y >= screen_h / 2 + 15 && y <= screen_h / 2 + 125
+            start_transition 3
+        end
+    else if game_state == 3
+        if y >= 168 && y <= 396
+            selected_room = floor((y - 180) / 72) + 1
+            game_mode = 1
+            match_time = 0
+            start_transition 5
+        end
+    else if game_state == 4
+        if y >= 172 && y <= 246
+            language_ru = 0
+        else if y >= 246 && y <= 320
+            language_ru = 1
+        end
+    else if game_state == 5
+        if y >= screen_h / 2 + 40 && y <= screen_h / 2 + 132
+            start_transition 3
+        end
+    end
+end

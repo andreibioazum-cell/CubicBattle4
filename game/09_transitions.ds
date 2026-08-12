@@ -1,0 +1,32 @@
+// Плавная смена экранов.
+function start_transition num target
+    if t_dir != 0
+        return
+    end
+    t_target = target
+    t_dir = 1
+end
+
+function update_transition
+    if t_dir == 1
+        t_fade = t_fade + dt / 0.25
+        if t_fade >= 1
+            // Сначала показываем полностью чёрный кадр. Экран меняется только
+            // на следующем кадре, поэтому в конце перехода нет белого мигания.
+            t_fade = 1
+            t_dir = 2
+        end
+    else if t_dir == 2
+        game_state = t_target
+        if t_target == 1
+            init_game
+        end
+        t_dir = -1
+    else if t_dir == -1
+        t_fade = t_fade - dt / 0.25
+        if t_fade <= 0
+            t_fade = 0
+            t_dir = 0
+        end
+    end
+end
