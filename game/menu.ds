@@ -1,44 +1,23 @@
 function draw_lobby
-rect 0, 0, screen_w, screen_h, 0x1a1a2e
-if language_ru==1
-button "Играть", (screen_w-btn_w)/2, screen_h/2-20, btn_w, btn_h; button "Настройки", (screen_w-btn_w)/2, screen_h/2+60, btn_w, btn_h
-else
-button "Play", (screen_w-btn_w)/2, screen_h/2-20, btn_w, btn_h; button "Settings", (screen_w-btn_w)/2, screen_h/2+60, btn_w, btn_h
-end
+rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-110,0xFFFFFF
+if language_ru==1; button "Играть",(screen_w-btn_w)/2,screen_h/2-20,btn_w,btn_h; button "Настройки",(screen_w-btn_w)/2,screen_h/2+60,btn_w,btn_h
+else; button "Play",(screen_w-btn_w)/2,screen_h/2-20,btn_w,btn_h; button "Settings",(screen_w-btn_w)/2,screen_h/2+60,btn_w,btn_h; end
 end
 function draw_modes
-rect 0, 0, screen_w, screen_h, 0x1a1a2e
-if language_ru==1
-button "Соло", (screen_w-btn_w)/2, screen_h/2-40, btn_w, btn_h; button "Онлайн", (screen_w-btn_w)/2, screen_h/2+40, btn_w, btn_h
-else
-button "Solo", (screen_w-btn_w)/2, screen_h/2-40, btn_w, btn_h; button "Online", (screen_w-btn_w)/2, screen_h/2+40, btn_w, btn_h
-end
-draw_back
+rect 0,0,screen_w,screen_h,0x1a1a2e
+if language_ru==1; button "Соло",(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h; button "Онлайн",(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h
+else; button "Solo",(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h; button "Online",(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h; end; draw_back
 end
 function draw_settings
-rect 0, 0, screen_w, screen_h, 0x1a1a2e
-choice "English", (screen_w-btn_w)/2, screen_h/2-80, btn_w, btn_h, 1-language_ru
-choice "Русский", (screen_w-btn_w)/2, screen_h/2, btn_w, btn_h, language_ru
-draw_back
+rect 0,0,screen_w,screen_h,0x1a1a2e; button "English",(screen_w-btn_w)/2,screen_h/2-80,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2,btn_w,btn_h; draw_back
 end
 function touch_lobby num x, num y, num action
-if action!=0; return; end
-num cx=(screen_w-btn_w)/2
-if x<cx-12 || x>cx+btn_w+12; return; end
-if y>=screen_h/2-28 && y<=screen_h/2+52; start_transition 2; return; end
-if y>=screen_h/2+52 && y<=screen_h/2+132; start_transition 4; end
+if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end
+if y>=screen_h/2-28&&y<=screen_h/2+52; start_transition 2; return; end; if y>=screen_h/2+52&&y<=screen_h/2+132; start_transition 4; end
 end
 function touch_menu num x, num y, num action
-if action!=0; return; end
-if y>=6 && y<=86
-num bx=(screen_w-btn_w)/2; if x>=bx-12 && x<=bx+btn_w+12; start_transition 0; return; end
-end
-if game_state==2
-num mx=(screen_w-btn_w)/2; if x<mx-12 || x>mx+btn_w+12; return; end
-if y>=screen_h/2-48 && y<=screen_h/2+32; game_mode=0; start_transition 1; return; end
-if y>=screen_h/2+32 && y<=screen_h/2+112; ROOM="main"; start_transition 5; end
-else if game_state==4
-num sx=(screen_w-btn_w)/2; if x<sx-12 || x>sx+btn_w+12; return; end
-if y>=screen_h/2-88 && y<=screen_h/2-8; language_ru=0; else if y>=screen_h/2-8 && y<=screen_h/2+72; language_ru=1; end
-end
+if action!=0; return; end; if back_hit(x,y)==1; start_transition 0; return; end
+num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end
+if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 5; end
+else if game_state==4; if y>=screen_h/2-88&&y<=screen_h/2-8; language_ru=0; else if y>=screen_h/2-8&&y<=screen_h/2+72; language_ru=1; end; end
 end
