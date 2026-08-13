@@ -1,6 +1,6 @@
 /* Software renderer. Скрипт собирает команды за кадр, потом растеризуем в
- * залоченный буфер окна Android. TTF-загрузчик и звёзды фона подключаются
- * через #include, чтобы не плодить translation units. */
+ * залоченный буфер окна Android. TTF-загрузчик подключается через #include,
+ * чтобы не плодить translation units. */
 
 #include "runtime.h"
 
@@ -56,8 +56,7 @@ typedef struct {
     } v;
 } DC;
 
-/* --- Pack/blend/clamp/helpers (определяются рано, чтобы их могли
- *     использовать и звёзды, и основной рендерер). --- */
+/* --- Pack/blend/clamp/helpers. --- */
 static uint32_t pack_c(uint32_t c) {
     uint32_t a = (c >> 24) & 0xff, r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
     if (!a) a = 255;
@@ -101,10 +100,6 @@ static void paint_span(uint32_t *d, int n, uint32_t c) {
     if ((c >> 24) >= 255) { fill_span(d, n, c); return; }
     while (n-- > 0) { *d = blend(*d, c); d++; }
 }
-
-/* --- Примитивы рендерера (forward, чтобы их могли видеть звёзды). --- */
-static void render_rect(Buffer *, float, float, float, float, uint32_t);
-static void render_circle(Buffer *, float, float, float, uint32_t);
 
 static void clear_buf(Buffer *b, uint32_t c) {
     if (!b || !b->pixels || b->width <= 0 || b->height <= 0 || b->stride < b->width) return;

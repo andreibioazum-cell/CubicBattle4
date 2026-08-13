@@ -14,7 +14,6 @@ static int script_active = 0;
 static AAssetManager *script_assets = NULL;
 static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
-static unsigned int frame_count = 0;
 static uint64_t prev_frame_ns = 0;
 
 static uint64_t monotonic_ns(void) {
@@ -86,7 +85,7 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
-            init_done = 1; frame_count = 0; script_active = 0; restart_failures = 0;
+            init_done = 1; script_active = 0; restart_failures = 0;
             ds_clear_script_restart(); (void)start_script(0);
             break;
         case APP_CMD_TERM_WINDOW:
@@ -164,7 +163,6 @@ void android_main(struct android_app *app) {
                     } else ds_graphics_end_frame();
                 }
                 ANativeWindow_unlockAndPost(app->window);
-                ++frame_count;
             }
         }
     }
