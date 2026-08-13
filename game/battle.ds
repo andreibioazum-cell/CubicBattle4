@@ -1,5 +1,8 @@
-// бой — только система боя
+// battle.ds — только система боя (без чата)
+// Частая запись/чтение 50мс в net.c, без интерполяции — прямое присваивание x,y
+
 function reset_battle
+// сброс игрока в центр, очистка пуль и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; finished=0; bullet.active=0; aiming=0; aim_id=-1
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
 arr_clear remotes; arr_clear rbullets; num i=0; loop i<max_players*6; arr_push rbullets,0; i=i+1; end
@@ -11,21 +14,25 @@ function init_online
 reset_battle; online_ready=0; my_shot=0; net_connect FIREBASE,ROOM
 end
 function place_online
+// слот -> позиция на карте
 num s=net_slot(), row=floor(s/2), col=s-row*2; player.x=screen_w*(0.3+0.4*col); player.y=screen_h*(0.35+0.3*row); online_ready=1
 end
 function spawn_enemy
 num i=0; loop i<50; enemy.x=50+rand()%(screen_w-100); enemy.y=50+rand()%(screen_h-100); if sqrt((enemy.x-player.x)*(enemy.x-player.x)+(enemy.y-player.y)*(enemy.y-player.y))>250; return; end; i=i+1; end; enemy.x=50; enemy.y=50
 end
 function move_player
+// движение джойстиком, угол 0 вправо, pi влево — флип только по X (фикс в graphics.c)
 player.x=player.x+joy.dx*joy_speed*dt; player.y=player.y+joy.dy*joy_speed*dt
 if joy.dx>0; player.angle=0; end; if joy.dx<0; player.angle=pi; end
 if player.x<player.size; player.x=player.size; end; if player.x>screen_w-player.size; player.x=screen_w-player.size; end; if player.y<player.size; player.y=player.size; end; if player.y>screen_h-player.size; player.y=screen_h-player.size; end
 end
 function move_b
+// своя пуля летит вперед
 bullet.x=bullet.x+bullet.dx*bullet_speed*dt; bullet.y=bullet.y+bullet.dy*bullet_speed*dt; bullet.traveled=bullet.traveled+bullet_speed*dt
 if bullet.traveled>=aim_range||bullet.x<-10||bullet.x>screen_w+10||bullet.y<-10||bullet.y>screen_h+10; bullet.active=0; end
 end
 function rbx num b
+// позиция чужой пули по траектории ox+dx*tr, чтобы не летела из воздуха
 return arr_get(rbullets,b+1)+arr_get(rbullets,b+3)*arr_get(rbullets,b+5)
 end
 function rby num b
@@ -35,6 +42,7 @@ function move_rb num s
 num b=s*6, tr=arr_get(rbullets,b+5)+bullet_speed*dt, x=rbx(b), y=rby(b); arr_set rbullets,b+5,tr; if tr>=aim_range||x<-10||x>screen_w+10||y<-10||y>screen_h+10; arr_set rbullets,b,0; end
 end
 function hit_r num tr
+// радиус пули с затуханием, пуля 3x3 -> 1.5
 num left=aim_range-tr; if left<aim_fade; return 1.5*left/aim_fade; end; return 1.5
 end
 function update_game
@@ -48,6 +56,7 @@ function ridx num s
 num i=0; loop i<arr_len(remotes)/7; if arr_get(remotes,i*7)==s; return i; end; i=i+1; end; return -1
 end
 function read_remotes
+// без интерполяции — просто частое чтение, прямое присваивание x,y убирает тряску и лаги
 if net_slot()<0; return; end; num i=0; loop i<arr_len(remotes)/7; arr_set remotes,i*7+5,0; i=i+1; end
 num s=0; loop s<max_players; if net_player_online(s)==1&&s!=net_slot()
 num x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h; i=ridx(s)
@@ -57,17 +66,20 @@ num sh=net_player_bullet_shot(s); if sh!=arr_get(remotes,b+6); arr_set remotes,b
 end
 function update_online
 if online_ready==0&&net_slot()>=0; place_online; end; read_remotes; if finished!=0||online_ready==0; return; end; move_player; if bullet.active==1; move_b; end
+// частая публикация позиции каждый кадр (net.c пишет каждые 50мс) — без лага
 num alive=1; if player.hp<=0; alive=0; end; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive; net_publish_bullet bullet.ox/screen_w,bullet.oy/screen_h,bullet.dx,bullet.dy,bullet.active,my_shot,bullet.traveled
 num i=0; loop i<arr_len(remotes)/7; num b=i*7; if bullet.active==1&&arr_get(remotes,b+4)>0&&arr_get(remotes,b+5)==1; if sqrt((arr_get(remotes,b+1)-bullet.x)*(arr_get(remotes,b+1)-bullet.x)+(arr_get(remotes,b+2)-bullet.y)*(arr_get(remotes,b+2)-bullet.y))<=player.size+hit_r(bullet.traveled); bullet.active=0; end; end; i=i+1; end
 i=0; loop i<max_players; num rb=i*6; if arr_get(rbullets,rb)==1; move_rb i; if arr_get(rbullets,rb)==1&&player.hp>0; if sqrt((player.x-rbx(rb))*(player.x-rbx(rb))+(player.y-rby(rb))*(player.y-rby(rb)))<=player.size+hit_r(arr_get(rbullets,rb+5)); arr_set rbullets,rb,0; player.hp=player.hp-1; if player.hp<=0; player.hp=0; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end; end; end; end; i=i+1; end
 end
 function fire_bullet
+// пуля 3x3, вылет на 54px от центра вправо/влево считая с правой стороны
 num dx=cos(player.angle), off=54; if player.angle==0; bullet.x=player.x+off; else; bullet.x=player.x-off; end; bullet.y=player.y; bullet.ox=bullet.x; bullet.oy=bullet.y; bullet.dx=dx; bullet.dy=0; bullet.traveled=0; bullet.active=1; my_shot=my_shot+1; if game_state==5; net_publish_bullet bullet.ox/screen_w,bullet.oy/screen_h,dx,0,1,my_shot,0; end
 end
 function finish_game num result
 finished=result; aiming=0; aim_id=-1; bullet.active=0; drop_joy
 end
 function draw_b num x, num y, num tr
+// пуля ровно 3 на 3 пикселя
 num left=aim_range-tr, alpha=255; if left<aim_fade; alpha=floor(255*left/aim_fade); end; if alpha<1; alpha=1; end; rect x-1,y-1,3,3,alpha*0x1000000+0xFFF176
 end
 function draw_field

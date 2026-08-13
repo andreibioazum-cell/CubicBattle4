@@ -1,13 +1,21 @@
 num chat_open=0, chat_scroll=0
 str chat_input=""
-// чат отдельно от боя
+// chat.ds — отдельный модуль онлайн чата, не в battle.ds
+// использует реальную клавиатуру через JNI (keyboard_show/hide/get_text)
+
 function chat_send
+// отправка текста в Firebase
 if chat_input==""; return; end; net_chat_send chat_input; chat_input=""; keyboard_clear; keyboard_hide; chat_scroll=0
 end
 function draw_chat
-if game_state!=5; return; end; if chat_open==0; num bx=screen_w/2-50, by=8; roundrect bx,by,100,32,10,0xAA2A2A4A; if language_ru==1; text_scaled "Чат",bx+(100-text_ink_width("Чат"))/2,by+6,0xFFFFFF,0.6; else; text_scaled "Chat",bx+(100-text_ink_width("Chat"))/2,by+6,0xFFFFFF,0.6; end; num cc=net_chat_count(), i=cc-2, dy=44; if i<0; i=0; end; loop i<cc; str t=net_chat_text(i); if t!=""; text_scaled t,20,dy,0xE0E0FF,0.45; dy=dy+20; end; i=i+1; end; return; end; rect 0,0,screen_w,screen_h,0xDD0F0F1A; num pw=screen_w-40, ph=screen_h-40, px=20, py=20; roundrect px,py,pw,ph,18,0xFF1E1E2F; if language_ru==1; ctext "Онлайн чат",py+14,0xFFFFFF; else; ctext "Online chat",py+14,0xFFFFFF; end; num lx=px+16, ly=py+50, lw=pw-32, lh=ph-180, line_h=26, maxl=floor(lh/line_h), total=net_chat_count(), start=total-maxl-chat_scroll; if start<0; start=0; end; if total==0; text_scaled "No messages",lx,ly,0x8888AA,0.5; else; num idx=start, yy=ly; loop idx<total; if yy+line_h>ly+lh; idx=total; else; str line=net_chat_uid(idx)+": "+net_chat_text(idx); if text_ink_width(line)>lw-8; line=net_chat_text(idx); end; text_scaled line,lx,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1; end; end; end; roundrect px+pw-50,py+50,34,34,8,0x5F10A0; text "^",px+pw-38,py+54,0xFFFFFF; roundrect px+pw-50,py+94,34,34,8,0x5F10A0; text "v",px+pw-38,py+98,0xFFFFFF; num iy=py+ph-110, ih=44; roundrect lx,iy,lw,ih,10,0xFF2A2A40; str kbt=keyboard_get_text(); if kbt!=""; chat_input=kbt; end; text_scaled chat_input,lx+10,iy+10,0xFFFFFF,0.55; num bby=iy+56; roundrect lx,bby,80,36,8,0x3A7A4A; text_scaled "Send",lx+14,bby+8,0xFFFFFF,0.5; roundrect lx+90,bby,80,36,8,0x7A3A3A; text_scaled "Clear",lx+98,bby+8,0xFFFFFF,0.5; roundrect lx+180,bby,80,36,8,0x5F10A0; text_scaled "Close",lx+188,bby+8,0xFFFFFF,0.5; roundrect lx+270,bby,100,36,8,0x4A4A8A; text_scaled "Keyboard",lx+274,bby+8,0xFFFFFF,0.5
+if game_state!=5; return; end; if chat_open==0
+// мини-режим: кнопка и 2 последних сообщения
+num bx=screen_w/2-50, by=8; roundrect bx,by,100,32,10,0xAA2A2A4A; if language_ru==1; text_scaled "Чат",bx+(100-text_ink_width("Чат"))/2,by+6,0xFFFFFF,0.6; else; text_scaled "Chat",bx+(100-text_ink_width("Chat"))/2,by+6,0xFFFFFF,0.6; end; num cc=net_chat_count(), i=cc-2, dy=44; if i<0; i=0; end; loop i<cc; str t=net_chat_text(i); if t!=""; text_scaled t,20,dy,0xE0E0FF,0.45; dy=dy+20; end; i=i+1; end; return; end
+// полный экран чата
+rect 0,0,screen_w,screen_h,0xDD0F0F1A; num pw=screen_w-40, ph=screen_h-40, px=20, py=20; roundrect px,py,pw,ph,18,0xFF1E1E2F; if language_ru==1; ctext "Онлайн чат",py+14,0xFFFFFF; else; ctext "Online chat",py+14,0xFFFFFF; end; num lx=px+16, ly=py+50, lw=pw-32, lh=ph-180, line_h=26, maxl=floor(lh/line_h), total=net_chat_count(), start=total-maxl-chat_scroll; if start<0; start=0; end; if total==0; text_scaled "No messages",lx,ly,0x8888AA,0.5; else; num idx=start, yy=ly; loop idx<total; if yy+line_h>ly+lh; idx=total; else; str line=net_chat_uid(idx)+": "+net_chat_text(idx); if text_ink_width(line)>lw-8; line=net_chat_text(idx); end; text_scaled line,lx,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1; end; end; end; roundrect px+pw-50,py+50,34,34,8,0x5F10A0; text "^",px+pw-38,py+54,0xFFFFFF; roundrect px+pw-50,py+94,34,34,8,0x5F10A0; text "v",px+pw-38,py+98,0xFFFFFF; num iy=py+ph-110, ih=44; roundrect lx,iy,lw,ih,10,0xFF2A2A40; str kbt=keyboard_get_text(); if kbt!=""; chat_input=kbt; end; text_scaled chat_input,lx+10,iy+10,0xFFFFFF,0.55; num bby=iy+56; roundrect lx,bby,80,36,8,0x3A7A4A; text_scaled "Send",lx+14,bby+8,0xFFFFFF,0.5; roundrect lx+90,bby,80,36,8,0x7A3A3A; text_scaled "Clear",lx+98,bby+8,0xFFFFFF,0.5; roundrect lx+180,bby,80,36,8,0x5F10A0; text_scaled "Close",lx+188,bby+8,0xFFFFFF,0.5; roundrect lx+270,bby,100,36,8,0x4A4A8A; text_scaled "Keyboard",lx+274,bby+8,0xFFFFFF,0.5
 end
 function chat_hit num x, num y, num bx, num by, num bw, num bh
+// проверка попадания в кнопку
 if x>=bx&&x<=bx+bw&&y>=by&&y<=by+bh; return 1; end; return 0
 end
 function touch_chat num x, num y, num action

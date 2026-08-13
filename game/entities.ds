@@ -1,3 +1,4 @@
+// entities — игровые объекты, пуля 3x3 => r=1.5, ox/oy точка вылета для фикса "из воздуха"
 object Player
 num x=0, y=0, size=30, angle=0, hp=10, max_hp=10
 end

@@ -11,6 +11,8 @@
 #include <android/keycodes.h>
 #include <android/native_activity.h>
 
+// Только arm64/arm32 Android 10 — без кроссплатформы
+// + реальная клавиатура через JNI (ANativeActivity_showSoftInput)
 static int init_done = 0;
 static int script_active = 0;
 static AAssetManager *script_assets = NULL;
@@ -73,7 +75,7 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             if (screen_w <= 0 || screen_h <= 0) { init_done = 0; return; }
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
-            ds_set_activity(app->activity);
+            ds_set_activity(app->activity); // для клавиатуры JNI
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
             init_done = 1; script_active = 0; restart_failures = 0;
             ds_clear_script_restart(); (void)start_script(0); break;
@@ -89,6 +91,7 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     if (!event) return 0;
     int32_t type = AInputEvent_getType(event);
     if (type == AINPUT_EVENT_TYPE_MOTION) {
+        // тачи — джойстик и атака
         if (!script_active) return 0;
         TouchCall call; size_t count, index, i; int raw, action;
         count = AMotionEvent_getPointerCount(event); if (count == 0) return 0;
@@ -106,14 +109,13 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         }
         return 1;
     } else if (type == AINPUT_EVENT_TYPE_KEY) {
+        // реальная клавиатура — ловим A-Z, 0-9, DEL, SPACE, ENTER
         int32_t action = AKeyEvent_getAction(event);
         int32_t key = AKeyEvent_getKeyCode(event);
         if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE) {
             if (keyboard_handle_key(key, action)) return 1;
         }
-        /* пусть система тоже обработает back */
         if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) {
-            /* back handled as touch outside */
             return 0;
         }
         return 1;
