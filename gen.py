@@ -82,7 +82,12 @@ def main():
         print("Compilation failed", file=sys.stderr)
         return 1
 
-    print(f"{output_path} generated from {len(compiler.loaded_sources)} DimScript file(s)")
+    note = ""
+    if compiler.warnings:
+        note = f" with {compiler.warnings} warning(s)"
+    if compiler.errors:
+        note += f" (errors above are non-fatal: game still builds)"
+    print(f"{output_path} generated from {len(compiler.loaded_sources)} DimScript file(s){note}")
 
     if dump_c:
         print("\n" + "=" * 60)

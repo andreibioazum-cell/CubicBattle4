@@ -106,7 +106,7 @@ num left=aim_range-tr, alpha=255, scale=1; if left<aim_fade; scale=left/aim_fade
 end
 function draw_field
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end; rect 0,0,screen_w,screen_h,0x33000000
-if aiming==1&&finished==0; num dx=cos(player.angle), dy=sin(player.angle); line player.x,player.y,player.x+dx*aim_range,player.y+dy*aim_range,18,0x66000000; end; circle player.x,player.y,player.size/2,0xFF8844; tex player.x-20,player.y-20,TEX,sprite_angle,1
+if aiming==1&&finished==0; num dx=cos(player.angle), dy=sin(player.angle); line player.x,player.y,player.x+dx*aim_range,player.y+dy*aim_range,18,0x66000000; end; circle player.x,player.y,player.size/2,0xFF8844; tex player.x-20,player.y-20,TEX,sprite_angle(),1
 end
 function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
