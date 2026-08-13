@@ -3,7 +3,7 @@
 
 Типы: num, str, col. Блоки закрываются словом `end`, вызовы — без скобок.
 
-    str TEX = "player.png"
+    str CUBE_TEX = "cube1.png"
 
     object Player              // структура с полями
         num x = 0

@@ -7,7 +7,7 @@ else if t_dir==2; if game_state==5&&t_target!=5; net_disconnect; end; game_state
 else if t_dir==-1; t_fade=t_fade-dt/0.25; if t_fade<=0; t_fade=0; t_dir=0; end; end
 end
 function init
-png_load GRASS; png_load TEX
+png_load GRASS; png_load CUBE_TEX
 end
 function update
 update_transition; if game_state==1; update_game; else if game_state==5; update_online; end
