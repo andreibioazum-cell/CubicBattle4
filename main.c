@@ -41,6 +41,7 @@ static void protected_touch(void *userdata) {
 static void mark_script_failed(const char *hook) {
     const char *message = ds_runtime_error_message();
     __android_log_print(ANDROID_LOG_ERROR, "DimScript","script hook '%s' stopped: %s; scheduling a restart",hook?hook:"unknown",message);
+    ds_console_log(1, "script error: hook '%s' stopped: %s; restarting", hook?hook:"unknown", message);
     unsigned int shift = restart_failures < 5 ? restart_failures : 5;
     uint64_t delay = 1000000000ull << shift;
     script_active = 0;
