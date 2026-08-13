@@ -1,8 +1,8 @@
 object Player
-num x=0, y=0, size=52, angle=0, hp=10, max_hp=10
+num x=0, y=0, size=30, angle=0, hp=10, max_hp=10
 end
 object Enemy
-num x=0, y=0, size=38, hp=3, max_hp=3, angle=0
+num x=0, y=0, size=22, hp=3, max_hp=3, angle=0
 end
 object Bullet
 num x=0, y=0, dx=0, dy=0, r=12, traveled=0, active=0, ox=0, oy=0
