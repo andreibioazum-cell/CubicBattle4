@@ -366,3 +366,58 @@ double clamp(double v, double lo, double hi){ if(v<lo) return lo; if(v>hi) retur
 double lerp(double a, double b, double t){ return a + (b-a)*t; }
 double dist(double x1, double y1, double x2, double y2){ double dx=x2-x1, dy=y2-y1; return sqrt(dx*dx+dy*dy); }
 double now(void){ return now_ms()/1000.0; }
+
+/* ---------- реальная клавиатура через JNI (Android) ---------- */
+#include <android/native_activity.h>
+#include <android/keycodes.h>
+#define KB_BUF 256
+static ANativeActivity *kb_activity = NULL;
+static char kb_text[KB_BUF] = {0};
+static int kb_len = 0;
+static int kb_show = 0;
+static int kb_enter = 0;
+
+void ds_set_activity(void *act){ kb_activity = (ANativeActivity*)act; }
+void keyboard_show(void){
+    if(!kb_activity) return;
+    ANativeActivity_showSoftInput(kb_activity, ANATIVEACTIVITY_SHOW_SOFT_INPUT_FORCED);
+    kb_show = 1;
+}
+void keyboard_hide(void){
+    if(!kb_activity) return;
+    ANativeActivity_hideSoftInput(kb_activity, ANATIVEACTIVITY_HIDE_SOFT_INPUT_IMPLICIT_ONLY);
+    kb_show = 0;
+}
+const char* keyboard_get_text(void){ return ds_track_string(ds_strdup(kb_text)); }
+const char* keyboard_get_raw(void){ return kb_text; }
+void keyboard_clear(void){ kb_text[0]='\0'; kb_len=0; kb_enter=0; }
+int keyboard_visible(void){ return kb_show; }
+int keyboard_enter_pressed(void){ int e=kb_enter; kb_enter=0; return e; }
+
+int keyboard_handle_key(int keycode, int action){
+    if(action!=0) { /* 0 = DOWN */ }
+    // ACTION_DOWN = 0, ACTION_UP =1 from android
+    if(keycode==AKEYCODE_DEL){
+        if(kb_len>0){ kb_len--; kb_text[kb_len]='\0'; }
+        return 1;
+    }
+    if(keycode==AKEYCODE_ENTER || keycode==AKEYCODE_DPAD_CENTER){
+        kb_enter=1; return 1;
+    }
+    if(keycode==AKEYCODE_SPACE){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=' '; kb_text[kb_len]='\0'; } return 1; }
+    if(keycode>=AKEYCODE_A && keycode<=AKEYCODE_Z){
+        char c='A'+(keycode-AKEYCODE_A);
+        if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=c; kb_text[kb_len]='\0'; }
+        return 1;
+    }
+    if(keycode>=AKEYCODE_0 && keycode<=AKEYCODE_9){
+        char c='0'+(keycode-AKEYCODE_0);
+        if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=c; kb_text[kb_len]='\0'; }
+        return 1;
+    }
+    if(keycode==AKEYCODE_COMMA){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=','; kb_text[kb_len]='\0'; } return 1; }
+    if(keycode==AKEYCODE_PERIOD){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]='.'; kb_text[kb_len]='\0'; } return 1; }
+    if(keycode==AKEYCODE_MINUS){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]='-'; kb_text[kb_len]='\0'; } return 1; }
+    // цифры с клавиатуры и тд
+    return 0;
+}

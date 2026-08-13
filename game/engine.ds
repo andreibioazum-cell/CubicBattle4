@@ -1,3 +1,4 @@
+// engine — переходы и хуки движка
 function start_transition num t
 if t_dir!=0; return; end; t_target=t; t_dir=1
 end

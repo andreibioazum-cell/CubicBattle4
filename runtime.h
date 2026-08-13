@@ -90,6 +90,17 @@ double lerp(double a, double b, double t);
 double dist(double x1, double y1, double x2, double y2);
 double now(void);
 
+/* клавиатура через JNI */
+void ds_set_activity(void *activity);
+void keyboard_show(void);
+void keyboard_hide(void);
+const char* keyboard_get_text(void);
+const char* keyboard_get_raw(void);
+void keyboard_clear(void);
+int keyboard_visible(void);
+int keyboard_enter_pressed(void);
+int keyboard_handle_key(int keycode, int action);
+
 /* графика */
 void rect(float x, float y, float w, float h, uint32_t color);
 void roundrect(float x, float y, float w, float h, float r, uint32_t color);
