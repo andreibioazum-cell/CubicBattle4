@@ -363,7 +363,9 @@ static void render_text_now(Buffer *b, const char *s, float x, float y, uint32_t
     }
 }
 
-/* --- Текстуры с поворотом/масштабом --- */
+/* --- Текстуры с поворотом/масштабом ---
+ * Исправлен флип по Y: ранее поворот на pi переворачивал спрайт и по Y
+ * (вверх ногами). Теперь для pi делаем только зеркало по X. */
 static void draw_tx_unrot(Buffer *b, const Texture *t, float x, float y, float sc) {
     if (!b || !t || !t->pixels || !isfinite(x+y+sc) || sc <= 0) return;
     float w = t->w*sc, h = t->h*sc;
@@ -393,6 +395,26 @@ static void draw_tx_unrot(Buffer *b, const Texture *t, float x, float y, float s
         }
     }
 }
+/* Зеркало только по X, без переворота по Y — именно это нужно для
+ * движения влево: игрок смотрит влево, но не становится вверх ногами. */
+static void draw_tx_unrot_flip_h(Buffer *b, const Texture *t, float x, float y, float sc) {
+    if (!b || !t || !t->pixels || !isfinite(x+y+sc) || sc == 0) return;
+    float abs_sc = fabsf(sc);
+    float w = t->w*abs_sc, h = t->h*abs_sc;
+    if (x >= b->width || y >= b->height || x+w <= 0 || y+h <= 0) return;
+    int l = cl_floor(floorf(x), b->width), t0 = cl_floor(floorf(y), b->height);
+    int r = cl_ceil(ceilf(x+w), b->width),  bo = cl_ceil(ceilf(y+h), b->height);
+    for (int sy = t0; sy < bo; sy++) {
+        int src_y = (int)(((float)sy + 0.5f - y) / abs_sc);
+        if (src_y < 0) src_y = 0; if (src_y >= t->h) src_y = t->h - 1;
+        for (int sx = l; sx < r; sx++) {
+            int src_x = (int)(((float)sx + 0.5f - x) / abs_sc);
+            if (src_x < 0) src_x = 0; if (src_x >= t->w) src_x = t->w - 1;
+            src_x = t->w - 1 - src_x; /* зеркало */
+            b->pixels[sy*b->stride + sx] = blend(b->pixels[sy*b->stride + sx], t->pixels[src_y*t->w + src_x]);
+        }
+    }
+}
 static void draw_tx_rot(Buffer *b, const Texture *t, float x, float y, float ang, float sc) {
     float hw = t->w*0.5f*sc, hh = t->h*0.5f*sc;
     float cx = x+hw, cy = y+hh, ca = cosf(ang), sa = sinf(ang);
@@ -411,9 +433,15 @@ static void draw_tx_rot(Buffer *b, const Texture *t, float x, float y, float ang
         }
     }
 }
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 static void draw_tx(Buffer *b, const Texture *t, float x, float y, float a, float sc) {
-    if (fabsf(a) < 0.0005f) draw_tx_unrot(b, t, x, y, sc);
-    else draw_tx_rot(b, t, x, y, a, sc);
+    if (fabsf(a) < 0.0005f) { draw_tx_unrot(b, t, x, y, sc); return; }
+    float absa = fabsf(a);
+    /* pi (180°) раньше переворачивал спрайт и по Y. Теперь — только X. */
+    if (fabsf(absa - (float)M_PI) < 0.01f) { draw_tx_unrot_flip_h(b, t, x, y, sc); return; }
+    draw_tx_rot(b, t, x, y, a, sc);
 }
 
 /* --- Очередь команд и флаш --- */

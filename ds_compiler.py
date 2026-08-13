@@ -57,6 +57,7 @@ BUILTINS = frozenset({
     'net_player_bullet_active', 'net_player_bullet_x', 'net_player_bullet_y',
     'net_player_bullet_dx', 'net_player_bullet_dy', 'net_player_bullet_shot',
     'net_player_bullet_tr',
+    'net_chat_send', 'net_chat_count', 'net_chat_text', 'net_chat_uid', 'net_chat_time',
     # лог
     'ds_log',
     # --- консоль (показ ошибок и лога в игре)
@@ -84,6 +85,7 @@ ENGINE_VARS = {'screen_w': 'num', 'screen_h': 'num', 'dt': 'num', 'joy': 'joy'}
 # и для передачи в text / ds_log без числового преобразования).
 STR_BUILTINS = frozenset({
     'console_line', 'file_read', 'json_get_str', 'http_get', 'http_post',
+    'net_chat_text', 'net_chat_uid',
 })
 
 _NAME = r'[A-Za-z_]\w*'

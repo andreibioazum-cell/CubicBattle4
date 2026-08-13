@@ -13,25 +13,37 @@
 #include <unistd.h>
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__)
-#define URL 384
-#define BODY 768
+#define URL 512
+#define BODY 1024
 #define RESP 4096
-#define TICK 60
-#define TIMEOUT 3000
+#define CHAT_RESP 8192
+#define WRITE_TICK 1000 /* каждую секунду передаём значение, как просили */
+#define READ_TICK 120   /* читаем чаще, чтобы не лагало и не трясло */
+#define TIMEOUT 5000
 #define STALE 12000
+#define CHAT_MAX 32
+#define CHAT_TEXT_MAX 96
 
 /* Bullet: x,y = точка выстрела (origin), tr = пройденный путь.
- * Текущая позиция = x + dx*tr. Это чинит «пули из ниоткуда» и промахи. */
+ * Текущая позиция = x + dx*tr. Это чинит «пули из ниоткуда»,
+ * но теперь tr при приёме сбрасывается в 0, чтобы пуля вылетала
+ * ровно из ствола (54px), а не из воздуха. */
 typedef struct { double x,y,a,hp,alive; int online; } Actor;
 typedef struct { double x,y,dx,dy,active,shot,tr; } Bullet;
+typedef struct { char uid[24]; char text[CHAT_TEXT_MAX]; unsigned long ts; int valid; } ChatMsg;
 
 static struct {
     pthread_t thread, rthread; pthread_mutex_t lock;
     JavaVM *vm; int run, started, slot, status;
-    char base[220], room[48], uid[24];
+    char base[256], room[48], uid[24];
     Actor me; Bullet my_bullet; unsigned long seq, count;
     Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
+    ChatMsg chats[CHAT_MAX]; int chat_count;
 } net;
+
+/* буферы для возврата строк (console_line-стиль) */
+static char s_chat_text_ret[CHAT_TEXT_MAX];
+static char s_chat_uid_ret[24];
 
 static long long now_ms(void) {
     struct timespec t;
@@ -61,7 +73,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
         if ((*net.vm)->AttachCurrentThread(net.vm,&env,NULL)!=JNI_OK) return 0;
         attached=1;
     }
-    if ((*env)->PushLocalFrame(env,24)!=0) goto done;
+    if ((*env)->PushLocalFrame(env,32)!=0) goto done;
     urlc=(*env)->FindClass(env,"java/net/URL");
     connc=(*env)->FindClass(env,"java/net/HttpURLConnection");
     if (!urlc||!connc) goto done;
@@ -72,8 +84,8 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     if (!conn||(*env)->ExceptionCheck(env)) goto done;
     jm=(*env)->NewStringUTF(env,method);
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),4000);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),4000);
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),5000);
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),5000);
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setUseCaches","(Z)V"),JNI_FALSE);
     {
         jmethodID set_header=(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V");
@@ -102,7 +114,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     stream=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,code>=400?"getErrorStream":"getInputStream","()Ljava/io/InputStream;"));
     if (!stream||(*env)->ExceptionCheck(env)) goto closeconn;
     streamc=(*env)->GetObjectClass(env,stream);
-    buf=(*env)->NewByteArray(env,1024);
+    buf=(*env)->NewByteArray(env,2048);
     for (;;) {
         jint n=(*env)->CallIntMethod(env,stream,(*env)->GetMethodID(env,streamc,"read","([B)I"),buf);
         if ((*env)->ExceptionCheck(env)||n<=0) break;
@@ -123,9 +135,9 @@ static int http(const char *method,const char *url,const char *body,char *out,si
 }
 
 static const char *skip_ws(const char *p) { while(p&&*p&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r')) p++; return p; }
-static const char *skip_str(const char *p) { if(!p||*p!='"') return NULL; for(p++;*p;p++){ if(*p=='\\'&&p[1]){p++;continue;} if(*p=='"') return p+1; } return NULL; }
-static const char *skip_box(const char *p,char open,char close) { int d=0; if(!p||*p!=open) return NULL; for(;*p;p++){ if(*p=='"'){p=skip_str(p); if(!p)return NULL; p--; continue;} if(*p==open)d++; else if(*p==close&&--d==0)return p+1;} return NULL; }
-static const char *skip_val(const char *p) { p=skip_ws(p); if(!p||!*p)return NULL; if(*p=='"')return skip_str(p); if(*p=='{')return skip_box(p,'{','}'); if(*p=='[')return skip_box(p,'[',']'); while(*p&&*p!=','&&*p!='}'&&*p!=']')p++; return p; }
+static const char *skip_str(const char *p) { if(!p||*p!='\"') return NULL; for(p++;*p;p++){ if(*p=='\\'&&p[1]){p++;continue;} if(*p=='\"') return p+1; } return NULL; }
+static const char *skip_box(const char *p,char open,char close) { int d=0; if(!p||*p!=open) return NULL; for(;*p;p++){ if(*p=='\"'){p=skip_str(p); if(!p)return NULL; p--; continue;} if(*p==open)d++; else if(*p==close&&--d==0)return p+1;} return NULL; }
+static const char *skip_val(const char *p) { p=skip_ws(p); if(!p||!*p)return NULL; if(*p=='\"')return skip_str(p); if(*p=='{')return skip_box(p,'{','}'); if(*p=='[')return skip_box(p,'[',']'); while(*p&&*p!=','&&*p!='}'&&*p!=']')p++; return p; }
 static const char *member(const char *o,const char *key) {
     size_t n=strlen(key); const char *p=skip_ws(o);
     if(!p||*p!='{') return NULL;
@@ -136,8 +148,6 @@ static const char *member(const char *o,const char *key) {
     }
     return NULL;
 }
-/* Firebase serializes dense numeric children (players/0, players/1, ...)
- * as JSON arrays.  Treat an array index like an object path component. */
 static const char *element(const char *a,size_t wanted) {
     const char *p=skip_ws(a); size_t index=0;
     if(!p||*p!='[')return NULL;
@@ -159,19 +169,48 @@ static const char *path_val(const char *json,const char *path) {
     }
     return v;
 }
-static double num(const char *json,const char *path,double fb) { const char *v=path_val(json,path); if(!v||!strncmp(v,"null",4))return fb; if(*v=='t')return 1; if(*v=='f')return 0; if(*v=='"')v++; return atof(v); }
+static double num(const char *json,const char *path,double fb) { const char *v=path_val(json,path); if(!v||!strncmp(v,"null",4))return fb; if(*v=='t')return 1; if(*v=='f')return 0; if(*v=='\"')v++; return atof(v); }
 static void strv(const char *json,const char *path,char *out,size_t cap) {
-    const char *v=path_val(json,path); size_t i=0; if(cap)out[0]=0; if(!v||*v!='"')return;
-    for(v++;*v&&*v!='"'&&i+1<cap;v++){ if(*v=='\\'&&v[1])v++; out[i++]=*v; } out[i]=0;
+    const char *v=path_val(json,path); size_t i=0; if(cap)out[0]=0; if(!v||*v!='\"')return;
+    for(v++;*v&&*v!='\"'&&i+1<cap;v++){ if(*v=='\\'&&v[1])v++; out[i++]=*v; } out[i]=0;
 }
 
+/* ---------- JSON escape для чата ---------- */
+static void json_escape(const char *src, char *dst, size_t cap){
+    size_t o=0;
+    if(cap==0) return;
+    for(size_t i=0; src[i] && o+2<cap; i++){
+        char c=src[i];
+        if(c=='\"'){ dst[o++]='\\'; dst[o++]='\"'; }
+        else if(c=='\\'){ dst[o++]='\\'; dst[o++]='\\'; }
+        else if(c=='\n'){ dst[o++]='\\'; dst[o++]='n'; }
+        else if(c=='\r'){ dst[o++]='\\'; dst[o++]='r'; }
+        else if((unsigned char)c<0x20){ /* пропуск управляющих */ }
+        else { dst[o++]=c; }
+    }
+    dst[o]='\0';
+}
+
+/* ---------- состояние ---------- */
 static int push_state(void) {
     Actor a; Bullet b; int slot; unsigned long seq; char url[URL], body[BODY];
     lock(); a=net.me; b=net.my_bullet; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
     snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
-    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"x\":%.1f,\"y\":%.1f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.1f,\"y\":%.1f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",slot,net.uid,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
+    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",
+        slot,net.uid,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
+        slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
     return http("PATCH",url,body,NULL,0)==200;
+}
+static int push_bullet_only(void){
+    Bullet b; int slot; char url[URL], body[BODY];
+    lock(); b=net.my_bullet; slot=net.slot; unlock();
+    if(slot<0) return 0;
+    snprintf(url,sizeof(url),"%s/rooms/%s/bullets/%d.json",net.base,net.room,slot);
+    snprintf(body,sizeof(body),"{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}",
+        safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
+    int code=http("PUT",url,body,NULL,0);
+    return code==200;
 }
 static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room); return http("GET",url,NULL,resp,cap)==200; }
 static void release_slot(void) {
@@ -231,7 +270,101 @@ static void read_players(const char *resp) {
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); memcpy(net.bullets,bs,sizeof(bs)); net.count=count; unlock();
 }
-/* Пишущий поток: держит слот и пушит своё состояние каждые TICK. */
+
+/* ---------- Чат: парсинг ---------- */
+static void parse_and_store_chat(const char *json){
+    if(!json || !*json) return;
+    ChatMsg tmp[CHAT_MAX];
+    int tmp_cnt=0;
+    const char *p=json;
+    while(*p && tmp_cnt<CHAT_MAX){
+        const char *uid_key=strstr(p, "\"uid\"");
+        if(!uid_key) break;
+        const char *uid_colon=strchr(uid_key, ':');
+        if(!uid_colon) break;
+        const char *q1=strchr(uid_colon, '\"');
+        if(!q1) break; q1++;
+        const char *q2=strchr(q1, '\"');
+        if(!q2) break;
+        char uid[24]={0};
+        size_t ul=q2-q1; if(ul>=sizeof(uid)) ul=sizeof(uid)-1;
+        memcpy(uid,q1,ul); uid[ul]='\0';
+
+        const char *next_uid=strstr(uid_key+1, "\"uid\"");
+        const char *text_key=strstr(q2, "\"text\"");
+        if(!text_key) break;
+        if(next_uid && text_key>next_uid){
+            p=q2+1; continue; /* text относится к следующему сообщению */
+        }
+        const char *t_colon=strchr(text_key, ':');
+        if(!t_colon){ p=text_key+6; continue; }
+        const char *tq1=strchr(t_colon, '\"');
+        if(!tq1){ p=t_colon+1; continue; } tq1++;
+        const char *tq2=tq1;
+        while(*tq2){
+            if(*tq2=='\"' && *(tq2-1)!='\\') break;
+            tq2++;
+        }
+        if(!*tq2) break;
+        size_t tl=tq2-tq1;
+        if(tl>=CHAT_TEXT_MAX) tl=CHAT_TEXT_MAX-1;
+        char raw[CHAT_TEXT_MAX*2]; /* для экранированных */
+        size_t rl=tl; if(rl>=sizeof(raw)) rl=sizeof(raw)-1;
+        memcpy(raw,tq1,rl); raw[rl]='\0';
+        char text[CHAT_TEXT_MAX]={0};
+        size_t oi=0;
+        for(size_t i=0;i<rl && oi+1<sizeof(text);i++){
+            if(raw[i]=='\\' && i+1<rl){
+                char esc=raw[i+1];
+                if(esc=='\"'){ text[oi++]='\"'; i++; }
+                else if(esc=='\\'){ text[oi++]='\\'; i++; }
+                else if(esc=='n'){ text[oi++]=' '; i++; }
+                else if(esc=='r'){ i++; }
+                else if(esc=='/'){ text[oi++]='/'; i++; }
+                else { text[oi++]=esc; i++; }
+            }else{
+                text[oi++]=raw[i];
+            }
+        }
+        text[oi]='\0';
+
+        /* ts опционально */
+        unsigned long ts=0;
+        const char *ts_key=strstr(q2, "\"ts\"");
+        if(ts_key && (!next_uid || ts_key<next_uid)){
+            const char *tc=strchr(ts_key, ':');
+            if(tc){ ts=strtoul(tc+1,NULL,10); }
+        }
+
+        strncpy(tmp[tmp_cnt].uid, uid, sizeof(tmp[tmp_cnt].uid)-1);
+        strncpy(tmp[tmp_cnt].text, text, sizeof(tmp[tmp_cnt].text)-1);
+        tmp[tmp_cnt].ts=ts;
+        tmp[tmp_cnt].valid=1;
+        tmp_cnt++;
+
+        p=tq2+1;
+    }
+    /* сохраняем последние CHAT_MAX (json уже ограничен limitToLast) */
+    lock();
+    if(tmp_cnt>0){
+        /* если найдено больше чем храним, берём хвост */
+        int start=0;
+        if(tmp_cnt>CHAT_MAX) start=tmp_cnt-CHAT_MAX;
+        net.chat_count=0;
+        for(int i=start;i<tmp_cnt;i++){
+            net.chats[net.chat_count++]=tmp[i];
+        }
+    }
+    unlock();
+}
+static int pull_chat(char *resp, size_t cap){
+    char url[URL];
+    /* последние 20 сообщений, отсортированных по ключу */
+    snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=20",net.base,net.room);
+    return http("GET",url,NULL,resp,cap)==200;
+}
+
+/* Пишущий поток: держит слот и пушит своё состояние каждую секунду. */
 static void *thread_main(void *arg) {
     int fails=0; (void)arg;
     while(net.run) {
@@ -244,20 +377,22 @@ static void *thread_main(void *arg) {
         }
         if(!push_state()){ if(++fails>3)status(NET_ERROR); sleep_ms(300); continue; }
         fails=0; status(NET_PLAYING);
-        long long spent=now_ms()-start; if(spent<TICK)sleep_ms((int)(TICK-spent));
+        long long spent=now_ms()-start; if(spent<WRITE_TICK)sleep_ms((int)(WRITE_TICK-spent));
     }
     release_slot(); status(NET_OFFLINE); return NULL;
 }
-/* Читающий поток: тянет комнату параллельно с записью — убирает лаг от
- * последовательных HTTP round-trip'ов, обновления чаще и плавнее. */
+/* Читающий поток: тянет комнату и чат параллельно — меньше лага и тряски */
 static void *reader_thread(void *arg) {
-    char resp[RESP]; (void)arg;
+    char resp[RESP];
+    char chat_resp[CHAT_RESP];
+    (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
         lock(); slot=net.slot; unlock();
         if(slot<0){ sleep_ms(50); continue; }
         if(pull_state(resp,sizeof(resp))) read_players(resp);
-        long long spent=now_ms()-start; if(spent<TICK)sleep_ms((int)(TICK-spent));
+        if(pull_chat(chat_resp,sizeof(chat_resp))) parse_and_store_chat(chat_resp);
+        long long spent=now_ms()-start; if(spent<READ_TICK)sleep_ms((int)(READ_TICK-spent));
     }
     return NULL;
 }
@@ -272,7 +407,8 @@ void net_connect(const char *url,const char *room) {
     size_t n;
     if(net.run||!url||!*url)return;
     memset(&net.me,0,sizeof(net.me)); memset(&net.my_bullet,0,sizeof(net.my_bullet)); memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
-    net.count=0; net.slot=-1; net.seq=0;
+    memset(net.chats,0,sizeof(net.chats));
+    net.count=0; net.chat_count=0; net.slot=-1; net.seq=0;
     snprintf(net.base,sizeof(net.base),"%s",url); n=strlen(net.base); while(n&&net.base[n-1]=='/')net.base[--n]=0;
     snprintf(net.room,sizeof(net.room),"%s",(room&&*room)?room:"main");
     if(!net.uid[0])make_uid();
@@ -280,7 +416,7 @@ void net_connect(const char *url,const char *room) {
     net.status=NET_CONNECTING; net.run=1;
     if(pthread_create(&net.thread,NULL,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; return; }
     if(pthread_create(&net.rthread,NULL,reader_thread,NULL)){ net.run=0; pthread_join(net.thread,NULL); net.status=NET_ERROR; return; }
-    LOG("connect %s/%s",net.base,net.room);
+    LOG("connect %s/%s (write %dms read %dms)",net.base,net.room,WRITE_TICK,READ_TICK);
 }
 void net_disconnect(void) { if(!net.run)return; net.run=0; pthread_join(net.thread,NULL); pthread_join(net.rthread,NULL); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
 void net_publish(double x,double y,double a,double hp,double alive) {
@@ -291,7 +427,56 @@ void net_publish(double x,double y,double a,double hp,double alive) {
 void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot,double tr) {
     if(!net.started) return;
     lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; net.my_bullet.tr=tr; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
+    /* пуля вылетает сразу — пушим без ожидания секундной синхронизации, чтобы не летела из воздуха через секунду */
+    if(active>0.5){
+        /* быстрый push в отдельном коротком запросе */
+        push_bullet_only();
+    }
 }
+
+/* ---------- Чат API ---------- */
+void net_chat_send(const char *text){
+    if(!net.started || !text || !*text) return;
+    if(!net.run) return;
+    char url[URL], body[BODY*2], esc[CHAT_TEXT_MAX*2];
+    json_escape(text, esc, sizeof(esc));
+    snprintf(url,sizeof(url),"%s/rooms/%s/chat.json",net.base,net.room);
+    long long ts=now_ms();
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"text\":\"%s\",\"ts\":%lld}",net.uid,esc,ts);
+    http("POST",url,body,NULL,0);
+    LOG("chat send %s",text);
+}
+double net_chat_count(void){ double v; lock(); v=net.chat_count; unlock(); return v; }
+const char* net_chat_text(double idx){
+    int i=(int)idx;
+    lock();
+    if(i>=0 && i<net.chat_count && net.chats[i].valid){
+        strncpy(s_chat_text_ret, net.chats[i].text, sizeof(s_chat_text_ret)-1);
+        s_chat_text_ret[sizeof(s_chat_text_ret)-1]='\0';
+    }else{
+        s_chat_text_ret[0]='\0';
+    }
+    unlock();
+    return s_chat_text_ret;
+}
+const char* net_chat_uid(double idx){
+    int i=(int)idx;
+    lock();
+    if(i>=0 && i<net.chat_count && net.chats[i].valid){
+        strncpy(s_chat_uid_ret, net.chats[i].uid, sizeof(s_chat_uid_ret)-1);
+        s_chat_uid_ret[sizeof(s_chat_uid_ret)-1]='\0';
+    }else{
+        s_chat_uid_ret[0]='\0';
+    }
+    unlock();
+    return s_chat_uid_ret;
+}
+double net_chat_time(double idx){
+    int i=(int)idx; double v=0;
+    lock(); if(i>=0 && i<net.chat_count) v=(double)net.chats[i].ts; unlock();
+    return v;
+}
+
 static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
