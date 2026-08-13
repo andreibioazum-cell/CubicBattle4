@@ -422,9 +422,14 @@ double now(void){ return now_ms()/1000.0; }
 double str_len(const char *s){ return s ? (double)strlen(s) : 0; }
 int str_eq(const char *a, const char *b){ if(a==b) return 1; if(!a||!b) return 0; return strcmp(a,b)==0; }
 
-/* ---------- реальная клавиатура через JNI (Android) ---------- */
+/* ---------- реальная (системная) клавиатура через JNI (Android) ----------
+ * Кастомной нарисованной клавиатуры больше нет: текст вводится системной
+ * клавиатурой Android. Символы берём не из голого keycode, а через
+ * android.view.KeyEvent.getUnicodeChar(metaState) — поэтому работают
+ * заглавные буквы, кириллица и любая раскладка. */
 #include <android/native_activity.h>
 #include <android/keycodes.h>
+#include <jni.h>
 #define KB_BUF 256
 static ANativeActivity *kb_activity = NULL;
 static char kb_text[KB_BUF] = {0};
@@ -458,32 +463,82 @@ void keyboard_type(const char *text){
     }
     kb_text[kb_len]='\0';
 }
-void keyboard_backspace(void){ if(kb_len>0){ kb_len--; kb_text[kb_len]='\0'; } }
+/* стираем целый UTF-8 символ, а не один байт — иначе кириллица «ломается» */
+void keyboard_backspace(void){
+    while(kb_len>0){
+        unsigned char c=(unsigned char)kb_text[--kb_len];
+        kb_text[kb_len]='\0';
+        if((c & 0xC0) != 0x80) break;   /* дошли до ведущего байта */
+    }
+}
 
-int keyboard_handle_key(int keycode, int action){
-    if(action!=0) { /* 0 = DOWN */ }
-    // ACTION_DOWN = 0, ACTION_UP =1 from android
-    if(keycode==AKEYCODE_DEL){
-        if(kb_len>0){ kb_len--; kb_text[kb_len]='\0'; }
-        return 1;
+/* Кодовая точка -> UTF-8 в буфер ввода (кириллица и прочий юникод) */
+static void kb_append_cp(unsigned int cp){
+    char u[5]; int n=0;
+    if(cp<0x80){ u[0]=(char)cp; n=1; }
+    else if(cp<0x800){ u[0]=(char)(0xC0|(cp>>6)); u[1]=(char)(0x80|(cp&0x3F)); n=2; }
+    else if(cp<0x10000){ u[0]=(char)(0xE0|(cp>>12)); u[1]=(char)(0x80|((cp>>6)&0x3F)); u[2]=(char)(0x80|(cp&0x3F)); n=3; }
+    else { u[0]=(char)(0xF0|(cp>>18)); u[1]=(char)(0x80|((cp>>12)&0x3F)); u[2]=(char)(0x80|((cp>>6)&0x3F)); u[3]=(char)(0x80|(cp&0x3F)); n=4; }
+    u[n]='\0';
+    if(kb_len+n < KB_BUF-1){ memcpy(kb_text+kb_len,u,(size_t)n); kb_len+=n; kb_text[kb_len]='\0'; }
+}
+
+/* JNI: KeyEvent(action, keycode).getUnicodeChar(metaState) — настоящий символ
+ * системной клавиатуры с учётом раскладки, Shift и Caps. */
+static unsigned int kb_unicode(int keycode, int meta){
+    JNIEnv *env=NULL; JavaVM *vm; jclass cls; jmethodID ctor, get_uni;
+    jobject ev; jint uni=0; int attached=0;
+    if(!kb_activity || !kb_activity->vm) return 0;
+    vm = kb_activity->vm;
+    if((*vm)->GetEnv(vm,(void**)&env,JNI_VERSION_1_6)!=JNI_OK){
+        if((*vm)->AttachCurrentThread(vm,&env,NULL)!=JNI_OK) return 0;
+        attached=1;
     }
-    if(keycode==AKEYCODE_ENTER || keycode==AKEYCODE_DPAD_CENTER){
-        kb_enter=1; return 1;
+    if((*env)->PushLocalFrame(env,8)!=0){ if(attached)(*vm)->DetachCurrentThread(vm); return 0; }
+    cls=(*env)->FindClass(env,"android/view/KeyEvent");
+    if(!cls) goto done;
+    ctor=(*env)->GetMethodID(env,cls,"<init>","(II)V");
+    get_uni=(*env)->GetMethodID(env,cls,"getUnicodeChar","(I)I");
+    if(!ctor||!get_uni) goto done;
+    ev=(*env)->NewObject(env,cls,ctor,(jint)0,(jint)keycode);  /* ACTION_DOWN */
+    if(!ev||(*env)->ExceptionCheck(env)) goto done;
+    uni=(*env)->CallIntMethod(env,ev,get_uni,(jint)meta);
+    if((*env)->ExceptionCheck(env)) uni=0;
+done:
+    if((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->PopLocalFrame(env,NULL);
+    if(attached) (*vm)->DetachCurrentThread(vm);
+    return uni>0 ? (unsigned int)uni : 0;
+}
+
+int keyboard_handle_key(int keycode, int action, int meta){
+    (void)action;
+    if(keycode==AKEYCODE_DEL){ keyboard_backspace(); return 1; }
+    if(keycode==AKEYCODE_FORWARD_DEL){ keyboard_backspace(); return 1; }
+    if(keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER){ kb_enter=1; return 1; }
+    if(keycode==AKEYCODE_SPACE){ kb_append_cp(' '); return 1; }
+    /* настоящий символ с учётом раскладки/Shift — работает и для кириллицы */
+    {
+        unsigned int cp = kb_unicode(keycode, meta);
+        if(cp>=0x20 && cp!=0x7F){ kb_append_cp(cp); return 1; }
     }
-    if(keycode==AKEYCODE_SPACE){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=' '; kb_text[kb_len]='\0'; } return 1; }
-    if(keycode>=AKEYCODE_A && keycode<=AKEYCODE_Z){
-        char c='a'+(keycode-AKEYCODE_A);
-        if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=c; kb_text[kb_len]='\0'; }
-        return 1;
-    }
-    if(keycode>=AKEYCODE_0 && keycode<=AKEYCODE_9){
-        char c='0'+(keycode-AKEYCODE_0);
-        if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=c; kb_text[kb_len]='\0'; }
-        return 1;
-    }
-    if(keycode==AKEYCODE_COMMA){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=','; kb_text[kb_len]='\0'; } return 1; }
-    if(keycode==AKEYCODE_PERIOD){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]='.'; kb_text[kb_len]='\0'; } return 1; }
-    if(keycode==AKEYCODE_MINUS){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]='-'; kb_text[kb_len]='\0'; } return 1; }
-    // цифры с клавиатуры и тд
+    /* запасной путь, если JNI недоступен */
+    if(keycode>=AKEYCODE_A && keycode<=AKEYCODE_Z){ kb_append_cp((unsigned int)('a'+(keycode-AKEYCODE_A))); return 1; }
+    if(keycode>=AKEYCODE_0 && keycode<=AKEYCODE_9){ kb_append_cp((unsigned int)('0'+(keycode-AKEYCODE_0))); return 1; }
+    if(keycode==AKEYCODE_COMMA){ kb_append_cp(','); return 1; }
+    if(keycode==AKEYCODE_PERIOD){ kb_append_cp('.'); return 1; }
+    if(keycode==AKEYCODE_MINUS){ kb_append_cp('-'); return 1; }
     return 0;
+}
+
+/* ACTION_MULTIPLE / вставка строки из системной клавиатуры */
+void keyboard_commit_utf8(const char *utf8){
+    if(!utf8) return;
+    size_t n=strlen(utf8);
+    for(size_t i=0;i<n && kb_len+1<KB_BUF-1;i++){
+        char c=utf8[i];
+        if(c=='\n'||c=='\r'){ kb_enter=1; continue; }
+        kb_text[kb_len++]=c;
+    }
+    kb_text[kb_len]='\0';
 }
