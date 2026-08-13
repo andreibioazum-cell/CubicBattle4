@@ -94,6 +94,8 @@ double clamp(double v, double lo, double hi);
 double lerp(double a, double b, double t);
 double dist(double x1, double y1, double x2, double y2);
 double now(void);
+double str_len(const char *s);
+int str_eq(const char *a, const char *b);
 
 /* клавиатура через JNI */
 void ds_set_activity(void *activity);

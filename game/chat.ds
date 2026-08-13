@@ -45,7 +45,7 @@ if x>=bx&&x<=bx+bw&&y>=by&&y<=by+bh; return 1; end; return 0
 end
 function keypad_tap num x, num y
 // экранная клавиатура: ввод символа по координатам (геометрия как в draw_keypad)
-num kx=36, kw=floor((screen_w-138)/12), kh=44, gap=6, ky=screen_h-264
+num kx=36, kw=floor((screen_w-138)/12), gap=6, ky=screen_h-264
 if y<ky||y>ky+194; return 0; end
 num row=floor((y-ky)/50); if row>3; row=3; end; num col=floor((x-kx)/(kw+gap))
 if col<0||col>11; return 0; end
