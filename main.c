@@ -12,7 +12,8 @@
 #include <android/native_activity.h>
 
 // Только arm64/arm32 Android 10 — без кроссплатформы
-// + реальная клавиатура через JNI (ANativeActivity_showSoftInput)
+// + системная клавиатура Android через JNI (ANativeActivity_showSoftInput),
+//   символы приходят из KeyEvent.getUnicodeChar с учётом раскладки
 static int init_done = 0;
 static int script_active = 0;
 static AAssetManager *script_assets = NULL;
@@ -110,11 +111,12 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         }
         return 1;
     } else if (type == AINPUT_EVENT_TYPE_KEY) {
-        // реальная клавиатура — ловим A-Z, 0-9, DEL, SPACE, ENTER
+        // системная клавиатура: любой символ раскладки, включая кириллицу
         int32_t action = AKeyEvent_getAction(event);
         int32_t key = AKeyEvent_getKeyCode(event);
+        int32_t meta = AKeyEvent_getMetaState(event);
         if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE) {
-            if (keyboard_handle_key(key, action)) return 1;
+            if (keyboard_handle_key(key, action, meta)) return 1;
         }
         if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) {
             return 0;
@@ -129,7 +131,7 @@ void android_main(struct android_app *app) {
     app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
     net_set_java_vm(app->activity->vm);
     ds_set_activity(app->activity);
-    ds_log("DimScript Android 10 arm64/arm32 only + keyboard JNI");
+    ds_log("DimScript Android 10 arm64/arm32 only + system keyboard (JNI)");
     for (;;) {
         struct android_poll_source *source = NULL; int ident;
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {

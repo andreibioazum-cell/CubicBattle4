@@ -97,7 +97,7 @@ double now(void);
 double str_len(const char *s);
 int str_eq(const char *a, const char *b);
 
-/* клавиатура через JNI */
+/* системная клавиатура Android через JNI (кастомной нарисованной больше нет) */
 void ds_set_activity(void *activity);
 void keyboard_show(void);
 void keyboard_hide(void);
@@ -106,9 +106,12 @@ const char* keyboard_get_raw(void);
 void keyboard_clear(void);
 int keyboard_visible(void);
 int keyboard_enter_pressed(void);
-int keyboard_handle_key(int keycode, int action);
+/* keycode + metaState: символ берётся из KeyEvent.getUnicodeChar — раскладка,
+ * Shift и кириллица работают как в обычном текстовом поле */
+int keyboard_handle_key(int keycode, int action, int meta);
 void keyboard_type(const char *text);   /* дописать строку в буфер клавиатуры */
-void keyboard_backspace(void);          /* стереть последний символ */
+void keyboard_backspace(void);          /* стереть последний символ (UTF-8) */
+void keyboard_commit_utf8(const char *utf8); /* вставка готовой строки */
 
 /* графика */
 void rect(float x, float y, float w, float h, uint32_t color);
