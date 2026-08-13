@@ -12,7 +12,6 @@
 void net_set_java_vm(JavaVM *vm);
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
-void net_shutdown(void);
 void net_publish(double x, double y, double a, double hp, double alive);
 void net_publish_bullet(double x, double y, double dx, double dy, double active, double shot, double tr);
 double net_status(void);

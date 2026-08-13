@@ -49,7 +49,6 @@ BUILTINS = frozenset({
     'text_scaled', 'text_ink_width', 'text_ink_height', 'text_ink_top', 'png_load',
     # математика
     'sqrt', 'sin', 'cos', 'atan2', 'floor', 'rand',
-    # звёзды (совместимость)
     # онлайн Firebase
     'net_connect', 'net_disconnect', 'net_publish', 'net_publish_bullet',
     'net_status', 'net_slot', 'net_count',
@@ -327,28 +326,14 @@ class DimScriptCompiler:
             cur+=1
         return j+1
 
-    def _decl(self, line):
-        lst = self._decl_list(line)
-        if not lst:
-            return None
-        # для совместимости возвращаем первый
-        t, n, v = lst[0]
-        if t not in TYPES and t not in self.objects:
-            return None
-        return t, n, v.strip() if v else None
     def _decl_all(self, line):
         # возвращает все объявления в строке: num a=0, b=1
         lst = self._decl_list(line)
         if not lst:
             return None
-        # проверим типы
         for t, n, v in lst:
             if t not in TYPES and t not in self.objects:
-                # на этапе парсинга объектов тип может быть ещё не известен? проверим только буквы
-                if t not in TYPES and t not in self.objects:
-                    # если это поле объекта, тип должен быть из TYPES
-                    if t not in TYPES:
-                        return None
+                return None
         return lst
 
     def _parse_object(self, i):
@@ -686,7 +671,7 @@ class DimScriptCompiler:
     def _emit_line(self, line):
         # inline C: c <raw C>  или  c "C code"  — вызов кода на Си из DimScript
         if line and line[0] == 'c' and len(line) > 1 and line[1] in ' \t"':
-            if find_assign(line) == -1 and not self._decl(line):
+            if find_assign(line) == -1 and not self._decl_all(line):
                 raw = line[1:].strip()
                 if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
                     inner = raw[1:-1]

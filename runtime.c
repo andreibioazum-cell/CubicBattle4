@@ -3,10 +3,6 @@
 #include <stdio.h>
 #include <time.h>
 
-#ifdef __ANDROID__
-#include <android/log.h>
-#endif
-
 #define DS_ERROR_MESSAGE_SIZE 1024
 
 /* --- Консоль (показ лога и ошибок в игре) --- */
