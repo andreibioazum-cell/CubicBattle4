@@ -20,7 +20,9 @@ BUILTINS=frozenset({
     # чат — отдельный файл chat.ds
     'net_chat_send','net_chat_count','net_chat_text','net_chat_uid','net_chat_time',
     # реальная клавиатура через JNI (ANativeActivity_showSoftInput)
-    'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_clear','keyboard_visible','keyboard_enter_pressed',
+    'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_visible','keyboard_enter_pressed','keyboard_type','keyboard_backspace',
+    # строки
+    'str_len','str_eq',
     # лог и консоль
     'ds_log','console_count','console_line','console_type','console_clear',
     # массивы
@@ -108,6 +110,9 @@ class DimScriptCompiler:
                     for raw in f:
                         line=strip_comment(raw).strip()
                         if not line: continue
+                        # inline C (c ...) не режется по «;» — внутри может быть блок
+                        if line[0]=='c' and len(line)>1 and line[1] in ' \t"':
+                            self.lines.append(line); continue
                         for part in split_top(line,';'):
                             q=part.strip()
                             if q: self.lines.append(q)
@@ -185,12 +190,17 @@ class DimScriptCompiler:
         return j
 
     def _infer_returns(self):
-        # уточняет str/num возврат
+        # уточняет str/num возврат (учитывает локальные объявления str)
         for _ in range(4):
             ch=False
             for name in list(self.func_ret.keys()):
                 params,body=self.functions[name]; saved=self.scope; self.scope={pn:pt for pt,pn in params}; kind='num'
                 for line in body:
+                    lst=self._decl_all(line)
+                    if lst:
+                        for t,n,v in lst:
+                            if t in TYPES: self.scope[n]=t
+                        continue
                     if line.startswith('return '):
                         if self.expr_type(line[7:].strip())=='str': kind='str'; break
                 self.scope=saved
@@ -300,17 +310,16 @@ class DimScriptCompiler:
     def _emit(self,s): self.output.append(s)
 
     def _emit_line(self,line):
-        # inline C: c printf("hi");
+        # inline C: c printf("hi"); — префикс «c » всегда означает сырой C,
+        # включая блоки с присваиваниями: c { int n = 0; ... }
         if line and line[0]=='c' and len(line)>1 and line[1] in ' \t"':
-            if find_assign(line)==-1 and not self._decl_all(line):
-                raw=line[1:].strip()
-                if raw.startswith('"') and raw.endswith('"') and len(raw)>=2:
-                    inner=raw[1:-1].replace('\\"', '"').replace('\\\\','\\'); self._out(inner)
-                else:
-                    if raw:
-                        if raw.endswith((';','{','}')): self._out(raw)
-                        else: self._out(raw+';')
-                return
+            raw=line[1:].strip()
+            if raw.startswith('"') and raw.endswith('"') and len(raw)>=2:
+                inner=raw[1:-1].replace('\\"', '"').replace('\\\\','\\'); self._out(inner)
+            elif raw:
+                if raw.endswith((';','{','}')): self._out(raw)
+                else: self._out(raw+';')
+            return
         if line=='end':
             if not self.blocks: self._error("unexpected 'end'"); return
             self.blocks.pop(); self.indent-=1; self._out('}'); return

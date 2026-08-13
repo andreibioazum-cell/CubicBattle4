@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
@@ -12,6 +13,13 @@ static char ds_console_buf[DS_CONSOLE_MAX][DS_CONSOLE_LINE_MAX];
 static int ds_console_type_buf[DS_CONSOLE_MAX];
 static int ds_console_head = 0;   /* индекс следующей записи (кольцо) */
 static int ds_console_count = 0;  /* сколько всего строк хранится */
+static pthread_mutex_t ds_console_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* копии для чтения из игрового потока — защищены мьютексом,
+ * чтобы сетевые потоки не перезаписали строку во время отрисовки */
+#define DS_CONSOLE_READ_SLOTS 8
+static char ds_console_read[DS_CONSOLE_READ_SLOTS][DS_CONSOLE_LINE_MAX];
+static int ds_console_read_pos = 0;
 
 static void console_add(const char *line, int is_error) {
     if (!line) return;
@@ -24,26 +32,45 @@ static void console_add(const char *line, int is_error) {
         tmp[w++] = (c == '\n' || c == '\r') ? ' ' : c;
     }
     tmp[w] = '\0';
+    pthread_mutex_lock(&ds_console_lock);
     snprintf(ds_console_buf[ds_console_head], DS_CONSOLE_LINE_MAX, "%s", tmp);
     ds_console_type_buf[ds_console_head] = is_error ? 1 : 0;
     ds_console_head = (ds_console_head + 1) % DS_CONSOLE_MAX;
     if (ds_console_count < DS_CONSOLE_MAX) ds_console_count++;
+    pthread_mutex_unlock(&ds_console_lock);
 }
 
 int console_count(void) { return ds_console_count; }
 int console_type(int index) {
-    if (index < 0 || index >= ds_console_count) return 0;
-    int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
-    if (pos < 0) pos += DS_CONSOLE_MAX;
-    return ds_console_type_buf[pos];
+    int t = 0;
+    pthread_mutex_lock(&ds_console_lock);
+    if (index >= 0 && index < ds_console_count) {
+        int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
+        if (pos < 0) pos += DS_CONSOLE_MAX;
+        t = ds_console_type_buf[pos];
+    }
+    pthread_mutex_unlock(&ds_console_lock);
+    return t;
 }
 const char *console_line(int index) {
-    if (index < 0 || index >= ds_console_count) return "";
-    int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
-    if (pos < 0) pos += DS_CONSOLE_MAX;
-    return ds_console_buf[pos];
+    pthread_mutex_lock(&ds_console_lock);
+    char *slot = ds_console_read[ds_console_read_pos];
+    ds_console_read_pos = (ds_console_read_pos + 1) % DS_CONSOLE_READ_SLOTS;
+    if (index >= 0 && index < ds_console_count) {
+        int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
+        if (pos < 0) pos += DS_CONSOLE_MAX;
+        snprintf(slot, DS_CONSOLE_LINE_MAX, "%s", ds_console_buf[pos]);
+    } else {
+        slot[0] = '\0';
+    }
+    pthread_mutex_unlock(&ds_console_lock);
+    return slot;
 }
-void console_clear(void) { ds_console_count = 0; ds_console_head = 0; }
+void console_clear(void) {
+    pthread_mutex_lock(&ds_console_lock);
+    ds_console_count = 0; ds_console_head = 0;
+    pthread_mutex_unlock(&ds_console_lock);
+}
 
 Joy joy = {0};
 int screen_w = 0;
@@ -70,6 +97,31 @@ void ds_log(const char *format, ...) {
     vsnprintf(tmp, sizeof(tmp), format, args);
     va_end(args);
     console_add(tmp, 0);
+}
+
+void ds_log_err(const char *format, ...) {
+    char tmp[DS_CONSOLE_LINE_MAX];
+    va_list args;
+    va_start(args, format);
+    __android_log_vprint(ANDROID_LOG_ERROR, "DimScript", format, args);
+    va_end(args);
+    va_start(args, format);
+    vsnprintf(tmp, sizeof(tmp), format, args);
+    va_end(args);
+    console_add(tmp, 1);
+}
+
+/* потокобезопасная запись в консоль + logcat (для net.c и прочих потоков) */
+void ds_console_log(int is_error, const char *format, ...) {
+    char tmp[DS_CONSOLE_LINE_MAX];
+    va_list args;
+    va_start(args, format);
+    __android_log_vprint(is_error ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "DimScript", format, args);
+    va_end(args);
+    va_start(args, format);
+    vsnprintf(tmp, sizeof(tmp), format, args);
+    va_end(args);
+    console_add(tmp, is_error ? 1 : 0);
 }
 
 void ds_runtime_error(const char *format, ...) {
@@ -367,6 +419,9 @@ double lerp(double a, double b, double t){ return a + (b-a)*t; }
 double dist(double x1, double y1, double x2, double y2){ double dx=x2-x1, dy=y2-y1; return sqrt(dx*dx+dy*dy); }
 double now(void){ return now_ms()/1000.0; }
 
+double str_len(const char *s){ return s ? (double)strlen(s) : 0; }
+int str_eq(const char *a, const char *b){ if(a==b) return 1; if(!a||!b) return 0; return strcmp(a,b)==0; }
+
 /* ---------- реальная клавиатура через JNI (Android) ---------- */
 #include <android/native_activity.h>
 #include <android/keycodes.h>
@@ -393,6 +448,17 @@ const char* keyboard_get_raw(void){ return kb_text; }
 void keyboard_clear(void){ kb_text[0]='\0'; kb_len=0; kb_enter=0; }
 int keyboard_visible(void){ return kb_show; }
 int keyboard_enter_pressed(void){ int e=kb_enter; kb_enter=0; return e; }
+void keyboard_type(const char *text){
+    if(!text) return;
+    size_t n=strlen(text);
+    for(size_t i=0;i<n && kb_len+1<KB_BUF-1;i++){
+        char c=text[i];
+        if(c=='\n'||c=='\r'){ kb_enter=1; continue; }
+        kb_text[kb_len++]=c;
+    }
+    kb_text[kb_len]='\0';
+}
+void keyboard_backspace(void){ if(kb_len>0){ kb_len--; kb_text[kb_len]='\0'; } }
 
 int keyboard_handle_key(int keycode, int action){
     if(action!=0) { /* 0 = DOWN */ }
@@ -406,7 +472,7 @@ int keyboard_handle_key(int keycode, int action){
     }
     if(keycode==AKEYCODE_SPACE){ if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=' '; kb_text[kb_len]='\0'; } return 1; }
     if(keycode>=AKEYCODE_A && keycode<=AKEYCODE_Z){
-        char c='A'+(keycode-AKEYCODE_A);
+        char c='a'+(keycode-AKEYCODE_A);
         if(kb_len+1<KB_BUF-1){ kb_text[kb_len++]=c; kb_text[kb_len]='\0'; }
         return 1;
     }

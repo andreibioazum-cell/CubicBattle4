@@ -267,29 +267,29 @@ static int open_asset(const char *n, uint8_t **out, size_t *sz) {
 }
 static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
-    if (!n) { ds_runtime_error("invalid PNG asset path: '%s'", req ? req : "(null)"); return NULL; }
+    if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
     Texture *t = find_tx(n);
     if (t) return t->pixels ? t : NULL;
-    if (!amgr) { ds_runtime_error("cannot load PNG '%s' without an Android asset manager", n); return NULL; }
+    if (!amgr) { ds_log_err("texture not loaded: no asset manager for '%s'", n); return NULL; }
     t = (Texture *)calloc(1, sizeof(*t));
-    if (!t) { ds_runtime_error("out of memory while caching PNG '%s'", n); return NULL; }
+    if (!t) { ds_log_err("texture not loaded: out of memory caching '%s'", n); return NULL; }
     t->name = strdup_safe(n);
-    if (!t->name) { free(t); ds_runtime_error("out of memory while caching PNG name '%s'", n); return NULL; }
+    if (!t->name) { free(t); ds_log_err("texture not loaded: out of memory caching name '%s'", n); return NULL; }
     t->next = textures; textures = t;
     uint8_t *enc = NULL; size_t enc_sz = 0;
     if (!open_asset(n, &enc, &enc_sz) || enc_sz > (size_t)INT_MAX) {
-        free(enc); ds_runtime_error("PNG asset not found or unreadable: '%s'", n); return NULL;
+        free(enc); ds_log_err("texture not loaded: asset not found or unreadable: '%s'", n); return NULL;
     }
     int ch = 0;
     stbi_uc *dec = stbi_load_from_memory(enc, (int)enc_sz, &t->w, &t->h, &ch, STBI_rgb_alpha);
     free(enc);
     if (!dec || t->w <= 0 || t->h <= 0) {
-        ds_runtime_error("could not decode PNG '%s': %s", n, stbi_failure_reason() ? stbi_failure_reason() : "unknown");
+        ds_log_err("texture not loaded: could not decode PNG '%s': %s", n, stbi_failure_reason() ? stbi_failure_reason() : "unknown");
         stbi_image_free(dec); return NULL;
     }
     size_t pc = (size_t)t->w * t->h;
     t->pixels = (uint32_t *)malloc(pc * sizeof(*t->pixels));
-    if (!t->pixels) { stbi_image_free(dec); ds_runtime_error("out of memory uploading PNG '%s'", n); return NULL; }
+    if (!t->pixels) { stbi_image_free(dec); ds_log_err("texture not loaded: out of memory uploading PNG '%s'", n); return NULL; }
     t->opaque = 1;
     for (size_t i = 0; i < pc; i++) {
         uint8_t a = dec[i*4+3];
@@ -297,6 +297,7 @@ static Texture *load_png(const char *req) {
         if (a != 255) t->opaque = 0;
     }
     stbi_image_free(dec);
+    ds_log("texture loaded: %s (%dx%d)", n, t->w, t->h);
     return t;
 }
 
@@ -307,12 +308,13 @@ static int ensure_font(void) {
     font_tried = 1;
     uint8_t *data = NULL; size_t sz = 0;
     if (!open_asset("fonts/ChillRoundGothic_Heavy.ttf", &data, &sz)) {
-        ds_runtime_error("TTF asset not found: fonts/ChillRoundGothic_Heavy.ttf");
+        ds_log_err("font not loaded: fonts/ChillRoundGothic_Heavy.ttf not found");
         return 0;
     }
     font = ds_font_create(data, sz, 32);
     free(data);
-    if (!font) { ds_runtime_error("could not parse TrueType font"); return 0; }
+    if (!font) { ds_log_err("font not loaded: could not parse TrueType font"); return 0; }
+    ds_log("font loaded: fonts/ChillRoundGothic_Heavy.ttf");
     return 1;
 }
 

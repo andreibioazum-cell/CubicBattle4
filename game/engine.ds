@@ -8,7 +8,9 @@ else if t_dir==2; if game_state==5&&t_target!=5; net_disconnect; end; game_state
 else if t_dir==-1; t_fade=t_fade-dt/transition_duration; if t_fade<=0; t_fade=0; t_dir=0; end; end
 end
 function init
-png_load GRASS; png_load CUBE_TEX
+ds_log "init: loading textures"
+png_load GRASS; png_load ORDINARY_TEX; png_load PUNCH_TEX
+ds_log "init: ready"
 end
 function update
 update_transition; if game_state==1; update_game; else if game_state==5; update_online; end

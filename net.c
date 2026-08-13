@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "net.h"
+#include "runtime.h"
 #include <android/log.h>
 #include <math.h>
 #include <pthread.h>
@@ -12,7 +13,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOG(...) __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__)
+/* Все сетевые логи идут и в logcat, и во внутриигровую консоль */
+#define LOG(...) do { __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__); ds_console_log(0, __VA_ARGS__); } while (0)
+#define LOGERR(...) do { __android_log_print(ANDROID_LOG_ERROR, "DimScriptNet", __VA_ARGS__); ds_console_log(1, __VA_ARGS__); } while (0)
 #define URL 512
 #define BODY 1024
 #define RESP 4096
@@ -372,10 +375,11 @@ static void *thread_main(void *arg) {
         lock(); slot=net.slot; unlock();
         if(slot<0) {
             status(NET_CONNECTING); slot=claim_slot();
-            if(slot<0){ if(++fails>3)status(NET_ERROR); sleep_ms(500); continue; }
+            if(slot<0){ if(++fails>3){status(NET_ERROR); LOGERR("network error: cannot claim player slot in room '%s'", net.room);} sleep_ms(500); continue; }
             lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.bullets[slot]=net.my_bullet; net.players[slot].online=1; unlock(); fails=0;
+            LOG("slot %d claimed", (int)net.slot);
         }
-        if(!push_state()){ if(++fails>3)status(NET_ERROR); sleep_ms(300); continue; }
+        if(!push_state()){ if(++fails>3){status(NET_ERROR); LOGERR("network error: failed to push player state");} sleep_ms(300); continue; }
         fails=0; status(NET_PLAYING);
         long long spent=now_ms()-start; if(spent<WRITE_TICK)sleep_ms((int)(WRITE_TICK-spent));
     }
@@ -414,8 +418,8 @@ void net_connect(const char *url,const char *room) {
     if(!net.uid[0])make_uid();
     if(!net.started){ pthread_mutex_init(&net.lock,NULL); net.started=1; }
     net.status=NET_CONNECTING; net.run=1;
-    if(pthread_create(&net.thread,NULL,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; return; }
-    if(pthread_create(&net.rthread,NULL,reader_thread,NULL)){ net.run=0; pthread_join(net.thread,NULL); net.status=NET_ERROR; return; }
+    if(pthread_create(&net.thread,NULL,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; LOGERR("network error: cannot start writer thread"); return; }
+    if(pthread_create(&net.rthread,NULL,reader_thread,NULL)){ net.run=0; pthread_join(net.thread,NULL); net.status=NET_ERROR; LOGERR("network error: cannot start reader thread"); return; }
     LOG("connect %s/%s (write %dms read %dms)",net.base,net.room,WRITE_TICK,READ_TICK);
 }
 void net_disconnect(void) { if(!net.run)return; net.run=0; pthread_join(net.thread,NULL); pthread_join(net.rthread,NULL); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }

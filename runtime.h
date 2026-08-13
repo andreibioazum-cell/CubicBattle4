@@ -26,6 +26,11 @@ typedef struct { float x, y, dx, dy, ox, oy, r; } Joy;
 extern Joy joy;
 
 void ds_log(const char *format, ...);
+/* ds_log_err — некритичная ошибка (например «текстура не загрузилась»):
+ * пишется в консоль красным и в logcat как ERROR, но НЕ останавливает скрипт. */
+void ds_log_err(const char *format, ...);
+/* ds_console_log — запись в консоль из любых потоков (сетевых и т.д.) */
+void ds_console_log(int is_error, const char *format, ...);
 typedef void (*DSProtectedFunction)(void *userdata);
 int ds_call_protected(DSProtectedFunction function, void *userdata, const char *label);
 void ds_runtime_error(const char *format, ...);
@@ -89,6 +94,8 @@ double clamp(double v, double lo, double hi);
 double lerp(double a, double b, double t);
 double dist(double x1, double y1, double x2, double y2);
 double now(void);
+double str_len(const char *s);
+int str_eq(const char *a, const char *b);
 
 /* клавиатура через JNI */
 void ds_set_activity(void *activity);
@@ -100,6 +107,8 @@ void keyboard_clear(void);
 int keyboard_visible(void);
 int keyboard_enter_pressed(void);
 int keyboard_handle_key(int keycode, int action);
+void keyboard_type(const char *text);   /* дописать строку в буфер клавиатуры */
+void keyboard_backspace(void);          /* стереть последний символ */
 
 /* графика */
 void rect(float x, float y, float w, float h, uint32_t color);
