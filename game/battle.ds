@@ -1,6 +1,6 @@
-// ===== Сброс и запуск =====
+// бой — только система боя
 function reset_battle
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; finished=0; bullet.active=0; aiming=0; aim_id=-1; last_pub=0; chat_open=0; chat_scroll=0; chat_input=""; kb_shift=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; finished=0; bullet.active=0; aiming=0; aim_id=-1
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
 arr_clear remotes; arr_clear rbullets; num i=0; loop i<max_players*6; arr_push rbullets,0; i=i+1; end
 end
@@ -8,18 +8,14 @@ function init_game
 reset_battle; enemy.hp=enemy.max_hp; spawn_enemy
 end
 function init_online
-reset_battle; online_ready=0; my_shot=0; last_pub=now(); net_connect FIREBASE,ROOM
+reset_battle; online_ready=0; my_shot=0; net_connect FIREBASE,ROOM
 end
 function place_online
-num s=net_slot(), row=floor(s/2), col=s-row*2; player.x=screen_w*(0.3+0.4*col); player.y=screen_h*(0.35+0.3*row); online_ready=1; last_pub=now()
+num s=net_slot(), row=floor(s/2), col=s-row*2; player.x=screen_w*(0.3+0.4*col); player.y=screen_h*(0.35+0.3*row); online_ready=1
 end
 function spawn_enemy
-num i=0; loop i<50; enemy.x=50+rand()%(screen_w-100); enemy.y=50+rand()%(screen_h-100); num dx=enemy.x-player.x, dy=enemy.y-player.y; if sqrt(dx*dx+dy*dy)>250; return; end; i=i+1; end; enemy.x=50; enemy.y=50
+num i=0; loop i<50; enemy.x=50+rand()%(screen_w-100); enemy.y=50+rand()%(screen_h-100); if sqrt((enemy.x-player.x)*(enemy.x-player.x)+(enemy.y-player.y)*(enemy.y-player.y))>250; return; end; i=i+1; end; enemy.x=50; enemy.y=50
 end
-
-// ===== Движение и пули =====
-// cube1 изначально смотрит вправо: 0 — вправо, pi — влево.
-// Теперь флип только по X (исправлено в graphics.c), по Y не переворачивается.
 function move_player
 player.x=player.x+joy.dx*joy_speed*dt; player.y=player.y+joy.dy*joy_speed*dt
 if joy.dx>0; player.angle=0; end; if joy.dx<0; player.angle=pi; end
@@ -29,8 +25,6 @@ function move_b
 bullet.x=bullet.x+bullet.dx*bullet_speed*dt; bullet.y=bullet.y+bullet.dy*bullet_speed*dt; bullet.traveled=bullet.traveled+bullet_speed*dt
 if bullet.traveled>=aim_range||bullet.x<-10||bullet.x>screen_w+10||bullet.y<-10||bullet.y>screen_h+10; bullet.active=0; end
 end
-// Пули соперников: ox,oy — точка выстрела, dx,dy — направление, tr — путь.
-// Позиция = ox+dx*tr. Теперь при получении tr сбрасываем в 0, чтобы пуля вылетала из ствола а не из воздуха.
 function rbx num b
 return arr_get(rbullets,b+1)+arr_get(rbullets,b+3)*arr_get(rbullets,b+5)
 end
@@ -38,14 +32,11 @@ function rby num b
 return arr_get(rbullets,b+2)+arr_get(rbullets,b+4)*arr_get(rbullets,b+5)
 end
 function move_rb num s
-num b=s*6, tr=arr_get(rbullets,b+5)+bullet_speed*dt, x=rbx(b), y=rby(b)
-arr_set rbullets,b+5,tr; if tr>=aim_range||x<-10||x>screen_w+10||y<-10||y>screen_h+10; arr_set rbullets,b,0; end
+num b=s*6, tr=arr_get(rbullets,b+5)+bullet_speed*dt, x=rbx(b), y=rby(b); arr_set rbullets,b+5,tr; if tr>=aim_range||x<-10||x>screen_w+10||y<-10||y>screen_h+10; arr_set rbullets,b,0; end
 end
 function hit_r num tr
 num left=aim_range-tr; if left<aim_fade; return 1.5*left/aim_fade; end; return 1.5
 end
-
-// ===== Соло-режим =====
 function update_game
 if finished!=0; return; end; move_player; num dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
 if d>1; enemy.x=enemy.x+dx/d*bot_speed*dt; enemy.y=enemy.y+dy/d*bot_speed*dt; end; if dx>=0; enemy.angle=0; else; enemy.angle=pi; end
@@ -53,170 +44,54 @@ if d<player.size+enemy.size; player.hp=player.hp-1; if player.hp<=0; finish_game
 if bullet.active==0; return; end; move_b; if bullet.active==0; return; end; dx=enemy.x-bullet.x; dy=enemy.y-bullet.y; d=sqrt(dx*dx+dy*dy)
 if d<=enemy.size+hit_r(bullet.traveled); bullet.active=0; enemy.hp=enemy.hp-1; if enemy.hp<=0; finish_game 1; end; end
 end
-
-// ===== Онлайн =====
 function ridx num s
 num i=0; loop i<arr_len(remotes)/7; if arr_get(remotes,i*7)==s; return i; end; i=i+1; end; return -1
 end
 function read_remotes
-if net_slot()<0; return; end
-num i=0; loop i<arr_len(remotes)/7; arr_set remotes,i*7+5,0; i=i+1; end
-num s=0; loop s<max_players
-if net_player_online(s)==1&&s!=net_slot()
+if net_slot()<0; return; end; num i=0; loop i<arr_len(remotes)/7; arr_set remotes,i*7+5,0; i=i+1; end
+num s=0; loop s<max_players; if net_player_online(s)==1&&s!=net_slot()
 num x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h; i=ridx(s)
 if i<0&&arr_len(remotes)/7<max_players-1; i=arr_len(remotes)/7; num v=0; loop v<7; arr_push remotes,0; v=v+1; end; num nb=i*7; arr_set remotes,nb,s; arr_set remotes,nb+1,x; arr_set remotes,nb+2,y; arr_set remotes,nb+6,net_player_bullet_shot(s); end
-if i>=0
-num b=i*7
-// Плавная интерполяция без тряски: фиксированный коэф, а не dt*12.
-// Если далеко — телепорт, иначе лерп 0.18
-num curx=arr_get(remotes,b+1), cury=arr_get(remotes,b+2), ddx=x-curx, ddy=y-cury, d2=sqrt(ddx*ddx+ddy*ddy), k=0.18; if d2>180; k=1; end
-arr_set remotes,b+1,curx+ddx*k; arr_set remotes,b+2,cury+ddy*k
-arr_set remotes,b+3,net_player_angle(s); arr_set remotes,b+4,net_player_hp(s); arr_set remotes,b+5,net_player_alive(s)
-num sh=net_player_bullet_shot(s); if sh!=arr_get(remotes,b+6); arr_set remotes,b+6,sh; if net_player_bullet_active(s)==1; num rb=s*6; arr_set rbullets,rb,1; arr_set rbullets,rb+1,net_player_bullet_x(s)*screen_w; arr_set rbullets,rb+2,net_player_bullet_y(s)*screen_h; arr_set rbullets,rb+3,net_player_bullet_dx(s); arr_set rbullets,rb+4,net_player_bullet_dy(s); arr_set rbullets,rb+5,0; end; end
-end
-end
-s=s+1; end
+if i>=0; num b=i*7; arr_set remotes,b+1,x; arr_set remotes,b+2,y; arr_set remotes,b+3,net_player_angle(s); arr_set remotes,b+4,net_player_hp(s); arr_set remotes,b+5,net_player_alive(s)
+num sh=net_player_bullet_shot(s); if sh!=arr_get(remotes,b+6); arr_set remotes,b+6,sh; if net_player_bullet_active(s)==1; num rb=s*6; arr_set rbullets,rb,1; arr_set rbullets,rb+1,net_player_bullet_x(s)*screen_w; arr_set rbullets,rb+2,net_player_bullet_y(s)*screen_h; arr_set rbullets,rb+3,net_player_bullet_dx(s); arr_set rbullets,rb+4,net_player_bullet_dy(s); arr_set rbullets,rb+5,0; end; end; end; end; s=s+1; end
 end
 function update_online
-if online_ready==0&&net_slot()>=0; place_online; end
-read_remotes; if finished!=0||online_ready==0; return; end
-// Если открыт чат — игрок стоит, не двигается.
-if chat_open==0; move_player; end; if bullet.active==1; move_b; end
-// Передача значения каждую секунду, а не куда игрок перешёл (не каждый кадр)
-num cur=now(); if cur-last_pub>=pub_interval; last_pub=cur; num alive=1; if player.hp<=0; alive=0; end; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive; net_publish_bullet bullet.ox/screen_w,bullet.oy/screen_h,bullet.dx,bullet.dy,bullet.active,my_shot,bullet.traveled; end
-num i=0; loop i<arr_len(remotes)/7; num b=i*7; if bullet.active==1&&arr_get(remotes,b+4)>0&&arr_get(remotes,b+5)==1; num dx=arr_get(remotes,b+1)-bullet.x, dy=arr_get(remotes,b+2)-bullet.y; if sqrt(dx*dx+dy*dy)<=player.size+hit_r(bullet.traveled); bullet.active=0; end; end; i=i+1; end
-i=0; loop i<max_players; num rb=i*6; if arr_get(rbullets,rb)==1; move_rb i; if arr_get(rbullets,rb)==1&&player.hp>0; num x=rbx(rb), y=rby(rb), hdx=player.x-x, hdy=player.y-y, tr=arr_get(rbullets,rb+5); if sqrt(hdx*hdx+hdy*hdy)<=player.size+hit_r(tr); arr_set rbullets,rb,0; player.hp=player.hp-1; if player.hp<=0; player.hp=0; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end; end; end; end; i=i+1; end
+if online_ready==0&&net_slot()>=0; place_online; end; read_remotes; if finished!=0||online_ready==0; return; end; move_player; if bullet.active==1; move_b; end
+num alive=1; if player.hp<=0; alive=0; end; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive; net_publish_bullet bullet.ox/screen_w,bullet.oy/screen_h,bullet.dx,bullet.dy,bullet.active,my_shot,bullet.traveled
+num i=0; loop i<arr_len(remotes)/7; num b=i*7; if bullet.active==1&&arr_get(remotes,b+4)>0&&arr_get(remotes,b+5)==1; if sqrt((arr_get(remotes,b+1)-bullet.x)*(arr_get(remotes,b+1)-bullet.x)+(arr_get(remotes,b+2)-bullet.y)*(arr_get(remotes,b+2)-bullet.y))<=player.size+hit_r(bullet.traveled); bullet.active=0; end; end; i=i+1; end
+i=0; loop i<max_players; num rb=i*6; if arr_get(rbullets,rb)==1; move_rb i; if arr_get(rbullets,rb)==1&&player.hp>0; if sqrt((player.x-rbx(rb))*(player.x-rbx(rb))+(player.y-rby(rb))*(player.y-rby(rb)))<=player.size+hit_r(arr_get(rbullets,rb+5)); arr_set rbullets,rb,0; player.hp=player.hp-1; if player.hp<=0; player.hp=0; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end; end; end; end; i=i+1; end
 end
 function fire_bullet
-num dx=cos(player.angle), dy=sin(player.angle)
-// Пуля 3x3 пикселя, вылетает на 54 пикселе если игрок повёрнут вправо, считая с правой стороны.
-// То есть из дула: +54 вправо, -54 влево.
-num off=54
-if player.angle==0; bullet.x=player.x+off; else; bullet.x=player.x-off; end; bullet.y=player.y
-bullet.ox=bullet.x; bullet.oy=bullet.y; bullet.dx=dx; bullet.dy=dy; bullet.traveled=0; bullet.active=1; my_shot=my_shot+1
-if game_state==5; net_publish_bullet bullet.ox/screen_w,bullet.oy/screen_h,dx,dy,1,my_shot,0; end
+num dx=cos(player.angle), off=54; if player.angle==0; bullet.x=player.x+off; else; bullet.x=player.x-off; end; bullet.y=player.y; bullet.ox=bullet.x; bullet.oy=bullet.y; bullet.dx=dx; bullet.dy=0; bullet.traveled=0; bullet.active=1; my_shot=my_shot+1; if game_state==5; net_publish_bullet bullet.ox/screen_w,bullet.oy/screen_h,dx,0,1,my_shot,0; end
 end
 function finish_game num result
 finished=result; aiming=0; aim_id=-1; bullet.active=0; drop_joy
 end
-
-// ===== Чат =====
-function chat_send
-if chat_input==""; return; end; net_chat_send chat_input; chat_input=""; chat_scroll=0
-end
-function row0_char num idx
-if idx==0; return "Q"; end; if idx==1; return "W"; end; if idx==2; return "E"; end; if idx==3; return "R"; end; if idx==4; return "T"; end; if idx==5; return "Y"; end; if idx==6; return "U"; end; if idx==7; return "I"; end; if idx==8; return "O"; end; if idx==9; return "P"; end; return ""
-end
-function row1_char num idx
-if idx==0; return "A"; end; if idx==1; return "S"; end; if idx==2; return "D"; end; if idx==3; return "F"; end; if idx==4; return "G"; end; if idx==5; return "H"; end; if idx==6; return "J"; end; if idx==7; return "K"; end; if idx==8; return "L"; end; return ""
-end
-function row2_char num idx
-if idx==0; return "Z"; end; if idx==1; return "X"; end; if idx==2; return "C"; end; if idx==3; return "V"; end; if idx==4; return "B"; end; if idx==5; return "N"; end; if idx==6; return "M"; end; return ""
-end
-function draw_kb_btn str label, num x, num y, num w, num h
-roundrect x,y,w,h,8,0x3A3A5E; text label,x+(w-text_ink_width(label))/2,y+(h-text_ink_height(label))/2-text_ink_top(label),0xFFFFFF
-end
-function draw_chat
-if game_state!=5; return; end
-if chat_open==0
-// мини-чат: кнопка открыть и 2 последних сообщения
-num bx=screen_w/2-50, by=8; roundrect bx,by,100,32,10,0xAA2A2A4A
-if language_ru==1; text_scaled "Чат",bx+(100-text_ink_width("Чат"))/2,by+6,0xFFFFFF,0.6; else; text_scaled "Chat",bx+(100-text_ink_width("Chat"))/2,by+6,0xFFFFFF,0.6; end
-num cc=net_chat_count(), i=0, dy=44; if cc>2; i=cc-2; end; loop i<cc; str t=net_chat_text(i); if t!=""; text_scaled t,20,dy,0xE0E0FF,0.45; dy=dy+20; end; i=i+1; end; return
-end
-// полноэкранный чат
-rect 0,0,screen_w,screen_h,0xDD0F0F1A
-num panel_w=screen_w-40, panel_h=screen_h-40, px=20, py=20; roundrect px,py,panel_w,panel_h,18,0xFF1E1E2F
-// заголовок
-if language_ru==1; ctext "Онлайн чат",py+14,0xFFFFFF; else; ctext "Online chat",py+14,0xFFFFFF; end
-// список сообщений
-num list_x=px+16, list_y=py+50, list_w=panel_w-32, list_h=panel_h-320, line_h=26, max_lines=floor(list_h/line_h), total=net_chat_count(), start=total-max_lines-chat_scroll; if start<0; start=0; end
-if total==0; text_scaled "No messages",list_x,list_y,0x8888AA,0.5; else; num idx=start, yy=list_y; loop idx<total; if yy+line_h>list_y+list_h; idx=total; else; str uid=net_chat_uid(idx), msg=net_chat_text(idx); str line=uid+": "+msg; if text_ink_width(line)>list_w-8; line=msg; end; text_scaled line,list_x,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1; end; end; end
-// прокрутка
-roundrect px+panel_w-50,py+50,34,34,8,0x5F10A0; text "^",px+panel_w-50+12,py+50+4,0xFFFFFF
-roundrect px+panel_w-50,py+50+44,34,34,8,0x5F10A0; text "v",px+panel_w-50+12,py+50+44+4,0xFFFFFF
-// поле ввода
-num inp_y=py+panel_h-270, inp_h=44; roundrect list_x,inp_y,list_w,inp_h,10,0xFF2A2A40; text_scaled chat_input,list_x+10,inp_y+10,0xFFFFFF,0.55
-// клавиатура
-num key_w=36, key_h=38, gap=6, row0_y=inp_y+56, q=10, tot0=q*key_w+(q-1)*gap, sx0=px+(panel_w-tot0)/2, ii=0; loop ii<q; draw_kb_btn row0_char(ii),sx0+ii*(key_w+gap),row0_y,key_w,key_h; ii=ii+1; end
-num row1_y=row0_y+key_h+gap, q1=9, tot1=q1*key_w+(q1-1)*gap, sx1=px+(panel_w-tot1)/2, jj=0; loop jj<q1; draw_kb_btn row1_char(jj),sx1+jj*(key_w+gap),row1_y,key_w,key_h; jj=jj+1; end
-num row2_y=row1_y+key_h+gap, q2=7, tot2=q2*key_w+(q2-1)*gap, sx2=px+(panel_w-tot2)/2, kk=0; loop kk<q2; draw_kb_btn row2_char(kk),sx2+kk*(key_w+gap),row2_y,key_w,key_h; kk=kk+1; end
-num row3_y=row2_y+key_h+gap
-roundrect sx0,row3_y,100,38,8,0x4A4A7A; text_scaled "Space",sx0+8,row3_y+8,0xFFFFFF,0.5
-roundrect sx0+110,row3_y,70,38,8,0x7A3A3A; text_scaled "Del",sx0+110+12,row3_y+8,0xFFFFFF,0.5
-roundrect sx0+190,row3_y,90,38,8,0x3A7A4A; text_scaled "Send",sx0+190+10,row3_y+8,0xFFFFFF,0.5
-roundrect sx0+290,row3_y,80,38,8,0x5F10A0; text_scaled "Close",sx0+290+8,row3_y+8,0xFFFFFF,0.5
-end
-function chat_hit num x, num y, num bx, num by, num bw, num bh
-if x>=bx&&x<=bx+bw&&y>=by&&y<=by+bh; return 1; end; return 0
-end
-function touch_chat num x, num y, num action
-if action!=0; return 0; end
-if chat_open==0
-num bx=screen_w/2-50, by=8; if chat_hit(x,y,bx,by,100,32)==1; chat_open=1; return 1; end; return 0
-end
-// открыт
-num panel_w=screen_w-40, panel_h=screen_h-40, px=20, py=20, list_x=px+16, list_w=panel_w-32
-// скролл
-if chat_hit(x,y,px+panel_w-50,py+50,34,34)==1; chat_scroll=chat_scroll+1; if chat_scroll>net_chat_count(); chat_scroll=net_chat_count(); end; return 1; end
-if chat_hit(x,y,px+panel_w-50,py+50+44,34,34)==1; chat_scroll=chat_scroll-1; if chat_scroll<0; chat_scroll=0; end; return 1; end
-num inp_y=py+panel_h-270, key_w=36, key_h=38, gap=6, row0_y=inp_y+56, q=10, tot0=q*key_w+(q-1)*gap, sx0=px+(panel_w-tot0)/2, ii=0; loop ii<q; if chat_hit(x,y,sx0+ii*(key_w+gap),row0_y,key_w,key_h)==1; chat_input=chat_input+row0_char(ii); return 1; end; ii=ii+1; end
-num row1_y=row0_y+key_h+gap, q1=9, tot1=q1*key_w+(q1-1)*gap, sx1=px+(panel_w-tot1)/2, jj=0; loop jj<q1; if chat_hit(x,y,sx1+jj*(key_w+gap),row1_y,key_w,key_h)==1; chat_input=chat_input+row1_char(jj); return 1; end; jj=jj+1; end
-num row2_y=row1_y+key_h+gap, q2=7, tot2=q2*key_w+(q2-1)*gap, sx2=px+(panel_w-tot2)/2, kk=0; loop kk<q2; if chat_hit(x,y,sx2+kk*(key_w+gap),row2_y,key_w,key_h)==1; chat_input=chat_input+row2_char(kk); return 1; end; kk=kk+1; end
-num row3_y=row2_y+key_h+gap
-if chat_hit(x,y,sx0,row3_y,100,38)==1; chat_input=chat_input+" "; return 1; end
-if chat_hit(x,y,sx0+110,row3_y,70,38)==1; if chat_input!=""; chat_input=""; end; return 1; end
-if chat_hit(x,y,sx0+190,row3_y,90,38)==1; chat_send; return 1; end
-if chat_hit(x,y,sx0+290,row3_y,80,38)==1; chat_open=0; return 1; end
-return 1
-end
-
-// ===== Отрисовка =====
 function draw_b num x, num y, num tr
-num left=aim_range-tr, alpha=255; if left<aim_fade; alpha=floor(255*left/aim_fade); end; if alpha<1; alpha=1; end
-// Пуля ровно 3 на 3 пикселя
-rect x-1,y-1,3,3,alpha*0x1000000+0xFFF176
+num left=aim_range-tr, alpha=255; if left<aim_fade; alpha=floor(255*left/aim_fade); end; if alpha<1; alpha=1; end; rect x-1,y-1,3,3,alpha*0x1000000+0xFFF176
 end
 function draw_field
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end; rect 0,0,screen_w,screen_h,0x33000000
-if aiming==1&&finished==0; num dx=cos(player.angle), dy=sin(player.angle); line player.x,player.y,player.x+dx*aim_range,player.y+dy*aim_range,18,0x66000000; end; tex player.x-25*cube_scale,player.y-25*cube_scale,CUBE_TEX,player.angle,cube_scale
+if aiming==1&&finished==0; line player.x,player.y,player.x+cos(player.angle)*aim_range,player.y+sin(player.angle)*aim_range,18,0x66000000; end; tex player.x-25*cube_scale,player.y-25*cube_scale,CUBE_TEX,player.angle,cube_scale
 end
 function draw_controls
-if chat_open==1; return; end; ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
-circle atk_x,atk_y,70,0xE94560; ring atk_x,atk_y,70,4,0x000000
-if language_ru==1; text_scaled "Атака",atk_x-text_ink_width("Атака")*0.275,atk_y-7,0xFFFFFF,0.55; else; text_scaled "Attack",atk_x-text_ink_width("Attack")*0.275,atk_y-7,0xFFFFFF,0.55; end; draw_back
+ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000; circle atk_x,atk_y,70,0xE94560; ring atk_x,atk_y,70,4,0x000000; if language_ru==1; text_scaled "Атака",atk_x-text_ink_width("Атака")*0.275,atk_y-7,0xFFFFFF,0.55; else; text_scaled "Attack",atk_x-text_ink_width("Attack")*0.275,atk_y-7,0xFFFFFF,0.55; end; draw_back
 end
 function draw_result str title, str note
-rect 0,0,screen_w,screen_h,0x99000000; num y=screen_h/2-85; roundrect screen_w/2-165,y,330,170,24,0x5F10A0; ctext title,y+34,0xFFFFFF; ctext note,y+75,0xFFFFFF
-if language_ru==1; ctext "Нажмите, чтобы выйти",y+118,0xFFCDD2; else; ctext "Tap to return",y+118,0xFFCDD2; end
+rect 0,0,screen_w,screen_h,0x99000000; num y=screen_h/2-85; roundrect screen_w/2-165,y,330,170,24,0x5F10A0; ctext title,y+34,0xFFFFFF; ctext note,y+75,0xFFFFFF; if language_ru==1; ctext "Нажмите, чтобы выйти",y+118,0xFFCDD2; else; ctext "Tap to return",y+118,0xFFCDD2; end
 end
 function draw_game
-draw_field; tex enemy.x-25*cube_scale,enemy.y-25*cube_scale,CUBE_TEX,enemy.angle,cube_scale
-if bullet.active==1; draw_b bullet.x,bullet.y,bullet.traveled; end
-num w=screen_w/4; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1; draw_controls
-if finished==1; if language_ru==1; draw_result "Победа!","Соперник побеждён"; else; draw_result "Victory!","Opponent defeated"; end; else if finished==2; if language_ru==1; draw_result "Поражение","Соперник победил"; else; draw_result "Defeat","The opponent won"; end; end
+draw_field; tex enemy.x-25*cube_scale,enemy.y-25*cube_scale,CUBE_TEX,enemy.angle,cube_scale; if bullet.active==1; draw_b bullet.x,bullet.y,bullet.traveled; end; num w=screen_w/4; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1; draw_controls; if finished==1; if language_ru==1; draw_result "Победа!","Соперник побеждён"; else; draw_result "Victory!","Opponent defeated"; end; else if finished==2; if language_ru==1; draw_result "Поражение","Соперник победил"; else; draw_result "Defeat","The opponent won"; end; end
 end
 function draw_online
-draw_field; num i=0; loop i<arr_len(remotes)/7; num b=i*7; if arr_get(remotes,b+5)==1; tex arr_get(remotes,b+1)-25*cube_scale,arr_get(remotes,b+2)-25*cube_scale,CUBE_TEX,arr_get(remotes,b+3),cube_scale; end; i=i+1; end
-if bullet.active==1; draw_b bullet.x,bullet.y,bullet.traveled; end; i=0; loop i<max_players; num rb=i*6; if arr_get(rbullets,rb)==1; draw_b rbx(rb),rby(rb),arr_get(rbullets,rb+5); end; i=i+1; end
-num w=screen_w/3; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; draw_controls; draw_chat; num st=net_status(), sy=back_y+btn_h+18
-if st==4; if language_ru==1; ctext "Нет соединения",sy,0xFF8A80; else; ctext "No connection",sy,0xFF8A80; end; else if st==1; if language_ru==1; ctext "Подключение...",sy,0xFFF176; else; ctext "Connecting...",sy,0xFFF176; end; end
-if finished==2; if language_ru==1; draw_result "Поражение","Вы повержены"; else; draw_result "Defeat","You were defeated"; end; end
+draw_field; num i=0; loop i<arr_len(remotes)/7; num b=i*7; if arr_get(remotes,b+5)==1; tex arr_get(remotes,b+1)-25*cube_scale,arr_get(remotes,b+2)-25*cube_scale,CUBE_TEX,arr_get(remotes,b+3),cube_scale; end; i=i+1; end; if bullet.active==1; draw_b bullet.x,bullet.y,bullet.traveled; end; i=0; loop i<max_players; num rb=i*6; if arr_get(rbullets,rb)==1; draw_b rbx(rb),rby(rb),arr_get(rbullets,rb+5); end; i=i+1; end; num w=screen_w/3; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; draw_controls; draw_chat; num st=net_status(), sy=back_y+btn_h+18; if st==4; if language_ru==1; ctext "Нет соединения",sy,0xFF8A80; else; ctext "No connection",sy,0xFF8A80; end; else if st==1; if language_ru==1; ctext "Подключение...",sy,0xFFF176; else; ctext "Connecting...",sy,0xFFF176; end; end; if finished==2; if language_ru==1; draw_result "Поражение","Вы повержены"; else; draw_result "Defeat","You were defeated"; end; end
 end
-
-// ===== Управление =====
 function drop_joy
 joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
 end
 function joy_touch num x, num y, num action, num id
-if action==1; if id==joy_id; drop_joy; end; return; end; if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end
-if id!=joy_id; return; end; num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy); if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
+if action==1; if id==joy_id; drop_joy; end; return; end; if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end; if id!=joy_id; return; end; num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy); if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
 end
 function touch_game num x, num y, num action, num id
-if finished!=0; if action==0; start_transition 0; end; return; end; if action==3; aiming=0; aim_id=-1; drop_joy; return; end
-if game_state==5; if touch_chat(x,y,action)==1; return; end; end
-if back_hit(x,y)==1; if action==0||action==1; start_transition 0; return; end; end
-if chat_open==1; return; end
-if action==0; num dx=x-atk_x, dy=y-atk_y; if sqrt(dx*dx+dy*dy)<=96; aiming=1; aim_id=id; if game_state==1||online_ready==1; fire_bullet; end; return; end; end
-if action==1&&id==aim_id; aiming=0; aim_id=-1; return; end; joy_touch x,y,action,id
+if finished!=0; if action==0; start_transition 0; end; return; end; if action==3; aiming=0; aim_id=-1; drop_joy; return; end; if game_state==5&&touch_chat(x,y,action)==1; return; end; if back_hit(x,y)==1&&action!=2; start_transition 0; return; end; if chat_open==1; return; end; if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aiming=1; aim_id=id; if game_state==1||online_ready==1; fire_bullet; end; return; end; if action==1&&id==aim_id; aiming=0; aim_id=-1; return; end; joy_touch x,y,action,id
 end

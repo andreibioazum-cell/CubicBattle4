@@ -7,14 +7,17 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
+#include <android/input.h>
+#include <android/keycodes.h>
+#include <android/native_activity.h>
 
-// Только arm64/arm32, Android 10 — без кроссплатформы
 static int init_done = 0;
 static int script_active = 0;
 static AAssetManager *script_assets = NULL;
 static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
 static uint64_t prev_frame_ns = 0;
+static struct android_app *g_app = NULL;
 
 static uint64_t monotonic_ns(void) {
     struct timespec now;
@@ -35,47 +38,33 @@ static void protected_touch(void *userdata) {
 
 static void mark_script_failed(const char *hook) {
     const char *message = ds_runtime_error_message();
-    __android_log_print(ANDROID_LOG_ERROR, "DimScript",
-                        "script hook '%s' stopped: %s; scheduling a restart",
-                        hook ? hook : "unknown", message);
-    {
-        unsigned int shift = restart_failures < 5 ? restart_failures : 5;
-        uint64_t delay = 1000000000ull << shift;
-        script_active = 0;
-        ds_request_script_restart();
-        restart_after_ns = monotonic_ns() + delay;
-        ++restart_failures;
-    }
+    __android_log_print(ANDROID_LOG_ERROR, "DimScript","script hook '%s' stopped: %s; scheduling a restart",hook?hook:"unknown",message);
+    unsigned int shift = restart_failures < 5 ? restart_failures : 5;
+    uint64_t delay = 1000000000ull << shift;
+    script_active = 0;
+    ds_request_script_restart();
+    restart_after_ns = monotonic_ns() + delay;
+    ++restart_failures;
 }
 
 static int start_script(int reset_state) {
     int ok;
-    ds_clear_runtime_error();
-    ds_clear_script_restart();
-    ds_string_pool_reset();
-    if (reset_state) {
-        ok = ds_call_protected(protected_reset, NULL, "reset");
-        if (!ok) { mark_script_failed("reset"); return 0; }
-    }
+    ds_clear_runtime_error(); ds_clear_script_restart(); ds_string_pool_reset();
+    if (reset_state) { ok = ds_call_protected(protected_reset, NULL, "reset"); if (!ok) { mark_script_failed("reset"); return 0; } }
     ds_clear_runtime_error();
     ok = ds_call_protected(protected_init, script_assets, "init");
     if (!ok) { mark_script_failed("init"); return 0; }
-    ds_clear_runtime_error();
-    restart_failures = 0;
-    script_active = 1;
-    return 1;
+    ds_clear_runtime_error(); restart_failures = 0; script_active = 1; return 1;
 }
 
 static void restart_script_if_due(void) {
-    uint64_t now;
-    if (script_active || !ds_script_restart_requested()) return;
-    now = monotonic_ns();
-    if (now < restart_after_ns) return;
-    (void)start_script(1);
+    uint64_t now; if (script_active || !ds_script_restart_requested()) return;
+    now = monotonic_ns(); if (now < restart_after_ns) return; (void)start_script(1);
 }
 
 static void handle_cmd(struct android_app *app, int32_t command) {
     if (!app) { ds_runtime_error("no app"); return; }
+    g_app = app;
     switch (command) {
         case APP_CMD_INIT_WINDOW:
             if (!app->window) { init_done = 0; return; }
@@ -84,50 +73,62 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             if (screen_w <= 0 || screen_h <= 0) { init_done = 0; return; }
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
+            ds_set_activity(app->activity);
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
             init_done = 1; script_active = 0; restart_failures = 0;
-            ds_clear_script_restart(); (void)start_script(0);
-            break;
-        case APP_CMD_TERM_WINDOW:
-            init_done = 0; script_active = 0; ds_graphics_shutdown(); break;
+            ds_clear_script_restart(); (void)start_script(0); break;
+        case APP_CMD_TERM_WINDOW: init_done = 0; script_active = 0; ds_graphics_shutdown(); break;
+        case APP_CMD_GAINED_FOCUS: break;
+        case APP_CMD_LOST_FOCUS: break;
         default: break;
     }
 }
 
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
-    TouchCall call; size_t count, index, i; int raw, action;
     (void)app;
-    if (!script_active || !event || AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION) return 0;
-    count = AMotionEvent_getPointerCount(event);
-    if (count == 0) return 0;
-    raw = AMotionEvent_getAction(event);
-    action = raw & AMOTION_EVENT_ACTION_MASK;
-    if (action == AMOTION_EVENT_ACTION_POINTER_DOWN) action = AMOTION_EVENT_ACTION_DOWN;
-    else if (action == AMOTION_EVENT_ACTION_POINTER_UP) action = AMOTION_EVENT_ACTION_UP;
-    index = (size_t)((raw & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
-    if (index >= count) index = 0;
-    i = (action == AMOTION_EVENT_ACTION_MOVE) ? 0 : index;
-    count = (action == AMOTION_EVENT_ACTION_MOVE) ? count : index + 1;
-    for (; i < count; i++) {
-        call.x = AMotionEvent_getX(event, i);
-        call.y = AMotionEvent_getY(event, i);
-        call.action = action;
-        call.id = AMotionEvent_getPointerId(event, i);
-        if (!ds_call_protected(protected_touch, &call, "touch")) { mark_script_failed("touch"); break; }
+    if (!event) return 0;
+    int32_t type = AInputEvent_getType(event);
+    if (type == AINPUT_EVENT_TYPE_MOTION) {
+        if (!script_active) return 0;
+        TouchCall call; size_t count, index, i; int raw, action;
+        count = AMotionEvent_getPointerCount(event); if (count == 0) return 0;
+        raw = AMotionEvent_getAction(event); action = raw & AMOTION_EVENT_ACTION_MASK;
+        if (action == AMOTION_EVENT_ACTION_POINTER_DOWN) action = AMOTION_EVENT_ACTION_DOWN;
+        else if (action == AMOTION_EVENT_ACTION_POINTER_UP) action = AMOTION_EVENT_ACTION_UP;
+        index = (size_t)((raw & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+        if (index >= count) index = 0;
+        i = (action == AMOTION_EVENT_ACTION_MOVE) ? 0 : index;
+        count = (action == AMOTION_EVENT_ACTION_MOVE) ? count : index + 1;
+        for (; i < count; i++) {
+            call.x = AMotionEvent_getX(event, i); call.y = AMotionEvent_getY(event, i);
+            call.action = action; call.id = AMotionEvent_getPointerId(event, i);
+            if (!ds_call_protected(protected_touch, &call, "touch")) { mark_script_failed("touch"); break; }
+        }
+        return 1;
+    } else if (type == AINPUT_EVENT_TYPE_KEY) {
+        int32_t action = AKeyEvent_getAction(event);
+        int32_t key = AKeyEvent_getKeyCode(event);
+        if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE) {
+            if (keyboard_handle_key(key, action)) return 1;
+        }
+        /* пусть система тоже обработает back */
+        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) {
+            /* back handled as touch outside */
+            return 0;
+        }
+        return 1;
     }
-    return 1;
+    return 0;
 }
 
 void android_main(struct android_app *app) {
-    Buffer frame = {0};
-    if (!app) return;
-    app->onAppCmd = handle_cmd;
-    app->onInputEvent = handle_input;
+    Buffer frame = {0}; if (!app) return;
+    app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
     net_set_java_vm(app->activity->vm);
-    ds_log("DimScript Android 10 arm64/arm32 only");
+    ds_set_activity(app->activity);
+    ds_log("DimScript Android 10 arm64/arm32 only + keyboard JNI");
     for (;;) {
-        struct android_poll_source *source = NULL;
-        int ident;
+        struct android_poll_source *source = NULL; int ident;
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
             if (app->destroyRequested) { init_done = 0; script_active = 0; ds_graphics_shutdown(); return; }
@@ -142,28 +143,24 @@ void android_main(struct android_app *app) {
             if (!ds_call_protected(protected_update, NULL, "update")) mark_script_failed("update");
             else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
         }
-        {
-            ANativeWindow_Buffer native_buffer;
-            if (ANativeWindow_lock(app->window, &native_buffer, NULL) == 0) {
-                int frame_valid;
-                frame.pixels = (uint32_t *)native_buffer.bits;
-                frame.width = native_buffer.width;
-                frame.height = native_buffer.height;
-                frame.stride = native_buffer.stride;
-                frame_valid = frame.pixels && frame.width > 0 && frame.height > 0 && frame.stride >= frame.width && native_buffer.format == WINDOW_FORMAT_RGBA_8888;
-                if (frame_valid && ds_graphics_begin_frame(&frame)) {
-                    int draw_failed = 0;
-                    if (script_active) {
-                        if (!ds_call_protected(protected_draw, &frame, "draw")) { mark_script_failed("draw"); draw_failed = 1; }
-                        else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
-                    }
-                    if (!script_active) {
-                        if (draw_failed || ds_script_has_error()) ds_graphics_error_screen(ds_runtime_error_message());
-                        ds_graphics_cancel_frame();
-                    } else ds_graphics_end_frame();
+        ANativeWindow_Buffer native_buffer;
+        if (ANativeWindow_lock(app->window, &native_buffer, NULL) == 0) {
+            int frame_valid;
+            frame.pixels = (uint32_t *)native_buffer.bits;
+            frame.width = native_buffer.width; frame.height = native_buffer.height; frame.stride = native_buffer.stride;
+            frame_valid = frame.pixels && frame.width > 0 && frame.height > 0 && frame.stride >= frame.width && native_buffer.format == WINDOW_FORMAT_RGBA_8888;
+            if (frame_valid && ds_graphics_begin_frame(&frame)) {
+                int draw_failed = 0;
+                if (script_active) {
+                    if (!ds_call_protected(protected_draw, &frame, "draw")) { mark_script_failed("draw"); draw_failed = 1; }
+                    else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
                 }
-                ANativeWindow_unlockAndPost(app->window);
+                if (!script_active) {
+                    if (draw_failed || ds_script_has_error()) ds_graphics_error_screen(ds_runtime_error_message());
+                    ds_graphics_cancel_frame();
+                } else ds_graphics_end_frame();
             }
+            ANativeWindow_unlockAndPost(app->window);
         }
     }
 }

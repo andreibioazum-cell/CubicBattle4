@@ -12,7 +12,7 @@ def find_ds_files(directory):
     files = glob.glob(os.path.join(directory, '*.ds'))
     # Новый порядок без цифр: config -> entities -> ui -> menu -> battle -> engine
     # Если старые файлы с цифрами — сортируем как раньше.
-    order = ["config.ds", "entities.ds", "ui.ds", "menu.ds", "battle.ds", "engine.ds",
+    order = ["config.ds", "entities.ds", "ui.ds", "chat.ds", "menu.ds", "battle.ds", "engine.ds",
              "core.ds", "game.ds"]
     # Если есть файлы без цифр в имени, используем order
     has_plain = any(os.path.basename(f) in order or not os.path.basename(f)[0].isdigit() for f in files)
@@ -83,11 +83,11 @@ def main():
         return 1
 
     note = ""
-    if compiler.warnings:
+    if hasattr(compiler,'warnings') and compiler.warnings:
         note = f" with {compiler.warnings} warning(s)"
     if compiler.errors:
         note += f" (errors above are non-fatal: game still builds)"
-    print(f"{output_path} generated from {len(compiler.loaded_sources)} DimScript file(s){note}")
+    print(f"{output_path} generated from {len(compiler.lines)} line(s){note}")
 
     if dump_c:
         print("\n" + "=" * 60)

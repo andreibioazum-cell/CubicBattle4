@@ -17,8 +17,8 @@
 #define BODY 1024
 #define RESP 4096
 #define CHAT_RESP 8192
-#define WRITE_TICK 1000 /* каждую секунду передаём значение, как просили */
-#define READ_TICK 120   /* читаем чаще, чтобы не лагало и не трясло */
+#define WRITE_TICK 50   /* частая запись — убираем лаги, без интерполяции */
+#define READ_TICK 50    /* частое чтение — прямое присваивание позиции */
 #define TIMEOUT 5000
 #define STALE 12000
 #define CHAT_MAX 32
