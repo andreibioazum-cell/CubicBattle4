@@ -70,9 +70,9 @@ jobs:
         name: Game-APK-Android10-14-arm64-arm32
         path: Game.apk
 
-  build-pc:
-    name: Build Windows PC (.exe)
-    runs-on: ubuntu-latest
+  build-pc-cmake:
+    name: Build Windows PC (.exe) with CMake
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -82,36 +82,24 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install MinGW Cross-Compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-mingw-w64-x86-64 zip
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-    - name: Generate game.c
-      run: |
-        python3 gen.py
+    - name: Build Game.exe
+      run: cmake --build build --config Release
 
-    - name: Build Game.exe (MinGW x86_64)
+    - name: Prepare Release ZIP
+      shell: pwsh
       run: |
-        x86_64-w64-mingw32-gcc -O3 -s -Wall -Wextra -I. -Igame \
-          game/game.c runtime.c main_win32.c \
-          -lgdi32 -lwininet -luser32 -lkernel32 -lm \
-          -o Game.exe -mwindows
+        Compress-Archive -Path build/Release/* -DestinationPath Game-Windows-PC.zip
 
-    - name: Prepare Release Package (Game.exe + Assets)
-      run: |
-        mkdir -p release/assets
-        cp Game.exe release/
-        cp -r game/assets/* release/assets/
-        cd release && zip -r ../Game-Windows-PC.zip . && cd ..
-
-    - name: Upload Game.exe Executable
+    - name: Upload Game.exe
       uses: actions/upload-artifact@v4
       with:
         name: Game-Windows-PC-exe
-        path: Game.exe
+        path: build/Release/Game.exe
 
-    - name: Upload Full Game Windows ZIP (Game.exe + assets)
+    - name: Upload Full Game Windows Package
       uses: actions/upload-artifact@v4
       with:
         name: Game-Windows-PC-Full-Package
