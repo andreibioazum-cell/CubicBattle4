@@ -10,6 +10,7 @@ end
 function init
 ds_log "init: loading textures"
 png_load GRASS; png_load ORDINARY_TEX; png_load PUNCH_TEX
+net_account_configure FIREBASE,ROOM; account_nick_input=net_account_nickname(); account_last_status=net_account_status()
 ds_log "init: ready"
 end
 function update

@@ -21,7 +21,7 @@
     },
     {
       "name": "support.function.builtin.dimscript",
-      "match": "\\b(rect|roundrect|circle|ring|line|tex|png_load|text|text_scaled|text_ink_width|text_ink_height|sqrt|sin|cos|atan2|floor|rand|console_count|console_line|console_type|console_clear|ds_log)\\b"
+      "match": "\\b(rect|roundrect|circle|ring|line|tex|png_load|text|text_scaled|text_ink_width|text_ink_height|sqrt|sin|cos|atan2|floor|rand|console_count|console_line|console_type|console_clear|ds_log|net_account_configure|net_account_login|net_account_status|net_account_nickname|net_player_nickname|net_chat_nickname)\\b"
     },
     {
       "name": "entity.name.function.dimscript",
