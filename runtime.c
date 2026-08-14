@@ -1,8 +1,26 @@
 #include "runtime.h"
-#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
+
+#if defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MINGW32__)
+#include <windows.h>
+static CRITICAL_SECTION ds_console_lock;
+static int ds_console_lock_inited = 0;
+static void console_lock_init(void) {
+    if (!ds_console_lock_inited) {
+        InitializeCriticalSection(&ds_console_lock);
+        ds_console_lock_inited = 1;
+    }
+}
+#define CONSOLE_LOCK() do { console_lock_init(); EnterCriticalSection(&ds_console_lock); } while (0)
+#define CONSOLE_UNLOCK() LeaveCriticalSection(&ds_console_lock)
+#else
+#include <pthread.h>
+static pthread_mutex_t ds_console_lock = PTHREAD_MUTEX_INITIALIZER;
+#define CONSOLE_LOCK() pthread_mutex_lock(&ds_console_lock)
+#define CONSOLE_UNLOCK() pthread_mutex_unlock(&ds_console_lock)
+#endif
 
 #define DS_ERROR_MESSAGE_SIZE 1024
 
@@ -13,7 +31,6 @@ static char ds_console_buf[DS_CONSOLE_MAX][DS_CONSOLE_LINE_MAX];
 static int ds_console_type_buf[DS_CONSOLE_MAX];
 static int ds_console_head = 0;   /* индекс следующей записи (кольцо) */
 static int ds_console_count = 0;  /* сколько всего строк хранится */
-static pthread_mutex_t ds_console_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* копии для чтения из игрового потока — защищены мьютексом,
  * чтобы сетевые потоки не перезаписали строку во время отрисовки */
@@ -32,28 +49,28 @@ static void console_add(const char *line, int is_error) {
         tmp[w++] = (c == '\n' || c == '\r') ? ' ' : c;
     }
     tmp[w] = '\0';
-    pthread_mutex_lock(&ds_console_lock);
+    CONSOLE_LOCK();
     snprintf(ds_console_buf[ds_console_head], DS_CONSOLE_LINE_MAX, "%s", tmp);
     ds_console_type_buf[ds_console_head] = is_error ? 1 : 0;
     ds_console_head = (ds_console_head + 1) % DS_CONSOLE_MAX;
     if (ds_console_count < DS_CONSOLE_MAX) ds_console_count++;
-    pthread_mutex_unlock(&ds_console_lock);
+    CONSOLE_UNLOCK();
 }
 
 int console_count(void) { return ds_console_count; }
 int console_type(int index) {
     int t = 0;
-    pthread_mutex_lock(&ds_console_lock);
+    CONSOLE_LOCK();
     if (index >= 0 && index < ds_console_count) {
         int pos = (ds_console_head - ds_console_count + index) % DS_CONSOLE_MAX;
         if (pos < 0) pos += DS_CONSOLE_MAX;
         t = ds_console_type_buf[pos];
     }
-    pthread_mutex_unlock(&ds_console_lock);
+    CONSOLE_UNLOCK();
     return t;
 }
 const char *console_line(int index) {
-    pthread_mutex_lock(&ds_console_lock);
+    CONSOLE_LOCK();
     char *slot = ds_console_read[ds_console_read_pos];
     ds_console_read_pos = (ds_console_read_pos + 1) % DS_CONSOLE_READ_SLOTS;
     if (index >= 0 && index < ds_console_count) {
@@ -63,13 +80,13 @@ const char *console_line(int index) {
     } else {
         slot[0] = '\0';
     }
-    pthread_mutex_unlock(&ds_console_lock);
+    CONSOLE_UNLOCK();
     return slot;
 }
 void console_clear(void) {
-    pthread_mutex_lock(&ds_console_lock);
+    CONSOLE_LOCK();
     ds_console_count = 0; ds_console_head = 0;
-    pthread_mutex_unlock(&ds_console_lock);
+    CONSOLE_UNLOCK();
 }
 
 Joy joy = {0};
@@ -89,11 +106,18 @@ static DSStringNode *ds_strings = NULL;
 
 void ds_log(const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];
-    va_list args;
+    va_list args, copy;
     va_start(args, format);
-    __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, args);
-    va_end(args);
-    va_start(args, format);
+    va_copy(copy, args);
+#ifdef __ANDROID__
+    __android_log_vprint(ANDROID_LOG_INFO, "DimScript", format, copy);
+#else
+    printf("[DimScript] ");
+    vprintf(format, copy);
+    printf("\n");
+    fflush(stdout);
+#endif
+    va_end(copy);
     vsnprintf(tmp, sizeof(tmp), format, args);
     va_end(args);
     console_add(tmp, 0);
@@ -101,24 +125,45 @@ void ds_log(const char *format, ...) {
 
 void ds_log_err(const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];
-    va_list args;
+    va_list args, copy;
     va_start(args, format);
-    __android_log_vprint(ANDROID_LOG_ERROR, "DimScript", format, args);
-    va_end(args);
-    va_start(args, format);
+    va_copy(copy, args);
+#ifdef __ANDROID__
+    __android_log_vprint(ANDROID_LOG_ERROR, "DimScript", format, copy);
+#else
+    fprintf(stderr, "[DimScript ERR] ");
+    vfprintf(stderr, format, copy);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+#endif
+    va_end(copy);
     vsnprintf(tmp, sizeof(tmp), format, args);
     va_end(args);
     console_add(tmp, 1);
 }
 
-/* потокобезопасная запись в консоль + logcat (для net.c и прочих потоков) */
+/* потокобезопасная запись в консоль + logcat / stdout (для net.c и прочих потоков) */
 void ds_console_log(int is_error, const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];
-    va_list args;
+    va_list args, copy;
     va_start(args, format);
-    __android_log_vprint(is_error ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "DimScript", format, args);
-    va_end(args);
-    va_start(args, format);
+    va_copy(copy, args);
+#ifdef __ANDROID__
+    __android_log_vprint(is_error ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "DimScript", format, copy);
+#else
+    if (is_error) {
+        fprintf(stderr, "[DimScriptNet ERR] ");
+        vfprintf(stderr, format, copy);
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    } else {
+        printf("[DimScriptNet] ");
+        vprintf(format, copy);
+        printf("\n");
+        fflush(stdout);
+    }
+#endif
+    va_end(copy);
     vsnprintf(tmp, sizeof(tmp), format, args);
     va_end(args);
     console_add(tmp, is_error ? 1 : 0);
@@ -126,14 +171,21 @@ void ds_console_log(int is_error, const char *format, ...) {
 
 void ds_runtime_error(const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];
-    va_list args, copy;
+    va_list args, copy, copy2;
     va_start(args, format);
     va_copy(copy, args);
+    va_copy(copy2, args);
     vsnprintf(ds_last_error, sizeof(ds_last_error), format, copy);
     va_end(copy);
-    __android_log_vprint(ANDROID_LOG_ERROR, "DimScript", format, args);
-    va_end(args);
-    va_start(args, format);
+#ifdef __ANDROID__
+    __android_log_vprint(ANDROID_LOG_ERROR, "DimScript", format, copy2);
+#else
+    fprintf(stderr, "[DimScript FATAL] ");
+    vfprintf(stderr, format, copy2);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+#endif
+    va_end(copy2);
     vsnprintf(tmp, sizeof(tmp), format, args);
     va_end(args);
     console_add(tmp, 1);
@@ -285,11 +337,15 @@ void dict_free(DSDict* d) {
 /* ---------- таймеры ---------- */
 struct DSTimer { long long start_ms; };
 static long long now_ms(void){
+#if defined(_WIN32) && !defined(__CYGWIN__)
+    return (long long)GetTickCount64();
+#else
     struct timespec ts;
 #ifdef CLOCK_MONOTONIC
     if (clock_gettime(CLOCK_MONOTONIC,&ts)==0) return (long long)ts.tv_sec*1000 + ts.tv_nsec/1000000;
 #endif
     return (long long)time(NULL)*1000;
+#endif
 }
 DSTimer* timer_new(void){ DSTimer *t=(DSTimer*)malloc(sizeof(*t)); if(!t){ ds_runtime_error("timer_new OOM"); return NULL; } t->start_ms=now_ms(); return t; }
 void timer_start(DSTimer* t){ if(t) t->start_ms=now_ms(); }
@@ -344,8 +400,6 @@ static const char* skip_ws(const char* p){ while(p&&*p&&( *p==' '||*p=='\n'||*p=
 static double parse_number(const char* p){ char *e; double v=strtod(p,&e); return v; }
 double json_get_num(const char* json, const char* path){
     if(!json||!path) return 0;
-    // очень простой: ищем "path": number   путь вида a/b/c
-    // для простоты ищем последнее имя
     const char *key = strrchr(path,'/');
     if (key) key++; else key=path;
     char pattern[128];
@@ -398,14 +452,10 @@ int json_get_bool(const char* json, const char* path){
 const char* http_get(const char* url);
 const char* http_post(const char* url, const char* body);
 const char* http_get(const char* url){
-    // используем file_read как заглушку для десктопа, на Android — net.c сделает
-    // для простоты пробуем через file_read если url — путь
     if(!url) return ds_track_string(ds_strdup(""));
     if(strncmp(url,"http://",7)!=0 && strncmp(url,"https://",8)!=0){
         return file_read(url);
     }
-    // если сеть доступна через net.c, можно было бы вызвать, но пока возвращаем пусто
-    // реальная реализация есть в net.c через net_http, но требует java vm
     return ds_track_string(ds_strdup(""));
 }
 const char* http_post(const char* url, const char* body){
@@ -422,30 +472,37 @@ double now(void){ return now_ms()/1000.0; }
 double str_len(const char *s){ return s ? (double)strlen(s) : 0; }
 int str_eq(const char *a, const char *b){ if(a==b) return 1; if(!a||!b) return 0; return strcmp(a,b)==0; }
 
-/* ---------- реальная (системная) клавиатура через JNI (Android) ----------
- * Кастомной нарисованной клавиатуры больше нет: текст вводится системной
- * клавиатурой Android. Символы берём не из голого keycode, а через
- * android.view.KeyEvent.getUnicodeChar(metaState) — поэтому работают
- * заглавные буквы, кириллица и любая раскладка. */
+/* ---------- клавиатура и текстовый ввод ---------- */
+#ifdef __ANDROID__
 #include <android/native_activity.h>
 #include <android/keycodes.h>
 #include <jni.h>
-#define KB_BUF 256
 static ANativeActivity *kb_activity = NULL;
+#endif
+
+#define KB_BUF 256
 static char kb_text[KB_BUF] = {0};
 static int kb_len = 0;
 static int kb_show = 0;
 static int kb_enter = 0;
 
-void ds_set_activity(void *act){ kb_activity = (ANativeActivity*)act; }
+void ds_set_activity(void *act){
+#ifdef __ANDROID__
+    kb_activity = (ANativeActivity*)act;
+#else
+    (void)act;
+#endif
+}
 void keyboard_show(void){
-    if(!kb_activity) return;
-    ANativeActivity_showSoftInput(kb_activity, ANATIVEACTIVITY_SHOW_SOFT_INPUT_FORCED);
+#ifdef __ANDROID__
+    if(kb_activity) ANativeActivity_showSoftInput(kb_activity, ANATIVEACTIVITY_SHOW_SOFT_INPUT_FORCED);
+#endif
     kb_show = 1;
 }
 void keyboard_hide(void){
-    if(!kb_activity) return;
-    ANativeActivity_hideSoftInput(kb_activity, ANATIVEACTIVITY_HIDE_SOFT_INPUT_IMPLICIT_ONLY);
+#ifdef __ANDROID__
+    if(kb_activity) ANativeActivity_hideSoftInput(kb_activity, ANATIVEACTIVITY_HIDE_SOFT_INPUT_IMPLICIT_ONLY);
+#endif
     kb_show = 0;
 }
 const char* keyboard_get_text(void){ return ds_track_string(ds_strdup(kb_text)); }
@@ -483,6 +540,7 @@ static void kb_append_cp(unsigned int cp){
     if(kb_len+n < KB_BUF-1){ memcpy(kb_text+kb_len,u,(size_t)n); kb_len+=n; kb_text[kb_len]='\0'; }
 }
 
+#ifdef __ANDROID__
 /* JNI: KeyEvent(action, keycode).getUnicodeChar(metaState) — настоящий символ
  * системной клавиатуры с учётом раскладки, Shift и Caps. */
 static unsigned int kb_unicode(int keycode, int meta){
@@ -510,9 +568,11 @@ done:
     if(attached) (*vm)->DetachCurrentThread(vm);
     return uni>0 ? (unsigned int)uni : 0;
 }
+#endif
 
 int keyboard_handle_key(int keycode, int action, int meta){
     (void)action;
+#ifdef __ANDROID__
     if(keycode==AKEYCODE_DEL){ keyboard_backspace(); return 1; }
     if(keycode==AKEYCODE_FORWARD_DEL){ keyboard_backspace(); return 1; }
     if(keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER){ kb_enter=1; return 1; }
@@ -528,6 +588,12 @@ int keyboard_handle_key(int keycode, int action, int meta){
     if(keycode==AKEYCODE_COMMA){ kb_append_cp(','); return 1; }
     if(keycode==AKEYCODE_PERIOD){ kb_append_cp('.'); return 1; }
     if(keycode==AKEYCODE_MINUS){ kb_append_cp('-'); return 1; }
+#else
+    (void)meta;
+    if(keycode=='\b' || keycode==8 || keycode==127){ keyboard_backspace(); return 1; }
+    if(keycode=='\r' || keycode=='\n' || keycode==13){ kb_enter=1; return 1; }
+    if(keycode>=32){ kb_append_cp((unsigned int)keycode); return 1; }
+#endif
     return 0;
 }
 

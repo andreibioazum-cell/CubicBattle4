@@ -1,10 +1,15 @@
 #ifndef RUNTIME_H
 #define RUNTIME_H
 
-// Только Android 10, arm64/arm32 — без кроссплатформы
+#ifdef __ANDROID__
 #include <android/asset_manager.h>
 #include <android/log.h>
 #include <android/native_window.h>
+#else
+// Desktop / PC (Windows, Linux, macOS)
+typedef struct AAssetManager AAssetManager;
+#endif
+
 #include <math.h>
 #include <setjmp.h>
 #include <stddef.h>
@@ -97,7 +102,7 @@ double now(void);
 double str_len(const char *s);
 int str_eq(const char *a, const char *b);
 
-/* системная клавиатура Android через JNI (кастомной нарисованной больше нет) */
+/* системная клавиатура / текстовый ввод */
 void ds_set_activity(void *activity);
 void keyboard_show(void);
 void keyboard_hide(void);
@@ -106,8 +111,6 @@ const char* keyboard_get_raw(void);
 void keyboard_clear(void);
 int keyboard_visible(void);
 int keyboard_enter_pressed(void);
-/* keycode + metaState: символ берётся из KeyEvent.getUnicodeChar — раскладка,
- * Shift и кириллица работают как в обычном текстовом поле */
 int keyboard_handle_key(int keycode, int action, int meta);
 void keyboard_type(const char *text);   /* дописать строку в буфер клавиатуры */
 void keyboard_backspace(void);          /* стереть последний символ (UTF-8) */

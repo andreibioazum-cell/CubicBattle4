@@ -72,15 +72,39 @@ game/
 
 ## Сборка
 
+### 1. Генерация C-кода из DimScript
 ```sh
 python3 gen.py
 ```
 
-NDK (Android 10):
-```sh
-aarch64-linux-android29-clang -O3 -shared game.c runtime.c main.c glue -landroid -llog -lm -o lib/arm64-v8a/libds_game.so
-armv7a-linux-androideabi29-clang ... -o lib/armeabi-v7a/libds_game.so
-aapt package -M AndroidManifest.xml -I android-29/android.jar -F apk
+### 2. Сборка для ПК Windows (.exe)
+
+**Через bat-скрипт (Windows):**
+```cmd
+build_pc.bat
 ```
 
-APK только для Android 10 arm64/arm32, без звёзд, без кроссплатформы.
+**Через MinGW GCC (вручную):**
+```sh
+gcc -O3 -Wall -Wextra -I. -Igame game/game.c runtime.c main_win32.c -lgdi32 -lwininet -luser32 -lkernel32 -lm -o Game.exe -mwindows
+```
+
+**Через MSVC (cl.exe):**
+```cmd
+cl /O2 /W3 /I. /Igame game/game.c runtime.c main_win32.c /Fe:Game.exe /link gdi32.lib wininet.lib user32.lib kernel32.lib shell32.lib /SUBSYSTEM:WINDOWS
+```
+
+**Управление на ПК:**
+- `W`, `A`, `S`, `D` / Стрелочки — движение персонажа
+- `Space` (Пробел), `J`, `F` — прицеливание и удар (удар наносится при отпускании)
+- Мышь (ЛКМ) — нажатие на кнопки меню, управление джойстиком
+- `Enter` / Клавиатура — набор текста и отправка сообщений в онлайн-чате
+- `Esc` — кнопка «Назад»
+
+### 3. Сборка для Android 10 NDK (APK)
+
+```sh
+aarch64-linux-android29-clang -O3 -shared game/game.c runtime.c main.c $GLUE/android_native_app_glue.c -I. -I$GLUE -landroid -llog -lm -o staging/lib/arm64-v8a/libds_game.so
+armv7a-linux-androideabi29-clang -O3 -shared game/game.c runtime.c main.c $GLUE/android_native_app_glue.c -I. -I$GLUE -landroid -llog -lm -o staging/lib/armeabi-v7a/libds_game.so
+aapt package -f -M game/AndroidManifest.xml -I android-34/android.jar -F unsigned.apk ./staging/
+```

@@ -1,7 +1,10 @@
 #ifndef NET_H
 #define NET_H
 
+#ifdef __ANDROID__
 #include <jni.h>
+void net_set_java_vm(JavaVM *vm);
+#endif
 
 #define NET_SLOTS 4
 #define NET_OFFLINE 0
@@ -9,7 +12,6 @@
 #define NET_PLAYING 3
 #define NET_ERROR 4
 
-void net_set_java_vm(JavaVM *vm);
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_publish(double x, double y, double a, double hp, double alive);

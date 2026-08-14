@@ -3,19 +3,63 @@
 #endif
 #include "net.h"
 #include "runtime.h"
-#include <android/log.h>
 #include <math.h>
-#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
-/* Все сетевые логи идут и в logcat, и во внутриигровую консоль */
+#if defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MINGW32__)
+#include <windows.h>
+#include <process.h>
+#include <wininet.h>
+#pragma comment(lib, "wininet.lib")
+
+typedef HANDLE ds_net_thread_t;
+typedef CRITICAL_SECTION ds_net_mutex_t;
+#define NET_MUTEX_INIT(m) InitializeCriticalSection(m)
+#define NET_MUTEX_LOCK(m) EnterCriticalSection(m)
+#define NET_MUTEX_UNLOCK(m) LeaveCriticalSection(m)
+#define NET_MUTEX_DESTROY(m) DeleteCriticalSection(m)
+
+static int ds_thread_create(ds_net_thread_t *th, void *(*fn)(void *), void *arg) {
+    *th = (HANDLE)_beginthreadex(NULL, 0, (unsigned int (__stdcall *)(void *))fn, arg, 0, NULL);
+    return (*th == NULL) ? -1 : 0;
+}
+static void ds_thread_join(ds_net_thread_t th) {
+    if (th) {
+        WaitForSingleObject(th, INFINITE);
+        CloseHandle(th);
+    }
+}
+#else
+#include <pthread.h>
+#include <unistd.h>
+typedef pthread_t ds_net_thread_t;
+typedef pthread_mutex_t ds_net_mutex_t;
+#define NET_MUTEX_INIT(m) pthread_mutex_init(m, NULL)
+#define NET_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define NET_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#define NET_MUTEX_DESTROY(m) pthread_mutex_destroy(m)
+
+static int ds_thread_create(ds_net_thread_t *th, void *(*fn)(void *), void *arg) {
+    return pthread_create(th, NULL, fn, arg);
+}
+static void ds_thread_join(ds_net_thread_t th) {
+    pthread_join(th, NULL);
+}
+#endif
+
+#ifdef __ANDROID__
+#include <android/log.h>
 #define LOG(...) do { __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__); ds_console_log(0, __VA_ARGS__); } while (0)
 #define LOGERR(...) do { __android_log_print(ANDROID_LOG_ERROR, "DimScriptNet", __VA_ARGS__); ds_console_log(1, __VA_ARGS__); } while (0)
+#else
+#define LOG(...) do { printf("[DimScriptNet] "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); ds_console_log(0, __VA_ARGS__); } while (0)
+#define LOGERR(...) do { fprintf(stderr, "[DimScriptNet ERR] "); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); fflush(stderr); ds_console_log(1, __VA_ARGS__); } while (0)
+#endif
+
 #define URL 512
 #define BODY 1024
 #define RESP 4096
@@ -27,17 +71,16 @@
 #define CHAT_MAX 32
 #define CHAT_TEXT_MAX 96
 
-/* Bullet: x,y = точка выстрела (origin), tr = пройденный путь.
- * Текущая позиция = x + dx*tr. Это чинит «пули из ниоткуда»,
- * но теперь tr при приёме сбрасывается в 0, чтобы пуля вылетала
- * ровно из ствола (54px), а не из воздуха. */
 typedef struct { double x,y,a,hp,alive; int online; } Actor;
 typedef struct { double x,y,dx,dy,active,shot,tr; } Bullet;
 typedef struct { char uid[24]; char text[CHAT_TEXT_MAX]; unsigned long ts; int valid; } ChatMsg;
 
 static struct {
-    pthread_t thread, rthread; pthread_mutex_t lock;
-    JavaVM *vm; int run, started, slot, status;
+    ds_net_thread_t thread, rthread; ds_net_mutex_t lock;
+#ifdef __ANDROID__
+    JavaVM *vm;
+#endif
+    int run, started, slot, status;
     char base[256], room[48], uid[24];
     Actor me; Bullet my_bullet; unsigned long seq, count;
     Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
@@ -49,19 +92,30 @@ static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
 
 static long long now_ms(void) {
+#if defined(_WIN32) && !defined(__CYGWIN__)
+    return (long long)GetTickCount64();
+#else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (long long)t.tv_sec*1000+t.tv_nsec/1000000;
+#endif
 }
+
 static void sleep_ms(int ms) {
+#if defined(_WIN32) && !defined(__CYGWIN__)
+    Sleep((DWORD)ms);
+#else
     struct timespec t = { ms/1000, (long)(ms%1000)*1000000L };
     nanosleep(&t, NULL);
+#endif
 }
+
 static double safe(double v) { return isnan(v)||isinf(v) ? 0 : v; }
-static void lock(void) { pthread_mutex_lock(&net.lock); }
-static void unlock(void) { pthread_mutex_unlock(&net.lock); }
+static void lock(void) { NET_MUTEX_LOCK(&net.lock); }
+static void unlock(void) { NET_MUTEX_UNLOCK(&net.lock); }
 static void status(int s) { lock(); net.status=s; unlock(); }
 
+#ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
 
 static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
@@ -133,6 +187,104 @@ done:
     if (attached) (*net.vm)->DetachCurrentThread(net.vm);
     return ok ? code : 0;
 }
+#elif defined(_WIN32)
+#include <windows.h>
+#include <wininet.h>
+
+static HINTERNET g_hInternet = NULL;
+
+static void init_wininet(void) {
+    if (!g_hInternet) {
+        g_hInternet = InternetOpenA("DimScriptNet/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+        if (g_hInternet) {
+            DWORD timeout = 5000;
+            InternetSetOptionA(g_hInternet, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
+            InternetSetOptionA(g_hInternet, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+            InternetSetOptionA(g_hInternet, INTERNET_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
+        }
+    }
+}
+
+static int http_ex(const char *method, const char *url, const char *body, char *out, size_t cap,
+                   const char *header, const char *value, char *etag, size_t etag_cap) {
+    if (out && cap) out[0] = '\0';
+    if (etag && etag_cap) etag[0] = '\0';
+    if (!url || !*url) return 0;
+    init_wininet();
+    if (!g_hInternet) return 0;
+
+    char scheme[16] = {0}, host[128] = {0}, path[512] = {0};
+    URL_COMPONENTSA uc;
+    memset(&uc, 0, sizeof(uc));
+    uc.dwStructSize = sizeof(uc);
+    uc.lpszScheme = scheme; uc.dwSchemeLength = sizeof(scheme);
+    uc.lpszHostName = host; uc.dwHostNameLength = sizeof(host);
+    uc.lpszUrlPath = path; uc.dwUrlPathLength = sizeof(path);
+
+    if (!InternetCrackUrlA(url, (DWORD)strlen(url), 0, &uc)) return 0;
+
+    int is_https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
+    INTERNET_PORT port = uc.nPort ? uc.nPort : (is_https ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT);
+
+    HINTERNET hConnect = InternetConnectA(g_hInternet, host, port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConnect) return 0;
+
+    DWORD flags = (is_https ? INTERNET_FLAG_SECURE : 0) | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_DONT_CACHE;
+    HINTERNET hRequest = HttpOpenRequestA(hConnect, method, path, NULL, NULL, NULL, flags, 0);
+    if (!hRequest) { InternetCloseHandle(hConnect); return 0; }
+
+    char hdrs[512] = "Content-Type: application/json\r\n";
+    if (header && value && *header && *value) {
+        snprintf(hdrs + strlen(hdrs), sizeof(hdrs) - strlen(hdrs), "%s: %s\r\n", header, value);
+    }
+
+    DWORD body_len = body ? (DWORD)strlen(body) : 0;
+    BOOL sent = HttpSendRequestA(hRequest, hdrs, (DWORD)strlen(hdrs), (LPVOID)body, body_len);
+    if (!sent) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        return 0;
+    }
+
+    DWORD status_code = 0;
+    DWORD code_size = sizeof(status_code);
+    HttpQueryInfoA(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status_code, &code_size, NULL);
+
+    if (etag && etag_cap > 0) {
+        DWORD etag_len = (DWORD)etag_cap;
+        if (!HttpQueryInfoA(hRequest, HTTP_QUERY_ETAG, etag, &etag_len, NULL)) {
+            etag[0] = '\0';
+        }
+    }
+
+    if (out && cap > 0) {
+        size_t total = 0;
+        DWORD bytes_read = 0;
+        char buf[1024];
+        while (InternetReadFile(hRequest, buf, sizeof(buf), &bytes_read) && bytes_read > 0) {
+            if (total + bytes_read < cap) {
+                memcpy(out + total, buf, bytes_read);
+                total += bytes_read;
+                out[total] = '\0';
+            }
+        }
+    }
+
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
+    return (int)status_code;
+}
+#else
+// Generic fallback for non-Windows, non-Android platforms
+static int http_ex(const char *method, const char *url, const char *body, char *out, size_t cap,
+                   const char *header, const char *value, char *etag, size_t etag_cap) {
+    (void)method; (void)url; (void)body; (void)header; (void)value;
+    if (out && cap) out[0] = '\0';
+    if (etag && etag_cap) etag[0] = '\0';
+    return 0;
+}
+#endif
+
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap) {
     return http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
 }
@@ -311,7 +463,7 @@ static void parse_and_store_chat(const char *json){
         if(!*tq2) break;
         size_t tl=tq2-tq1;
         if(tl>=CHAT_TEXT_MAX) tl=CHAT_TEXT_MAX-1;
-        char raw[CHAT_TEXT_MAX*2]; /* для экранированных */
+        char raw[CHAT_TEXT_MAX*2];
         size_t rl=tl; if(rl>=sizeof(raw)) rl=sizeof(raw)-1;
         memcpy(raw,tq1,rl); raw[rl]='\0';
         char text[CHAT_TEXT_MAX]={0};
@@ -347,10 +499,8 @@ static void parse_and_store_chat(const char *json){
 
         p=tq2+1;
     }
-    /* сохраняем последние CHAT_MAX (json уже ограничен limitToLast) */
     lock();
     if(tmp_cnt>0){
-        /* если найдено больше чем храним, берём хвост */
         int start=0;
         if(tmp_cnt>CHAT_MAX) start=tmp_cnt-CHAT_MAX;
         net.chat_count=0;
@@ -362,12 +512,11 @@ static void parse_and_store_chat(const char *json){
 }
 static int pull_chat(char *resp, size_t cap){
     char url[URL];
-    /* последние 20 сообщений, отсортированных по ключу */
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=20",net.base,net.room);
     return http("GET",url,NULL,resp,cap)==200;
 }
 
-/* Пишущий поток: держит слот и пушит своё состояние каждую секунду. */
+/* Пишущий поток: держит слот и пушит своё состояние */
 static void *thread_main(void *arg) {
     int fails=0; (void)arg;
     while(net.run) {
@@ -401,10 +550,16 @@ static void *reader_thread(void *arg) {
     return NULL;
 }
 static void make_uid(void) {
-    struct timespec t; unsigned long a,b; int local=0;
+    unsigned long a, b; int local=0;
+#if defined(_WIN32) && !defined(__CYGWIN__)
+    a = (unsigned long)time(NULL) ^ ((unsigned long)GetTickCount64() << 8);
+    b = (unsigned long)GetCurrentProcessId() ^ (unsigned long)(uintptr_t)&local;
+#else
+    struct timespec t;
     clock_gettime(CLOCK_MONOTONIC,&t);
     a=(unsigned long)time(NULL)^((unsigned long)t.tv_nsec<<8);
     b=(unsigned long)getpid()^(unsigned long)(uintptr_t)&local;
+#endif
     snprintf(net.uid,sizeof(net.uid),"%08lx%08lx",a&0xfffffffful,b&0xfffffffful);
 }
 void net_connect(const char *url,const char *room) {
@@ -416,13 +571,13 @@ void net_connect(const char *url,const char *room) {
     snprintf(net.base,sizeof(net.base),"%s",url); n=strlen(net.base); while(n&&net.base[n-1]=='/')net.base[--n]=0;
     snprintf(net.room,sizeof(net.room),"%s",(room&&*room)?room:"main");
     if(!net.uid[0])make_uid();
-    if(!net.started){ pthread_mutex_init(&net.lock,NULL); net.started=1; }
+    if(!net.started){ NET_MUTEX_INIT(&net.lock); net.started=1; }
     net.status=NET_CONNECTING; net.run=1;
-    if(pthread_create(&net.thread,NULL,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; LOGERR("network error: cannot start writer thread"); return; }
-    if(pthread_create(&net.rthread,NULL,reader_thread,NULL)){ net.run=0; pthread_join(net.thread,NULL); net.status=NET_ERROR; LOGERR("network error: cannot start reader thread"); return; }
+    if(ds_thread_create(&net.thread,thread_main,NULL)){ net.run=0; net.status=NET_ERROR; LOGERR("network error: cannot start writer thread"); return; }
+    if(ds_thread_create(&net.rthread,reader_thread,NULL)){ net.run=0; ds_thread_join(net.thread); net.status=NET_ERROR; LOGERR("network error: cannot start reader thread"); return; }
     LOG("connect %s/%s (write %dms read %dms)",net.base,net.room,WRITE_TICK,READ_TICK);
 }
-void net_disconnect(void) { if(!net.run)return; net.run=0; pthread_join(net.thread,NULL); pthread_join(net.rthread,NULL); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
+void net_disconnect(void) { if(!net.run)return; net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
 void net_publish(double x,double y,double a,double hp,double alive) {
     if(!net.started) return;
     lock(); net.me.x=x; net.me.y=y; net.me.a=a; net.me.hp=hp; net.me.alive=alive;
@@ -431,9 +586,7 @@ void net_publish(double x,double y,double a,double hp,double alive) {
 void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot,double tr) {
     if(!net.started) return;
     lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; net.my_bullet.tr=tr; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
-    /* пуля вылетает сразу — пушим без ожидания секундной синхронизации, чтобы не летела из воздуха через секунду */
     if(active>0.5){
-        /* быстрый push в отдельном коротком запросе */
         push_bullet_only();
     }
 }

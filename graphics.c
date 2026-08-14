@@ -1,6 +1,5 @@
 /* Software renderer. Скрипт собирает команды за кадр, потом растеризуем в
- * залоченный буфер окна Android. TTF-загрузчик подключается через #include,
- * чтобы не плодить translation units. */
+ * буфер окна (Android / Windows / Linux). TTF-загрузчик подключается через #include. */
 
 #include "runtime.h"
 
@@ -249,6 +248,7 @@ static const char *norm_name(const char *n) {
     return n;
 }
 static int open_asset(const char *n, uint8_t **out, size_t *sz) {
+#ifdef __ANDROID__
     if (!amgr || !out || !sz) return 0;
     AAsset *a = AAssetManager_open(amgr, n, AASSET_MODE_BUFFER);
     if (!a) return 0;
@@ -264,13 +264,39 @@ static int open_asset(const char *n, uint8_t **out, size_t *sz) {
     AAsset_close(a);
     if (off != (size_t)len) { free(buf); return 0; }
     *out = buf; *sz = (size_t)len; return 1;
+#else
+    if (!n || !out || !sz) return 0;
+    FILE *f = fopen(n, "rb");
+    if (!f) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "game/assets/%s", n);
+        f = fopen(buf, "rb");
+        if (!f) {
+            snprintf(buf, sizeof(buf), "assets/%s", n);
+            f = fopen(buf, "rb");
+        }
+    }
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0) { fclose(f); return 0; }
+    uint8_t *buf = (uint8_t *)malloc((size_t)len);
+    if (!buf) { fclose(f); return 0; }
+    size_t nr = fread(buf, 1, (size_t)len, f);
+    fclose(f);
+    if (nr != (size_t)len) { free(buf); return 0; }
+    *out = buf; *sz = (size_t)len; return 1;
+#endif
 }
 static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
     Texture *t = find_tx(n);
     if (t) return t->pixels ? t : NULL;
+#ifdef __ANDROID__
     if (!amgr) { ds_log_err("texture not loaded: no asset manager for '%s'", n); return NULL; }
+#endif
     t = (Texture *)calloc(1, sizeof(*t));
     if (!t) { ds_log_err("texture not loaded: out of memory caching '%s'", n); return NULL; }
     t->name = strdup_safe(n);
@@ -365,9 +391,7 @@ static void render_text_now(Buffer *b, const char *s, float x, float y, uint32_t
     }
 }
 
-/* --- Текстуры с поворотом/масштабом ---
- * Исправлен флип по Y: ранее поворот на pi переворачивал спрайт и по Y
- * (вверх ногами). Теперь для pi делаем только зеркало по X. */
+/* --- Текстуры с поворотом/масштабом --- */
 static void draw_tx_unrot(Buffer *b, const Texture *t, float x, float y, float sc) {
     if (!b || !t || !t->pixels || !isfinite(x+y+sc) || sc <= 0) return;
     float w = t->w*sc, h = t->h*sc;
@@ -419,8 +443,7 @@ static void draw_tx_rot(Buffer *b, const Texture *t, float x, float y, float ang
 #define M_PI 3.14159265358979323846
 #endif
 /* Спрайт крутится на любой угол — игрок смотрит ровно туда, куда наклонён
- * джойстик, а не только влево/вправо. Зеркальных «флипов» больше нет:
- * они давали неверную картинку на промежуточных углах. */
+ * джойстик, а не только влево/вправо. */
 static void draw_tx(Buffer *b, const Texture *t, float x, float y, float a, float sc) {
     if (!b || !t || !t->pixels || !isfinite(x+y+a+sc) || sc <= 0) return;
     if (fabsf(a) < 0.0005f) { draw_tx_unrot(b, t, x, y, sc); return; }
@@ -463,11 +486,13 @@ void ds_release_assets(void) {
     while (t) { Texture *n = t->next; free(t->pixels); free(t->name); free(t); t = n; }
     textures = NULL;
     ds_font_destroy(font); font = NULL; font_tried = 0;
-        amgr = NULL;
+    amgr = NULL;
 }
 void ds_set_asset_manager(AAssetManager *a) {
     if (amgr != a) { ds_release_assets(); amgr = a; }
+#ifdef __ANDROID__
     if (!amgr) ds_runtime_error("Android asset manager is unavailable");
+#endif
 }
 int png_load(const char *n) { return load_png(n) != NULL; }
 
@@ -539,8 +564,7 @@ int text_ink_height(const char *s) {
     }
     return first ? 0 : (int)(maxB - minT + 0.5f);
 }
-/* Смещение верхней кромки чернил относительно y отрисовки.
- * У кириллицы глифы выше латиницы — без компенсации текст уезжает вверх. */
+/* Смещение верхней кромки чернил относительно y отрисовки. */
 int text_ink_top(const char *s) {
     if (!s || !ensure_font()) return 0;
     const DSFontGlyph *ref = ds_font_glyph(font, 'S');
@@ -570,8 +594,7 @@ void ds_graphics_end_frame(void) {
     flush(); cmd_n = 0; frame_open = 0; cur_buf = NULL;
 }
 void ds_graphics_cancel_frame(void) { cmd_n = 0; frame_open = 0; cur_buf = NULL; }
-/* Экран ошибки: показывает не только последнее сообщение, а всю консоль
- * (лог + ошибки) — чтобы было видно, что именно пошло не так. */
+/* Экран ошибки: показывает не только последнее сообщение, а всю консоль */
 void ds_graphics_error_screen(const char *m) {
     if (!cur_buf) return;
     clear_buf(cur_buf, pack_c(0xff1c0b10));
