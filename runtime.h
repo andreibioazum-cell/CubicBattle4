@@ -1,14 +1,10 @@
 #ifndef RUNTIME_H
 #define RUNTIME_H
 
-#ifdef __ANDROID__
+// Только Android 10, arm64/arm32 — без кроссплатформы
 #include <android/asset_manager.h>
 #include <android/log.h>
 #include <android/native_window.h>
-#else
-typedef struct AAssetManager AAssetManager;
-#endif
-
 #include <math.h>
 #include <setjmp.h>
 #include <stddef.h>
@@ -16,14 +12,24 @@ typedef struct AAssetManager AAssetManager;
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct { uint32_t *pixels; int width, height, stride; } Buffer;
+typedef struct {
+    uint32_t *pixels;
+    int width;
+    int height;
+    int stride;
+} Buffer;
+
 extern int screen_w, screen_h;
 extern double dt;
+
 typedef struct { float x, y, dx, dy, ox, oy, r; } Joy;
 extern Joy joy;
 
 void ds_log(const char *format, ...);
+/* ds_log_err — некритичная ошибка (например «текстура не загрузилась»):
+ * пишется в консоль красным и в logcat как ERROR, но НЕ останавливает скрипт. */
 void ds_log_err(const char *format, ...);
+/* ds_console_log — запись в консоль из любых потоков (сетевых и т.д.) */
 void ds_console_log(int is_error, const char *format, ...);
 typedef void (*DSProtectedFunction)(void *userdata);
 int ds_call_protected(DSProtectedFunction function, void *userdata, const char *label);
@@ -39,11 +45,13 @@ char *ds_concat(const char *left, const char *right);
 char *ds_num_to_string(double number);
 void ds_string_pool_reset(void);
 
+/* --- Консоль: кольцевой буфер лога/ошибок, виден в настройках --- */
 int console_count(void);
 const char *console_line(int index);
-int console_type(int index);
+int console_type(int index);   /* 1 = ошибка, 0 = обычный лог */
 void console_clear(void);
 
+/* --- Типы для расширенной стандартной библиотеки --- */
 typedef struct DSArray DSArray;
 typedef struct DSDict DSDict;
 typedef struct DSTimer DSTimer;
@@ -89,6 +97,7 @@ double now(void);
 double str_len(const char *s);
 int str_eq(const char *a, const char *b);
 
+/* системная клавиатура Android через JNI (кастомной нарисованной больше нет) */
 void ds_set_activity(void *activity);
 void keyboard_show(void);
 void keyboard_hide(void);
@@ -97,11 +106,14 @@ const char* keyboard_get_raw(void);
 void keyboard_clear(void);
 int keyboard_visible(void);
 int keyboard_enter_pressed(void);
+/* keycode + metaState: символ берётся из KeyEvent.getUnicodeChar — раскладка,
+ * Shift и кириллица работают как в обычном текстовом поле */
 int keyboard_handle_key(int keycode, int action, int meta);
-void keyboard_type(const char *text);
-void keyboard_backspace(void);
-void keyboard_commit_utf8(const char *utf8);
+void keyboard_type(const char *text);   /* дописать строку в буфер клавиатуры */
+void keyboard_backspace(void);          /* стереть последний символ (UTF-8) */
+void keyboard_commit_utf8(const char *utf8); /* вставка готовой строки */
 
+/* графика */
 void rect(float x, float y, float w, float h, uint32_t color);
 void roundrect(float x, float y, float w, float h, float r, uint32_t color);
 void circle(float x, float y, float r, uint32_t color);
