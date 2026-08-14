@@ -1,25 +1,14 @@
-// engine — переходы и хуки движка
 function start_transition num t
-if t_dir!=0; return; end; t_target=t; t_dir=1
-end
+if t_dir!=0; return; end; t_target=t; t_dir=1;end
 function update_transition
-if t_dir==1; t_fade=t_fade+dt/transition_duration; if t_fade>=1; t_fade=1; t_dir=2; end
-else if t_dir==2; if game_state==5&&t_target!=5; net_disconnect; end; game_state=t_target; if t_target==1; init_game; else if t_target==5; init_online; else if t_target==6; console_scroll=0; end; t_dir=-1
-else if t_dir==-1; t_fade=t_fade-dt/transition_duration; if t_fade<=0; t_fade=0; t_dir=0; end; end
-end
+if t_dir==1; t_fade=t_fade+dt/transition_duration; if t_fade>=1; t_fade=1; t_dir=2; end;else if t_dir==2; if game_state==5&&t_target!=5; net_disconnect; end; game_state=t_target; if t_target==1; init_game; else if t_target==5; init_online; else if t_target==6; console_scroll=0; end; t_dir=-1
+else if t_dir==-1; t_fade=t_fade-dt/transition_duration; if t_fade<=0; t_fade=0; t_dir=0; end; end;end
 function init
-ds_log "init: loading textures"
-png_load GRASS; png_load ORDINARY_TEX; png_load PUNCH_TEX
-net_account_configure FIREBASE,ROOM; account_nick_input=net_account_nickname(); account_last_status=net_account_status()
-ds_log "init: ready"
-end
+ds_log "init: loading textures";png_load GRASS; png_load ORDINARY_TEX; png_load PUNCH_TEX;net_account_configure FIREBASE,ROOM; account_nick_input=net_account_nickname(); account_last_status=net_account_status();ds_log "init: ready";end
 function update
-update_transition; if game_state==1; update_game; else if game_state==5; update_online; end
-end
+update_transition; if game_state==1; update_game; else if game_state==5; update_online; end;end
 function draw
-if game_state==0; draw_lobby; else if game_state==1; draw_game; else if game_state==2; draw_modes; else if game_state==4; draw_settings; else if game_state==6; draw_console; else; draw_online; end
-if t_fade>0; rect 0,0,screen_w,screen_h,(1+floor(t_fade*254))*0x1000000; end
+if game_state==0; draw_lobby; else if game_state==1; draw_game; else if game_state==2; draw_modes; else if game_state==4; draw_settings; else if game_state==6; draw_console; else; draw_online; end;if t_fade>0; rect 0,0,screen_w,screen_h,(1+floor(t_fade*254))*0x1000000; end
 end
 function touch num x, num y, num action, num id
-if t_dir!=0; return; end; if game_state==0; touch_lobby x,y,action; else if game_state==1||game_state==5; touch_game x,y,action,id; else; touch_menu x,y,action; end
-end
+if t_dir!=0; return; end; if game_state==0; touch_lobby x,y,action; else if game_state==1||game_state==5; touch_game x,y,action,id; else; touch_menu x,y,action; end;end

@@ -1,28 +1,35 @@
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200809L
-#endif
 #include "net.h"
 #include "runtime.h"
-#include <android/log.h>
 #include <math.h>
-#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
+#ifdef _WIN32
+#include <process.h>
+#include <wininet.h>
+#else
+#include <pthread.h>
+#include <sys/stat.h>
 #include <unistd.h>
-
-/* Все сетевые логи идут и в logcat, и во внутриигровую консоль */
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+#endif
+#ifdef __ANDROID__
 #define LOG(...) do { __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__); ds_console_log(0, __VA_ARGS__); } while (0)
 #define LOGERR(...) do { __android_log_print(ANDROID_LOG_ERROR, "DimScriptNet", __VA_ARGS__); ds_console_log(1, __VA_ARGS__); } while (0)
+#else
+#define LOG(...) do { ds_console_log(0, __VA_ARGS__); } while (0)
+#define LOGERR(...) do { ds_console_log(1, __VA_ARGS__); } while (0)
+#endif
 #define URL 512
 #define BODY 1024
 #define RESP 4096
 #define CHAT_RESP 8192
-#define WRITE_TICK 50   /* частая запись — убираем лаги, без интерполяции */
-#define READ_TICK 50    /* частое чтение — прямое присваивание позиции */
+#define WRITE_TICK 50
+#define READ_TICK 50
 #define TIMEOUT 5000
 #define STALE 12000
 #define CHAT_MAX 32
@@ -34,15 +41,34 @@
 #define ACCOUNT_SALT_HEX 32
 #define ACCOUNT_VERIFIER_HEX 64
 #define PBKDF2_ROUNDS 60000
-
-/* Bullet: x,y = точка выстрела (origin), tr = пройденный путь.
- * Текущая позиция = x + dx*tr. Это чинит «пули из ниоткуда»,
- * но теперь tr при приёме сбрасывается в 0, чтобы пуля вылетала
- * ровно из ствола (54px), а не из воздуха. */
+#ifdef _WIN32
+typedef SRWLOCK DSMutex;
+#define DS_MUTEX_INIT SRWLOCK_INIT
+#define ds_mutex_lock(m) AcquireSRWLockExclusive(&(m))
+#define ds_mutex_unlock(m) ReleaseSRWLockExclusive(&(m))
+typedef HANDLE DSThread;
+static DSThread ds_thread_start(unsigned (__stdcall *fn)(void *), void *arg) {
+    return (DSThread)_beginthreadex(NULL, 0, fn, arg, 0, NULL);
+}
+static void ds_thread_join(DSThread t) { if (t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); } }
+static void ds_thread_detach(DSThread t) { if (t) CloseHandle(t); }
+#else
+typedef pthread_mutex_t DSMutex;
+#define DS_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
+#define ds_mutex_lock(m) pthread_mutex_lock(&(m))
+#define ds_mutex_unlock(m) pthread_mutex_unlock(&(m))
+typedef pthread_t DSThread;
+static DSThread ds_thread_start(void *(*fn)(void *), void *arg) {
+    pthread_t t;
+    if (pthread_create(&t, NULL, fn, arg) != 0) return (pthread_t)0;
+    return t;
+}
+static void ds_thread_join(DSThread t) { if (t) pthread_join(t, NULL); }
+static void ds_thread_detach(DSThread t) { if (t) pthread_detach(t); }
+#endif
 typedef struct { double x,y,a,hp,alive; int online; char nickname[NICK_MAX_BYTES+1]; } Actor;
 typedef struct { double x,y,dx,dy,active,shot,tr; } Bullet;
 typedef struct { char uid[24]; char nickname[NICK_MAX_BYTES+1]; char text[CHAT_TEXT_MAX]; unsigned long ts; int valid; } ChatMsg;
-
 typedef struct {
     int status;
     char nickname[NICK_MAX_BYTES+1];
@@ -51,41 +77,114 @@ typedef struct {
     char verifier[ACCOUNT_VERIFIER_HEX+1];
     char error[128];
 } Account;
-
 static struct {
-    pthread_t thread, rthread; pthread_mutex_t lock;
-    JavaVM *vm; int run, started, slot, status, writer_created, reader_created;
+    DSThread thread, rthread; DSMutex lock;
+#ifdef __ANDROID__
+    JavaVM *vm;
+#endif
+    int run, started, slot, status, writer_created, reader_created;
     char base[256], room[48], uid[24], storage[384];
     Actor me; Bullet my_bullet; unsigned long seq, count;
     Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
     Account account; int account_loaded, account_worker;
-} net = { .lock = PTHREAD_MUTEX_INITIALIZER, .slot = -1 };
-
-/* буферы для возврата строк (console_line-стиль) */
+} net = { .lock = DS_MUTEX_INIT, .slot = -1 };
 static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
 static char s_chat_nick_ret[NICK_MAX_BYTES+1];
 static char s_player_nick_ret[NICK_MAX_BYTES+1];
 static char s_account_nick_ret[NICK_MAX_BYTES+1];
 static char s_account_error_ret[128];
-
 static long long now_ms(void) {
+#ifdef _WIN32
+    return (long long)GetTickCount64();
+#else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (long long)t.tv_sec*1000+t.tv_nsec/1000000;
+#endif
 }
 static void sleep_ms(int ms) {
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
     struct timespec t = { ms/1000, (long)(ms%1000)*1000000L };
     nanosleep(&t, NULL);
+#endif
 }
-static double safe(double v) { return isnan(v)||isinf(v) ? 0 : v; }
-static void lock(void) { pthread_mutex_lock(&net.lock); }
-static void unlock(void) { pthread_mutex_unlock(&net.lock); }
+static double safe(double v) { if (v != v) return 0; if (v > 1e300 || v < -1e300) return 0; return v; }
+static void lock(void) { ds_mutex_lock(net.lock); }
+static void unlock(void) { ds_mutex_unlock(net.lock); }
 static void status(int s) { lock(); net.status=s; unlock(); }
-
+#ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
-
+#endif
+#ifdef _WIN32
+static int parse_http_url(const char *url, char *host, size_t host_cap, int *port, const char **path, int *secure) {
+    const char *p = url;
+    *secure = 0; *port = 80;
+    if (strncmp(p, "https://", 8) == 0) { *secure = 1; *port = 443; p += 8; }
+    else if (strncmp(p, "http://", 7) == 0) p += 7;
+    else return 0;
+    const char *slash = strchr(p, '/');
+    size_t hl = slash ? (size_t)(slash - p) : strlen(p);
+    if (!hl || hl >= host_cap) return 0;
+    memcpy(host, p, hl); host[hl] = 0;
+    char *colon = strchr(host, ':');
+    if (colon) { *colon = 0; *port = atoi(colon + 1); if (*port <= 0) *port = *secure ? 443 : 80; }
+    *path = slash ? slash : "/";
+    return 1;
+}
+static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
+                   const char *header,const char *value,char *etag,size_t etag_cap) {
+    char host[256]; int port = 80, secure = 0; const char *path = NULL;
+    if (out && cap) out[0] = '\0';
+    if (etag && etag_cap) etag[0] = '\0';
+    if (!url || !parse_http_url(url, host, sizeof(host), &port, &path, &secure)) return 0;
+    HINTERNET inet = InternetOpenA("CubicBattle/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!inet) return 0;
+    HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!conn) { InternetCloseHandle(inet); return 0; }
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI;
+    if (secure) flags |= INTERNET_FLAG_SECURE;
+    HINTERNET req = HttpOpenRequestA(conn, method, path, NULL, NULL, NULL, flags, 0);
+    if (!req) { InternetCloseHandle(conn); InternetCloseHandle(inet); return 0; }
+    char hdrs[512]; int hl = 0;
+    hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "Content-Type: application/json\r\n");
+    if (header && value) hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "%s: %s\r\n", header, value);
+    if (hl < 0 || (size_t)hl >= sizeof(hdrs)) hl = (int)sizeof(hdrs) - 1;
+    hdrs[hl] = '\0';
+    BOOL ok = HttpSendRequestA(req, hl ? hdrs : NULL, (DWORD)hl, (LPVOID)body, (DWORD)(body ? strlen(body) : 0));
+    int code = 0;
+    if (ok) {
+        DWORD len = sizeof(code), idx = 0;
+        HttpQueryInfoA(req, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &len, &idx);
+    }
+    if (etag && etag_cap) {
+        DWORD len = 0, idx = 0;
+        if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, NULL, &len, &idx) || GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+            if (len && len < etag_cap) {
+                DWORD got = len;
+                if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, etag, &got, &idx) && got < etag_cap) etag[got] = '\0';
+            }
+        }
+    }
+    if (ok && out && cap) {
+        size_t total = 0;
+        for (;;) {
+            DWORD rd = 0;
+            if (!InternetReadFile(req, out + total, (DWORD)(cap - 1 - total), &rd) || rd == 0) break;
+            total += (size_t)rd;
+            out[total] = '\0';
+            if (total + 1 >= cap) break;
+        }
+    }
+    InternetCloseHandle(req);
+    InternetCloseHandle(conn);
+    InternetCloseHandle(inet);
+    return code;
+}
+#elif defined(__ANDROID__)
 static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
                    const char *header,const char *value,char *etag,size_t etag_cap) {
     JNIEnv *env=NULL; jobject conn=NULL, stream=NULL, urlobj=NULL;
@@ -155,10 +254,18 @@ done:
     if (attached) (*net.vm)->DetachCurrentThread(net.vm);
     return ok ? code : 0;
 }
+#else
+static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
+                   const char *header,const char *value,char *etag,size_t etag_cap) {
+    (void)method; (void)url; (void)body; (void)header; (void)value;
+    if (out && cap) out[0] = '\0';
+    if (etag && etag_cap) etag[0] = '\0';
+    return 0;
+}
+#endif
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap) {
     return http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
 }
-
 static const char *skip_ws(const char *p) { while(p&&*p&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r')) p++; return p; }
 static const char *skip_str(const char *p) { if(!p||*p!='\"') return NULL; for(p++;*p;p++){ if(*p=='\\'&&p[1]){p++;continue;} if(*p=='\"') return p+1; } return NULL; }
 static const char *skip_box(const char *p,char open,char close) { int d=0; if(!p||*p!=open) return NULL; for(;*p;p++){ if(*p=='\"'){p=skip_str(p); if(!p)return NULL; p--; continue;} if(*p==open)d++; else if(*p==close&&--d==0)return p+1;} return NULL; }
@@ -199,8 +306,6 @@ static void strv(const char *json,const char *path,char *out,size_t cap) {
     const char *v=path_val(json,path); size_t i=0; if(cap)out[0]=0; if(!v||*v!='\"')return;
     for(v++;*v&&*v!='\"'&&i+1<cap;v++){ if(*v=='\\'&&v[1])v++; out[i++]=*v; } out[i]=0;
 }
-
-/* ---------- JSON escape для чата ---------- */
 static void json_escape(const char *src, char *dst, size_t cap){
     size_t o=0;
     if(cap==0) return;
@@ -210,13 +315,11 @@ static void json_escape(const char *src, char *dst, size_t cap){
         else if(c=='\\'){ dst[o++]='\\'; dst[o++]='\\'; }
         else if(c=='\n'){ dst[o++]='\\'; dst[o++]='n'; }
         else if(c=='\r'){ dst[o++]='\\'; dst[o++]='r'; }
-        else if((unsigned char)c<0x20){ /* пропуск управляющих */ }
+        else if((unsigned char)c<0x20){  }
         else { dst[o++]=c; }
     }
     dst[o]='\0';
 }
-
-/* ---------- аккаунт: SHA-256 + PBKDF2, уникальный ник ---------- */
 typedef struct { uint32_t h[8]; uint64_t bits; unsigned char block[64]; size_t used; } Sha256;
 static const uint32_t sha_k[64]={
     0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
@@ -250,7 +353,6 @@ static void to_hex(const unsigned char *in,size_t n,char *out){static const char
 static int from_hex(const char *in,unsigned char *out,size_t n){if(!in||strlen(in)!=n*2)return 0;for(size_t i=0;i<n;i++){int a=in[i*2],b=in[i*2+1];a=a>='0'&&a<='9'?a-'0':a>='a'&&a<='f'?a-'a'+10:a>='A'&&a<='F'?a-'A'+10:-1;b=b>='0'&&b<='9'?b-'0':b>='a'&&b<='f'?b-'a'+10:b>='A'&&b<='F'?b-'A'+10:-1;if(a<0||b<0)return 0;out[i]=(unsigned char)((a<<4)|b);}return 1;}
 static int secure_eq(const char *a,const char *b,size_t n){unsigned char d=0;if(!a||!b||strlen(a)!=n||strlen(b)!=n)return 0;for(size_t i=0;i<n;i++)d|=(unsigned char)(a[i]^b[i]);return d==0;}
 static void wipe(void *p,size_t n){volatile unsigned char *v=p;while(n--)*v++=0;}
-
 static int utf8_next(const unsigned char **at,const unsigned char *end,uint32_t *cp){
     const unsigned char *p=*at;uint32_t c;if(p>=end)return 0;if(*p<0x80){*cp=*p;*at=p+1;return 1;}if(*p>=0xc2&&*p<=0xdf&&p+1<end&&(p[1]&0xc0)==0x80){c=((uint32_t)(p[0]&31)<<6)|(p[1]&63);*at=p+2;*cp=c;return 1;}if(*p>=0xe0&&*p<=0xef&&p+2<end&&(p[1]&0xc0)==0x80&&(p[2]&0xc0)==0x80){c=((uint32_t)(p[0]&15)<<12)|((uint32_t)(p[1]&63)<<6)|(p[2]&63);if(c<0x800||(c>=0xd800&&c<=0xdfff))return 0;*at=p+3;*cp=c;return 1;}if(*p>=0xf0&&*p<=0xf4&&p+3<end&&(p[1]&0xc0)==0x80&&(p[2]&0xc0)==0x80&&(p[3]&0xc0)==0x80){c=((uint32_t)(p[0]&7)<<18)|((uint32_t)(p[1]&63)<<12)|((uint32_t)(p[2]&63)<<6)|(p[3]&63);if(c<0x10000||c>0x10ffff)return 0;*at=p+4;*cp=c;return 1;}return 0;
 }
@@ -265,10 +367,20 @@ static int normalize_nickname(const char *input,char shown[NICK_MAX_BYTES+1],cha
     shown[oi]=0;normalized[ni]=0;sha256(normalized,ni,digest);to_hex(digest,32,key);return 1;
 }
 static int valid_password(const char *password){const unsigned char *p=(const unsigned char*)(password?password:""),*end=p+strlen((const char*)p);uint32_t cp;int count=0;if((size_t)(end-p)>PASSWORD_MAX_BYTES)return 0;while(p<end){if(!utf8_next(&p,end,&cp))return 0;if(++count>64)return 0;}return count>=6;}
-static int random_bytes(unsigned char *out,size_t n){FILE *f=fopen("/dev/urandom","rb");if(f){size_t got=fread(out,1,n,f);fclose(f);if(got==n)return 1;}uint64_t x=(uint64_t)now_ms()^((uint64_t)getpid()<<32)^(uintptr_t)out;for(size_t i=0;i<n;i++){x^=x<<13;x^=x>>7;x^=x<<17;out[i]=(unsigned char)x;}return 1;}
+static int random_bytes(unsigned char *out,size_t n){FILE *f=fopen("/dev/urandom","rb");if(f){size_t got=fread(out,1,n,f);fclose(f);if(got==n)return 1;}uint64_t x=(uint64_t)now_ms()^((uint64_t)(
+#ifdef _WIN32
+_getpid()
+#else
+getpid()
+#endif
+)<<32)^(uintptr_t)out;for(size_t i=0;i<n;i++){x^=x<<13;x^=x>>7;x^=x<<17;out[i]=(unsigned char)x;}return 1;}
 static void account_file(char *out,size_t cap,const char *suffix){char root[384];lock();snprintf(root,sizeof(root),"%s",net.storage);unlock();if(root[0])snprintf(out,cap,"%s/%s",root,suffix);else out[0]=0;}
 static void account_set(int st,const char *error){lock();net.account.status=st;snprintf(net.account.error,sizeof(net.account.error),"%s",error?error:"");unlock();}
-static int account_save(const Account *a){char path[512],tmp[520];account_file(path,sizeof(path),"account.dat");if(!path[0])return 0;snprintf(tmp,sizeof(tmp),"%s.tmp",path);FILE *f=fopen(tmp,"wb");if(!f)return 0;int ok=fprintf(f,"1\n%s\n%s\n%s\n%s\n",a->nickname,a->key,a->salt,a->verifier)>0;if(fclose(f)!=0)ok=0;if(!ok){remove(tmp);return 0;}chmod(tmp,S_IRUSR|S_IWUSR);if(rename(tmp,path)!=0){remove(tmp);return 0;}return 1;}
+static int account_save(const Account *a){char path[512],tmp[520];account_file(path,sizeof(path),"account.dat");if(!path[0])return 0;snprintf(tmp,sizeof(tmp),"%s.tmp",path);FILE *f=fopen(tmp,"wb");if(!f)return 0;int ok=fprintf(f,"1\n%s\n%s\n%s\n%s\n",a->nickname,a->key,a->salt,a->verifier)>0;if(fclose(f)!=0)ok=0;if(!ok){remove(tmp);return 0;}
+#ifndef _WIN32
+chmod(tmp,S_IRUSR|S_IWUSR);
+#endif
+if(rename(tmp,path)!=0){remove(tmp);return 0;}return 1;}
 static void chomp(char *s){size_t n=strlen(s);while(n&&(s[n-1]=='\n'||s[n-1]=='\r'))s[--n]=0;}
 static void account_load(void){
     char path[512],version[8],nickname[NICK_MAX_BYTES+2],key[ACCOUNT_KEY_HEX+2],salt[ACCOUNT_SALT_HEX+2],verifier[ACCOUNT_VERIFIER_HEX+2],shown[NICK_MAX_BYTES+1],norm[NICK_MAX_BYTES+1],checkkey[ACCOUNT_KEY_HEX+1];Account a;memset(&a,0,sizeof(a));account_file(path,sizeof(path),"account.dat");FILE *f=fopen(path,"rb");if(!f){lock();net.account_loaded=1;unlock();return;}int ok=fgets(version,sizeof(version),f)&&fgets(nickname,sizeof(nickname),f)&&fgets(key,sizeof(key),f)&&fgets(salt,sizeof(salt),f)&&fgets(verifier,sizeof(verifier),f);fclose(f);if(!ok)return;chomp(version);chomp(nickname);chomp(key);chomp(salt);chomp(verifier);unsigned char bin[32];if(strcmp(version,"1")||!normalize_nickname(nickname,shown,norm,checkkey)||strcmp(key,checkkey)||!from_hex(salt,bin,16)||!from_hex(verifier,bin,32))return;snprintf(a.nickname,sizeof(a.nickname),"%s",shown);snprintf(a.key,sizeof(a.key),"%s",key);snprintf(a.salt,sizeof(a.salt),"%s",salt);snprintf(a.verifier,sizeof(a.verifier),"%s",verifier);a.status=NET_ACCOUNT_READY;lock();net.account=a;net.account_loaded=1;unlock();
@@ -296,10 +408,19 @@ wipe_done: wipe(salt,sizeof(salt));
 done:
     wipe(r->password,sizeof(r->password));free(r);lock();net.account_worker=0;unlock();return NULL;
 }
+#ifdef _WIN32
+static unsigned __stdcall win_account_thread(void *arg){ account_thread(arg); return 0; }
+#endif
 void net_set_storage_path(const char *path){lock();snprintf(net.storage,sizeof(net.storage),"%s",path?path:"");unlock();}
 void net_account_configure(const char *url,const char *room){size_t n;lock();snprintf(net.base,sizeof(net.base),"%s",url?url:"");n=strlen(net.base);while(n&&net.base[n-1]=='/')net.base[--n]=0;snprintf(net.room,sizeof(net.room),"%s",room&&*room?room:"main");int load=!net.account_loaded;net.started=1;unlock();if(load)account_load();}
 void net_account_login(const char *nickname,const char *password){
-    char shown[NICK_MAX_BYTES+1],normalized[NICK_MAX_BYTES+1],key[ACCOUNT_KEY_HEX+1],base[256];if(!normalize_nickname(nickname,shown,normalized,key)){account_set(NET_ACCOUNT_INVALID,"Nickname must be 3-16 letters, digits, _ or -");return;}if(!valid_password(password)){account_set(NET_ACCOUNT_INVALID,"Password must contain 6-64 characters");return;}lock();if(net.account_worker){unlock();return;}snprintf(base,sizeof(base),"%s",net.base);net.account.status=NET_ACCOUNT_CHECKING;net.account.error[0]=0;net.account_worker=1;unlock();if(!base[0]){account_set(NET_ACCOUNT_ERROR,"Firebase is not configured");lock();net.account_worker=0;unlock();return;}AccountRequest *r=calloc(1,sizeof(*r));if(!r){account_set(NET_ACCOUNT_ERROR,"Out of memory");lock();net.account_worker=0;unlock();return;}snprintf(r->nickname,sizeof(r->nickname),"%s",shown);snprintf(r->key,sizeof(r->key),"%s",key);snprintf(r->password,sizeof(r->password),"%s",password);snprintf(r->base,sizeof(r->base),"%s",base);pthread_t worker;if(pthread_create(&worker,NULL,account_thread,r)!=0){wipe(r->password,sizeof(r->password));free(r);account_set(NET_ACCOUNT_ERROR,"Cannot start account check");lock();net.account_worker=0;unlock();return;}pthread_detach(worker);
+    char shown[NICK_MAX_BYTES+1],normalized[NICK_MAX_BYTES+1],key[ACCOUNT_KEY_HEX+1],base[256];if(!normalize_nickname(nickname,shown,normalized,key)){account_set(NET_ACCOUNT_INVALID,"Nickname must be 3-16 letters, digits, _ or -");return;}if(!valid_password(password)){account_set(NET_ACCOUNT_INVALID,"Password must contain 6-64 characters");return;}lock();if(net.account_worker){unlock();return;}snprintf(base,sizeof(base),"%s",net.base);net.account.status=NET_ACCOUNT_CHECKING;net.account.error[0]=0;net.account_worker=1;unlock();if(!base[0]){account_set(NET_ACCOUNT_ERROR,"Firebase is not configured");lock();net.account_worker=0;unlock();return;}AccountRequest *r=calloc(1,sizeof(*r));if(!r){account_set(NET_ACCOUNT_ERROR,"Out of memory");lock();net.account_worker=0;unlock();return;}snprintf(r->nickname,sizeof(r->nickname),"%s",shown);snprintf(r->key,sizeof(r->key),"%s",key);snprintf(r->password,sizeof(r->password),"%s",password);snprintf(r->base,sizeof(r->base),"%s",base);
+#ifdef _WIN32
+    DSThread worker=ds_thread_start(win_account_thread,r);
+#else
+    DSThread worker=ds_thread_start(account_thread,r);
+#endif
+if(!worker){wipe(r->password,sizeof(r->password));free(r);account_set(NET_ACCOUNT_ERROR,"Cannot start account check");lock();net.account_worker=0;unlock();return;}ds_thread_detach(worker);
 }
 double net_account_status(void){double v;lock();v=net.account.status;unlock();return v;}
 const char *net_account_nickname(void){lock();snprintf(s_account_nick_ret,sizeof(s_account_nick_ret),"%s",net.account.nickname);unlock();return s_account_nick_ret;}
@@ -307,8 +428,6 @@ const char *net_account_error(void){lock();snprintf(s_account_error_ret,sizeof(s
 static int verify_saved_account(void){
     Account a;char base[256],resp[2048],etag[8],salt[ACCOUNT_SALT_HEX+1],verifier[ACCOUNT_VERIFIER_HEX+1];lock();a=net.account;snprintf(base,sizeof(base),"%s",net.base);unlock();if(a.status!=NET_ACCOUNT_READY||!a.key[0])return -1;int code=account_fetch(base,a.key,resp,sizeof(resp),etag,sizeof(etag));if(code!=200)return 0;strv(resp,"salt",salt,sizeof(salt));strv(resp,"verifier",verifier,sizeof(verifier));return secure_eq(a.salt,salt,ACCOUNT_SALT_HEX)&&secure_eq(a.verifier,verifier,ACCOUNT_VERIFIER_HEX)?1:-1;
 }
-
-/* ---------- состояние ---------- */
 static int push_state(void) {
     Actor a; Bullet b; int slot; unsigned long seq; char url[URL], body[BODY], nick[NICK_MAX_BYTES*2+1];
     lock(); a=net.me; b=net.my_bullet; slot=net.slot; seq=++net.seq; unlock();
@@ -390,8 +509,6 @@ static void read_players(const char *resp) {
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); memcpy(net.bullets,bs,sizeof(bs)); net.count=count; unlock();
 }
-
-/* ---------- Чат: парсинг ---------- */
 static void parse_and_store_chat(const char *json){
     ChatMsg tmp[CHAT_MAX];int tmp_cnt=0;const char *p=skip_ws(json);
     memset(tmp,0,sizeof(tmp));
@@ -416,12 +533,9 @@ static void parse_and_store_chat(const char *json){
 }
 static int pull_chat(char *resp, size_t cap){
     char url[URL];
-    /* последние 20 сообщений, отсортированных по ключу */
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=20",net.base,net.room);
     return http("GET",url,NULL,resp,cap)==200;
 }
-
-/* Пишущий поток: держит слот и пушит своё состояние каждую секунду. */
 static void *thread_main(void *arg) {
     int fails=0; (void)arg;
     int verified=verify_saved_account();
@@ -445,7 +559,9 @@ static void *thread_main(void *arg) {
     }
     release_slot(); status(NET_OFFLINE); return NULL;
 }
-/* Читающий поток: тянет комнату и чат параллельно — меньше лага и тряски */
+#ifdef _WIN32
+static unsigned __stdcall win_thread_main(void *arg){ thread_main(arg); return 0; }
+#endif
 static void *reader_thread(void *arg) {
     char resp[RESP];
     char chat_resp[CHAT_RESP];
@@ -460,11 +576,18 @@ static void *reader_thread(void *arg) {
     }
     return NULL;
 }
+#ifdef _WIN32
+static unsigned __stdcall win_reader_thread(void *arg){ reader_thread(arg); return 0; }
+#endif
 static void make_uid(void) {
     struct timespec t; unsigned long a,b; int local=0;
     clock_gettime(CLOCK_MONOTONIC,&t);
     a=(unsigned long)time(NULL)^((unsigned long)t.tv_nsec<<8);
+#ifdef _WIN32
+    b=(unsigned long)_getpid()^(unsigned long)(uintptr_t)&local;
+#else
     b=(unsigned long)getpid()^(unsigned long)(uintptr_t)&local;
+#endif
     snprintf(net.uid,sizeof(net.uid),"%08lx%08lx",a&0xfffffffful,b&0xfffffffful);
 }
 void net_connect(const char *url,const char *room) {
@@ -481,16 +604,26 @@ void net_connect(const char *url,const char *room) {
     snprintf(net.room,sizeof(net.room),"%s",(room&&*room)?room:"main");
     if(!net.uid[0])make_uid();
     net.started=1;net.status=NET_CONNECTING;net.run=1;unlock();
-    if(pthread_create(&net.thread,NULL,thread_main,NULL)){lock();net.run=0;net.status=NET_ERROR;unlock();LOGERR("network error: cannot start writer thread");return;}
+#ifdef _WIN32
+    net.thread=ds_thread_start(win_thread_main,NULL);
+#else
+    net.thread=ds_thread_start(thread_main,NULL);
+#endif
+    if(!net.thread){lock();net.run=0;net.status=NET_ERROR;unlock();LOGERR("network error: cannot start writer thread");return;}
     net.writer_created=1;
-    if(pthread_create(&net.rthread,NULL,reader_thread,NULL)){net.run=0;pthread_join(net.thread,NULL);net.writer_created=0;status(NET_ERROR);LOGERR("network error: cannot start reader thread");return;}
+#ifdef _WIN32
+    net.rthread=ds_thread_start(win_reader_thread,NULL);
+#else
+    net.rthread=ds_thread_start(reader_thread,NULL);
+#endif
+    if(!net.rthread){net.run=0;ds_thread_join(net.thread);net.writer_created=0;status(NET_ERROR);LOGERR("network error: cannot start reader thread");return;}
     net.reader_created=1;
     LOG("connect %s/%s (write %dms read %dms)",net.base,net.room,WRITE_TICK,READ_TICK);
 }
 void net_disconnect(void) {
     net.run=0;
-    if(net.writer_created){pthread_join(net.thread,NULL);net.writer_created=0;}
-    if(net.reader_created){pthread_join(net.rthread,NULL);net.reader_created=0;}
+    if(net.writer_created){ds_thread_join(net.thread);net.writer_created=0;}
+    if(net.reader_created){ds_thread_join(net.rthread);net.reader_created=0;}
     lock();net.status=NET_OFFLINE;net.slot=-1;net.count=0;memset(net.players,0,sizeof(net.players));memset(net.bullets,0,sizeof(net.bullets));unlock();
 }
 void net_publish(double x,double y,double a,double hp,double alive) {
@@ -501,14 +634,10 @@ void net_publish(double x,double y,double a,double hp,double alive) {
 void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot,double tr) {
     if(!net.started) return;
     lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; net.my_bullet.tr=tr; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
-    /* пуля вылетает сразу — пушим без ожидания секундной синхронизации, чтобы не летела из воздуха через секунду */
     if(active>0.5){
-        /* быстрый push в отдельном коротком запросе */
         push_bullet_only();
     }
 }
-
-/* ---------- Чат API ---------- */
 void net_chat_send(const char *text){
     if(!net.started || !text || !*text) return;
     if(!net.run) return;
@@ -560,7 +689,6 @@ double net_chat_time(double idx){
     lock(); if(i>=0 && i<net.chat_count) v=(double)net.chats[i].ts; unlock();
     return v;
 }
-
 static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }

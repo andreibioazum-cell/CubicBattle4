@@ -10,10 +10,6 @@
 #include <android/input.h>
 #include <android/keycodes.h>
 #include <android/native_activity.h>
-
-// Только arm64/arm32 Android 10 — без кроссплатформы
-// + системная клавиатура Android через JNI (ANativeActivity_showSoftInput),
-//   символы приходят из KeyEvent.getUnicodeChar с учётом раскладки
 static int init_done = 0;
 static int script_active = 0;
 static AAssetManager *script_assets = NULL;
@@ -21,24 +17,20 @@ static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
 static uint64_t prev_frame_ns = 0;
 static struct android_app *g_app = NULL;
-
 static uint64_t monotonic_ns(void) {
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
     return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
 }
-
 static void protected_init(void *userdata) { init((AAssetManager *)userdata); }
 static void protected_reset(void *userdata) { (void)userdata; reset(); }
 static void protected_update(void *userdata) { (void)userdata; update(); }
 static void protected_draw(void *userdata) { draw((Buffer *)userdata); }
-
 typedef struct { float x; float y; int action; int id; } TouchCall;
 static void protected_touch(void *userdata) {
     TouchCall *call = (TouchCall *)userdata;
     touch(call->x, call->y, call->action, call->id);
 }
-
 static void mark_script_failed(const char *hook) {
     const char *message = ds_runtime_error_message();
     __android_log_print(ANDROID_LOG_ERROR, "DimScript","script hook '%s' stopped: %s; scheduling a restart",hook?hook:"unknown",message);
@@ -50,7 +42,6 @@ static void mark_script_failed(const char *hook) {
     restart_after_ns = monotonic_ns() + delay;
     ++restart_failures;
 }
-
 static int start_script(int reset_state) {
     int ok;
     ds_clear_runtime_error(); ds_clear_script_restart(); ds_string_pool_reset();
@@ -60,12 +51,10 @@ static int start_script(int reset_state) {
     if (!ok) { mark_script_failed("init"); return 0; }
     ds_clear_runtime_error(); restart_failures = 0; script_active = 1; return 1;
 }
-
 static void restart_script_if_due(void) {
     uint64_t now; if (script_active || !ds_script_restart_requested()) return;
     now = monotonic_ns(); if (now < restart_after_ns) return; (void)start_script(1);
 }
-
 static void handle_cmd(struct android_app *app, int32_t command) {
     if (!app) { ds_runtime_error("no app"); return; }
     g_app = app;
@@ -77,7 +66,7 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             if (screen_w <= 0 || screen_h <= 0) { init_done = 0; return; }
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
-            ds_set_activity(app->activity); // для клавиатуры JNI
+            ds_set_activity(app->activity);
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
             init_done = 1; script_active = 0; restart_failures = 0;
             ds_clear_script_restart(); (void)start_script(0); break;
@@ -87,13 +76,11 @@ static void handle_cmd(struct android_app *app, int32_t command) {
         default: break;
     }
 }
-
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     (void)app;
     if (!event) return 0;
     int32_t type = AInputEvent_getType(event);
     if (type == AINPUT_EVENT_TYPE_MOTION) {
-        // тачи — джойстик и атака
         if (!script_active) return 0;
         TouchCall call; size_t count, index, i; int raw, action;
         count = AMotionEvent_getPointerCount(event); if (count == 0) return 0;
@@ -111,7 +98,6 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         }
         return 1;
     } else if (type == AINPUT_EVENT_TYPE_KEY) {
-        // системная клавиатура: любой символ раскладки, включая кириллицу
         int32_t action = AKeyEvent_getAction(event);
         int32_t key = AKeyEvent_getKeyCode(event);
         int32_t meta = AKeyEvent_getMetaState(event);
@@ -125,7 +111,6 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     }
     return 0;
 }
-
 void android_main(struct android_app *app) {
     Buffer frame = {0}; if (!app) return;
     app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
@@ -170,6 +155,5 @@ void android_main(struct android_app *app) {
         }
     }
 }
-
 #include "graphics.c"
 #include "net.c"
