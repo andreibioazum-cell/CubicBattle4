@@ -1,22 +1,27 @@
 function draw_lobby
 rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-110,0xFFFFFF
-if language_ru==1; button "Играть",(screen_w-btn_w)/2,screen_h/2-20,btn_w,btn_h; button "Настройки",(screen_w-btn_w)/2,screen_h/2+60,btn_w,btn_h
-else; button "Play",(screen_w-btn_w)/2,screen_h/2-20,btn_w,btn_h; button "Settings",(screen_w-btn_w)/2,screen_h/2+60,btn_w,btn_h; end
+button tr_play(),(screen_w-btn_w)/2,screen_h/2-20,btn_w,btn_h
+button tr_settings(),(screen_w-btn_w)/2,screen_h/2+60,btn_w,btn_h
 end
 function draw_modes
 rect 0,0,screen_w,screen_h,0x1a1a2e
-if language_ru==1; button "Соло",(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h; button "Онлайн",(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h
-else; button "Solo",(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h; button "Online",(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h; end; draw_back
+button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h
+button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h
+draw_back
 end
 function draw_settings
 rect 0,0,screen_w,screen_h,0x1a1a2e
-if language_ru==1; button "English",(screen_w-btn_w)/2,screen_h/2-110,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2-30,btn_w,btn_h; button "Консоль",(screen_w-btn_w)/2,screen_h/2+50,btn_w,btn_h
-else; button "English",(screen_w-btn_w)/2,screen_h/2-110,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2-30,btn_w,btn_h; button "Console",(screen_w-btn_w)/2,screen_h/2+50,btn_w,btn_h; end; draw_back
+num x=(screen_w-btn_w)/2, y=screen_h/2-110
+button "English",x,y,btn_w,btn_h
+button "Русский",x,y+80,btn_w,btn_h
+button "日本語",x,y+160,btn_w,btn_h
+button tr_console(),x,y+240,btn_w,btn_h
+draw_back
 end
 function draw_console
 // фон идеально чёрный, текст: зелёный = лог, красный = ошибка
 rect 0,0,screen_w,screen_h,0xFF000000
-if language_ru==1; ctext "Консоль",48,0xFF00FF00; else; ctext "Console",48,0xFF00FF00; end
+ctext tr_console(),48,0xFF00FF00
 num total=console_count(), lh=30, max=floor((screen_h-230)/lh)
 if max<3; max=3; end; if max>22; max=22; end
 num cy=100, i=0, li=0, col=0
@@ -29,8 +34,9 @@ end
 cy=cy+lh; i=i+1
 end
 num bw=(screen_w-76)/3, by=screen_h-78
-if language_ru==1; button "Вверх",16,by,bw,btn_h; button "Вниз",screen_w/2-bw/2,by,bw,btn_h; button "Очистить",screen_w-bw-16,by,bw,btn_h
-else; button "Up",16,by,bw,btn_h; button "Down",screen_w/2-bw/2,by,bw,btn_h; button "Clear",screen_w-bw-16,by,bw,btn_h; end
+button tr_up(),16,by,bw,btn_h
+button tr_down(),screen_w/2-bw/2,by,bw,btn_h
+button tr_clear(),screen_w-bw-16,by,bw,btn_h
 draw_back
 end
 function touch_lobby num x, num y, num action
@@ -49,5 +55,12 @@ return
 end
 num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end
 if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 5; end
-else if game_state==4; if y>=screen_h/2-150&&y<=screen_h/2-70; language_ru=0; else if y>=screen_h/2-70&&y<=screen_h/2+10; language_ru=1; else if y>=screen_h/2+10&&y<=screen_h/2+90; start_transition 6; end; end
+else if game_state==4
+num sy=screen_h/2-110
+if y>=sy-8&&y<sy+72; language=0
+else if y>=sy+72&&y<sy+152; language=1
+else if y>=sy+152&&y<sy+232; language=2
+else if y>=sy+232&&y<=sy+312; start_transition 6
+end
+end
 end

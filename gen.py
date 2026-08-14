@@ -10,9 +10,9 @@ from ds_compiler import DimScriptCompiler
 
 def find_ds_files(directory):
     files = glob.glob(os.path.join(directory, '*.ds'))
-    # Новый порядок без цифр: config -> entities -> ui -> menu -> battle -> engine
+    # Новый порядок без цифр: config -> locale -> entities -> ui -> menu -> battle -> engine
     # Если старые файлы с цифрами — сортируем как раньше.
-    order = ["config.ds", "entities.ds", "ui.ds", "chat.ds", "menu.ds", "battle.ds", "engine.ds",
+    order = ["config.ds", "locale.ds", "entities.ds", "ui.ds", "chat.ds", "menu.ds", "battle.ds", "engine.ds",
              "core.ds", "game.ds"]
     # Если есть файлы без цифр в имени, используем order
     has_plain = any(os.path.basename(f) in order or not os.path.basename(f)[0].isdigit() for f in files)
