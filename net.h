@@ -8,26 +8,8 @@
 #define NET_CONNECTING 1
 #define NET_PLAYING 3
 #define NET_ERROR 4
-#define NET_AUTH_ERROR 5
-
-#define NET_ACCOUNT_EMPTY 0
-#define NET_ACCOUNT_CHECKING 1
-#define NET_ACCOUNT_READY 2
-#define NET_ACCOUNT_WRONG_PASSWORD 3
-#define NET_ACCOUNT_INVALID 4
-#define NET_ACCOUNT_ERROR 5
 
 void net_set_java_vm(JavaVM *vm);
-void net_set_storage_path(const char *path);
-
-/* Уникальный аккаунт по нику. Пароль проверяется в Firebase, но никогда не
- * публикуется и не сохраняется открытым текстом на устройстве. */
-void net_account_configure(const char *url, const char *room);
-void net_account_login(const char *nickname, const char *password);
-double net_account_status(void);
-const char *net_account_nickname(void);
-const char *net_account_error(void);
-
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_publish(double x, double y, double a, double hp, double alive);
@@ -41,7 +23,6 @@ double net_player_y(double slot);
 double net_player_angle(double slot);
 double net_player_hp(double slot);
 double net_player_alive(double slot);
-const char *net_player_nickname(double slot);
 double net_player_bullet_active(double slot);
 double net_player_bullet_x(double slot);
 double net_player_bullet_y(double slot);
@@ -55,7 +36,6 @@ void net_chat_send(const char *text);
 double net_chat_count(void);
 const char *net_chat_text(double idx);
 const char *net_chat_uid(double idx);
-const char *net_chat_nickname(double idx);
 double net_chat_time(double idx);
 
 #endif
