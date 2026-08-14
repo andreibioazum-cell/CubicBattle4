@@ -3,6 +3,9 @@
 #endif
 
 #define WIN32_LEAN_AND_MEAN
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
@@ -221,7 +224,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 case 'F': {
                     if (!g_key_space && !keyboard_visible()) {
                         g_key_space = 1;
-                        // Trigger attack button / aiming
                         extern double atk_x, atk_y;
                         TouchCall call = { (float)atk_x, (float)atk_y, 0, 99 };
                         if (g_script_active) {
@@ -231,7 +233,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     break;
                 }
                 case VK_ESCAPE: {
-                    // Back button
                     extern double back_y, btn_w, btn_h;
                     float bx = (float)((screen_w - btn_w) / 2.0 + btn_w / 2.0);
                     float by = (float)(back_y + btn_h / 2.0);
@@ -289,10 +290,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     }
 }
 
-static void render_frame_to_window(HWND hwnd, HDC hdc) {
+static void render_frame_to_window(HDC hdc) {
     if (!g_frame.pixels || g_frame.width <= 0 || g_frame.height <= 0) return;
 
-    // Use BITMAPV5HEADER or BITMAPINFO with BI_BITFIELDS to display RGBA directly
     struct {
         BITMAPINFOHEADER bmiHeader;
         DWORD bmiColors[3];
@@ -301,13 +301,13 @@ static void render_frame_to_window(HWND hwnd, HDC hdc) {
     memset(&bmi, 0, sizeof(bmi));
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = g_frame.width;
-    bmi.bmiHeader.biHeight = -g_frame.height; // top-down
+    bmi.bmiHeader.biHeight = -g_frame.height;
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_BITFIELDS;
-    bmi.bmiColors[0] = 0x000000FF; // Red
-    bmi.bmiColors[1] = 0x0000FF00; // Green
-    bmi.bmiColors[2] = 0x00FF0000; // Blue
+    bmi.bmiColors[0] = 0x000000FF;
+    bmi.bmiColors[1] = 0x0000FF00;
+    bmi.bmiColors[2] = 0x00FF0000;
 
     StretchDIBits(
         hdc,
@@ -324,7 +324,6 @@ int main_loop(HINSTANCE hInstance, int nCmdShow) {
     QueryPerformanceFrequency(&g_perf_freq);
     QueryPerformanceCounter(&g_prev_counter);
 
-    // Register Window Class
     WNDCLASSEXA wc;
     memset(&wc, 0, sizeof(wc));
     wc.cbSize = sizeof(wc);
@@ -378,7 +377,6 @@ int main_loop(HINSTANCE hInstance, int nCmdShow) {
     ShowWindow(g_hwnd, nCmdShow);
     UpdateWindow(g_hwnd);
 
-    // Main Game Loop
     MSG msg;
     while (g_running) {
         while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -391,7 +389,6 @@ int main_loop(HINSTANCE hInstance, int nCmdShow) {
         }
         if (!g_running) break;
 
-        // Calculate dt
         LARGE_INTEGER current_counter;
         QueryPerformanceCounter(&current_counter);
         dt = (double)(current_counter.QuadPart - g_prev_counter.QuadPart) / (double)g_perf_freq.QuadPart;
@@ -410,7 +407,6 @@ int main_loop(HINSTANCE hInstance, int nCmdShow) {
             }
         }
 
-        // Draw frame
         if (ds_graphics_begin_frame(&g_frame)) {
             int draw_failed = 0;
             if (g_script_active) {
@@ -432,9 +428,7 @@ int main_loop(HINSTANCE hInstance, int nCmdShow) {
             }
         }
 
-        render_frame_to_window(g_hwnd, hdc);
-
-        // Cap frame rate ~60 FPS
+        render_frame_to_window(hdc);
         Sleep(1);
     }
 

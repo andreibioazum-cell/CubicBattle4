@@ -40,7 +40,7 @@ struct Texture {
 };
 
 typedef enum {
-    DC_RECT, DC_ROUND, DC_CIRCLE, DC_RING, DC_LINE, DC_TEX, DC_TEXT
+    DS_CMD_RECT, DS_CMD_ROUND, DS_CMD_CIRCLE, DS_CMD_RING, DS_CMD_LINE, DS_CMD_TEX, DS_CMD_TEXT
 } DCCmd;
 typedef struct {
     DCCmd t;
@@ -145,7 +145,8 @@ static void render_circle(Buffer *b, float x, float y, float rad, uint32_t c) {
         int sy = cy+dy; if (sy < 0 || sy >= b->height) continue;
         int hw = (int)sqrt((double)(r2 - (long long)dy*dy));
         int l = cx-hw, rr = cx+hw+1;
-        if (l < 0) l = 0; if (rr > b->width) rr = b->width;
+        if (l < 0) l = 0;
+        if (rr > b->width) rr = b->width;
         if (l < rr) paint_span(b->pixels + sy*b->stride + l, rr-l, c);
     }
 }
@@ -161,7 +162,8 @@ static void render_ring(Buffer *b, float x, float y, float rad, float th, uint32
         int ih = -1;
         if (abs(dy) <= in) ih = (int)sqrt((double)(i2 - (long long)dy*dy));
         int l = cx-oh, rr = cx+oh+1;
-        if (l < 0) l = 0; if (rr > b->width) rr = b->width;
+        if (l < 0) l = 0;
+        if (rr > b->width) rr = b->width;
         if (ih < 0) {
             if (l < rr) paint_span(b->pixels + sy*b->stride + l, rr-l, c);
         } else {
@@ -173,11 +175,7 @@ static void render_ring(Buffer *b, float x, float y, float rad, float th, uint32
     }
 }
 
-/* Растрируем толстый отрезок через расстояние до сегмента. Концы прямые:
- * пиксели, чья проекция лежит за пределами [0, 1], не рисуются, поэтому
- * линия выглядит ровной, а не «таблеткой» с круглыми срезами.
- * Каждый пиксель смешивается с фоном, поэтому полупрозрачный прицел
- * действительно остаётся полупрозрачным. */
+/* Растрируем толстый отрезок через расстояние до сегмента. Концы прямые */
 static void render_line(Buffer *b, float x1, float y1, float x2, float y2, float th, uint32_t c) {
     if (!b || !isfinite(x1+y1+x2+y2+th) || th <= 0) return;
     float dx = x2-x1, dy = y2-y1, len2 = dx*dx + dy*dy;
@@ -219,7 +217,6 @@ static Texture *textures;
 static DSFont *font;
 static int font_tried;
 
-/* ttf_font.c определяется ниже, но мы зовём его функции раньше. */
 DSFont *ds_font_create(const uint8_t *data, size_t size, int ph);
 void ds_font_destroy(DSFont *font);
 const DSFontGlyph *ds_font_glyph(const DSFont *font, uint32_t cp);
@@ -398,7 +395,6 @@ static void draw_tx_unrot(Buffer *b, const Texture *t, float x, float y, float s
     if (x >= b->width || y >= b->height || x+w <= 0 || y+h <= 0) return;
     int l = cl_floor(floorf(x), b->width), t0 = cl_floor(floorf(y), b->height);
     int r = cl_ceil(ceilf(x+w), b->width),  bo = cl_ceil(ceilf(y+h), b->height);
-    /* Непрозрачный PNG в масштабе 1:1 с целыми координатами — memcpy по строкам. */
     if (sc == 1.0f && x == floorf(x) && y == floorf(y) && t->opaque && l == (int)x && t0 == (int)y) {
         int sl = l - (int)x, st = t0 - (int)y;
         for (int sy = t0; sy < bo; sy++) {
@@ -413,10 +409,12 @@ static void draw_tx_unrot(Buffer *b, const Texture *t, float x, float y, float s
     }
     for (int sy = t0; sy < bo; sy++) {
         int src_y = (int)(((float)sy + 0.5f - y) / sc);
-        if (src_y < 0) src_y = 0; if (src_y >= t->h) src_y = t->h - 1;
+        if (src_y < 0) src_y = 0;
+        if (src_y >= t->h) src_y = t->h - 1;
         for (int sx = l; sx < r; sx++) {
             int src_x = (int)(((float)sx + 0.5f - x) / sc);
-            if (src_x < 0) src_x = 0; if (src_x >= t->w) src_x = t->w - 1;
+            if (src_x < 0) src_x = 0;
+            if (src_x >= t->w) src_x = t->w - 1;
             b->pixels[sy*b->stride + sx] = blend(b->pixels[sy*b->stride + sx], t->pixels[src_y*t->w + src_x]);
         }
     }
@@ -431,7 +429,6 @@ static void draw_tx_rot(Buffer *b, const Texture *t, float x, float y, float ang
         float py = (float)sy + 0.5f - cy;
         for (int sx = l; sx < r; sx++) {
             float px = (float)sx + 0.5f - cx;
-            /* Обратный поворот: R(-angle) * (px, py) → координаты в текстуре. */
             int tx = (int)floorf((px*ca + py*sa)/sc + t->w*0.5f);
             int ty = (int)floorf((-px*sa + py*ca)/sc + t->h*0.5f);
             if (tx < 0 || tx >= t->w || ty < 0 || ty >= t->h) continue;
@@ -442,8 +439,6 @@ static void draw_tx_rot(Buffer *b, const Texture *t, float x, float y, float ang
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-/* Спрайт крутится на любой угол — игрок смотрит ровно туда, куда наклонён
- * джойстик, а не только влево/вправо. */
 static void draw_tx(Buffer *b, const Texture *t, float x, float y, float a, float sc) {
     if (!b || !t || !t->pixels || !isfinite(x+y+a+sc) || sc <= 0) return;
     if (fabsf(a) < 0.0005f) { draw_tx_unrot(b, t, x, y, sc); return; }
@@ -469,13 +464,13 @@ static void flush(void) {
     for (size_t i = 0; i < cmd_n; i++) {
         DC *c = &cmds[i];
         switch (c->t) {
-            case DC_RECT:  render_rect(cur_buf, c->v.rc.x, c->v.rc.y, c->v.rc.w, c->v.rc.h, c->v.rc.c); break;
-            case DC_ROUND: render_roundrect(cur_buf, c->v.rr.x, c->v.rr.y, c->v.rr.w, c->v.rr.h, c->v.rr.r, c->v.rr.c); break;
-            case DC_CIRCLE: render_circle(cur_buf, c->v.ci.x, c->v.ci.y, c->v.ci.r, c->v.ci.c); break;
-            case DC_RING:   render_ring(cur_buf, c->v.rg.x, c->v.rg.y, c->v.rg.r, c->v.rg.th, c->v.rg.c); break;
-            case DC_LINE:   render_line(cur_buf, c->v.ln.x1, c->v.ln.y1, c->v.ln.x2, c->v.ln.y2, c->v.ln.th, c->v.ln.c); break;
-            case DC_TEX:    draw_tx(cur_buf, c->v.tx.tx, c->v.tx.x, c->v.tx.y, c->v.tx.a, c->v.tx.sc); break;
-            case DC_TEXT:   render_text_now(cur_buf, c->v.tt.s, c->v.tt.x, c->v.tt.y, c->v.tt.c, c->v.tt.sc); break;
+            case DS_CMD_RECT:   render_rect(cur_buf, c->v.rc.x, c->v.rc.y, c->v.rc.w, c->v.rc.h, c->v.rc.c); break;
+            case DS_CMD_ROUND:  render_roundrect(cur_buf, c->v.rr.x, c->v.rr.y, c->v.rr.w, c->v.rr.h, c->v.rr.r, c->v.rr.c); break;
+            case DS_CMD_CIRCLE: render_circle(cur_buf, c->v.ci.x, c->v.ci.y, c->v.ci.r, c->v.ci.c); break;
+            case DS_CMD_RING:   render_ring(cur_buf, c->v.rg.x, c->v.rg.y, c->v.rg.r, c->v.rg.th, c->v.rg.c); break;
+            case DS_CMD_LINE:   render_line(cur_buf, c->v.ln.x1, c->v.ln.y1, c->v.ln.x2, c->v.ln.y2, c->v.ln.th, c->v.ln.c); break;
+            case DS_CMD_TEX:    draw_tx(cur_buf, c->v.tx.tx, c->v.tx.x, c->v.tx.y, c->v.tx.a, c->v.tx.sc); break;
+            case DS_CMD_TEXT:   render_text_now(cur_buf, c->v.tt.s, c->v.tt.x, c->v.tt.y, c->v.tt.c, c->v.tt.sc); break;
         }
     }
 }
@@ -497,41 +492,39 @@ void ds_set_asset_manager(AAssetManager *a) {
 int png_load(const char *n) { return load_png(n) != NULL; }
 
 void rect(float x, float y, float w, float h, uint32_t c) {
-    DC *p = push(DC_RECT); if (!p) return;
+    DC *p = push(DS_CMD_RECT); if (!p) return;
     p->v.rc.x=x; p->v.rc.y=y; p->v.rc.w=w; p->v.rc.h=h; p->v.rc.c=pack_c(c);
 }
 void roundrect(float x, float y, float w, float h, float r, uint32_t c) {
-    DC *p = push(DC_ROUND); if (!p) return;
+    DC *p = push(DS_CMD_ROUND); if (!p) return;
     p->v.rr.x=x; p->v.rr.y=y; p->v.rr.w=w; p->v.rr.h=h; p->v.rr.r=r; p->v.rr.c=pack_c(c);
 }
 void circle(float x, float y, float r, uint32_t c) {
-    DC *p = push(DC_CIRCLE); if (!p) return;
+    DC *p = push(DS_CMD_CIRCLE); if (!p) return;
     p->v.ci.x=x; p->v.ci.y=y; p->v.ci.r=r; p->v.ci.c=pack_c(c);
 }
 void ring(float x, float y, float r, float t, uint32_t c) {
-    DC *p = push(DC_RING); if (!p) return;
+    DC *p = push(DS_CMD_RING); if (!p) return;
     p->v.rg.x=x; p->v.rg.y=y; p->v.rg.r=r; p->v.rg.th=t; p->v.rg.c=pack_c(c);
 }
 void line(float x1, float y1, float x2, float y2, float thickness, uint32_t c) {
-    DC *p = push(DC_LINE); if (!p) return;
+    DC *p = push(DS_CMD_LINE); if (!p) return;
     p->v.ln.x1=x1; p->v.ln.y1=y1; p->v.ln.x2=x2; p->v.ln.y2=y2;
     p->v.ln.th=thickness; p->v.ln.c=pack_c(c);
 }
 void tex(float x, float y, const char *name, float a, float s) {
     if (!frame_open) return;
     Texture *t = load_png(name); if (!t) return;
-    DC *p = push(DC_TEX); if (!p) return;
+    DC *p = push(DS_CMD_TEX); if (!p) return;
     p->v.tx.x=x; p->v.tx.y=y; p->v.tx.a=a; p->v.tx.sc=s; p->v.tx.tx=t;
 }
 void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
     if (!frame_open || !s || !ensure_font()) return;
-    DC *p = push(DC_TEXT); if (!p) return;
+    DC *p = push(DS_CMD_TEXT); if (!p) return;
     p->v.tt.s=s; p->v.tt.x=x; p->v.tt.y=y; p->v.tt.sc=sc; p->v.tt.c=pack_c(c);
 }
 void text(const char *s, float x, float y, uint32_t c) { text_scaled(s, x, y, c, 1.0f); }
 
-/* text_ink_width/height — реальные границы отрисовки (pen стартует
- * в x - 'S'.bearing_x, baseline в y + 'S'.bearing_top). */
 int text_ink_width(const char *s) {
     if (!s || !ensure_font()) return 0;
     const DSFontGlyph *ref = ds_font_glyph(font, 'S');
@@ -564,7 +557,6 @@ int text_ink_height(const char *s) {
     }
     return first ? 0 : (int)(maxB - minT + 0.5f);
 }
-/* Смещение верхней кромки чернил относительно y отрисовки. */
 int text_ink_top(const char *s) {
     if (!s || !ensure_font()) return 0;
     const DSFontGlyph *ref = ds_font_glyph(font, 'S');
@@ -585,7 +577,6 @@ int ds_graphics_init(AAssetManager *a) { if (amgr != a) { ds_release_assets(); a
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || !b->pixels || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;
     cur_buf = b; frame_open = 1; cmd_n = 0;
-    /* Очистка раз в кадр: старое содержимое буфера не должно светиться. */
     clear_buf(b, pack_c(0x00000000));
     return 1;
 }
@@ -594,7 +585,6 @@ void ds_graphics_end_frame(void) {
     flush(); cmd_n = 0; frame_open = 0; cur_buf = NULL;
 }
 void ds_graphics_cancel_frame(void) { cmd_n = 0; frame_open = 0; cur_buf = NULL; }
-/* Экран ошибки: показывает не только последнее сообщение, а всю консоль */
 void ds_graphics_error_screen(const char *m) {
     if (!cur_buf) return;
     clear_buf(cur_buf, pack_c(0xff1c0b10));
@@ -626,5 +616,4 @@ void ds_graphics_shutdown(void) {
     free(cmds); cmds = NULL; cmd_cap = 0; cmd_n = 0;
 }
 
-/* TTF-загрузчик и функции измерения/поиска глифов подключаются в конец. */
 #include "ttf_font.c"

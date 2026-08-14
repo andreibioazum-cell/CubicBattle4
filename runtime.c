@@ -3,8 +3,14 @@
 #include <stdio.h>
 #include <time.h>
 
-#if defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MINGW32__)
+#if defined(_WIN32) && !defined(__CYGWIN__)
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
 #include <windows.h>
+#endif
+
+#if defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MINGW32__)
 static CRITICAL_SECTION ds_console_lock;
 static int ds_console_lock_inited = 0;
 static void console_lock_init(void) {
@@ -32,8 +38,7 @@ static int ds_console_type_buf[DS_CONSOLE_MAX];
 static int ds_console_head = 0;   /* индекс следующей записи (кольцо) */
 static int ds_console_count = 0;  /* сколько всего строк хранится */
 
-/* копии для чтения из игрового потока — защищены мьютексом,
- * чтобы сетевые потоки не перезаписали строку во время отрисовки */
+/* копии для чтения из игрового потока — защищены мьютексом */
 #define DS_CONSOLE_READ_SLOTS 8
 static char ds_console_read[DS_CONSOLE_READ_SLOTS][DS_CONSOLE_LINE_MAX];
 static int ds_console_read_pos = 0;
@@ -41,7 +46,6 @@ static int ds_console_read_pos = 0;
 static void console_add(const char *line, int is_error) {
     if (!line) return;
     char tmp[DS_CONSOLE_LINE_MAX];
-    /* одна строка — без переводов */
     size_t n = strlen(line);
     size_t w = 0;
     for (size_t i = 0; i < n && w + 1 < sizeof(tmp); i++) {
@@ -142,7 +146,6 @@ void ds_log_err(const char *format, ...) {
     console_add(tmp, 1);
 }
 
-/* потокобезопасная запись в консоль + logcat / stdout (для net.c и прочих потоков) */
 void ds_console_log(int is_error, const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];
     va_list args, copy;
@@ -293,7 +296,6 @@ void arr_set(DSArray* a, double idx, double v) {
     long i = (long)idx;
     if (i<0) return;
     if ((size_t)i>=a->len) {
-        // расширяем нулями
         while (a->len <= (size_t)i) arr_push(a, 0);
     }
     a->data[i] = v;
@@ -358,18 +360,21 @@ const char* file_read(const char* path){
     if(!path) return ds_track_string(ds_strdup(""));
     FILE *f=fopen(path,"rb");
     if(!f){
-        // пробуем с префиксами
         char buf[512];
         snprintf(buf,sizeof(buf),"game/assets/%s",path);
         f=fopen(buf,"rb");
         if(!f){ snprintf(buf,sizeof(buf),"assets/%s",path); f=fopen(buf,"rb"); }
     }
     if(!f) return ds_track_string(ds_strdup(""));
-    fseek(f,0,SEEK_END); long sz=ftell(f); fseek(f,0,SEEK_SET);
-    if(sz<0) sz=0; if(sz>10*1024*1024) sz=10*1024*1024;
+    fseek(f,0,SEEK_END);
+    long sz=ftell(f);
+    fseek(f,0,SEEK_SET);
+    if(sz<0) sz=0;
+    if(sz>10*1024*1024) sz=10*1024*1024;
     char *data=(char*)malloc(sz+1);
     if(!data){ fclose(f); return ds_track_string(ds_strdup("")); }
-    size_t r=fread(data,1,sz,f); fclose(f);
+    size_t r=fread(data,1,sz,f);
+    fclose(f);
     data[r]='\0';
     return ds_track_string(data);
 }
@@ -395,7 +400,7 @@ int file_exists(const char* path){
 }
 int file_del(const char* path){ if(!path) return 0; return remove(path)==0; }
 
-/* ---------- json (мини-парсер, использует логику из net.c) ---------- */
+/* ---------- json ---------- */
 static const char* skip_ws(const char* p){ while(p&&*p&&( *p==' '||*p=='\n'||*p=='\r'||*p=='\t')) p++; return p; }
 static double parse_number(const char* p){ char *e; double v=strtod(p,&e); return v; }
 double json_get_num(const char* json, const char* path){
@@ -448,9 +453,7 @@ int json_get_bool(const char* json, const char* path){
     return parse_number(pos)!=0;
 }
 
-/* ---------- сеть высокого уровня (обёртка над http в net.c) ---------- */
-const char* http_get(const char* url);
-const char* http_post(const char* url, const char* body);
+/* ---------- сеть высокого уровня ---------- */
 const char* http_get(const char* url){
     if(!url) return ds_track_string(ds_strdup(""));
     if(strncmp(url,"http://",7)!=0 && strncmp(url,"https://",8)!=0){
@@ -520,16 +523,14 @@ void keyboard_type(const char *text){
     }
     kb_text[kb_len]='\0';
 }
-/* стираем целый UTF-8 символ, а не один байт — иначе кириллица «ломается» */
 void keyboard_backspace(void){
     while(kb_len>0){
         unsigned char c=(unsigned char)kb_text[--kb_len];
         kb_text[kb_len]='\0';
-        if((c & 0xC0) != 0x80) break;   /* дошли до ведущего байта */
+        if((c & 0xC0) != 0x80) break;
     }
 }
 
-/* Кодовая точка -> UTF-8 в буфер ввода (кириллица и прочий юникод) */
 static void kb_append_cp(unsigned int cp){
     char u[5]; int n=0;
     if(cp<0x80){ u[0]=(char)cp; n=1; }
@@ -541,8 +542,6 @@ static void kb_append_cp(unsigned int cp){
 }
 
 #ifdef __ANDROID__
-/* JNI: KeyEvent(action, keycode).getUnicodeChar(metaState) — настоящий символ
- * системной клавиатуры с учётом раскладки, Shift и Caps. */
 static unsigned int kb_unicode(int keycode, int meta){
     JNIEnv *env=NULL; JavaVM *vm; jclass cls; jmethodID ctor, get_uni;
     jobject ev; jint uni=0; int attached=0;
@@ -558,7 +557,7 @@ static unsigned int kb_unicode(int keycode, int meta){
     ctor=(*env)->GetMethodID(env,cls,"<init>","(II)V");
     get_uni=(*env)->GetMethodID(env,cls,"getUnicodeChar","(I)I");
     if(!ctor||!get_uni) goto done;
-    ev=(*env)->NewObject(env,cls,ctor,(jint)0,(jint)keycode);  /* ACTION_DOWN */
+    ev=(*env)->NewObject(env,cls,ctor,(jint)0,(jint)keycode);
     if(!ev||(*env)->ExceptionCheck(env)) goto done;
     uni=(*env)->CallIntMethod(env,ev,get_uni,(jint)meta);
     if((*env)->ExceptionCheck(env)) uni=0;
@@ -577,12 +576,10 @@ int keyboard_handle_key(int keycode, int action, int meta){
     if(keycode==AKEYCODE_FORWARD_DEL){ keyboard_backspace(); return 1; }
     if(keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER){ kb_enter=1; return 1; }
     if(keycode==AKEYCODE_SPACE){ kb_append_cp(' '); return 1; }
-    /* настоящий символ с учётом раскладки/Shift — работает и для кириллицы */
     {
         unsigned int cp = kb_unicode(keycode, meta);
         if(cp>=0x20 && cp!=0x7F){ kb_append_cp(cp); return 1; }
     }
-    /* запасной путь, если JNI недоступен */
     if(keycode>=AKEYCODE_A && keycode<=AKEYCODE_Z){ kb_append_cp((unsigned int)('a'+(keycode-AKEYCODE_A))); return 1; }
     if(keycode>=AKEYCODE_0 && keycode<=AKEYCODE_9){ kb_append_cp((unsigned int)('0'+(keycode-AKEYCODE_0))); return 1; }
     if(keycode==AKEYCODE_COMMA){ kb_append_cp(','); return 1; }
@@ -597,7 +594,6 @@ int keyboard_handle_key(int keycode, int action, int meta){
     return 0;
 }
 
-/* ACTION_MULTIPLE / вставка строки из системной клавиатуры */
 void keyboard_commit_utf8(const char *utf8){
     if(!utf8) return;
     size_t n=strlen(utf8);
