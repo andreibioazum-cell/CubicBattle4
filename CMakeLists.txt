@@ -50,8 +50,10 @@ elseif(WIN32 OR MINGW)
         user32
         kernel32
         shell32
-        m
     )
+    if(NOT MSVC)
+        target_link_libraries(Game PRIVATE m)
+    endif()
     
     # Копирование ассетов в директорию сборки рядом с Game.exe
     add_custom_command(TARGET Game POST_BUILD
@@ -73,4 +75,11 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/game"
     )
     target_link_libraries(Game PRIVATE m pthread)
+    
+    add_custom_command(TARGET Game POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/game/assets"
+            "$<TARGET_FILE_DIR:Game>/assets"
+        COMMENT "Copying game assets next to Game"
+    )
 endif()
