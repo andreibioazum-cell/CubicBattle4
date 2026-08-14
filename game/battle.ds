@@ -51,14 +51,21 @@ if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex-fx+sx,ey-fy+sy)==1; return 
 return 0
 end
 function update_aim
-// прицел-хитбокс появляется мгновенно и так же быстро, но плавно, гаснет;
-// держим его видимым и во время анимации удара (пока punch_left>0)
-if (aiming==1||punch_left>0)&&finished==0; aim_a=aim_a+dt/aim_fade_in; if aim_a>1; aim_a=1; end
+// хитбокс показывается ТОЛЬКО во время самого удара (пока меняется текстура и
+// наносится урон), при простом прицеливании его не видно
+if punch_left>0&&finished==0; aim_a=1
 else; aim_a=aim_a-dt/aim_fade_out; if aim_a<0; aim_a=0; end; end
 if punch_cd>0; punch_cd=punch_cd-dt; if punch_cd<0; punch_cd=0; end; end
 end
+function follow_punch
+// хитбокс удара привязан к игроку: при ходьбе во время удара он не отстаёт
+// (не «улетает назад»), а всегда остаётся перед персонажем
+if punch_left<=0; return; end
+punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle)
+end
 function update_game
 update_aim; if finished!=0; return; end; move_player; if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
+follow_punch
 // урон наносится во время анимации удара (смены спрайта), пока активен хитбокс
 if punch_left>0&&punch.active==1&&punch.hit==0
 if enemy_in_punch()==1
@@ -91,6 +98,7 @@ end
 function update_online
 if online_ready==0&&net_slot()>=0; place_online; end; read_remotes; update_aim; if finished!=0||online_ready==0; return; end; move_player
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
+follow_punch
 if punch.active==1&&punch_left<=0; punch.active=0; net_publish_bullet punch.ox/screen_w,punch.oy/screen_h,punch.dx,punch.dy,0,punch.shot,0; end
 // частая публикация позиции каждый кадр (net.c пишет каждые 50мс) — без лага
 num alive=1; if player.hp<=0; alive=0; end; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive
@@ -116,14 +124,13 @@ finished=result; aiming=0; aim_id=-1; aim_a=0; punch.active=0; punch.hit=0; punc
 end
 function draw_field
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end; rect 0,0,screen_w,screen_h,0x33000000
-// вместо прицела — сам хитбокс удара: чёрный, слегка прозрачный прямоугольник,
-// повёрнутый по направлению взгляда игрока (длина punch_reach, ширина punch_width).
-// Пока идёт анимация удара, хитбокс зафиксирован в точке/направлении удара.
+// хитбокс удара: чёрный, слегка прозрачный прямоугольник, повёрнутый по направлению
+// взгляда игрока (длина punch_reach, ширина punch_width). Рисуется только в момент
+// удара (когда меняется текстура и наносится урон) и всегда следует за игроком.
 if aim_a>0&&finished==0
 num aa=floor(aim_a*102)
 if aa>0
 num px=player.x, py=player.y, pdx=cos(player.angle), pdy=sin(player.angle)
-if punch_left>0; px=punch.x; py=punch.y; pdx=punch.dx; pdy=punch.dy; end
 num ax=px+pdx*punch_reach, ay=py+pdy*punch_reach
 // Цвет всегда чисто чёрный, прозрачность задаётся только альфа-каналом.
 line px,py,ax,ay,punch_width,aa*0x1000000
