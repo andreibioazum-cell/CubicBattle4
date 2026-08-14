@@ -143,7 +143,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             update_movement(); return 0;
         }
         case WM_CLOSE: {
-            int res = MessageBoxW(hwnd, L"Вы точно хотите выйти?", L"Выход", MB_YESNO | MB_ICONQUESTION);
+            wchar_t w_msg[128] = {0}, w_title[64] = {0};
+            MultiByteToWideChar(CP_UTF8, 0, "Вы точно хотите выйти?", -1, w_msg, 128);
+            MultiByteToWideChar(CP_UTF8, 0, "Выход", -1, w_title, 64);
+            int res = MessageBoxW(hwnd, w_msg, w_title, MB_YESNO | MB_ICONQUESTION);
             if (res == IDYES) {
                 g_running = 0;
                 DestroyWindow(hwnd);

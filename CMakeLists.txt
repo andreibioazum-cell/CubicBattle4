@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.16)
 project(CubicBattle C)
 set(CMAKE_C_STANDARD 99)
 
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(GAME_C "${CMAKE_CURRENT_SOURCE_DIR}/game/game.c")
 file(GLOB_RECURSE DS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/game/*.ds")
