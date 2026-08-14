@@ -112,12 +112,13 @@ end
 function draw_field
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end; rect 0,0,screen_w,screen_h,0x33000000
 // Хитбокс и прицел удара отрисовываются ТОЛЬКО во время самого удара (punch_left > 0)
+// Цвет: #242621 (RGB: 36, 38, 33)
 if aim_a>0&&punch_left>0&&finished==0
-num aa=floor(aim_a*102)
+num aa=floor(aim_a*160)
 if aa>0
 num px=punch.x, py=punch.y, pdx=punch.dx, pdy=punch.dy
 num ax=px+pdx*punch_reach, ay=py+pdy*punch_reach
-line px,py,ax,ay,punch_width,aa*0x1000000+0x555555
+line px,py,ax,ay,punch_width,aa*0x1000000+0x242621
 end
 end
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
