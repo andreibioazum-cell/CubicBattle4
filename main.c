@@ -11,79 +11,54 @@
 #include <android/keycodes.h>
 #include <android/native_activity.h>
 
-// Только arm64/arm32 Android 10 — без кроссплатформы
-// + системная клавиатура Android через JNI (ANativeActivity_showSoftInput),
-//   символы приходят из KeyEvent.getUnicodeChar с учётом раскладки
-static int init_done = 0;
-static int script_active = 0;
+static int init_done = 0, script_active = 0;
 static AAssetManager *script_assets = NULL;
-static uint64_t restart_after_ns = 0;
+static uint64_t restart_after_ns = 0, prev_frame_ns = 0;
 static unsigned int restart_failures = 0;
-static uint64_t prev_frame_ns = 0;
 static struct android_app *g_app = NULL;
 
 static uint64_t monotonic_ns(void) {
     struct timespec now;
-    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
-    return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
+    return clock_gettime(CLOCK_MONOTONIC, &now) == 0 ? (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec : 0;
 }
-
-static void protected_init(void *userdata) { init((AAssetManager *)userdata); }
-static void protected_reset(void *userdata) { (void)userdata; reset(); }
-static void protected_update(void *userdata) { (void)userdata; update(); }
-static void protected_draw(void *userdata) { draw((Buffer *)userdata); }
-
-typedef struct { float x; float y; int action; int id; } TouchCall;
-static void protected_touch(void *userdata) {
-    TouchCall *call = (TouchCall *)userdata;
-    touch(call->x, call->y, call->action, call->id);
-}
+static void protected_init(void *u) { init((AAssetManager *)u); }
+static void protected_reset(void *u) { (void)u; reset(); }
+static void protected_update(void *u) { (void)u; update(); }
+static void protected_draw(void *u) { draw((Buffer *)u); }
+typedef struct { float x, y; int action, id; } TouchCall;
+static void protected_touch(void *u) { TouchCall *c = (TouchCall *)u; touch(c->x, c->y, c->action, c->id); }
 
 static void mark_script_failed(const char *hook) {
-    const char *message = ds_runtime_error_message();
-    __android_log_print(ANDROID_LOG_ERROR, "DimScript","script hook '%s' stopped: %s; scheduling a restart",hook?hook:"unknown",message);
-    ds_console_log(1, "script error: hook '%s' stopped: %s; restarting", hook?hook:"unknown", message);
+    const char *msg = ds_runtime_error_message();
+    ds_console_log(1, "script error in '%s': %s", hook ? hook : "?", msg);
     unsigned int shift = restart_failures < 5 ? restart_failures : 5;
-    uint64_t delay = 1000000000ull << shift;
-    script_active = 0;
-    ds_request_script_restart();
-    restart_after_ns = monotonic_ns() + delay;
+    script_active = 0; ds_request_script_restart();
+    restart_after_ns = monotonic_ns() + (1000000000ull << shift);
     ++restart_failures;
 }
 
-static int start_script(int reset_state) {
-    int ok;
+static int start_script(int rst) {
     ds_clear_runtime_error(); ds_clear_script_restart(); ds_string_pool_reset();
-    if (reset_state) { ok = ds_call_protected(protected_reset, NULL, "reset"); if (!ok) { mark_script_failed("reset"); return 0; } }
-    ds_clear_runtime_error();
-    ok = ds_call_protected(protected_init, script_assets, "init");
-    if (!ok) { mark_script_failed("init"); return 0; }
-    ds_clear_runtime_error(); restart_failures = 0; script_active = 1; return 1;
+    if (rst && !ds_call_protected(protected_reset, NULL, "reset")) { mark_script_failed("reset"); return 0; }
+    if (!ds_call_protected(protected_init, script_assets, "init")) { mark_script_failed("init"); return 0; }
+    restart_failures = 0; script_active = 1; return 1;
 }
 
-static void restart_script_if_due(void) {
-    uint64_t now; if (script_active || !ds_script_restart_requested()) return;
-    now = monotonic_ns(); if (now < restart_after_ns) return; (void)start_script(1);
-}
-
-static void handle_cmd(struct android_app *app, int32_t command) {
-    if (!app) { ds_runtime_error("no app"); return; }
+static void handle_cmd(struct android_app *app, int32_t cmd) {
+    if (!app) return;
     g_app = app;
-    switch (command) {
+    switch (cmd) {
         case APP_CMD_INIT_WINDOW:
             if (!app->window) { init_done = 0; return; }
-            screen_w = ANativeWindow_getWidth(app->window);
-            screen_h = ANativeWindow_getHeight(app->window);
+            screen_w = ANativeWindow_getWidth(app->window); screen_h = ANativeWindow_getHeight(app->window);
             if (screen_w <= 0 || screen_h <= 0) { init_done = 0; return; }
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
-            ds_set_activity(app->activity); // для клавиатуры JNI
+            ds_set_activity(app->activity);
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
-            init_done = 1; script_active = 0; restart_failures = 0;
-            ds_clear_script_restart(); (void)start_script(0); break;
-        case APP_CMD_TERM_WINDOW: init_done = 0; script_active = 0; ds_graphics_shutdown(); break;
-        case APP_CMD_GAINED_FOCUS: break;
-        case APP_CMD_LOST_FOCUS: break;
+            init_done = 1; script_active = restart_failures = 0;
+            ds_clear_script_restart(); start_script(0); break;
+        case APP_CMD_TERM_WINDOW: init_done = script_active = 0; ds_graphics_shutdown(); break;
         default: break;
     }
 }
@@ -92,18 +67,15 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     (void)app;
     if (!event) return 0;
     int32_t type = AInputEvent_getType(event);
-    if (type == AINPUT_EVENT_TYPE_MOTION) {
-        // тачи — джойстик и атака
-        if (!script_active) return 0;
-        TouchCall call; size_t count, index, i; int raw, action;
-        count = AMotionEvent_getPointerCount(event); if (count == 0) return 0;
-        raw = AMotionEvent_getAction(event); action = raw & AMOTION_EVENT_ACTION_MASK;
+    if (type == AINPUT_EVENT_TYPE_MOTION && script_active) {
+        TouchCall call; size_t count = AMotionEvent_getPointerCount(event); if (!count) return 0;
+        int raw = AMotionEvent_getAction(event), action = raw & AMOTION_EVENT_ACTION_MASK;
         if (action == AMOTION_EVENT_ACTION_POINTER_DOWN) action = AMOTION_EVENT_ACTION_DOWN;
         else if (action == AMOTION_EVENT_ACTION_POINTER_UP) action = AMOTION_EVENT_ACTION_UP;
-        index = (size_t)((raw & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
-        if (index >= count) index = 0;
-        i = (action == AMOTION_EVENT_ACTION_MOVE) ? 0 : index;
-        count = (action == AMOTION_EVENT_ACTION_MOVE) ? count : index + 1;
+        size_t idx = (size_t)((raw & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+        if (idx >= count) idx = 0;
+        size_t i = (action == AMOTION_EVENT_ACTION_MOVE) ? 0 : idx;
+        count = (action == AMOTION_EVENT_ACTION_MOVE) ? count : idx + 1;
         for (; i < count; i++) {
             call.x = AMotionEvent_getX(event, i); call.y = AMotionEvent_getY(event, i);
             call.action = action; call.id = AMotionEvent_getPointerId(event, i);
@@ -111,16 +83,9 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         }
         return 1;
     } else if (type == AINPUT_EVENT_TYPE_KEY) {
-        // системная клавиатура: любой символ раскладки, включая кириллицу
-        int32_t action = AKeyEvent_getAction(event);
-        int32_t key = AKeyEvent_getKeyCode(event);
-        int32_t meta = AKeyEvent_getMetaState(event);
-        if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE) {
-            if (keyboard_handle_key(key, action, meta)) return 1;
-        }
-        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) {
-            return 0;
-        }
+        int32_t act = AKeyEvent_getAction(event), key = AKeyEvent_getKeyCode(event), meta = AKeyEvent_getMetaState(event);
+        if ((act == AKEY_EVENT_ACTION_DOWN || act == AKEY_EVENT_ACTION_MULTIPLE) && keyboard_handle_key(key, act, meta)) return 1;
+        if (key == AKEYCODE_BACK && act == AKEY_EVENT_ACTION_UP) return 0;
         return 1;
     }
     return 0;
@@ -129,41 +94,33 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
 void android_main(struct android_app *app) {
     Buffer frame = {0}; if (!app) return;
     app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
-    net_set_java_vm(app->activity->vm);
-    ds_set_activity(app->activity);
-    ds_log("DimScript Android 10 arm64/arm32 only + system keyboard (JNI)");
+    net_set_java_vm(app->activity->vm); ds_set_activity(app->activity);
     for (;;) {
         struct android_poll_source *source = NULL; int ident;
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
-            if (app->destroyRequested) { init_done = 0; script_active = 0; ds_graphics_shutdown(); return; }
+            if (app->destroyRequested) { init_done = script_active = 0; ds_graphics_shutdown(); return; }
         }
         if (!app->window || !init_done || app->destroyRequested) continue;
-        restart_script_if_due();
+        if (!script_active && ds_script_restart_requested() && monotonic_ns() >= restart_after_ns) start_script(1);
         if (script_active) {
             uint64_t now = monotonic_ns();
             dt = prev_frame_ns ? (double)(now - prev_frame_ns) / 1000000000.0 : 0.0;
             if (dt < 0.0) dt = 0.0; if (dt > 0.1) dt = 0.1;
             prev_frame_ns = now;
             if (!ds_call_protected(protected_update, NULL, "update")) mark_script_failed("update");
-            else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
         }
-        ANativeWindow_Buffer native_buffer;
-        if (ANativeWindow_lock(app->window, &native_buffer, NULL) == 0) {
-            int frame_valid;
-            frame.pixels = (uint32_t *)native_buffer.bits;
-            frame.width = native_buffer.width; frame.height = native_buffer.height; frame.stride = native_buffer.stride;
-            frame_valid = frame.pixels && frame.width > 0 && frame.height > 0 && frame.stride >= frame.width && native_buffer.format == WINDOW_FORMAT_RGBA_8888;
-            if (frame_valid && ds_graphics_begin_frame(&frame)) {
-                int draw_failed = 0;
+        ANativeWindow_Buffer nb;
+        if (ANativeWindow_lock(app->window, &nb, NULL) == 0) {
+            frame.pixels = (uint32_t *)nb.bits; frame.width = nb.width; frame.height = nb.height; frame.stride = nb.stride;
+            if (frame.pixels && frame.width > 0 && frame.height > 0 && ds_graphics_begin_frame(&frame)) {
                 if (script_active) {
-                    if (!ds_call_protected(protected_draw, &frame, "draw")) { mark_script_failed("draw"); draw_failed = 1; }
-                    else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
-                }
-                if (!script_active) {
-                    if (draw_failed || ds_script_has_error()) ds_graphics_error_screen(ds_runtime_error_message());
+                    if (!ds_call_protected(protected_draw, &frame, "draw")) mark_script_failed("draw");
+                    ds_graphics_end_frame();
+                } else {
+                    ds_graphics_error_screen(ds_runtime_error_message());
                     ds_graphics_cancel_frame();
-                } else ds_graphics_end_frame();
+                }
             }
             ANativeWindow_unlockAndPost(app->window);
         }

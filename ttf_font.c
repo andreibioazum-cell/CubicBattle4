@@ -1,30 +1,14 @@
-/* Минимальный TTF-загрузчик и растеризатор глифов в альфа-атлас.
- * Поддерживает форматы 4 и 12 cmap, простые и составные глифы.
- * Включается прямо в graphics.c — никаких отдельных translation units. */
-
 typedef struct DSFont DSFont;
-
 void ds_font_destroy(DSFont *font);
 
 #define DS_FONT_ATLAS_W 1024
 #define DS_FONT_ATLAS_H 1024
 #define DS_FONT_SS 4
 #define DS_FONT_MAX 256
-
-#define ARG_WORDS 0x0001
-#define ARG_XY 0x0002
-#define HAVE_SCALE 0x0008
-#define MORE 0x0020
-#define HAVE_XY_SCALE 0x0040
-#define HAVE_2X2 0x0080
-
 #define TAG(a,b,c,d) ((uint32_t)(a)<<24|(uint32_t)(b)<<16|(uint32_t)(c)<<8|(uint32_t)(d))
 
 typedef struct { float x, y; int on_curve; } DSPoint;
-typedef struct {
-    DSPoint *points; int pc, pp;
-    int *ends;     int cc, cp;
-} DSOutline;
+typedef struct { DSPoint *points; int pc, pp; int *ends; int cc, cp; } DSOutline;
 typedef struct { float x, y; } DSFPoint;
 typedef struct { DSFPoint *points; int count, cap; } DSFC;
 
@@ -38,460 +22,242 @@ struct DSFont {
     DSFontGlyph *glyphs; int gcount;
 };
 
-static int in_r(const DSFont *f, size_t o, size_t l) {
-    return f && o <= f->size && l <= f->size - o;
-}
-static uint16_t bu16(const DSFont *f, size_t o) {
-    if (!in_r(f, o, 2)) return 0;
-    return (uint16_t)((f->data[o]<<8)|f->data[o+1]);
-}
+static int in_r(const DSFont *f, size_t o, size_t l) { return f && o <= f->size && l <= f->size - o; }
+static uint16_t bu16(const DSFont *f, size_t o) { return in_r(f, o, 2) ? (uint16_t)((f->data[o]<<8)|f->data[o+1]) : 0; }
 static int16_t bs16(const DSFont *f, size_t o) { return (int16_t)bu16(f, o); }
 static uint32_t bu32(const DSFont *f, size_t o) {
-    if (!in_r(f, o, 4)) return 0;
-    return (uint32_t)f->data[o]<<24|(uint32_t)f->data[o+1]<<16|
-           (uint32_t)f->data[o+2]<<8|(uint32_t)f->data[o+3];
+    return in_r(f, o, 4) ? ((uint32_t)f->data[o]<<24|(uint32_t)f->data[o+1]<<16|(uint32_t)f->data[o+2]<<8|(uint32_t)f->data[o+3]) : 0;
 }
 static int tbound(const DSFont *f, uint32_t tag, uint32_t *off, uint32_t *len) {
     if (!f || !in_r(f, 0, 12)) return 0;
     uint16_t n = bu16(f, 4);
     for (size_t i = 0; i < n; i++) {
         size_t r = 12 + i*16;
-        if (!in_r(f, r, 16)) return 0;
-        if (bu32(f, r) == tag) {
+        if (in_r(f, r, 16) && bu32(f, r) == tag) {
             uint32_t a = bu32(f, r+8), l = bu32(f, r+12);
-            if (!in_r(f, a, l)) return 0;
-            if (off) *off = a; if (len) *len = l; return 1;
+            if (in_r(f, a, l)) { if (off) *off = a; if (len) *len = l; return 1; }
         }
     }
     return 0;
 }
 
 static void ol_init(DSOutline *o) { memset(o, 0, sizeof(*o)); }
-static void ol_free(DSOutline *o) {
-    if (!o) return;
-    free(o->points); free(o->ends); memset(o, 0, sizeof(*o));
-}
-static int ol_rsrv_p(DSOutline *o, int n) {
-    int need = o->pc + n, cap = o->pp ?: 32;
-    while (cap < need) { if (cap > 1e6) return 0; cap *= 2; }
-    DSPoint *p = (DSPoint *)realloc(o->points, (size_t)cap*sizeof(*p));
-    if (!p) return 0;
-    o->points = p; o->pp = cap; return 1;
-}
-static int ol_rsrv_c(DSOutline *o, int n) {
-    int need = o->cc + n, cap = o->cp ?: 8;
-    while (cap < need) cap *= 2;
-    int *e = (int *)realloc(o->ends, (size_t)cap*sizeof(*e));
-    if (!e) return 0;
-    o->ends = e; o->cp = cap; return 1;
-}
+static void ol_free(DSOutline *o) { if (o) { free(o->points); free(o->ends); memset(o, 0, sizeof(*o)); } }
 static int ol_add(DSOutline *o, const DSPoint *p, int n) {
-    if (n <= 0 || !ol_rsrv_p(o, n) || !ol_rsrv_c(o, 1)) return 0;
-    memcpy(o->points + o->pc, p, (size_t)n*sizeof(*p));
-    o->pc += n;
-    o->ends[o->cc++] = o->pc - 1;
+    if (n <= 0) return 0;
+    int np = o->pc + n, cp = o->pp ? o->pp : 32; while (cp < np) cp *= 2;
+    DSPoint *pts = (DSPoint *)realloc(o->points, (size_t)cp * sizeof(*pts)); if (!pts) return 0;
+    o->points = pts; o->pp = cp;
+    int nc = o->cc + 1, cpc = o->cp ? o->cp : 8; while (cpc < nc) cpc *= 2;
+    int *ends = (int *)realloc(o->ends, (size_t)cpc * sizeof(*ends)); if (!ends) return 0;
+    o->ends = ends; o->cp = cpc;
+    memcpy(o->points + o->pc, p, (size_t)n * sizeof(*p));
+    o->pc += n; o->ends[o->cc++] = o->pc - 1;
     return 1;
 }
 
 static int g_offs(const DSFont *f, int g, uint32_t *s, uint32_t *e) {
     if (!f || g < 0 || g >= f->ng) return 0;
-    uint32_t a, b;
-    if (f->loc_format == 0) {
-        a = (uint32_t)bu16(f, f->loca + (size_t)g*2) * 2;
-        b = (uint32_t)bu16(f, f->loca + (size_t)(g+1)*2) * 2;
-    } else {
-        a = bu32(f, f->loca + (size_t)g*4);
-        b = bu32(f, f->loca + (size_t)(g+1)*4);
-    }
+    uint32_t a = f->loc_format == 0 ? (uint32_t)bu16(f, f->loca + (size_t)g*2)*2 : bu32(f, f->loca + (size_t)g*4);
+    uint32_t b = f->loc_format == 0 ? (uint32_t)bu16(f, f->loca + (size_t)(g+1)*2)*2 : bu32(f, f->loca + (size_t)(g+1)*4);
     if (a > b || !in_r(f, (size_t)f->glyf + a, b - a)) return 0;
     if (s) *s = a; if (e) *e = b; return 1;
 }
 
-static int read_outline(const DSFont *f, int g, int depth, float a, float b, float c, float d,
-                        float tx, float ty, DSOutline *dst);
+static int read_outline(const DSFont *f, int g, int depth, float a, float b, float c, float d, float tx, float ty, DSOutline *dst);
 
-static int read_simple(const DSFont *f, uint32_t off, int nc, float a, float b, float c, float d,
-                       float tx, float ty, DSOutline *dst) {
+static int read_simple(const DSFont *f, uint32_t off, int nc, float a, float b, float c, float d, float tx, float ty, DSOutline *dst) {
     if (nc <= 0 || nc > 4096) return 1;
-    int *ends = (int *)malloc((size_t)nc*sizeof(*ends));
-    if (!ends) return 0;
+    int *ends = (int *)malloc((size_t)nc * sizeof(*ends)); if (!ends) return 0;
     for (int i = 0; i < nc; i++) ends[i] = (int)bu16(f, (size_t)f->glyf + off + 10 + i*2);
     int pc = ends[nc-1] + 1;
     if (pc <= 0 || pc > 200000) { free(ends); return 0; }
     size_t cur = (size_t)f->glyf + off + 10 + (size_t)nc*2;
-    int ilen = bu16(f, cur); cur += 2 + ilen;
-    if (!in_r(f, cur, 1)) { free(ends); return 0; }
-    int *flags = (int *)malloc((size_t)pc*sizeof(*flags));
+    cur += 2 + bu16(f, cur);
+    int *flags = (int *)malloc((size_t)pc * sizeof(*flags));
     DSPoint *pts = (DSPoint *)calloc((size_t)pc, sizeof(*pts));
     if (!flags || !pts) { free(ends); free(flags); free(pts); return 0; }
     int p = 0;
     while (p < pc) {
-        if (!in_r(f, cur, 1)) goto fail;
-        uint8_t fl = f->data[cur++];
-        flags[p++] = fl;
+        if (!in_r(f, cur, 1)) { free(ends); free(flags); free(pts); return 0; }
+        uint8_t fl = f->data[cur++]; flags[p++] = fl;
         int rep = (fl & 8) ? (int)f->data[cur++] : 0;
         while (rep-- > 0 && p < pc) flags[p++] = fl;
     }
     int x = 0;
     for (p = 0; p < pc; p++) {
         int fl = flags[p], dlt = 0;
-        if (fl & 2) { if (!in_r(f, cur, 1)) goto fail; dlt = f->data[cur++]; if (!(fl & 16)) dlt = -dlt; }
-        else if (!(fl & 16)) { if (!in_r(f, cur, 2)) goto fail; dlt = bs16(f, cur); cur += 2; }
+        if (fl & 2) { dlt = f->data[cur++]; if (!(fl & 16)) dlt = -dlt; }
+        else if (!(fl & 16)) { dlt = bs16(f, cur); cur += 2; }
         x += dlt; pts[p].x = (float)x; pts[p].on_curve = (fl & 1) != 0;
     }
     int y = 0;
     for (p = 0; p < pc; p++) {
         int fl = flags[p], dlt = 0;
-        if (fl & 4) { if (!in_r(f, cur, 1)) goto fail; dlt = f->data[cur++]; if (!(fl & 32)) dlt = -dlt; }
-        else if (!(fl & 32)) { if (!in_r(f, cur, 2)) goto fail; dlt = bs16(f, cur); cur += 2; }
+        if (fl & 4) { dlt = f->data[cur++]; if (!(fl & 32)) dlt = -dlt; }
+        else if (!(fl & 32)) { dlt = bs16(f, cur); cur += 2; }
         y += dlt; pts[p].y = (float)y;
     }
     int st = 0;
     for (int cn = 0; cn < nc; cn++) {
         int en = ends[cn], cnt = en - st + 1;
-        DSPoint *tr = (DSPoint *)malloc((size_t)cnt*sizeof(*tr));
-        if (!tr) goto fail;
+        DSPoint *tr = (DSPoint *)malloc((size_t)cnt * sizeof(*tr));
         for (int i = 0; i < cnt; i++) {
-            DSPoint in = pts[st + i];
-            tr[i].x = a*in.x + c*in.y + tx;
-            tr[i].y = b*in.x + d*in.y + ty;
-            tr[i].on_curve = in.on_curve;
+            DSPoint in = pts[st + i]; tr[i].x = a*in.x + c*in.y + tx; tr[i].y = b*in.x + d*in.y + ty; tr[i].on_curve = in.on_curve;
         }
-        if (!ol_add(dst, tr, cnt)) { free(tr); goto fail; }
-        free(tr); st = en + 1;
+        ol_add(dst, tr, cnt); free(tr); st = en + 1;
     }
     free(ends); free(flags); free(pts); return 1;
-fail:
-    free(ends); free(flags); free(pts); return 0;
 }
 
-static int read_composite(const DSFont *f, uint32_t off, int depth, float a, float b, float c, float d,
-                          float tx, float ty, DSOutline *dst) {
-    size_t cur = (size_t)f->glyf + off + 10;
-    int flags = MORE;
-    while (flags & MORE) {
-        if (!in_r(f, cur, 4)) return 0;
-        flags = bu16(f, cur);
-        int comp = bu16(f, cur + 2);
-        cur += 4;
-        int a1, a2;
-        if (flags & ARG_WORDS) { a1 = bs16(f, cur); a2 = bs16(f, cur+2); cur += 4; }
-        else { a1 = (int8_t)f->data[cur]; a2 = (int8_t)f->data[cur+1]; cur += 2; }
-        float ca=1, cb=0, cc=0, cd=1, dx=0, dy=0;
-        if (flags & ARG_XY) { dx = (float)a1; dy = (float)a2; }
-        if (flags & HAVE_SCALE) {
-            int16_t s = bs16(f, cur); ca = cd = (float)s/16384.0f; cur += 2;
-        } else if (flags & HAVE_XY_SCALE) {
-            ca = (float)bs16(f, cur)/16384.0f; cd = (float)bs16(f, cur+2)/16384.0f; cur += 4;
-        } else if (flags & HAVE_2X2) {
-            ca = (float)bs16(f, cur)/16384.0f;   cb = (float)bs16(f, cur+2)/16384.0f;
-            cc = (float)bs16(f, cur+4)/16384.0f; cd = (float)bs16(f, cur+6)/16384.0f; cur += 8;
-        }
-        /* P * C: координаты компоненты в локальном пространстве глифа. */
-        float na = a*ca + c*cb, nb = b*ca + d*cb, nc = a*cc + c*cd, nd = b*cc + d*cd;
-        float ntx = a*dx + c*dy + tx, nty = b*dx + d*dy + ty;
-        if (!read_outline(f, comp, depth+1, na, nb, nc, nd, ntx, nty, dst)) return 0;
+static int read_composite(const DSFont *f, uint32_t off, int depth, float a, float b, float c, float d, float tx, float ty, DSOutline *dst) {
+    size_t cur = (size_t)f->glyf + off + 10; int flags = 0x0020;
+    while (flags & 0x0020) {
+        flags = bu16(f, cur); int comp = bu16(f, cur + 2); cur += 4;
+        int a1 = (flags & 1) ? bs16(f, cur) : (int8_t)f->data[cur];
+        int a2 = (flags & 1) ? bs16(f, cur+2) : (int8_t)f->data[cur+1];
+        cur += (flags & 1) ? 4 : 2;
+        float ca=1, cb=0, cc=0, cd=1, dx=(flags & 2)?(float)a1:0, dy=(flags & 2)?(float)a2:0;
+        if (flags & 8) { ca = cd = (float)bs16(f, cur)/16384.0f; cur += 2; }
+        else if (flags & 0x0040) { ca = (float)bs16(f, cur)/16384.0f; cd = (float)bs16(f, cur+2)/16384.0f; cur += 4; }
+        else if (flags & 0x0080) { ca = (float)bs16(f, cur)/16384.0f; cb = (float)bs16(f, cur+2)/16384.0f; cc = (float)bs16(f, cur+4)/16384.0f; cd = (float)bs16(f, cur+6)/16384.0f; cur += 8; }
+        read_outline(f, comp, depth+1, a*ca + c*cb, b*ca + d*cb, a*cc + c*cd, b*cc + d*cd, a*dx + c*dy + tx, b*dx + d*dy + ty, dst);
     }
     return 1;
 }
 
-static int read_outline(const DSFont *f, int g, int depth, float a, float b, float c, float d,
-                        float tx, float ty, DSOutline *dst) {
-    uint32_t s, e;
-    if (depth > 16 || !g_offs(f, g, &s, &e)) return 0;
-    if (s == e) return 1;
-    if (!in_r(f, (size_t)f->glyf + s, 10)) return 0;
+static int read_outline(const DSFont *f, int g, int depth, float a, float b, float c, float d, float tx, float ty, DSOutline *dst) {
+    uint32_t s, e; if (depth > 16 || !g_offs(f, g, &s, &e) || s == e) return 0;
     int16_t cc = bs16(f, (size_t)f->glyf + s);
-    if (cc >= 0) return read_simple(f, s, cc, a, b, c, d, tx, ty, dst);
-    return read_composite(f, s, depth, a, b, c, d, tx, ty, dst);
+    return cc >= 0 ? read_simple(f, s, cc, a, b, c, d, tx, ty, dst) : read_composite(f, s, depth, a, b, c, d, tx, ty, dst);
 }
 
-static int flat_rsrv(DSFC *f, int n) {
-    int need = f->count + n, cap = f->cap ?: 32;
-    while (cap < need) cap *= 2;
-    DSFPoint *p = (DSFPoint *)realloc(f->points, (size_t)cap*sizeof(*p));
-    if (!p) return 0;
-    f->points = p; f->cap = cap; return 1;
-}
 static int flat_push(DSFC *f, float x, float y) {
-    if (!flat_rsrv(f, 1)) return 0;
+    if (f->count >= f->cap) { f->cap = f->cap ? f->cap * 2 : 32; f->points = (DSFPoint*)realloc(f->points, (size_t)f->cap * sizeof(DSFPoint)); }
     f->points[f->count].x = x; f->points[f->count].y = y; f->count++; return 1;
 }
-static int flat_q(DSFC *f, DSFPoint from, DSPoint c, DSFPoint to) {
-    for (int s = 1; s <= 8; s++) {
-        float t = (float)s/8.0f, u = 1-t;
-        if (!flat_push(f,
-            u*u*from.x + 2*u*t*c.x + t*t*to.x,
-            u*u*from.y + 2*u*t*c.y + t*t*to.y)) return 0;
-    }
-    return 1;
-}
-static int flatten(const DSPoint *p, int n, DSFC *flat) {
-    if (n <= 0) return 1;
-    int first_on = p[0].on_curve, idx, proc;
-    DSFPoint start, cur;
-    if (first_on) { start.x=p[0].x; start.y=p[0].y; idx=1; proc=1; }
-    else if (p[n-1].on_curve) { start.x=p[n-1].x; start.y=p[n-1].y; idx=0; proc=0; }
-    else { start.x=(p[n-1].x+p[0].x)*0.5f; start.y=(p[n-1].y+p[0].y)*0.5f; idx=0; proc=0; }
-    cur = start;
-    if (!flat_push(flat, start.x, start.y)) return 0;
+static void flatten(const DSPoint *p, int n, DSFC *flat) {
+    if (n <= 0) return;
+    DSFPoint start = p[0].on_curve ? (DSFPoint){p[0].x, p[0].y} : (DSFPoint){(p[n-1].x+p[0].x)*0.5f, (p[n-1].y+p[0].y)*0.5f};
+    DSFPoint cur = start; flat_push(flat, start.x, start.y);
+    int idx = p[0].on_curve ? 1 : 0, proc = p[0].on_curve ? 1 : 0;
     while (proc < n) {
         const DSPoint *one = &p[idx % n];
-        if (one->on_curve) {
-            cur.x=one->x; cur.y=one->y;
-            if (!flat_push(flat, cur.x, cur.y)) return 0;
-            idx++; proc++;
-        } else {
+        if (one->on_curve) { cur = (DSFPoint){one->x, one->y}; flat_push(flat, cur.x, cur.y); idx++; proc++; }
+        else {
             const DSPoint *two = &p[(idx+1) % n];
-            DSFPoint end;
-            if (two->on_curve) { end.x=two->x; end.y=two->y; idx+=2; proc+=2; }
-            else { end.x=(one->x+two->x)*0.5f; end.y=(one->y+two->y)*0.5f; idx++; proc++; }
-            if (!flat_q(flat, cur, *one, end)) return 0;
-            cur = end;
+            DSFPoint end = two->on_curve ? (DSFPoint){two->x, two->y} : (DSFPoint){(one->x+two->x)*0.5f, (one->y+two->y)*0.5f};
+            for (int s = 1; s <= 8; s++) {
+                float t = (float)s/8.0f, u = 1-t;
+                flat_push(flat, u*u*cur.x + 2*u*t*one->x + t*t*end.x, u*u*cur.y + 2*u*t*one->y + t*t*end.y);
+            }
+            cur = end; idx += two->on_curve ? 2 : 1; proc += two->on_curve ? 2 : 1;
         }
     }
-    if (fabsf(cur.x-start.x) > 0.001f || fabsf(cur.y-start.y) > 0.001f) {
-        if (!flat_push(flat, start.x, start.y)) return 0;
-    }
-    return 1;
 }
-
 static int inside(const DSFC *c, int n, float x, float y) {
     int in = 0;
     for (int i = 0; i < n; i++) {
-        const DSFC *poly = &c[i];
-        for (int k = 0, j = poly->count-1; k < poly->count; j = k++) {
-            float yi = poly->points[k].y, yj = poly->points[j].y;
-            if (((yi > y) != (yj > y)) &&
-                x < (poly->points[j].x-poly->points[k].x)*(y-yi)/(yj-yi+1e-6f)+poly->points[k].x)
-                in = !in;
+        for (int k = 0, j = c[i].count-1; k < c[i].count; j = k++) {
+            float yi = c[i].points[k].y, yj = c[i].points[j].y;
+            if (((yi > y) != (yj > y)) && (x < (c[i].points[j].x - c[i].points[k].x)*(y - yi)/(yj - yi + 1e-6f) + c[i].points[k].x)) in = !in;
         }
     }
     return in;
 }
 
-static int g_metrics(const DSFont *f, int g, int *adv, int *lsb) {
-    if (!f || g < 0 || g >= f->ng || !f->hmtx) return 0;
-    int m = g < f->nhm ? g : f->nhm - 1;
-    size_t o = (size_t)f->hmtx + (size_t)m*4;
-    if (adv) *adv = bu16(f, o);
-    if (lsb) {
-        size_t lo = g < f->nhm ? o+2 : (size_t)f->hmtx + (size_t)f->nhm*4 + (size_t)(g-f->nhm)*2;
-        *lsb = bs16(f, lo);
-    }
-    return 1;
-}
-
-static int cmap4_lk(const DSFont *f, uint32_t cp) {
-    if (!f->cmap4 || cp > 0xFFFF) return 0;
-    size_t b = f->cmap4;
-    uint16_t sc = bu16(f, b+6)/2;
-    for (uint16_t i = 0; i < sc; i++) {
-        uint16_t en = bu16(f, b+14+i*2);
-        uint16_t st = bu16(f, b+16+sc*2+i*2);
-        if (cp < st || cp > en) continue;
-        int16_t dlt = bs16(f, b+16+sc*4+i*2);
-        uint16_t rng = bu16(f, b+16+sc*6+i*2);
-        if (rng == 0) return ((int)cp + dlt) & 0xFFFF;
-        size_t ga = b+16+sc*6+i*2 + rng + (cp-st)*2;
-        uint16_t g = bu16(f, ga);
-        return g ? ((int)g + dlt) & 0xFFFF : 0;
-    }
-    return 0;
-}
-static int cmap12_lk(const DSFont *f, uint32_t cp) {
-    if (!f->cmap12) return 0;
-    size_t b = f->cmap12;
-    uint32_t n = bu32(f, b+12);
-    for (uint32_t i = 0; i < n; i++) {
-        size_t at = b+16+i*12;
-        uint32_t f1 = bu32(f, at), l1 = bu32(f, at+4);
-        if (cp >= f1 && cp <= l1) return (int)(bu32(f, at+8) + cp - f1);
-    }
-    return 0;
-}
 static int g_for(const DSFont *f, uint32_t cp) {
-    int g = cmap12_lk(f, cp);
-    if (!g) g = cmap4_lk(f, cp);
-    if (g < 0 || g >= f->ng) g = 0;
-    return g;
+    if (f->cmap12) {
+        uint32_t n = bu32(f, f->cmap12 + 12);
+        for (uint32_t i = 0; i < n; i++) {
+            size_t at = f->cmap12 + 16 + i*12; uint32_t f1 = bu32(f, at), l1 = bu32(f, at+4);
+            if (cp >= f1 && cp <= l1) return (int)(bu32(f, at+8) + cp - f1);
+        }
+    }
+    if (f->cmap4 && cp <= 0xFFFF) {
+        uint16_t sc = bu16(f, f->cmap4 + 6)/2;
+        for (uint16_t i = 0; i < sc; i++) {
+            uint16_t en = bu16(f, f->cmap4 + 14 + i*2), st = bu16(f, f->cmap4 + 16 + sc*2 + i*2);
+            if (cp >= st && cp <= en) {
+                int16_t dlt = bs16(f, f->cmap4 + 16 + sc*4 + i*2); uint16_t rng = bu16(f, f->cmap4 + 16 + sc*6 + i*2);
+                if (rng == 0) return ((int)cp + dlt) & 0xFFFF;
+                uint16_t g = bu16(f, f->cmap4 + 16 + sc*6 + i*2 + rng + (cp-st)*2);
+                return g ? ((int)g + dlt) & 0xFFFF : 0;
+            }
+        }
+    }
+    return 0;
 }
 
 static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
-    int gi = g_for(f, g->codepoint);
-    int adv_u = 0;
-    DSOutline ol;
-    int mnx=0, mxx=0, mny=0, mxy=0, has=0;
-    int st = 0;
-    int w, h;
-    DSFC *flat = NULL;
-    int fc = 0;
-    float s = f->scale;
-
-    g_metrics(f, gi, &adv_u, NULL);
-    g->advance = adv_u * s;
-    g->bearing_x = 0; g->bearing_top = 0;
-    g->width = 0; g->height = 0;
-    g->u0 = g->u1 = (float)ax / f->aw;
-    g->v0 = g->v1 = (float)ay / f->ah;
-
-    ol_init(&ol);
-    if (!read_outline(f, gi, 0, 1, 0, 0, 1, 0, 0, &ol)) { ol_free(&ol); return rh; }
-    for (int cn = 0; cn < ol.cc; cn++) {
-        int en = ol.ends[cn];
-        for (int p = st; p <= en; p++) {
-            int x = (int)lrintf(ol.points[p].x);
-            int y = (int)lrintf(ol.points[p].y);
-            if (!has || x < mnx) mnx = x; if (!has || x > mxx) mxx = x;
-            if (!has || y < mny) mny = y; if (!has || y > mxy) mxy = y;
-            has = 1;
-        }
-        st = en + 1;
+    int gi = g_for(f, g->codepoint), adv = bu16(f, f->hmtx + (size_t)(gi < f->nhm ? gi : f->nhm - 1)*4);
+    g->advance = adv * f->scale;
+    DSOutline ol; ol_init(&ol);
+    if (!read_outline(f, gi, 0, 1, 0, 0, 1, 0, 0, &ol) || !ol.pc) { ol_free(&ol); return rh; }
+    int mnx = (int)ol.points[0].x, mxx = mnx, mny = (int)ol.points[0].y, mxy = mny;
+    for (int p = 1; p < ol.pc; p++) {
+        int x = (int)ol.points[p].x, y = (int)ol.points[p].y;
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x; if (y < mny) mny = y; if (y > mxy) mxy = y;
     }
-    if (!has) { ol_free(&ol); return rh; }
-    w = (int)ceilf((mxx-mnx)*s) + 2; h = (int)ceilf((mxy-mny)*s) + 2;
+    int w = (int)ceilf((mxx - mnx) * f->scale) + 2, h = (int)ceilf((mxy - mny) * f->scale) + 2;
     if (w < 1) w = 1; if (h < 1) h = 1;
-    g->bearing_x = mnx * s; g->bearing_top = mxy * s;
-    g->width = w; g->height = h;
-
-    flat = (DSFC *)calloc((size_t)ol.cc, sizeof(*flat));
-    if (!flat) { ol_free(&ol); return rh; }
-    st = 0;
-    for (int cn = 0; cn < ol.cc; cn++) {
-        int en = ol.ends[cn];
-        if (!flatten(ol.points + st, en - st + 1, &flat[fc])) {
-            for (int i = 0; i <= fc; i++) free(flat[i].points);
-            free(flat); ol_free(&ol); return rh;
-        }
-        fc++; st = en + 1;
-    }
+    g->bearing_x = mnx * f->scale; g->bearing_top = mxy * f->scale; g->width = w; g->height = h;
+    DSFC *flat = (DSFC *)calloc((size_t)ol.cc, sizeof(*flat)); int st = 0;
+    for (int cn = 0; cn < ol.cc; cn++) { int en = ol.ends[cn]; flatten(ol.points + st, en - st + 1, &flat[cn]); st = en + 1; }
     for (int py = 0; py < h; py++) {
         for (int px = 0; px < w; px++) {
             int cov = 0;
-            for (int sy = 0; sy < DS_FONT_SS; sy++)
-                for (int sx = 0; sx < DS_FONT_SS; sx++) {
-                    float fx = mnx + ((float)px + ((float)sx+0.5f)/DS_FONT_SS) / s;
-                    float fy = mxy - ((float)py + ((float)sy+0.5f)/DS_FONT_SS) / s;
-                    if (inside(flat, fc, fx, fy)) cov++;
-                }
-            f->alpha[(size_t)(ay+py) * f->aw + (ax+px)] =
-                (uint8_t)((cov*255)/(DS_FONT_SS*DS_FONT_SS));
+            for (int sy = 0; sy < DS_FONT_SS; sy++) for (int sx = 0; sx < DS_FONT_SS; sx++) {
+                float fx = mnx + ((float)px + ((float)sx+0.5f)/DS_FONT_SS)/f->scale, fy = mxy - ((float)py + ((float)sy+0.5f)/DS_FONT_SS)/f->scale;
+                if (inside(flat, ol.cc, fx, fy)) cov++;
+            }
+            f->alpha[(size_t)(ay + py) * f->aw + (ax + px)] = (uint8_t)((cov * 255) / (DS_FONT_SS * DS_FONT_SS));
         }
     }
-    g->u0 = (float)ax / f->aw;       g->v0 = (float)ay / f->ah;
-    g->u1 = (float)(ax+w) / f->aw;   g->v1 = (float)(ay+h) / f->ah;
-    for (int cn = 0; cn < fc; cn++) free(flat[cn].points);
+    g->u0 = (float)ax / f->aw; g->v0 = (float)ay / f->ah; g->u1 = (float)(ax + w) / f->aw; g->v1 = (float)(ay + h) / f->ah;
+    for (int cn = 0; cn < ol.cc; cn++) free(flat[cn].points);
     free(flat); ol_free(&ol);
     return h > rh ? h : rh;
 }
 
-static int init_tables(DSFont *f) {
+DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
+    if (!data || size < 12) return NULL;
+    DSFont *f = (DSFont *)calloc(1, sizeof(*f)); if (!f) return NULL;
+    f->data = (uint8_t *)malloc(size); f->glyphs = (DSFontGlyph *)calloc(DS_FONT_MAX, sizeof(*f->glyphs));
+    f->alpha = (uint8_t *)calloc((size_t)DS_FONT_ATLAS_W * DS_FONT_ATLAS_H, 1);
+    memcpy(f->data, data, size); f->size = size; f->aw = DS_FONT_ATLAS_W; f->ah = DS_FONT_ATLAS_H;
     uint32_t l;
-    if (!tbound(f, TAG('h','e','a','d'), &f->head, &l) || l < 54 ||
-        !tbound(f, TAG('h','h','e','a'), &f->hhea, &l) || l < 36 ||
-        !tbound(f, TAG('h','m','t','x'), &f->hmtx, &l) ||
-        !tbound(f, TAG('m','a','x','p'), &f->maxp, &l) || l < 6 ||
-        !tbound(f, TAG('l','o','c','a'), &f->loca, &l) ||
-        !tbound(f, TAG('g','l','y','f'), &f->glyf, &l) ||
-        !tbound(f, TAG('c','m','a','p'), &f->cmap, &l) || l < 4) return 0;
-    f->upem = bu16(f, f->head+18);
-    f->loc_format = bs16(f, f->head+50);
-    f->ng = bu16(f, f->maxp+4);
-    f->nhm = bu16(f, f->hhea+34);
-    f->asc_u = bs16(f, f->hhea+4);
-    f->desc_u = bs16(f, f->hhea+6);
-    f->lg_u = bs16(f, f->hhea+8);
-    if (f->upem <= 0 || f->ng <= 0 || f->nhm <= 0) return 0;
+    if (!tbound(f, TAG('h','e','a','d'), &f->head, &l) || !tbound(f, TAG('h','h','e','a'), &f->hhea, &l) ||
+        !tbound(f, TAG('h','m','t','x'), &f->hmtx, &l) || !tbound(f, TAG('m','a','x','p'), &f->maxp, &l) ||
+        !tbound(f, TAG('l','o','c','a'), &f->loca, &l) || !tbound(f, TAG('g','l','y','f'), &f->glyf, &l) ||
+        !tbound(f, TAG('c','m','a','p'), &f->cmap, &l)) { ds_font_destroy(f); return NULL; }
+    f->upem = bu16(f, f->head+18); f->loc_format = bs16(f, f->head+50); f->ng = bu16(f, f->maxp+4); f->nhm = bu16(f, f->hhea+34);
+    f->asc_u = bs16(f, f->hhea+4); f->desc_u = bs16(f, f->hhea+6); f->lg_u = bs16(f, f->hhea+8);
     uint16_t n = bu16(f, f->cmap+2);
     for (uint16_t i = 0; i < n; i++) {
-        size_t r = f->cmap + 4 + (size_t)i*8;
-        uint16_t p = bu16(f, r), e = bu16(f, r+2);
-        uint32_t sub = f->cmap + bu32(f, r+4);
-        uint16_t fmt = bu16(f, sub);
-        if (fmt == 12 && (p == 3 || p == 0)) {
-            if (!f->cmap12 || (p == 3 && e == 10)) f->cmap12 = sub;
-        } else if (fmt == 4 && (p == 3 || p == 0)) {
-            if (!f->cmap4 || (p == 3 && e == 1)) f->cmap4 = sub;
-        }
+        uint16_t p = bu16(f, f->cmap + 4 + i*8), fmt = bu16(f, f->cmap + bu32(f, f->cmap + 4 + i*8 + 4));
+        if (fmt == 12 && (p == 3 || p == 0)) f->cmap12 = f->cmap + bu32(f, f->cmap + 4 + i*8 + 4);
+        else if (fmt == 4 && (p == 3 || p == 0) && !f->cmap4) f->cmap4 = f->cmap + bu32(f, f->cmap + 4 + i*8 + 4);
     }
-    return f->cmap4 || f->cmap12;
-}
-
-static int add_cp(DSFont *f, uint32_t cp) {
-    if (f->gcount >= DS_FONT_MAX) return 1;
-    for (int i = 0; i < f->gcount; i++) if (f->glyphs[i].codepoint == cp) return 1;
-    f->glyphs[f->gcount++].codepoint = cp;
-    return 1;
-}
-
-DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
-    if (!data || size < 12 || ph <= 0 || ph > 256) return NULL;
-    DSFont *f = (DSFont *)calloc(1, sizeof(*f));
-    if (!f) return NULL;
-    f->data = (uint8_t *)malloc(size);
-    f->glyphs = (DSFontGlyph *)calloc(DS_FONT_MAX, sizeof(*f->glyphs));
-    f->alpha = (uint8_t *)calloc((size_t)DS_FONT_ATLAS_W * DS_FONT_ATLAS_H, 1);
-    if (!f->data || !f->glyphs || !f->alpha) { ds_font_destroy(f); return NULL; }
-    memcpy(f->data, data, size);
-    f->size = size;
-    f->aw = DS_FONT_ATLAS_W; f->ah = DS_FONT_ATLAS_H;
-    if (!init_tables(f)) { ds_font_destroy(f); return NULL; }
-    f->scale = (float)ph / f->upem;
-    f->ascent = f->asc_u * f->scale;
-    f->line_h = (f->asc_u - f->desc_u + f->lg_u) * f->scale;
-    if (f->line_h < ph) f->line_h = (float)ph;
-
-    /* ASCII + кириллица для заголовка "Кубик Батл". Ё/ё не нужны. */
-    for (int cp = 32; cp <= 126; cp++) add_cp(f, (uint32_t)cp);
-    for (int cp = 0x0410; cp <= 0x044F; cp++) add_cp(f, (uint32_t)cp);
-    add_cp(f, '?');
-
+    f->scale = (float)ph / f->upem; f->ascent = f->asc_u * f->scale; f->line_h = (f->asc_u - f->desc_u + f->lg_u) * f->scale;
+    for (int cp = 32; cp <= 126; cp++) f->glyphs[f->gcount++].codepoint = (uint32_t)cp;
+    for (int cp = 0x0410; cp <= 0x044F; cp++) f->glyphs[f->gcount++].codepoint = (uint32_t)cp;
+    f->glyphs[f->gcount++].codepoint = '?';
     int ax = 1, ay = 1, rh = 0;
     for (int i = 0; i < f->gcount; i++) {
-        DSFontGlyph *gl = &f->glyphs[i];
-        int gw = 0;
-        int gi = g_for(f, gl->codepoint);
-        DSOutline ol; ol_init(&ol);
-        int st = 0, mnx = 0, mxx = 0, has = 0;
-        if (read_outline(f, gi, 0, 1, 0, 0, 1, 0, 0, &ol)) {
-            for (int cn = 0; cn < ol.cc; cn++) {
-                int en = ol.ends[cn];
-                for (int p = st; p <= en; p++) {
-                    int x = (int)lrintf(ol.points[p].x);
-                    if (!has || x < mnx) mnx = x;
-                    if (!has || x > mxx) mxx = x;
-                    has = 1;
-                }
-                st = en + 1;
-            }
-            if (has) gw = (int)ceilf((mxx - mnx) * f->scale) + 2;
-        }
-        ol_free(&ol);
-        if (gw < 1) gw = 1;
-        if (ax + gw + 1 >= f->aw) { ax = 1; ay += rh + 1; rh = 0; }
-        if (ay + ph + 2 >= f->ah) { ds_font_destroy(f); return NULL; }
-        int nh = bake_glyph(f, gl, ax, ay, rh);
-        ax += gl->width + 1;
+        int nh = bake_glyph(f, &f->glyphs[i], ax, ay, rh);
+        ax += f->glyphs[i].width + 1;
+        if (ax + 40 >= f->aw) { ax = 1; ay += rh + 1; rh = 0; }
         if (nh > rh) rh = nh;
     }
     return f;
 }
-
-void ds_font_destroy(DSFont *f) {
-    if (!f) return;
-    free(f->data); free(f->alpha); free(f->glyphs); free(f);
-}
-
+void ds_font_destroy(DSFont *f) { if (f) { free(f->data); free(f->alpha); free(f->glyphs); free(f); } }
 const DSFontGlyph *ds_font_glyph(const DSFont *f, uint32_t cp) {
     if (!f) return NULL;
-    const DSFontGlyph *fb = NULL;
-    for (int i = 0; i < f->gcount; i++) {
-        if (f->glyphs[i].codepoint == cp) return &f->glyphs[i];
-        if (f->glyphs[i].codepoint == '?') fb = &f->glyphs[i];
-    }
-    return fb;
+    for (int i = 0; i < f->gcount; i++) if (f->glyphs[i].codepoint == cp) return &f->glyphs[i];
+    return NULL;
 }
-
 int ds_font_aw(const DSFont *f) { return f ? f->aw : 0; }
 int ds_font_ah(const DSFont *f) { return f ? f->ah : 0; }
 const uint8_t *ds_font_alpha(const DSFont *f) { return f ? f->alpha : NULL; }
