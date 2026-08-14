@@ -14,17 +14,12 @@ if language_ru==1; button "English",(screen_w-btn_w)/2,screen_h/2-110,btn_w,btn_
 else; button "English",(screen_w-btn_w)/2,screen_h/2-110,btn_w,btn_h; button "Русский",(screen_w-btn_w)/2,screen_h/2-30,btn_w,btn_h; button "Console",(screen_w-btn_w)/2,screen_h/2+50,btn_w,btn_h; end; draw_back
 end
 function draw_console
-// фон идеально чёрный, текст: зелёный = лог, красный = ошибка
-rect 0,0,screen_w,screen_h,0xFF000000
-if language_ru==1; ctext "Консоль",48,0xFF00FF00; else; ctext "Console",48,0xFF00FF00; end
-num total=console_count(), lh=30, max=floor((screen_h-230)/lh)
-if max<3; max=3; end; if max>22; max=22; end
+rect 0,0,screen_w,screen_h,0xFF000000; if language_ru==1; ctext "Консоль",48,0xFF00FF00; else; ctext "Console",48,0xFF00FF00; end
+num total=console_count(), lh=30, max=floor((screen_h-230)/lh); if max<3; max=3; end; if max>22; max=22; end
 num cy=100, i=0, li=0, col=0
 loop i<max
 if console_scroll+i<total
-li=total-1-(console_scroll+i); col=0xFF00FF00
-if console_type(li)==1; col=0xFFFF0000; end
-text_scaled console_line(li),18,cy,col,0.75
+li=total-1-(console_scroll+i); col=0xFF00FF00; if console_type(li)==1; col=0xFFFF0000; end; text_scaled console_line(li),18,cy,col,0.75
 end
 cy=cy+lh; i=i+1
 end

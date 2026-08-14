@@ -1,116 +1,51 @@
 num chat_open=0, chat_scroll=0
 str chat_input=""
-// chat.ds — онлайн чат
-// Сообщения показываются только при открытом окне чата (chat_open == 1).
-// В мини-режиме отображается только аккуратная кнопка «Чат».
-
 function chat_button str label, num x, num y, num w, num h
-roundrect x,y,w,h,20,0x5F10A0
-num tw=text_ink_width(label)*0.5, th=text_ink_height(label)*0.5, tt=text_ink_top(label)*0.5
-text_scaled label,x+(w-tw)/2,y+(h-th)/2-tt,0xFFFFFF,0.5
+roundrect x,y,w,h,20,0x5F10A0; num tw=text_ink_width(label)*0.5, th=text_ink_height(label)*0.5, tt=text_ink_top(label)*0.5; text_scaled label,x+(w-tw)/2,y+(h-th)/2-tt,0xFFFFFF,0.5
 end
-
 function chat_send
-if str_len(chat_input)==0; return; end
-net_chat_send chat_input
-chat_input=""
-keyboard_clear
-chat_scroll=0
+if str_len(chat_input)==0; return; end; net_chat_send chat_input; chat_input=""; keyboard_clear; chat_scroll=0
 end
-
 function uid_short num idx
-c static char ub[8]
+c static char ub[8];
 c { const char *u = net_chat_uid(idx); int n = 0; while (u && u[n] && n < 6) { ub[n] = u[n]; n++; } ub[n] = 0; }
-str s=ub
-return s
+str s=ub; return s
 end
-
 function draw_chat
 if game_state!=5; return; end
 if chat_open==0
-// Только кнопка «Чат», без лишних сообщений поверх игрового поля
-if language_ru==1; button "Чат",16,56,120,44; else; button "Chat",16,56,120,44; end
-return
+if language_ru==1; button "Чат",16,56,120,44; else; button "Chat",16,56,120,44; end; return
 end
-
-// Полный экран чата
-rect 0,0,screen_w,screen_h,0xDD0F0F1A
-num pw=screen_w-40, ph=screen_h-40, px=20, py=20
-roundrect px,py,pw,ph,18,0xFF1E1E2F
+rect 0,0,screen_w,screen_h,0xDD0F0F1A; num pw=screen_w-40, ph=screen_h-40, px=20, py=20; roundrect px,py,pw,ph,18,0xFF1E1E2F
 if language_ru==1; ctext "Онлайн чат",py+14,0xFFFFFF; else; ctext "Online chat",py+14,0xFFFFFF; end
-
 num lx=px+16, lw=pw-32, lwd=lw-168, ly=py+50, lh=ph-160, line_h=26, maxl=floor(lh/line_h), total=net_chat_count(), start=total-maxl-chat_scroll
 if start<0; start=0; end
-if total==0
-text_scaled "No messages",lx,ly,0x8888AA,0.5
+if total==0; text_scaled "No messages",lx,ly,0x8888AA,0.5
 else
-num idx=start, yy=ly
-loop idx<total
-if yy+line_h>ly+lh; idx=total; else
-str line=uid_short(idx)+": "+net_chat_text(idx)
-if text_ink_width(line)>lwd-8; line=net_chat_text(idx); end
-text_scaled line,lx,yy,0xE0E0FF,0.5
-yy=yy+line_h
-idx=idx+1
+num idx=start, yy=ly; loop idx<total; if yy+line_h>ly+lh; idx=total; else; str line=uid_short(idx)+": "+net_chat_text(idx); if text_ink_width(line)>lwd-8; line=net_chat_text(idx); end; text_scaled line,lx,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1; end; end
 end
-end
-end
-
-roundrect px+pw-50,py+50,34,34,10,0x5F10A0; text "^",px+pw-38,py+54,0xFFFFFF
-roundrect px+pw-50,py+94,34,34,10,0x5F10A0; text "v",px+pw-38,py+98,0xFFFFFF
-
-num rx=px+pw-160, rw=144
-if language_ru==1
-chat_button "Закрыть",rx,py+150,rw,44
-chat_button "Клавиатура",rx,py+200,rw,44
-else
-chat_button "Close",rx,py+150,rw,44
-chat_button "Keyboard",rx,py+200,rw,44
-end
-
-num iy=py+ph-90, ih=52
-roundrect lx,iy,lw-116,ih,10,0xFF2A2A40
-str raw=keyboard_get_raw()
+roundrect px+pw-50,py+50,34,34,10,0x5F10A0; text "^",px+pw-38,py+54,0xFFFFFF; roundrect px+pw-50,py+94,34,34,10,0x5F10A0; text "v",px+pw-38,py+98,0xFFFFFF
+num rx=px+pw-160, rw=144; if language_ru==1; chat_button "Закрыть",rx,py+150,rw,44; chat_button "Клавиатура",rx,py+200,rw,44; else; chat_button "Close",rx,py+150,rw,44; chat_button "Keyboard",rx,py+200,rw,44; end
+num iy=py+ph-90, ih=52; roundrect lx,iy,lw-116,ih,10,0xFF2A2A40; str raw=keyboard_get_raw()
 if str_eq(raw,chat_input)==0; chat_input=keyboard_get_text(); end
 if keyboard_enter_pressed()==1; chat_send; end
-
-// Ровное вертикальное центрирование текста внутри поля ввода
 num ty=iy+17
-if str_len(chat_input)==0
-if language_ru==1; text_scaled "Введите сообщение...",lx+14,ty,0x666688,0.55; else; text_scaled "Type a message...",lx+14,ty,0x666688,0.55; end
-else
-text_scaled chat_input,lx+14,ty,0xFFFFFF,0.55
-end
-
+if str_len(chat_input)==0; if language_ru==1; text_scaled "Введите сообщение...",lx+14,ty,0x666688,0.55; else; text_scaled "Type a message...",lx+14,ty,0x666688,0.55; end
+else; text_scaled chat_input,lx+14,ty,0xFFFFFF,0.55; end
 if language_ru==1; chat_button "Отправить",lx+lw-110,iy+2,110,48; else; chat_button "Send",lx+lw-110,iy+2,110,48; end
 end
-
 function chat_hit num x, num y, num bx, num by, num bw, num bh
 if x>=bx&&x<=bx+bw&&y>=by&&y<=by+bh; return 1; end; return 0
 end
-
 function touch_chat num x, num y, num action
 if action!=0; return 0; end
-if chat_open==0
-if chat_hit(x,y,16,56,120,44)==1; chat_open=1; keyboard_show; return 1; end
-return 0
-end
-
+if chat_open==0; if chat_hit(x,y,16,56,120,44)==1; chat_open=1; keyboard_show; return 1; end; return 0; end
 num pw=screen_w-40, ph=screen_h-40, px=20, py=20, lx=px+16, lw=pw-32
-if chat_hit(x,y,px+pw-50,py+50,34,34)==1
-chat_scroll=chat_scroll+1; if chat_scroll>net_chat_count(); chat_scroll=net_chat_count(); end; return 1
-end
-if chat_hit(x,y,px+pw-50,py+94,34,34)==1
-chat_scroll=chat_scroll-1; if chat_scroll<0; chat_scroll=0; end; return 1
-end
-
+if chat_hit(x,y,px+pw-50,py+50,34,34)==1; chat_scroll=chat_scroll+1; if chat_scroll>net_chat_count(); chat_scroll=net_chat_count(); end; return 1; end
+if chat_hit(x,y,px+pw-50,py+94,34,34)==1; chat_scroll=chat_scroll-1; if chat_scroll<0; chat_scroll=0; end; return 1; end
 num rx=px+pw-160, rw=144
 if chat_hit(x,y,rx,py+150,rw,44)==1; chat_open=0; keyboard_hide; return 1; end
-if chat_hit(x,y,rx,py+200,rw,44)==1
-if keyboard_visible()==1; keyboard_hide; else; keyboard_show; end
-return 1
-end
-
+if chat_hit(x,y,rx,py+200,rw,44)==1; if keyboard_visible()==1; keyboard_hide; else; keyboard_show; end; return 1; end
 num iy=py+ph-90, ih=52
 if chat_hit(x,y,lx,iy,lw-116,ih)==1; keyboard_show; return 1; end
 if chat_hit(x,y,lx+lw-110,iy+2,110,48)==1; chat_send; return 1; end
