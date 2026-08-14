@@ -33,7 +33,6 @@ double net_player_bullet_dy(double slot);
 double net_player_bullet_shot(double slot);
 double net_player_bullet_tr(double slot);
 
-/* чат */
 void net_chat_send(const char *text);
 double net_chat_count(void);
 const char *net_chat_text(double idx);

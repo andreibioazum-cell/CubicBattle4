@@ -37,9 +37,9 @@ def strip_comment(s):
         i += 1
     return ''.join(out)
 
-def scan(text):
-    n = len(text); depth = [0]*n; quoted = [False]*n; in_s = False; esc = False; lvl = 0
-    for i, c in enumerate(text):
+def scan(t):
+    n = len(t); depth, quoted, in_s, esc, lvl = [0]*n, [False]*n, False, False, 0
+    for i, c in enumerate(t):
         quoted[i] = in_s
         if esc: esc = False; continue
         if in_s:
@@ -53,7 +53,7 @@ def scan(text):
     return depth, quoted
 
 def split_top(text, sep):
-    depth, quoted = scan(text); parts = []; start = 0
+    depth, quoted = scan(text); parts, start = [], 0
     for i, c in enumerate(text):
         if depth[i] == 0 and not quoted[i] and c == sep:
             parts.append(text[start:i].strip()); start = i + 1
@@ -63,8 +63,8 @@ def split_top(text, sep):
 def find_assign(line):
     depth, quoted = scan(line)
     for i, c in enumerate(line):
-        if quoted[i] or depth[i]: continue
-        if c == '=' and (i == 0 or line[i-1] not in '<>!') and (i + 1 >= len(line) or line[i+1] != '='): return i
+        if not quoted[i] and not depth[i] and c == '=' and (i == 0 or line[i-1] not in '<>!') and (i + 1 >= len(line) or line[i+1] != '='):
+            return i
     return -1
 
 def used_outside_strings(text, name):
@@ -73,12 +73,10 @@ def used_outside_strings(text, name):
 
 class DimScriptCompiler:
     def __init__(self):
-        self.objects = {}; self.vars = {}; self.functions = {}; self.func_ret = {}
-        self.top = []; self.lines = []; self.errors = 0; self.output = []; self.indent = 0
-        self.scope = {}; self.blocks = []
+        self.objects, self.vars, self.functions, self.func_ret = {}, {}, {}, {}
+        self.top, self.lines, self.errors, self.output, self.indent, self.scope, self.blocks = [], [], 0, [], 0, {}, []
 
-    def _error(self, msg):
-        self.errors += 1; print(f"DimScript error: {msg}", file=sys.stderr)
+    def _error(self, msg): self.errors += 1; print(f"DimScript error: {msg}", file=sys.stderr)
 
     def _load(self, paths):
         for p in paths:
@@ -90,10 +88,8 @@ class DimScriptCompiler:
                         if line[0] == 'c' and len(line) > 1 and line[1] in ' \t"':
                             self.lines.append(line); continue
                         for part in split_top(line, ';'):
-                            q = part.strip()
-                            if q: self.lines.append(q)
-            except OSError as e:
-                self._error(f"cannot read '{p}': {e}"); return False
+                            if part.strip(): self.lines.append(part.strip())
+            except OSError as e: self._error(f"cannot read '{p}': {e}"); return False
         return True
 
     def _decl_list(self, line):
@@ -103,67 +99,49 @@ class DimScriptCompiler:
         if t not in TYPES and t not in self.objects and t != 'joy': return None
         res = []
         for part in split_top(rest, ','):
-            part = part.strip()
-            if not part: continue
-            mm = re.match(r'^(' + _NAME + r')(?:\s*=\s*(.*))?$', part)
+            if not part.strip(): continue
+            mm = re.match(r'^(' + _NAME + r')(?:\s*=\s*(.*))?$', part.strip())
             if not mm: return None
-            n, v = mm.group(1), mm.group(2)
-            res.append((t, n, v.strip() if v else None))
+            res.append((t, mm.group(1), mm.group(2).strip() if mm.group(2) else None))
         return res or None
+
+    def _decl_all(self, line):
+        lst = self._decl_list(line)
+        return lst if lst and all(t in TYPES or t in self.objects for t, _, _ in lst) else None
 
     def parse(self):
         i = 0
         while i < len(self.lines):
             line = self.lines[i]
-            if line == 'end': self._error("unexpected 'end' at top level"); i += 1
+            if line == 'end': self._error("unexpected 'end'"); i += 1
             elif line.startswith('object '): i = self._parse_object(i)
             elif line.startswith('function '): i = self._parse_function(i)
             elif self._decl_all(line): self._parse_global(line); i += 1
             else: self.top.append(line); i += 1
         return self.errors == 0
 
-    def _decl_all(self, line):
-        lst = self._decl_list(line)
-        if not lst: return None
-        return lst if all(t in TYPES or t in self.objects for t, _, _ in lst) else None
-
     def _parse_object(self, i):
-        m = re.match(r'^object\s+(' + _NAME + r')(?:\s+(.+))?$', self.lines[i])
-        if not m: self._error(f"invalid object: {self.lines[i]}"); return i + 1
-        name, rest = m.group(1), (m.group(2) or '').strip()
-        if name in self.objects: self._error(f"dup object '{name}'"); return i + 1
-        fields = {}
-        if rest and rest != 'end':
-            lst = self._decl_list(rest)
-            if lst:
-                for t, n, v in lst:
-                    if t not in TYPES: self._error(f"object '{name}': expected type")
-                    else: fields[n] = (t, v)
+        m = re.match(r'^object\s+(' + _NAME + r')(?:\s+(.+))?$', self.lines[i]); name = m.group(1); fields = {}
         j = i + 1
         while j < len(self.lines):
             line = self.lines[j]
             if line == 'end': self.objects[name] = fields; return j + 1
             lst = self._decl_all(line)
-            if not lst: self._error(f"object '{name}': expected declaration, got {line}")
-            else:
-                for t, n, v in lst:
-                    if t not in TYPES: self._error(f"object '{name}': expected type")
-                    elif n in fields: self._error(f"dup field '{name}.{n}'")
-                    else: fields[n] = (t, v)
+            if lst:
+                for t, n, v in lst: fields[n] = (t, v)
             j += 1
         self._error(f"object '{name}' without end"); return j
 
     def _parse_function(self, i):
-        m = _FUNC_RE.match(self.lines[i]); name = m.group(1); params = self._parse_params(m.group(2) or '')
+        m = _FUNC_RE.match(self.lines[i]); name = m.group(1)
+        params = [tuple(p.split()) for p in split_top(m.group(2) or '', ',') if len(p.split()) == 2]
         body, j = self._collect_block(i + 1, f"function '{name}'")
-        if name in self.functions: self._error(f"dup function '{name}'")
-        else: self.functions[name] = (params, body)
+        self.functions[name] = (params, body)
         if any(re.match(r'^return\s+\S', line) for line in body): self.func_ret[name] = 'num'
         return j
 
     def _infer_returns(self):
-        for _ in range(4):
-            ch = False
+        for _ in range(3):
             for name, (params, body) in list(self.functions.items()):
                 if name not in self.func_ret: continue
                 saved, self.scope = self.scope, {pn: pt for pt, pn in params}; kind = 'num'
@@ -172,59 +150,37 @@ class DimScriptCompiler:
                     if lst:
                         for t, n, _ in lst:
                             if t in TYPES: self.scope[n] = t
-                        continue
-                    if line.startswith('return ') and self.expr_type(line[7:].strip()) == 'str':
+                    elif line.startswith('return ') and self.expr_type(line[7:].strip()) == 'str':
                         kind = 'str'; break
-                self.scope = saved
-                if self.func_ret.get(name) != kind: self.func_ret[name] = kind; ch = True
-            if not ch: break
-
-    def _parse_params(self, text):
-        params = []
-        if not text.strip(): return params
-        for part in split_top(text, ','):
-            w = part.split()
-            if len(w) != 2 or (w[0] not in TYPES and w[0] not in self.objects):
-                self._error(f"invalid param '{part}'"); continue
-            params.append((w[0], w[1]))
-        return params
+                self.scope = saved; self.func_ret[name] = kind
 
     def _collect_block(self, i, what):
-        depth = 0; body = []
+        depth, body = 0, []
         while i < len(self.lines):
             line = self.lines[i]
             if line == 'end':
                 if depth == 0: return body, i + 1
                 depth -= 1
-            elif line.startswith('if ') or line.startswith('loop '): depth += 1
-            elif line in ('else', ) or line.startswith('else if '):
-                if depth == 0: self._error(f"{what}: 'else' without 'if'"); return body, i + 1
-            elif line.startswith('object ') or line.startswith('function '):
-                self._error(f"{what}: nested not allowed"); body.append(line); i += 1; continue
+            elif line.startswith(('if ', 'loop ')): depth += 1
+            elif line == 'else' or line.startswith('else if '):
+                if depth == 0: return body, i + 1
             body.append(line); i += 1
-        self._error(f"{what} without end"); return body, i
+        return body, i
 
     def _parse_global(self, line):
-        lst = self._decl_all(line)
-        if not lst: return
-        for t, n, v in lst:
-            if n in self.vars: self._error(f"dup var '{n}'"); continue
-            if t in self.objects and (not v or not re.match(r'^new\s+' + re.escape(t) + r'\s*\(\)?\s*$', v)):
-                self._error(f"'{n}': must be 'new {t}()'"); continue
-            self.vars[n] = (t, v)
+        for t, n, v in self._decl_all(line): self.vars[n] = (t, v)
 
     def c_type(self, t): return TYPES.get(t, t + ' *' if t in self.objects else 'double')
-    def default_value(self, t): return 'NULL' if t == 'str' else '0'
-    def static_expr(self, v): return bool(_NUM_RE.match(v)) or (len(v) >= 2 and v[0] == '"' and v[-1] == '"')
+    def default_val(self, t): return 'NULL' if t == 'str' else '0'
 
     def expr_type(self, expr):
         expr = expr.strip()
         if expr.startswith('"') and expr.endswith('"'): return 'str'
         m = re.match(r'^(' + _NAME + r')\.(' + _NAME + r')$', expr)
         if m:
-            holder = m.group(1); ot = self.scope.get(holder) or (self.vars[holder][0] if holder in self.vars else None)
-            fields = self.objects.get(ot)
-            if fields and m.group(2) in fields: return fields[m.group(2)][0]
+            holder, f = m.group(1), m.group(2)
+            ot = self.scope.get(holder) or (self.vars[holder][0] if holder in self.vars else None)
+            if self.objects.get(ot) and f in self.objects[ot]: return self.objects[ot][f][0]
         if expr in self.scope: return self.scope[expr]
         if expr in self.vars: return self.vars[expr][0]
         call = re.match(r'^(' + _NAME + r')\s*\(.*\)$', expr)
@@ -236,10 +192,9 @@ class DimScriptCompiler:
 
     def expr(self, e):
         e = e.strip()
-        if e == 'true': return '1'
-        if e == 'false': return '0'
+        if e in ('true', 'false'): return '1' if e == 'true' else '0'
         parts = split_top(e, '+')
-        if len(parts) > 1 and all(parts) and any(self.expr_type(p) == 'str' for p in parts):
+        if len(parts) > 1 and any(self.expr_type(p) == 'str' for p in parts):
             out = self.as_str(parts[0])
             for p in parts[1:]: out = f'ds_concat({out}, {self.as_str(p)})'
             return out
@@ -248,54 +203,30 @@ class DimScriptCompiler:
     def _fields(self, e):
         names = [n for n, v in self.vars.items() if v[0] in self.objects] + [n for n, t in self.scope.items() if t in self.objects]
         for n in sorted(names, key=len, reverse=True):
-            pat = re.compile(r'\b' + re.escape(n) + r'\.(' + _NAME + r')'); repl = n + r'->\1'
-            _, quoted = scan(e)
-            if not any(quoted): e = pat.sub(repl, e); continue
-            out, start = [], 0
-            for m in pat.finditer(e):
-                if quoted[m.start()]: continue
-                out.append(e[start:m.start()]); out.append(m.expand(repl)); start = m.end()
-            out.append(e[start:]); e = ''.join(out)
-        return self._calls(e)
+            e = re.sub(r'\b' + re.escape(n) + r'\.(' + _NAME + r')', n + r'->\1', e)
+        for fn in self.functions:
+            e = re.sub(r'\b' + re.escape(fn) + r'\s*\(', f'ds_fn_{fn}(', e)
+        return e
 
-    def _calls(self, e):
-        if not self.functions: return e
-        _, quoted = scan(e); pattern = re.compile(r'\b(' + _NAME + r')\s*\('); out, start = [], 0
-        for m in pattern.finditer(e):
-            name = m.group(1)
-            if quoted[m.start()] or name not in self.functions: continue
-            out.append(e[start:m.start()]); out.append('ds_fn_' + name + '('); start = m.end()
-        out.append(e[start:]); return ''.join(out)
-
-    def as_str(self, e):
-        return self.expr(e) if self.expr_type(e) == 'str' else f'ds_num_to_string((double)({self.expr(e)}))'
-
+    def as_str(self, e): return self.expr(e) if self.expr_type(e) == 'str' else f'ds_num_to_string((double)({self.expr(e)}))'
     def _out(self, s): self.output.append('    ' * self.indent + s)
     def _emit(self, s): self.output.append(s)
 
     def _emit_line(self, line):
-        if line and line[0] == 'c' and len(line) > 1 and line[1] in ' \t"':
+        if line.startswith('c ') or line.startswith('c\t'):
             raw = line[1:].strip()
-            if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
-                self._out(raw[1:-1].replace('\\"', '"').replace('\\\\', '\\'))
-            elif raw:
-                self._out(raw if raw.endswith((';', '{', '}')) else raw + ';')
+            self._out(raw[1:-1].replace('\\"', '"').replace('\\\\', '\\') if raw.startswith('"') and raw.endswith('"') else (raw if raw.endswith((';', '{', '}')) else raw + ';'))
             return
         if line == 'end':
-            if not self.blocks: self._error("unexpected 'end'"); return
-            self.blocks.pop(); self.indent -= 1; self._out('}'); return
+            if self.blocks: self.blocks.pop(); self.indent -= 1; self._out('}')
+            return
         if line.startswith('if '):
-            cond = line[3:].strip()
-            for sfx in (' then:', ' then', ':'):
-                if cond.endswith(sfx): cond = cond[:-len(sfx)].strip(); break
-            self.blocks.append(f'if ({self.expr(cond)})'); self._out(f'if ({self.expr(cond)}) {{'); self.indent += 1; return
+            cond = re.sub(r'(\s+then:?|:)$', '', line[3:].strip())
+            self.blocks.append('if'); self._out(f'if ({self.expr(cond)}) {{'); self.indent += 1; return
         if line.startswith('loop '):
-            cond = line[5:].strip()
-            for sfx in (' do:', ' do', ':'):
-                if cond.endswith(sfx): cond = cond[:-len(sfx)].strip(); break
-            self.blocks.append(f'while ({self.expr(cond)})'); self._out(f'while ({self.expr(cond)}) {{'); self.indent += 1; return
+            cond = re.sub(r'(\s+do:?|:)$', '', line[5:].strip())
+            self.blocks.append('while'); self._out(f'while ({self.expr(cond)}) {{'); self.indent += 1; return
         if line == 'else' or line.startswith('else if '):
-            if not self.blocks: self._error("'else' without 'if'"); return
             hdr = 'else' if line == 'else' else f'else if ({self.expr(line[8:])})'
             self.indent -= 1; self._out(f'}} {hdr} {{'); self.indent += 1; return
         if line == 'return': self._out('return;'); return
@@ -303,58 +234,43 @@ class DimScriptCompiler:
         lst = self._decl_all(line)
         if lst and lst[0][0] in TYPES:
             for t, n, v in lst:
-                if n in self.scope: self._error(f"dup var '{n}'"); continue
-                self.scope[n] = t; init = f'= {self.expr(v)}' if v else f'= {self.default_value(t)}'
+                self.scope[n] = t; init = f'= {self.expr(v)}' if v else f'= {self.default_val(t)}'
                 self._out(f'{self.c_type(t)} {n} {init};')
             return
         i = find_assign(line)
-        if i >= 0: self._emit_assign(line[:i].strip(), line[i+1:].strip()); return
+        if i >= 0:
+            lhs, rhs = line[:i].strip(), line[i+1:].strip()
+            if not rhs.startswith('new '):
+                self._out(f'{self._fields(lhs)} = {self.expr(rhs)};')
+            return
         m = _CALL_RE.match(line)
         if m:
             name, rest = m.group(1), m.group(2) or ''; args = split_top(rest, ',') if rest else []
-            if name in self.functions and len(args) == len(self.functions[name][0]):
-                self._out(f'ds_fn_{name}({", ".join(self.expr(a) for a in args)});')
-            elif name in BUILTINS:
-                self._out(f'{name}({", ".join(self.expr(a) for a in args)});')
-
-    def _emit_assign(self, lhs, rhs):
-        m = _LHS_RE.match(lhs)
-        if not m or rhs.startswith('new '): return
-        name, field = m.group(1), m.group(2)
-        if name not in self.scope and name not in self.vars and name not in ENGINE_VARS: return
-        htype = self.scope.get(name) or self.vars.get(name, ('', None))[0]
-        if field and htype in self.objects: lhs = self._fields(lhs)
-        self._out(f'{lhs} = {self.expr(rhs)};')
+            fn = f'ds_fn_{name}' if name in self.functions else (name if name in BUILTINS else None)
+            if fn: self._out(f'{fn}({", ".join(self.expr(a) for a in args)});')
 
     def generate(self):
-        self._infer_returns(); self.output = []; self.indent = 0
-        self._emit('#include "runtime.h"\n#include "net.h"\n#include <math.h>\n')
+        self._infer_returns(); self.output = ['#include "runtime.h"', '#include "net.h"', '#include <math.h>', '']
         for name in self.objects: self._emit(f'typedef struct {name} {name};')
-        self._emit('')
         for name, fields in self.objects.items():
             self._emit(f'struct {name} {{')
             for f, (t, _) in fields.items(): self._emit(f'    {self.c_type(t)} {f};')
-            self._emit('};\n')
-        for name in self.objects:
-            self._emit(f'static {name} *ds_new_{name}(void);\nstatic void ds_free_{name}({name} *self);')
-        self._emit('')
+            self._emit('};\n' + f'static {name} *ds_new_{name}(void);\nstatic void ds_free_{name}({name} *self);')
         init_lines = []
         for n, (t, v) in self.vars.items():
             if t in self.objects: self._emit(f'{t} *{n} = NULL;'); init_lines.append(n)
-            elif v and self.static_expr(v): self._emit(f'{self.c_type(t)} {n} = {self.expr(v)};')
-            else: self._emit(f'{self.c_type(t)} {n} = {self.default_value(t)};')
+            elif v and (_NUM_RE.match(v) or (v.startswith('"') and v.endswith('"'))): self._emit(f'{self.c_type(t)} {n} = {self.expr(v)};')
+            else: self._emit(f'{self.c_type(t)} {n} = {self.default_val(t)};')
             if v: init_lines.append(n)
-        if self.vars: self._emit('')
         for n, (params, _) in self.functions.items():
             ret = self.c_type(self.func_ret[n]) if n in self.func_ret else 'void'
             pstr = ', '.join(f'{self.c_type(t)} {pn}' for t, pn in params) if params else 'void'
             self._emit(f'static {ret} ds_fn_{n}({pstr});')
-        if self.functions: self._emit('')
         for name, fields in self.objects.items():
             self._emit(f'static {name} *ds_new_{name}(void) {{\n    {name} *self = ({name} *)calloc(1, sizeof(*self));\n    if (!self) {{ ds_runtime_error("out of memory: {name}"); return NULL; }}')
             for f, (_, v) in fields.items():
                 if v: self._emit(f'    self->{f} = {self.expr(v)};')
-            self._emit('    return self;\n}\n' + f'static void ds_free_{name}({name} *self) {{ free(self); }}\n')
+            self._emit(f'    return self;\n}}\nstatic void ds_free_{name}({name} *self) {{ free(self); }}\n')
         for n, (params, body) in self.functions.items():
             ret = self.c_type(self.func_ret[n]) if n in self.func_ret else 'void'
             pstr = ', '.join(f'{self.c_type(t)} {pn}' for t, pn in params) if params else 'void'
@@ -371,17 +287,15 @@ class DimScriptCompiler:
             if t in self.objects: self._out(f'{n} = ds_new_{t}();')
             elif n in self.vars and self.vars[n][1]:
                 try: self._out(f'{n} = {self.expr(self.vars[n][1])};')
-                except Exception: pass
+                except: pass
         for line in self.top: self._emit_line(line)
-        self._emit('    return 0;\n}\n')
-        self._emit('void reset(void) {'); self.indent = 1
+        self._emit('    return 0;\n}\n\nvoid reset(void) {'); self.indent = 1
         for n, (t, v) in self.vars.items():
             if t in self.objects: self._out(f'if ({n}) ds_free_{t}({n});\n    {n} = NULL;')
             elif t == 'arr': self._out(f'if ({n}) arr_free({n});\n    {n} = arr_new();')
-            elif v and self.static_expr(v): self._out(f'{n} = {self.expr(v)};')
-            else: self._out(f'{n} = {self.default_value(t)};')
-        self._emit('}\n')
-        self._emit('void init(AAssetManager *assets) {\n    ds_set_asset_manager(assets);\n    ds_main();')
+            elif v and (_NUM_RE.match(v) or (v.startswith('"') and v.endswith('"'))): self._out(f'{n} = {self.expr(v)};')
+            else: self._out(f'{n} = {self.default_val(t)};')
+        self._emit('}\n\nvoid init(AAssetManager *assets) {\n    ds_set_asset_manager(assets);\n    ds_main();')
         if 'init' in self.functions: self._emit('    ds_fn_init();')
         self._emit('}\n\nvoid update(void) {')
         if 'update' in self.functions: self._emit('    ds_fn_update();')
