@@ -130,7 +130,6 @@ void android_main(struct android_app *app) {
     Buffer frame = {0}; if (!app) return;
     app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
     net_set_java_vm(app->activity->vm);
-    net_set_storage_path(app->activity->internalDataPath);
     ds_set_activity(app->activity);
     ds_log("DimScript Android 10 arm64/arm32 only + system keyboard (JNI)");
     for (;;) {

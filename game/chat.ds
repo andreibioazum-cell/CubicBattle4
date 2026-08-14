@@ -17,25 +17,20 @@ function chat_send
 if str_len(chat_input)==0; return; end; net_chat_send chat_input; ds_log "chat: %s",chat_input; chat_input=""; keyboard_clear; chat_scroll=0
 end
 function uid_short num idx
-// первые 6 символов uid — подпись для старых сообщений без ника
+// первые 6 символов uid — компактная подпись вместо длинного хекса
 c static char ub[8]
 c { const char *u = net_chat_uid(idx); int n = 0; while (u && u[n] && n < 6) { ub[n] = u[n]; n++; } ub[n] = 0; }
 str s=ub
 return s
 end
-function chat_author num idx
-str nickname=net_chat_nickname(idx)
-if str_len(nickname)>0; return nickname; end
-return uid_short(idx)
-end
 function draw_chat
 if game_state!=5; return; end; if chat_open==0
 // мини-режим: сообщения слева сверху, кнопка чата чуть ниже
 num cc=net_chat_count(), i=cc-4, dy=56; if i<0; i=0; end
-loop i<cc; str t=net_chat_text(i); if str_len(t)>0; str preview=chat_author(i)+": "+t; text_scaled preview,16,dy,0xE0E0FF,0.45; dy=dy+22; end; i=i+1; end
+loop i<cc; str t=net_chat_text(i); if str_len(t)>0; text_scaled t,16,dy,0xE0E0FF,0.45; dy=dy+22; end; i=i+1; end
 if language_ru==1; button "Чат",16,150,140,48; else; button "Chat",16,150,140,48; end; return; end
 // полный экран чата
-rect 0,0,screen_w,screen_h,0xDD0F0F1A; num pw=screen_w-40, ph=screen_h-40, px=20, py=20; roundrect px,py,pw,ph,18,0xFF1E1E2F; if language_ru==1; ctext "Онлайн чат",py+14,0xFFFFFF; else; ctext "Online chat",py+14,0xFFFFFF; end; num lx=px+16, lw=pw-32, lwd=lw-168, ly=py+50, lh=ph-160, line_h=26, maxl=floor(lh/line_h), total=net_chat_count(), start=total-maxl-chat_scroll; if start<0; start=0; end; if total==0; text_scaled "No messages",lx,ly,0x8888AA,0.5; else; num idx=start, yy=ly; loop idx<total; if yy+line_h>ly+lh; idx=total; else; str line=chat_author(idx)+": "+net_chat_text(idx); if text_ink_width(line)>lwd-8; line=net_chat_text(idx); end; text_scaled line,lx,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1; end; end; end; roundrect px+pw-50,py+50,34,34,10,0x5F10A0; text "^",px+pw-38,py+54,0xFFFFFF; roundrect px+pw-50,py+94,34,34,10,0x5F10A0; text "v",px+pw-38,py+98,0xFFFFFF; num rx=px+pw-160, rw=144; if language_ru==1; chat_button "Закрыть",rx,py+150,rw,44; chat_button "Клавиатура",rx,py+200,rw,44; else; chat_button "Close",rx,py+150,rw,44; chat_button "Keyboard",rx,py+200,rw,44; end; num iy=py+ph-90, ih=52; roundrect lx,iy,lw-116,ih,10,0xFF2A2A40; str raw=keyboard_get_raw(); if str_eq(raw,chat_input)==0; chat_input=keyboard_get_text(); end; if keyboard_enter_pressed()==1; chat_send; end; if str_len(chat_input)==0; if language_ru==1; text_scaled "Введите сообщение...",lx+10,iy+10,0x666688,0.55; else; text_scaled "Type a message...",lx+10,iy+10,0x666688,0.55; end; else; text_scaled chat_input,lx+10,iy+10,0xFFFFFF,0.55; end; if language_ru==1; chat_button "Отправить",lx+lw-110,iy,110,48; else; chat_button "Send",lx+lw-110,iy,110,48; end
+rect 0,0,screen_w,screen_h,0xDD0F0F1A; num pw=screen_w-40, ph=screen_h-40, px=20, py=20; roundrect px,py,pw,ph,18,0xFF1E1E2F; if language_ru==1; ctext "Онлайн чат",py+14,0xFFFFFF; else; ctext "Online chat",py+14,0xFFFFFF; end; num lx=px+16, lw=pw-32, lwd=lw-168, ly=py+50, lh=ph-160, line_h=26, maxl=floor(lh/line_h), total=net_chat_count(), start=total-maxl-chat_scroll; if start<0; start=0; end; if total==0; text_scaled "No messages",lx,ly,0x8888AA,0.5; else; num idx=start, yy=ly; loop idx<total; if yy+line_h>ly+lh; idx=total; else; str line=uid_short(idx)+": "+net_chat_text(idx); if text_ink_width(line)>lwd-8; line=net_chat_text(idx); end; text_scaled line,lx,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1; end; end; end; roundrect px+pw-50,py+50,34,34,10,0x5F10A0; text "^",px+pw-38,py+54,0xFFFFFF; roundrect px+pw-50,py+94,34,34,10,0x5F10A0; text "v",px+pw-38,py+98,0xFFFFFF; num rx=px+pw-160, rw=144; if language_ru==1; chat_button "Закрыть",rx,py+150,rw,44; chat_button "Клавиатура",rx,py+200,rw,44; else; chat_button "Close",rx,py+150,rw,44; chat_button "Keyboard",rx,py+200,rw,44; end; num iy=py+ph-90, ih=52; roundrect lx,iy,lw-116,ih,10,0xFF2A2A40; str raw=keyboard_get_raw(); if str_eq(raw,chat_input)==0; chat_input=keyboard_get_text(); end; if keyboard_enter_pressed()==1; chat_send; end; if str_len(chat_input)==0; if language_ru==1; text_scaled "Введите сообщение...",lx+10,iy+10,0x666688,0.55; else; text_scaled "Type a message...",lx+10,iy+10,0x666688,0.55; end; else; text_scaled chat_input,lx+10,iy+10,0xFFFFFF,0.55; end; if language_ru==1; chat_button "Отправить",lx+lw-110,iy,110,48; else; chat_button "Send",lx+lw-110,iy,110,48; end
 end
 function chat_hit num x, num y, num bx, num by, num bw, num bh
 // проверка попадания в кнопку

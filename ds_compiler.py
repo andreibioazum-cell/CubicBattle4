@@ -15,11 +15,10 @@ BUILTINS=frozenset({
     'sqrt','sin','cos','atan2','floor','rand',
     # онлайн Firebase — частая запись/чтение для убирания лагов
     'net_connect','net_disconnect','net_publish','net_publish_bullet','net_status','net_slot','net_count',
-    'net_account_configure','net_account_login','net_account_status','net_account_nickname','net_account_error',
-    'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive','net_player_nickname',
+    'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive',
     'net_player_bullet_active','net_player_bullet_x','net_player_bullet_y','net_player_bullet_dx','net_player_bullet_dy','net_player_bullet_shot','net_player_bullet_tr',
     # чат — отдельный файл chat.ds
-    'net_chat_send','net_chat_count','net_chat_text','net_chat_uid','net_chat_nickname','net_chat_time',
+    'net_chat_send','net_chat_count','net_chat_text','net_chat_uid','net_chat_time',
     # реальная клавиатура через JNI (ANativeActivity_showSoftInput)
     'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_visible','keyboard_enter_pressed','keyboard_type','keyboard_backspace',
     # строки
@@ -36,10 +35,7 @@ BUILTINS=frozenset({
 ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy'}
 
 # Функции возвращающие строку (для конкатенации '+')
-STR_BUILTINS=frozenset({
-    'console_line','keyboard_get_text','net_chat_text','net_chat_uid','net_chat_nickname',
-    'net_account_nickname','net_account_error','net_player_nickname'
-})
+STR_BUILTINS=frozenset({'console_line','keyboard_get_text','net_chat_text','net_chat_uid'})
 
 _NAME=r'[A-Za-z_]\w*'
 _FUNC_RE=re.compile(r'^function\s+('+_NAME+r')(?:\s+(.*))?$')
