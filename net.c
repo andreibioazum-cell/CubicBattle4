@@ -580,12 +580,14 @@ static void *reader_thread(void *arg) {
 static unsigned __stdcall win_reader_thread(void *arg){ reader_thread(arg); return 0; }
 #endif
 static void make_uid(void) {
-    struct timespec t; unsigned long a,b; int local=0;
-    clock_gettime(CLOCK_MONOTONIC,&t);
-    a=(unsigned long)time(NULL)^((unsigned long)t.tv_nsec<<8);
+    unsigned long a,b; int local=0;
 #ifdef _WIN32
+    a=(unsigned long)time(NULL)^((unsigned long)GetTickCount64()<<8);
     b=(unsigned long)_getpid()^(unsigned long)(uintptr_t)&local;
 #else
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC,&t);
+    a=(unsigned long)time(NULL)^((unsigned long)t.tv_nsec<<8);
     b=(unsigned long)getpid()^(unsigned long)(uintptr_t)&local;
 #endif
     snprintf(net.uid,sizeof(net.uid),"%08lx%08lx",a&0xfffffffful,b&0xfffffffful);
