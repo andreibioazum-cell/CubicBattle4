@@ -20,7 +20,8 @@
 #define DEFAULT_WIDTH 960
 #define DEFAULT_HEIGHT 540
 
-static int g_running = 1, g_script_active = 0;
+static int g_running = 1, g_script_active = 0, g_fullscreen = 0;
+static WINDOWPLACEMENT g_wp_prev = { sizeof(g_wp_prev) };
 static uint64_t g_restart_after_ns = 0;
 static unsigned int g_restart_failures = 0;
 static LARGE_INTEGER g_perf_freq, g_prev_counter;
@@ -54,6 +55,25 @@ static int start_script(int rst) {
     if (rst && !ds_call_protected(p_reset, NULL, "reset")) { mark_script_failed("reset"); return 0; }
     if (!ds_call_protected(p_init, NULL, "init")) { mark_script_failed("init"); return 0; }
     g_restart_failures = 0; g_script_active = 1; return 1;
+}
+
+static void toggle_fullscreen(HWND hwnd) {
+    DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
+    if (!g_fullscreen) {
+        MONITORINFO mi = { sizeof(mi) };
+        if (GetWindowPlacement(hwnd, &g_wp_prev) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+            SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+                         mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            g_fullscreen = 1;
+        }
+    } else {
+        SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd, &g_wp_prev);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        g_fullscreen = 0;
+    }
 }
 
 static void update_movement(void) {
@@ -100,6 +120,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         case WM_KEYDOWN: case WM_KEYUP: {
             int down = (msg == WM_KEYDOWN);
             switch (wParam) {
+                case VK_F11:
+                    if (down) toggle_fullscreen(hwnd);
+                    return 0;
                 case 'W': g_key_w = down; break;
                 case 'S': g_key_s = down; break;
                 case 'A': g_key_a = down; break;
@@ -119,7 +142,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             }
             update_movement(); return 0;
         }
-        case WM_CLOSE: g_running = 0; DestroyWindow(hwnd); return 0;
+        case WM_CLOSE: {
+            int res = MessageBoxW(hwnd, L"Вы точно хотите выйти?", L"Выход", MB_YESNO | MB_ICONQUESTION);
+            if (res == IDYES) {
+                g_running = 0;
+                DestroyWindow(hwnd);
+            }
+            return 0;
+        }
         case WM_DESTROY: g_running = 0; PostQuitMessage(0); return 0;
         case WM_ERASEBKGND: return 1;
         default: return DefWindowProcA(hwnd, msg, wParam, lParam);
