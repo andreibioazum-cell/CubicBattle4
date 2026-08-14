@@ -72,14 +72,14 @@ static void ol_free(DSOutline *o) {
     free(o->points); free(o->ends); memset(o, 0, sizeof(*o));
 }
 static int ol_rsrv_p(DSOutline *o, int n) {
-    int need = o->pc + n, cap = o->pp ?: 32;
+    int need = o->pc + n, cap = o->pp ? o->pp : 32;
     while (cap < need) { if (cap > 1e6) return 0; cap *= 2; }
     DSPoint *p = (DSPoint *)realloc(o->points, (size_t)cap*sizeof(*p));
     if (!p) return 0;
     o->points = p; o->pp = cap; return 1;
 }
 static int ol_rsrv_c(DSOutline *o, int n) {
-    int need = o->cc + n, cap = o->cp ?: 8;
+    int need = o->cc + n, cap = o->cp ? o->cp : 8;
     while (cap < need) cap *= 2;
     int *e = (int *)realloc(o->ends, (size_t)cap*sizeof(*e));
     if (!e) return 0;
@@ -207,7 +207,7 @@ static int read_outline(const DSFont *f, int g, int depth, float a, float b, flo
 }
 
 static int flat_rsrv(DSFC *f, int n) {
-    int need = f->count + n, cap = f->cap ?: 32;
+    int need = f->count + n, cap = f->cap ? f->cap : 32;
     while (cap < need) cap *= 2;
     DSFPoint *p = (DSFPoint *)realloc(f->points, (size_t)cap*sizeof(*p));
     if (!p) return 0;
