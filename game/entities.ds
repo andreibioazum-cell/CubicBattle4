@@ -1,3 +1,5 @@
+// entities — игровые объекты
+// Punch — событие удара: точка, направление и счётчик выстрела для сети
 object Player
 num x=0, y=0, size=30, angle=0, hp=10, max_hp=10
 end
@@ -10,5 +12,6 @@ end
 Player player=new Player()
 Enemy enemy=new Enemy()
 Punch punch=new Punch()
+// punch_cd — кулдаун между ударами, aim_a — прозрачность серого хитбокса (0..1)
 num finished=0, aiming=0, atk_x=0, atk_y=0, joy_id=-1, aim_id=-1, punch_left=0, punch_cd=0, aim_a=0
 arr remotes=arr_new(), rbullets=arr_new()
