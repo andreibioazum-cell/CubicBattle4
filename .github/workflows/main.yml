@@ -1,11 +1,12 @@
-name: Build DS Game (Android 10-14 arm64+arm32)
+name: Build DS Game (Android APK & Windows PC .exe)
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
+    name: Build Android APK (Android 10-14 arm64+arm32)
     runs-on: ubuntu-latest
     
     steps:
@@ -24,14 +25,6 @@ jobs:
       run: |
         python3 gen.py
 
-    - name: Show generated C code
-      run: |
-        echo "=========================================="
-        echo "GENERATED GAME.C (Android 10-14, no stars, arm64+arm32):"
-        echo "=========================================="
-        cat game/game.c | head -n 200
-        echo "=========================================="
-
     - name: Stage assets
       run: |
         python3 stage_assets.py game/assets staging/assets
@@ -44,7 +37,7 @@ jobs:
         
         mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/assets
         
-        # arm64-v8a — min API 29 (Android 10), работает до Android 14+
+        # arm64-v8a — min API 29 (Android 10)
         "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
@@ -76,3 +69,50 @@ jobs:
       with:
         name: Game-APK-Android10-14-arm64-arm32
         path: Game.apk
+
+  build-pc:
+    name: Build Windows PC (.exe)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install MinGW Cross-Compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-mingw-w64-x86-64 zip
+
+    - name: Generate game.c
+      run: |
+        python3 gen.py
+
+    - name: Build Game.exe (MinGW x86_64)
+      run: |
+        x86_64-w64-mingw32-gcc -O3 -s -Wall -Wextra -I. -Igame \
+          game/game.c runtime.c main_win32.c \
+          -lgdi32 -lwininet -luser32 -lkernel32 -lm \
+          -o Game.exe -mwindows
+
+    - name: Prepare Release Package (Game.exe + Assets)
+      run: |
+        mkdir -p release/assets
+        cp Game.exe release/
+        cp -r game/assets/* release/assets/
+        cd release && zip -r ../Game-Windows-PC.zip . && cd ..
+
+    - name: Upload Game.exe Executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: Game-Windows-PC-exe
+        path: Game.exe
+
+    - name: Upload Full Game Windows ZIP (Game.exe + assets)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Game-Windows-PC-Full-Package
+        path: Game-Windows-PC.zip
