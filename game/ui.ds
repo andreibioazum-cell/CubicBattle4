@@ -1,6 +1,6 @@
 // ui — кнопки и HP бары
 function draw_back
-if language_ru==1; button "Назад",(screen_w-btn_w)/2,back_y,btn_w,btn_h; else; button "Back",(screen_w-btn_w)/2,back_y,btn_w,btn_h; end
+button tr_back(),(screen_w-btn_w)/2,back_y,btn_w,btn_h
 end
 function back_hit num x, num y
 num bx=(screen_w-btn_w)/2
