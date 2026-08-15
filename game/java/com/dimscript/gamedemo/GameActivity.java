@@ -12,10 +12,12 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.FrameLayout;
 
 /**
@@ -64,67 +66,91 @@ public final class GameActivity extends NativeActivity {
                 if (!syncingFromNative) nativeReplaceText(value.toString());
             }
         });
-        chatEditor.setOnEditorActionListener((view, actionId, event) -> {
-            boolean enter = actionId == EditorInfo.IME_ACTION_SEND
-                    || actionId == EditorInfo.IME_ACTION_DONE
-                    || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
-                        && event.getAction() == KeyEvent.ACTION_DOWN);
-            if (enter) {
-                nativeSubmitText();
-                return true;
+        chatEditor.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView view, int actionId, KeyEvent event) {
+                boolean enter = actionId == EditorInfo.IME_ACTION_SEND
+                        || actionId == EditorInfo.IME_ACTION_DONE
+                        || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                            && event.getAction() == KeyEvent.ACTION_DOWN);
+                if (enter) {
+                    nativeSubmitText();
+                    return true;
+                }
+                return false;
             }
-            return false;
         });
 
         // Android does not send a direct callback when the user dismisses an IME
         // with the system Back gesture. Track an actual visible->hidden transition;
         // importantly, do not report "hidden" during the short show request delay.
-        chatEditor.getRootView().getViewTreeObserver().addOnGlobalLayoutListener(() -> {
-            View root = chatEditor.getRootView();
-            Rect visible = new Rect();
-            root.getWindowVisibleDisplayFrame(visible);
-            boolean keyboardVisible = root.getHeight() - visible.bottom > root.getHeight() * 0.15f;
-            if (keyboardVisible) {
-                keyboardWasVisible = true;
-            } else if (keyboardWasVisible) {
-                keyboardWasVisible = false;
-                nativeKeyboardHidden();
-            }
-        });
+        chatEditor.getRootView().getViewTreeObserver().addOnGlobalLayoutListener(
+                new ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        View root = chatEditor.getRootView();
+                        Rect visible = new Rect();
+                        root.getWindowVisibleDisplayFrame(visible);
+                        boolean keyboardVisible = root.getHeight() - visible.bottom
+                                > root.getHeight() * 0.15f;
+                        if (keyboardVisible) {
+                            keyboardWasVisible = true;
+                        } else if (keyboardWasVisible) {
+                            keyboardWasVisible = false;
+                            nativeKeyboardHidden();
+                        }
+                    }
+                });
     }
 
     /** Called from native code. It is safe to call from the native game thread. */
     public void showGameKeyboard(final String currentText) {
-        runOnUiThread(() -> {
-            if (chatEditor == null) return;
-            chatEditor.setVisibility(View.VISIBLE);
-            replaceEditorText(currentText);
-            chatEditor.requestFocus();
-            chatEditor.postDelayed(() -> {
-                InputMethodManager input = (InputMethodManager)
-                        getSystemService(Context.INPUT_METHOD_SERVICE);
-                if (input != null) {
-                    input.showSoftInput(chatEditor, InputMethodManager.SHOW_IMPLICIT);
-                }
-            }, 80);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (chatEditor == null) return;
+                chatEditor.setVisibility(View.VISIBLE);
+                replaceEditorText(currentText);
+                chatEditor.requestFocus();
+                chatEditor.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        InputMethodManager input = (InputMethodManager)
+                                getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (input != null) {
+                            input.showSoftInput(chatEditor, InputMethodManager.SHOW_IMPLICIT);
+                        }
+                    }
+                }, 80);
+            }
         });
     }
 
     /** Keeps the hidden editor in sync after the native Send button clears it. */
     public void setGameKeyboardText(final String text) {
-        runOnUiThread(() -> replaceEditorText(text));
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                replaceEditorText(text);
+            }
+        });
     }
 
     /** Called from native code when chat is closed or the online game is left. */
     public void hideGameKeyboard() {
-        runOnUiThread(() -> {
-            if (chatEditor == null) return;
-            InputMethodManager input = (InputMethodManager)
-                    getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (input != null) input.hideSoftInputFromWindow(chatEditor.getWindowToken(), 0);
-            chatEditor.clearFocus();
-            chatEditor.setVisibility(View.INVISIBLE);
-            nativeKeyboardHidden();
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (chatEditor == null) return;
+                InputMethodManager input = (InputMethodManager)
+                        getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (input != null) {
+                    input.hideSoftInputFromWindow(chatEditor.getWindowToken(), 0);
+                }
+                chatEditor.clearFocus();
+                chatEditor.setVisibility(View.INVISIBLE);
+                nativeKeyboardHidden();
+            }
         });
     }
 
