@@ -8,11 +8,11 @@ rect 0,0,screen_w,screen_h,0x1a1a2e;text tr_login_title(),24,34,0xFFFFFF
 num bw=screen_w-120, bx=(screen_w-bw)/2, fy=screen_h/2-95
 text tr_nick(),bx,fy-24,0x9B9BC0
 if login_field==1; roundrect bx,fy,bw,58,14,0xFF4B2E83; else; roundrect bx,fy,bw,58,14,0xFF2A2A40; end
-if str_len(login_nick)==0; text_scaled tr_nick_ph(),bx+16,fy+14,0x666688,0.6; else; text_scaled login_nick,bx+16,fy+14,0xFFFFFF,0.6; end
+if str_len(login_nick)==0; text_in_field tr_nick_ph(),bx+16,fy,58,0x666688,0.6; else; text_in_field login_nick,bx+16,fy,58,0xFFFFFF,0.6; end
 num py=fy+72
 text tr_pwd(),bx,py-24,0x9B9BC0
 if login_field==2; roundrect bx,py,bw,58,14,0xFF4B2E83; else; roundrect bx,py,bw,58,14,0xFF2A2A40; end
-if str_len(login_pwd)==0; text_scaled tr_pwd_ph(),bx+16,py+14,0x666688,0.6; else; num pn=str_len(login_pwd), i=0, px=bx+16, aw=text_ink_width("*")*0.6; if aw<6; aw=8; end; loop i<pn; text_scaled "*",px,py+14,0xFFFFFF,0.6; px=px+aw; i=i+1; end; end
+if str_len(login_pwd)==0; text_in_field tr_pwd_ph(),bx+16,py,58,0x666688,0.6; else; num pn=str_len(login_pwd), i=0, px=bx+16, aw=text_ink_width("*")*0.6; if aw<6; aw=8; end; loop i<pn; text_in_field "*",px,py,58,0xFFFFFF,0.6; px=px+aw; i=i+1; end; end
 num by2=py+84
 button tr_login_go(),(screen_w-btn_w)/2,by2,btn_w,btn_h
 if net_login_status()==2; button tr_logout(),(screen_w-btn_w)/2,by2+80,btn_w,btn_h; end
