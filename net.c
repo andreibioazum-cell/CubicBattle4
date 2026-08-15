@@ -33,6 +33,9 @@
 #define STALE 12000
 #define CHAT_MAX 32
 #define CHAT_TEXT_MAX 96
+#define LOGIN_NICK_MAX 16
+#define LOGIN_PWD_MAX 64
+#define SESSION_FILE "auth.dat"
 #ifdef _WIN32
 typedef SRWLOCK DSMutex;
 #define DS_MUTEX_INIT SRWLOCK_INIT
@@ -58,9 +61,9 @@ static DSThread ds_thread_start(void *(*fn)(void *), void *arg) {
 static void ds_thread_join(DSThread t) { if (t) pthread_join(t, NULL); }
 static void ds_thread_detach(DSThread t) { if (t) pthread_detach(t); }
 #endif
-typedef struct { double x,y,a,hp,alive; int online; } Actor;
+typedef struct { double x,y,a,hp,alive; int online; char nick[24]; } Actor;
 typedef struct { double x,y,dx,dy,active,shot,tr; } Bullet;
-typedef struct { char uid[24]; char text[CHAT_TEXT_MAX]; unsigned long ts; int valid; } ChatMsg;
+typedef struct { char uid[24]; char nick[24]; char text[CHAT_TEXT_MAX]; unsigned long ts; int valid; } ChatMsg;
 static struct {
     DSThread thread, rthread; DSMutex lock;
 #ifdef __ANDROID__
@@ -74,6 +77,139 @@ static struct {
 } net = { .lock = DS_MUTEX_INIT };
 static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
+static char s_nick_ret[24];
+static char s_lg_nick_ret[24];
+static long long now_ms(void);
+static void *login_worker(void *arg);
+
+/* ---------- account login (nick + password) ---------- */
+typedef struct {
+    DSThread thread; DSMutex lock;
+    int run, request, status, gen;
+    char url[URL];
+    char nick[LOGIN_NICK_MAX+1], pwd[LOGIN_PWD_MAX+1];
+    char session_nick[LOGIN_NICK_MAX+1], session_hash[80];
+    char path[256];
+} Login;
+static Login lg = { .lock = DS_MUTEX_INIT };
+static void lg_lock(void) { ds_mutex_lock(lg.lock); }
+static void lg_unlock(void) { ds_mutex_unlock(lg.lock); }
+
+static int nick_valid(const char *n) {
+    size_t i, l = n ? strlen(n) : 0;
+    if (l < 3 || l > LOGIN_NICK_MAX) return 0;
+    for (i = 0; i < l; i++) {
+        char c = n[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) return 0;
+    }
+    return 1;
+}
+static int pwd_valid(const char *p) {
+    size_t l = p ? strlen(p) : 0;
+    return l >= 4 && l <= LOGIN_PWD_MAX;
+}
+/* SHA-256 (FIPS 180-4), used so passwords are never stored or sent in plaintext */
+typedef struct { uint32_t h[8]; uint64_t len; unsigned char buf[64]; size_t buflen; } DS_SHA256;
+static const uint32_t SHA256_K[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+};
+#define SHA256_ROR(x,n) (((x)>>(n))|((x)<<(32-(n))))
+static void sha256_block(DS_SHA256 *c, const unsigned char *p) {
+    uint32_t w[64], a, b, cc, d, e, f, g, h, t1, t2; int i;
+    for (i = 0; i < 16; i++) w[i] = ((uint32_t)p[i*4]<<24)|((uint32_t)p[i*4+1]<<16)|((uint32_t)p[i*4+2]<<8)|p[i*4+3];
+    for (i = 16; i < 64; i++) {
+        uint32_t s0 = SHA256_ROR(w[i-15],7)^SHA256_ROR(w[i-15],18)^(w[i-15]>>3);
+        uint32_t s1 = SHA256_ROR(w[i-2],17)^SHA256_ROR(w[i-2],19)^(w[i-2]>>10);
+        w[i] = w[i-16]+s0+w[i-7]+s1;
+    }
+    a=c->h[0]; b=c->h[1]; cc=c->h[2]; d=c->h[3]; e=c->h[4]; f=c->h[5]; g=c->h[6]; h=c->h[7];
+    for (i = 0; i < 64; i++) {
+        uint32_t S1 = SHA256_ROR(e,6)^SHA256_ROR(e,11)^SHA256_ROR(e,25);
+        uint32_t ch = (e&f)^((~e)&g);
+        uint32_t temp1 = h + S1 + ch + SHA256_K[i] + w[i];
+        uint32_t S0 = SHA256_ROR(a,2)^SHA256_ROR(a,13)^SHA256_ROR(a,22);
+        uint32_t maj = (a&b)^(a&cc)^(b&cc);
+        uint32_t temp2 = S0 + maj;
+        h=g; g=f; f=e; e=d+temp1; d=cc; cc=b; b=a; a=temp1+temp2;
+    }
+    c->h[0]+=a; c->h[1]+=b; c->h[2]+=cc; c->h[3]+=d; c->h[4]+=e; c->h[5]+=f; c->h[6]+=g; c->h[7]+=h;
+}
+static void sha256_init(DS_SHA256 *c) {
+    c->h[0]=0x6a09e667; c->h[1]=0xbb67ae85; c->h[2]=0x3c6ef372; c->h[3]=0xa54ff53a;
+    c->h[4]=0x510e527f; c->h[5]=0x9b05688c; c->h[6]=0x1f83d9ab; c->h[7]=0x5be0cd19;
+    c->len=0; c->buflen=0;
+}
+static void sha256_update(DS_SHA256 *c, const void *data, size_t n) {
+    const unsigned char *p = (const unsigned char*)data;
+    c->len += (uint64_t)n;
+    while (n) {
+        size_t take = 64 - c->buflen; if (take > n) take = n;
+        memcpy(c->buf + c->buflen, p, take);
+        c->buflen += take; p += take; n -= take;
+        if (c->buflen == 64) { sha256_block(c, c->buf); c->buflen = 0; }
+    }
+}
+static void sha256_final(DS_SHA256 *c, unsigned char out[32]) {
+    uint64_t bits = c->len * 8; unsigned char b, lenb[8]; int i;
+    b = 0x80; sha256_update(c, &b, 1);
+    b = 0x00;
+    while (c->buflen != 56) sha256_update(c, &b, 1);
+    for (i = 0; i < 8; i++) lenb[i] = (unsigned char)(bits >> (56 - i*8));
+    sha256_update(c, lenb, 8);
+    for (i = 0; i < 8; i++) {
+        out[i*4]   = (unsigned char)(c->h[i] >> 24);
+        out[i*4+1] = (unsigned char)(c->h[i] >> 16);
+        out[i*4+2] = (unsigned char)(c->h[i] >> 8);
+        out[i*4+3] = (unsigned char)c->h[i];
+    }
+}
+static void sha256_hex(const char *a, const char *b, const char *c, char *out /* 65 */) {
+    DS_SHA256 s; unsigned char d[32]; int i;
+    sha256_init(&s);
+    sha256_update(&s, a, strlen(a));
+    if (b) sha256_update(&s, b, strlen(b));
+    if (c) sha256_update(&s, c, strlen(c));
+    sha256_final(&s, d);
+    for (i = 0; i < 32; i++) snprintf(out + i*2, 3, "%02x", d[i]);
+}
+static void make_salt(char *out, size_t cap) {
+    unsigned long long v = (unsigned long long)now_ms() * 2654435761ull;
+    v ^= (unsigned long long)(uintptr_t)&out << 32;
+#ifdef _WIN32
+    v ^= (unsigned long long)_getpid() * 1000003ull;
+#else
+    v ^= (unsigned long long)getpid() * 1000003ull;
+#endif
+    snprintf(out, cap, "%016llx", v);
+}
+static void session_save(const char *nick, const char *hash) {
+    char path[320]; FILE *f;
+    if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
+    else snprintf(path, sizeof(path), "%s", SESSION_FILE);
+    f = fopen(path, "w");
+    if (f) { fprintf(f, "%s\n%s\n", nick, hash); fclose(f); }
+}
+static void session_clear(void) {
+    char path[320];
+    if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
+    else snprintf(path, sizeof(path), "%s", SESSION_FILE);
+    remove(path);
+}
+static int set_session(const char *nick, const char *hash) {
+    lg_lock();
+    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+    snprintf(lg.session_hash, sizeof(lg.session_hash), "%s", hash);
+    lg_unlock();
+    session_save(nick, hash);
+    return NET_LOGIN_OK;
+}
 static long long now_ms(void) {
 #ifdef _WIN32
     return (long long)GetTickCount64();
@@ -300,26 +436,223 @@ static void json_escape(const char *src, char *dst, size_t cap){
     dst[o]='\0';
 }
 static int push_state(void) {
-    Actor a; Bullet b; int slot; unsigned long seq; char url[URL], body[BODY];
+    Actor a; Bullet b; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
     lock(); a=net.me; b=net.my_bullet; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
+    json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
-    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",
-        slot,net.uid,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
+    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",
+        slot,net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
         slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
     return http("PATCH",url,body,NULL,0)==200;
 }
-static int push_bullet_only(void){
+typedef struct { char url[URL]; char body[BODY*2]; } HttpJob;
+static void *http_post_job(void *arg) {
+    HttpJob *j = (HttpJob*)arg;
+    if (j) { http("POST", j->url, j->body, NULL, 0); free(j); }
+    return NULL;
+}
+static void *http_put_job(void *arg) {
+    HttpJob *j = (HttpJob*)arg;
+    if (j) { http("PUT", j->url, j->body, NULL, 0); free(j); }
+    return NULL;
+}
+#ifdef _WIN32
+static void *http_post_job(void *arg);
+static void *http_put_job(void *arg);
+static unsigned __stdcall win_http_post(void *arg) { http_post_job(arg); return 0; }
+static unsigned __stdcall win_http_put(void *arg) { http_put_job(arg); return 0; }
+#endif
+/* one-shot background HTTP so the UI thread never blocks on the network */
+static void http_async(int kind, const char *url, const char *body) {
+    HttpJob *j = (HttpJob*)malloc(sizeof(*j));
+    DSThread t;
+    if (!j) return;
+    snprintf(j->url, sizeof(j->url), "%s", url);
+    snprintf(j->body, sizeof(j->body), "%s", body);
+#ifdef _WIN32
+    t = ds_thread_start(kind == 1 ? win_http_post : win_http_put, j);
+#else
+    t = ds_thread_start(kind == 1 ? http_post_job : http_put_job, j);
+#endif
+    if (t) { ds_thread_detach(t); return; }
+    free(j);
+}
+static void push_bullet_only(void){
     Bullet b; int slot; char url[URL], body[BODY];
     lock(); b=net.my_bullet; slot=net.slot; unlock();
-    if(slot<0) return 0;
+    if(slot<0) return;
     snprintf(url,sizeof(url),"%s/rooms/%s/bullets/%d.json",net.base,net.room,slot);
     snprintf(body,sizeof(body),"{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}",
         safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
-    int code=http("PUT",url,body,NULL,0);
-    return code==200;
+    http_async(0, url, body);
 }
 static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room); return http("GET",url,NULL,resp,cap)==200; }
+
+/* ---------- login worker ---------- */
+/* request==1: login/register with nick+pwd. request==2: verify saved session. */
+static int login_attempt(const char *url, const char *nick, const char *pwd);
+static int login_verify_session(const char *url);
+static void login_ensure_thread(void) {
+    if (lg.run) return;
+    lg.run = 1;
+#ifdef _WIN32
+    lg.thread = ds_thread_start(win_login_thread, NULL);
+#else
+    lg.thread = ds_thread_start(login_worker, NULL);
+#endif
+    if (!lg.thread) {
+        lg.run = 0;
+        lg_lock(); lg.status = NET_LOGIN_ERROR; lg.request = 0; lg_unlock();
+        LOGERR("network error: cannot start login thread");
+    }
+}
+static void *login_worker(void *arg) {
+    (void)arg;
+    while (lg.run) {
+        int req;
+        lg_lock(); req = lg.request; lg_unlock();
+        if (!req) { sleep_ms(80); continue; }
+        {
+            char url[URL], nick[LOGIN_NICK_MAX+1], pwd[LOGIN_PWD_MAX+1];
+            int gen;
+            lg_lock();
+            snprintf(url, sizeof(url), "%s", lg.url);
+            snprintf(nick, sizeof(nick), "%s", lg.nick);
+            snprintf(pwd, sizeof(pwd), "%s", lg.pwd);
+            lg.request = 0;
+            gen = lg.gen;
+            lg_unlock();
+            int st = (req == 1) ? login_attempt(url, nick, pwd) : login_verify_session(url);
+            lg_lock();
+            /* discard the result if a newer request or a logout happened meanwhile */
+            if (lg.request == 0 && lg.gen == gen) lg.status = st;
+            lg_unlock();
+        }
+    }
+    return NULL;
+}
+static int login_attempt(const char *url, const char *nick, const char *pwd) {
+    char acc[URL], resp[RESP], etag[96], body[BODY], salt[64], hash[80], chash[80];
+    int code;
+    snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, nick);
+    code = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
+    if (code == 200 && resp[0] && strcmp(resp, "null") != 0) {
+        /* account exists -> check the password */
+        strv(resp, "salt", salt, sizeof(salt));
+        strv(resp, "hash", hash, sizeof(hash));
+        if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
+        sha256_hex(salt, ":", pwd, chash);
+        return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
+    }
+    if (code == 404 || code == 200) {
+        /* no account -> create it atomically: only if it still does not exist */
+        char csalt[32];
+        make_salt(csalt, sizeof(csalt));
+        sha256_hex(csalt, ":", pwd, chash);
+        snprintf(body, sizeof(body), "{\"salt\":\"%s\",\"hash\":\"%s\",\"created\":%lld}", csalt, chash, (long long)now_ms());
+        int c2 = http_ex("PUT", acc, body, NULL, 0, "if-match", "null", NULL, 0);
+        if (c2 == 200) return set_session(nick, chash);
+        if (c2 == 412) {
+            /* someone else registered the same nick at the same moment -> verify against that account */
+            int c3 = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
+            if (c3 == 200 && strcmp(resp, "null") != 0) {
+                strv(resp, "salt", salt, sizeof(salt));
+                strv(resp, "hash", hash, sizeof(hash));
+                if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
+                sha256_hex(salt, ":", pwd, chash);
+                return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
+            }
+            return NET_LOGIN_ERROR;
+        }
+        /* server without conditional support: plain create (last write wins) */
+        int c4 = http_ex("PUT", acc, body, NULL, 0, NULL, NULL, NULL, 0);
+        return c4 == 200 ? set_session(nick, chash) : NET_LOGIN_ERROR;
+    }
+    return NET_LOGIN_ERROR;
+}
+static int login_verify_session(const char *url) {
+    char acc[URL], resp[RESP], salt[64], hash[80];
+    char snick[LOGIN_NICK_MAX+1], shash[80];
+    int code;
+    lg_lock();
+    snprintf(snick, sizeof(snick), "%s", lg.session_nick);
+    snprintf(shash, sizeof(shash), "%s", lg.session_hash);
+    lg_unlock();
+    if (!snick[0] || !shash[0]) return NET_LOGIN_IDLE;
+    snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, snick);
+    code = http("GET", acc, NULL, resp, sizeof(resp));
+    if (code != 200) return NET_LOGIN_OK; /* offline: keep the saved session */
+    strv(resp, "salt", salt, sizeof(salt));
+    strv(resp, "hash", hash, sizeof(hash));
+    if (!salt[0] || !hash[0] || strcmp(hash, shash) != 0) {
+        /* the account no longer matches this password -> drop the session */
+        lg_lock(); lg.session_nick[0] = 0; lg.session_hash[0] = 0; lg_unlock();
+        session_clear();
+        return NET_LOGIN_IDLE;
+    }
+    return NET_LOGIN_OK;
+}
+void net_set_data_path(const char *path) {
+    lg_lock();
+    if (path && *path) snprintf(lg.path, sizeof(lg.path), "%s", path);
+    else lg.path[0] = 0;
+    lg_unlock();
+}
+void net_autologin(const char *url) {
+    char path[320], nick[LOGIN_NICK_MAX+2], hash[96];
+    FILE *f; int got;
+    if (!url || !*url) return;
+    lg_lock();
+    if (lg.status == NET_LOGIN_OK || lg.status == NET_LOGIN_BUSY || lg.request) { lg_unlock(); return; }
+    if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
+    else snprintf(path, sizeof(path), "%s", SESSION_FILE);
+    lg_unlock();
+    f = fopen(path, "r");
+    if (!f) return;
+    got = fscanf(f, "%16s %64s", nick, hash);
+    fclose(f);
+    if (got != 2 || !nick_valid(nick) || strlen(hash) != 64) return;
+    lg_lock();
+    snprintf(lg.url, sizeof(lg.url), "%s", url);
+    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+    snprintf(lg.session_hash, sizeof(lg.session_hash), "%s", hash);
+    lg.status = NET_LOGIN_OK; lg.request = 2; lg.gen = lg.gen + 1;
+    lg_unlock();
+    login_ensure_thread();
+}
+void net_login(const char *url, const char *nick, const char *pwd) {
+    if (!url || !nick || !pwd) return;
+    lg_lock();
+    if (lg.status == NET_LOGIN_BUSY) { lg_unlock(); return; }
+    if (!nick_valid(nick) || !pwd_valid(pwd)) { lg.status = NET_LOGIN_INVALID; lg_unlock(); return; }
+    snprintf(lg.url, sizeof(lg.url), "%s", url);
+    snprintf(lg.nick, sizeof(lg.nick), "%s", nick);
+    snprintf(lg.pwd, sizeof(lg.pwd), "%s", pwd);
+    lg.status = NET_LOGIN_BUSY; lg.request = 1; lg.gen = lg.gen + 1;
+    lg_unlock();
+    login_ensure_thread();
+}
+void net_logout(void) {
+    lg_lock();
+    lg.session_nick[0] = 0; lg.session_hash[0] = 0;
+    lg.status = NET_LOGIN_IDLE; lg.request = 0; lg.gen = lg.gen + 1;
+    lg_unlock();
+    session_clear();
+}
+double net_login_status(void) {
+    double v;
+    lg_lock(); v = (double)lg.status; lg_unlock();
+    return v;
+}
+const char *net_login_nick(void) {
+    lg_lock();
+    if (lg.status == NET_LOGIN_OK && lg.session_nick[0])
+        snprintf(s_lg_nick_ret, sizeof(s_lg_nick_ret), "%s", lg.session_nick);
+    else s_lg_nick_ret[0] = 0;
+    lg_unlock();
+    return s_lg_nick_ret;
+}
 static void release_slot(void) {
     int slot; char url[URL]; lock(); slot=net.slot; net.slot=-1; unlock(); if(slot<0)return;
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
@@ -340,7 +673,11 @@ static int claim_slot(void) {
         else if(strcmp(uid,seen_uid[slot])||seq!=seen_seq[slot]) { snprintf(seen_uid[slot],sizeof(seen_uid[slot]),"%s",uid); seen_seq[slot]=seq; seen_at[slot]=t; }
         else if(t-seen_at[slot]>=STALE)claim=1;
         if(!claim)continue;
-        snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid);
+        {
+            char enick[64];
+            json_escape(net.me.nick,enick,sizeof(enick));
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid,enick);
+        }
         code=http_ex("PUT",url,body,NULL,0,"if-match",etag,NULL,0);
         if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
     }
@@ -356,6 +693,7 @@ static void read_players(const char *resp) {
         if(slot==local) { lock(); ps[slot]=net.me; bs[slot]=net.my_bullet; ps[slot].online=local>=0; unlock(); if(local>=0)count++; continue; }
         snprintf(bp,sizeof(bp),"players/%d",slot); snprintf(p,sizeof(p),"%s/uid",bp); strv(resp,p,uid,sizeof(uid));
         if(!uid[0]||!strcmp(uid,net.uid)){ lseq[slot]=0; lch[slot]=0; continue; }
+        snprintf(p,sizeof(p),"%s/nick",bp); strv(resp,p,ps[slot].nick,sizeof(ps[slot].nick));
         snprintf(p,sizeof(p),"%s/seq",bp); sq=(unsigned long)num(resp,p,0);
         if(sq!=lseq[slot]){ lseq[slot]=sq; lch[slot]=t; } else if(!lch[slot]) lch[slot]=t;
         online=t-lch[slot]<TIMEOUT; if(!online)continue;
@@ -400,6 +738,25 @@ static void parse_and_store_chat(const char *json){
         if(next_uid && text_key>next_uid){
             p=q2+1; continue;
         }
+        char nick[24]={0};
+        {
+            const char *nk=strstr(q2, "\"nick\"");
+            if(nk && (!next_uid || nk<next_uid) && nk<text_key){
+                const char *nc=strchr(nk, ':');
+                if(nc){
+                    const char *nq1=strchr(nc, '"');
+                    if(nq1){
+                        nq1++;
+                        const char *nq2=strchr(nq1, '"');
+                        if(nq2){
+                            size_t nl=nq2-nq1;
+                            if(nl>=sizeof(nick)) nl=sizeof(nick)-1;
+                            memcpy(nick,nq1,nl); nick[nl]=0;
+                        }
+                    }
+                }
+            }
+        }
         const char *t_colon=strchr(text_key, ':');
         if(!t_colon){ p=text_key+6; continue; }
         const char *tq1=strchr(t_colon, '\"');
@@ -438,6 +795,7 @@ static void parse_and_store_chat(const char *json){
             if(tc){ ts=strtoul(tc+1,NULL,10); }
         }
         strncpy(tmp[tmp_cnt].uid, uid, sizeof(tmp[tmp_cnt].uid)-1);
+        strncpy(tmp[tmp_cnt].nick, nick, sizeof(tmp[tmp_cnt].nick)-1);
         strncpy(tmp[tmp_cnt].text, text, sizeof(tmp[tmp_cnt].text)-1);
         tmp[tmp_cnt].ts=ts;
         tmp[tmp_cnt].valid=1;
@@ -463,8 +821,10 @@ static int pull_chat(char *resp, size_t cap){
 #ifdef _WIN32
 static void *thread_main(void *arg);
 static void *reader_thread(void *arg);
+static void *login_worker(void *arg);
 static unsigned __stdcall win_thread_main(void *arg){ thread_main(arg); return 0; }
 static unsigned __stdcall win_reader_thread(void *arg){ reader_thread(arg); return 0; }
+static unsigned __stdcall win_login_thread(void *arg){ login_worker(arg); return 0; }
 #endif
 static void *thread_main(void *arg) {
     int fails=0; (void)arg;
@@ -519,6 +879,11 @@ void net_connect(const char *url,const char *room) {
     snprintf(net.base,sizeof(net.base),"%s",url); n=strlen(net.base); while(n&&net.base[n-1]=='/')net.base[--n]=0;
     snprintf(net.room,sizeof(net.room),"%s",(room&&*room)?room:"main");
     if(!net.uid[0])make_uid();
+    {
+        char snick[LOGIN_NICK_MAX+1];
+        lg_lock(); if (lg.status == NET_LOGIN_OK) snprintf(snick,sizeof(snick),"%s",lg.session_nick); else snick[0]=0; lg_unlock();
+        if (snick[0]) snprintf(net.me.nick,sizeof(net.me.nick),"%s",snick);
+    }
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
 #ifdef _WIN32
@@ -551,12 +916,13 @@ void net_publish_bullet(double x,double y,double dx,double dy,double active,doub
 void net_chat_send(const char *text){
     if(!net.started || !text || !*text) return;
     if(!net.run) return;
-    char url[URL], body[BODY*2], esc[CHAT_TEXT_MAX*2];
+    char url[URL], body[BODY*2], esc[CHAT_TEXT_MAX*2], enick[64];
+    const char *nick;
     json_escape(text, esc, sizeof(esc));
+    lock(); nick = net.me.nick[0] ? net.me.nick : net.uid; json_escape(nick, enick, sizeof(enick)); unlock();
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json",net.base,net.room);
-    long long ts=now_ms();
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"text\":\"%s\",\"ts\":%lld}",net.uid,esc,ts);
-    http("POST",url,body,NULL,0);
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"text\":\"%s\",\"ts\":%lld}",net.uid,enick,esc,(long long)now_ms());
+    http_async(1, url, body);
     LOG("chat send %s",text);
 }
 double net_chat_count(void){ double v; lock(); v=net.chat_count; unlock(); return v; }
@@ -576,7 +942,8 @@ const char* net_chat_uid(double idx){
     int i=(int)idx;
     lock();
     if(i>=0 && i<net.chat_count && net.chats[i].valid){
-        strncpy(s_chat_uid_ret, net.chats[i].uid, sizeof(s_chat_uid_ret)-1);
+        const char *src = net.chats[i].nick[0] ? net.chats[i].nick : net.chats[i].uid;
+        strncpy(s_chat_uid_ret, src, sizeof(s_chat_uid_ret)-1);
         s_chat_uid_ret[sizeof(s_chat_uid_ret)-1]='\0';
     }else{
         s_chat_uid_ret[0]='\0';
@@ -593,6 +960,18 @@ static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
 double net_count(void){ double v; lock(); v=net.count; unlock(); return v; }
+const char* net_player_nick(double slot){
+    int i=sidx(slot);
+    lock();
+    if(i>=0 && net.players[i].nick[0]){
+        strncpy(s_nick_ret, net.players[i].nick, sizeof(s_nick_ret)-1);
+        s_nick_ret[sizeof(s_nick_ret)-1]='\0';
+    }else{
+        s_nick_ret[0]='\0';
+    }
+    unlock();
+    return s_nick_ret;
+}
 #define READER(name, field) double name(double slot){ int i=sidx(slot); double v=0; if(i>=0){lock();v=field;unlock();} return v; }
 READER(net_player_online, net.players[i].online?1:0)
 READER(net_player_x, net.players[i].x)

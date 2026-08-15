@@ -8,11 +8,25 @@
 #define NET_CONNECTING 1
 #define NET_PLAYING 3
 #define NET_ERROR 4
+/* login states (net_login_status) */
+#define NET_LOGIN_IDLE 0
+#define NET_LOGIN_BUSY 1
+#define NET_LOGIN_OK 2
+#define NET_LOGIN_WRONG_PWD 3
+#define NET_LOGIN_ERROR 4
+#define NET_LOGIN_INVALID 5
 #ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm);
 #endif
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
+void net_set_data_path(const char *path);
+void net_autologin(const char *url);
+void net_login(const char *url, const char *nick, const char *pwd);
+void net_logout(void);
+double net_login_status(void);
+const char *net_login_nick(void);
+const char *net_player_nick(double slot);
 void net_publish(double x, double y, double a, double hp, double alive);
 void net_publish_bullet(double x, double y, double dx, double dy, double active, double shot, double tr);
 double net_status(void);
