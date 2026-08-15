@@ -1,25 +1,16 @@
-/* Минимальный TTF-загрузчик и растеризатор глифов в альфа-атлас.
- * Поддерживает форматы 4 и 12 cmap, простые и составные глифы.
- * Включается прямо в graphics.c — никаких отдельных translation units. */
-
 typedef struct DSFont DSFont;
-
 void ds_font_destroy(DSFont *font);
-
 #define DS_FONT_ATLAS_W 1024
 #define DS_FONT_ATLAS_H 1024
 #define DS_FONT_SS 4
 #define DS_FONT_MAX 256
-
 #define ARG_WORDS 0x0001
 #define ARG_XY 0x0002
 #define HAVE_SCALE 0x0008
 #define MORE 0x0020
 #define HAVE_XY_SCALE 0x0040
 #define HAVE_2X2 0x0080
-
 #define TAG(a,b,c,d) ((uint32_t)(a)<<24|(uint32_t)(b)<<16|(uint32_t)(c)<<8|(uint32_t)(d))
-
 typedef struct { float x, y; int on_curve; } DSPoint;
 typedef struct {
     DSPoint *points; int pc, pp;
@@ -27,7 +18,6 @@ typedef struct {
 } DSOutline;
 typedef struct { float x, y; } DSFPoint;
 typedef struct { DSFPoint *points; int count, cap; } DSFC;
-
 struct DSFont {
     uint8_t *data; size_t size;
     int upem, loc_format, ng, nhm, asc_u, desc_u, lg_u;
@@ -37,7 +27,6 @@ struct DSFont {
     uint8_t *alpha;
     DSFontGlyph *glyphs; int gcount;
 };
-
 static int in_r(const DSFont *f, size_t o, size_t l) {
     return f && o <= f->size && l <= f->size - o;
 }
@@ -65,21 +54,20 @@ static int tbound(const DSFont *f, uint32_t tag, uint32_t *off, uint32_t *len) {
     }
     return 0;
 }
-
 static void ol_init(DSOutline *o) { memset(o, 0, sizeof(*o)); }
 static void ol_free(DSOutline *o) {
     if (!o) return;
     free(o->points); free(o->ends); memset(o, 0, sizeof(*o));
 }
 static int ol_rsrv_p(DSOutline *o, int n) {
-    int need = o->pc + n, cap = o->pp ?: 32;
+    int need = o->pc + n, cap = o->pp ? o->pp : 32;
     while (cap < need) { if (cap > 1e6) return 0; cap *= 2; }
     DSPoint *p = (DSPoint *)realloc(o->points, (size_t)cap*sizeof(*p));
     if (!p) return 0;
     o->points = p; o->pp = cap; return 1;
 }
 static int ol_rsrv_c(DSOutline *o, int n) {
-    int need = o->cc + n, cap = o->cp ?: 8;
+    int need = o->cc + n, cap = o->cp ? o->cp : 8;
     while (cap < need) cap *= 2;
     int *e = (int *)realloc(o->ends, (size_t)cap*sizeof(*e));
     if (!e) return 0;
@@ -92,7 +80,6 @@ static int ol_add(DSOutline *o, const DSPoint *p, int n) {
     o->ends[o->cc++] = o->pc - 1;
     return 1;
 }
-
 static int g_offs(const DSFont *f, int g, uint32_t *s, uint32_t *e) {
     if (!f || g < 0 || g >= f->ng) return 0;
     uint32_t a, b;
@@ -106,10 +93,8 @@ static int g_offs(const DSFont *f, int g, uint32_t *s, uint32_t *e) {
     if (a > b || !in_r(f, (size_t)f->glyf + a, b - a)) return 0;
     if (s) *s = a; if (e) *e = b; return 1;
 }
-
 static int read_outline(const DSFont *f, int g, int depth, float a, float b, float c, float d,
                         float tx, float ty, DSOutline *dst);
-
 static int read_simple(const DSFont *f, uint32_t off, int nc, float a, float b, float c, float d,
                        float tx, float ty, DSOutline *dst) {
     if (nc <= 0 || nc > 4096) return 1;
@@ -164,7 +149,6 @@ static int read_simple(const DSFont *f, uint32_t off, int nc, float a, float b, 
 fail:
     free(ends); free(flags); free(pts); return 0;
 }
-
 static int read_composite(const DSFont *f, uint32_t off, int depth, float a, float b, float c, float d,
                           float tx, float ty, DSOutline *dst) {
     size_t cur = (size_t)f->glyf + off + 10;
@@ -187,14 +171,12 @@ static int read_composite(const DSFont *f, uint32_t off, int depth, float a, flo
             ca = (float)bs16(f, cur)/16384.0f;   cb = (float)bs16(f, cur+2)/16384.0f;
             cc = (float)bs16(f, cur+4)/16384.0f; cd = (float)bs16(f, cur+6)/16384.0f; cur += 8;
         }
-        /* P * C: координаты компоненты в локальном пространстве глифа. */
         float na = a*ca + c*cb, nb = b*ca + d*cb, nc = a*cc + c*cd, nd = b*cc + d*cd;
         float ntx = a*dx + c*dy + tx, nty = b*dx + d*dy + ty;
         if (!read_outline(f, comp, depth+1, na, nb, nc, nd, ntx, nty, dst)) return 0;
     }
     return 1;
 }
-
 static int read_outline(const DSFont *f, int g, int depth, float a, float b, float c, float d,
                         float tx, float ty, DSOutline *dst) {
     uint32_t s, e;
@@ -205,9 +187,8 @@ static int read_outline(const DSFont *f, int g, int depth, float a, float b, flo
     if (cc >= 0) return read_simple(f, s, cc, a, b, c, d, tx, ty, dst);
     return read_composite(f, s, depth, a, b, c, d, tx, ty, dst);
 }
-
 static int flat_rsrv(DSFC *f, int n) {
-    int need = f->count + n, cap = f->cap ?: 32;
+    int need = f->count + n, cap = f->cap ? f->cap : 32;
     while (cap < need) cap *= 2;
     DSFPoint *p = (DSFPoint *)realloc(f->points, (size_t)cap*sizeof(*p));
     if (!p) return 0;
@@ -255,7 +236,6 @@ static int flatten(const DSPoint *p, int n, DSFC *flat) {
     }
     return 1;
 }
-
 static int inside(const DSFC *c, int n, float x, float y) {
     int in = 0;
     for (int i = 0; i < n; i++) {
@@ -269,7 +249,6 @@ static int inside(const DSFC *c, int n, float x, float y) {
     }
     return in;
 }
-
 static int g_metrics(const DSFont *f, int g, int *adv, int *lsb) {
     if (!f || g < 0 || g >= f->ng || !f->hmtx) return 0;
     int m = g < f->nhm ? g : f->nhm - 1;
@@ -281,7 +260,6 @@ static int g_metrics(const DSFont *f, int g, int *adv, int *lsb) {
     }
     return 1;
 }
-
 static int cmap4_lk(const DSFont *f, uint32_t cp) {
     if (!f->cmap4 || cp > 0xFFFF) return 0;
     size_t b = f->cmap4;
@@ -316,7 +294,6 @@ static int g_for(const DSFont *f, uint32_t cp) {
     if (g < 0 || g >= f->ng) g = 0;
     return g;
 }
-
 static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
     int gi = g_for(f, g->codepoint);
     int adv_u = 0;
@@ -327,14 +304,12 @@ static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
     DSFC *flat = NULL;
     int fc = 0;
     float s = f->scale;
-
     g_metrics(f, gi, &adv_u, NULL);
     g->advance = adv_u * s;
     g->bearing_x = 0; g->bearing_top = 0;
     g->width = 0; g->height = 0;
     g->u0 = g->u1 = (float)ax / f->aw;
     g->v0 = g->v1 = (float)ay / f->ah;
-
     ol_init(&ol);
     if (!read_outline(f, gi, 0, 1, 0, 0, 1, 0, 0, &ol)) { ol_free(&ol); return rh; }
     for (int cn = 0; cn < ol.cc; cn++) {
@@ -353,7 +328,6 @@ static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
     if (w < 1) w = 1; if (h < 1) h = 1;
     g->bearing_x = mnx * s; g->bearing_top = mxy * s;
     g->width = w; g->height = h;
-
     flat = (DSFC *)calloc((size_t)ol.cc, sizeof(*flat));
     if (!flat) { ol_free(&ol); return rh; }
     st = 0;
@@ -384,7 +358,6 @@ static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
     free(flat); ol_free(&ol);
     return h > rh ? h : rh;
 }
-
 static int init_tables(DSFont *f) {
     uint32_t l;
     if (!tbound(f, TAG('h','e','a','d'), &f->head, &l) || l < 54 ||
@@ -416,14 +389,12 @@ static int init_tables(DSFont *f) {
     }
     return f->cmap4 || f->cmap12;
 }
-
 static int add_cp(DSFont *f, uint32_t cp) {
     for (int i = 0; i < f->gcount; i++) if (f->glyphs[i].codepoint == cp) return 1;
     if (f->gcount >= DS_FONT_MAX) return 0;
     f->glyphs[f->gcount++].codepoint = cp;
     return 1;
 }
-
 static int add_utf8(DSFont *f, const char *text) {
     const uint8_t *p = (const uint8_t *)text;
     while (p && *p) {
@@ -443,7 +414,6 @@ static int add_utf8(DSFont *f, const char *text) {
     }
     return 1;
 }
-
 DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
     if (!data || size < 12 || ph <= 0 || ph > 256) return NULL;
     DSFont *f = (DSFont *)calloc(1, sizeof(*f));
@@ -460,12 +430,9 @@ DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
     f->ascent = f->asc_u * f->scale;
     f->line_h = (f->asc_u - f->desc_u + f->lg_u) * f->scale;
     if (f->line_h < ph) f->line_h = (float)ph;
-
-    /* Символы всех трёх локализаций. Японские глифы добавляются только для
-     * строк интерфейса, чтобы компактный атлас 1024x1024 не разрастался. */
     for (int cp = 32; cp <= 126; cp++) add_cp(f, (uint32_t)cp);
     for (int cp = 0x0410; cp <= 0x044F; cp++) add_cp(f, (uint32_t)cp);
-    add_cp(f, 0x0401); add_cp(f, 0x0451); /* Ё, ё */
+    add_cp(f, 0x0401); add_cp(f, 0x0451);
     if (!add_utf8(f,
         "日本語遊ぶ設定ソロオンラインコンソール上へ下へ消去戻る"
         "チャットオンラインチャットメッセージなし閉じるキーボード"
@@ -474,7 +441,6 @@ DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
         ds_font_destroy(f); return NULL;
     }
     add_cp(f, '?');
-
     int ax = 1, ay = 1, rh = 0;
     for (int i = 0; i < f->gcount; i++) {
         DSFontGlyph *gl = &f->glyphs[i];
@@ -505,12 +471,10 @@ DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
     }
     return f;
 }
-
 void ds_font_destroy(DSFont *f) {
     if (!f) return;
     free(f->data); free(f->alpha); free(f->glyphs); free(f);
 }
-
 const DSFontGlyph *ds_font_glyph(const DSFont *f, uint32_t cp) {
     if (!f) return NULL;
     const DSFontGlyph *fb = NULL;
@@ -520,7 +484,6 @@ const DSFontGlyph *ds_font_glyph(const DSFont *f, uint32_t cp) {
     }
     return fb;
 }
-
 int ds_font_aw(const DSFont *f) { return f ? f->aw : 0; }
 int ds_font_ah(const DSFont *f) { return f ? f->ah : 0; }
 const uint8_t *ds_font_alpha(const DSFont *f) { return f ? f->alpha : NULL; }
