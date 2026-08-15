@@ -1,2 +1,7 @@
-num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=96, punch_width=96, punch_damage=1, joy_speed=192, bot_speed=132, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.5, aim_fade_in=0.05, aim_fade_out=0.1, login_field=0, login_status=0
+// config — все глобальные константы игры, строки через запятую
+// Игрок заметно крупнее одиночного бота; физический размер совпадает с видимым спрайтом.
+// Бот использует отдельную атаку с предупреждением, коротким ударом и восстановлением:
+// столкновение с ним само по себе больше не наносит урон.
+num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=142, bot_strafe_speed=72, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1, aim_fade_in=0.05, aim_fade_out=0.1, login_field=0, login_status=0
+num enemy_attack_distance=112, enemy_min_distance=82, enemy_punch_reach=126, enemy_punch_width=106, enemy_windup=0.42, enemy_lock_time=0.14, enemy_punch_time=0.2, enemy_recovery=0.5, enemy_attack_cooldown=0.65, enemy_damage=1, enemy_prediction=0.18
 str GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main", login_nick="", login_pwd="", last_kb=""

@@ -11,13 +11,14 @@
 
     <application
         android:label="Cubic Battle 4"
-        android:hasCode="false"
+        android:hasCode="true"
         android:extractNativeLibs="true">
 
         <activity
-            android:name="android.app.NativeActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:name="com.dimscript.gamedemo.GameActivity"
+            android:configChanges="orientation|keyboard|keyboardHidden|screenSize"
             android:screenOrientation="landscape"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
             android:exported="true">
 
             <meta-data

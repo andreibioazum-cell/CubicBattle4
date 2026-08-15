@@ -70,7 +70,18 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
             init_done = 1; script_active = 0; restart_failures = 0;
             ds_clear_script_restart(); (void)start_script(0); break;
-        case APP_CMD_TERM_WINDOW: init_done = 0; script_active = 0; ds_graphics_shutdown(); break;
+        case APP_CMD_WINDOW_RESIZED:
+        case APP_CMD_CONTENT_RECT_CHANGED:
+        case APP_CMD_CONFIG_CHANGED:
+            /* adjustResize changes the game surface while the IME is open. */
+            if (app->window) {
+                int w = ANativeWindow_getWidth(app->window);
+                int h = ANativeWindow_getHeight(app->window);
+                if (w > 0 && h > 0) { screen_w = w; screen_h = h; }
+            }
+            break;
+        case APP_CMD_TERM_WINDOW:
+            init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); break;
         case APP_CMD_GAINED_FOCUS: break;
         case APP_CMD_LOST_FOCUS: break;
         default: break;
@@ -101,12 +112,15 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         int32_t action = AKeyEvent_getAction(event);
         int32_t key = AKeyEvent_getKeyCode(event);
         int32_t meta = AKeyEvent_getMetaState(event);
-        if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE) {
+        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_DOWN && keyboard_visible()) {
+            keyboard_hide();
+            return 1;
+        }
+        if (keyboard_visible() &&
+            (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE)) {
             if (keyboard_handle_key(key, action, meta)) return 1;
         }
-        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) {
-            return 0;
-        }
+        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) return 0;
         return 1;
     }
     return 0;
@@ -122,7 +136,9 @@ void android_main(struct android_app *app) {
         struct android_poll_source *source = NULL; int ident;
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
-            if (app->destroyRequested) { init_done = 0; script_active = 0; ds_graphics_shutdown(); return; }
+            if (app->destroyRequested) {
+                init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); return;
+            }
         }
         if (!app->window || !init_done || app->destroyRequested) continue;
         restart_script_if_due();

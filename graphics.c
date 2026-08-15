@@ -44,7 +44,7 @@ typedef struct {
         struct { float x, y, r, th; uint32_t c; } rg;
         struct { float x1, y1, x2, y2, th; uint32_t c; } ln;
         struct { float x, y, a, sc; Texture *tx; } tx;
-        struct { const char *s; float x, y, sc; uint32_t c; } tt;
+        struct { char *s; float x, y, sc; uint32_t c; } tt;
     } v;
 } DSCmd;
 static uint32_t pack_c(uint32_t c) {
@@ -444,9 +444,21 @@ static void flush(void) {
             case DS_CMD_RING:   render_ring(cur_buf, c->v.rg.x, c->v.rg.y, c->v.rg.r, c->v.rg.th, c->v.rg.c); break;
             case DS_CMD_LINE:   render_line(cur_buf, c->v.ln.x1, c->v.ln.y1, c->v.ln.x2, c->v.ln.y2, c->v.ln.th, c->v.ln.c); break;
             case DS_CMD_TEX:    draw_tx(cur_buf, c->v.tx.tx, c->v.tx.x, c->v.tx.y, c->v.tx.a, c->v.tx.sc); break;
-            case DS_CMD_TEXT:   render_text_now(cur_buf, c->v.tt.s, c->v.tt.x, c->v.tt.y, c->v.tt.c, c->v.tt.sc); break;
+            case DS_CMD_TEXT:
+                render_text_now(cur_buf, c->v.tt.s, c->v.tt.x, c->v.tt.y, c->v.tt.c, c->v.tt.sc);
+                free(c->v.tt.s); c->v.tt.s = NULL;
+                break;
         }
     }
+}
+static void discard_commands(void) {
+    for (size_t i = 0; i < cmd_n; i++) {
+        if (cmds[i].t == DS_CMD_TEXT) {
+            free(cmds[i].v.tt.s);
+            cmds[i].v.tt.s = NULL;
+        }
+    }
+    cmd_n = 0;
 }
 void ds_release_assets(void) {
     Texture *t = textures;
@@ -496,7 +508,11 @@ void tex(float x, float y, const char *name, float a, float s) {
 void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
     if (!frame_open || !s || !ensure_font()) return;
     DSCmd *p = push(DS_CMD_TEXT); if (!p) return;
-    p->v.tt.s=s; p->v.tt.x=x; p->v.tt.y=y; p->v.tt.sc=sc; p->v.tt.c=pack_c(c);
+    /* Network and script strings can come from reused buffers; renderer commands
+     * must own text until the frame is flushed or cancelled. */
+    p->v.tt.s = strdup_safe(s);
+    if (!p->v.tt.s) { ds_runtime_error("out of memory copying renderer text"); return; }
+    p->v.tt.x=x; p->v.tt.y=y; p->v.tt.sc=sc; p->v.tt.c=pack_c(c);
 }
 void text(const char *s, float x, float y, uint32_t c) { text_scaled(s, x, y, c, 1.0f); }
 int text_ink_width(const char *s) {
@@ -553,7 +569,7 @@ int ds_graphics_init(AAssetManager *a) { (void)a; return 1; }
 #endif
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || !b->pixels || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;
-    cur_buf = b; frame_open = 1; cmd_n = 0;
+    discard_commands(); cur_buf = b; frame_open = 1;
     clear_buf(b, pack_c(0x00000000));
     return 1;
 }
@@ -561,7 +577,7 @@ void ds_graphics_end_frame(void) {
     if (!frame_open) return;
     flush(); cmd_n = 0; frame_open = 0; cur_buf = NULL;
 }
-void ds_graphics_cancel_frame(void) { cmd_n = 0; frame_open = 0; cur_buf = NULL; }
+void ds_graphics_cancel_frame(void) { discard_commands(); frame_open = 0; cur_buf = NULL; }
 void ds_graphics_error_screen(const char *m) {
     if (!cur_buf) return;
     clear_buf(cur_buf, pack_c(0xff1c0b10));
