@@ -76,38 +76,3 @@ jobs:
       with:
         name: Game-APK-Android10-14-arm64-arm32
         path: Game.apk
-
-  build-pc-cmake:
-    name: Build Windows PC (.exe) with CMake
-    runs-on: windows-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-    - name: Build Game.exe
-      run: cmake --build build --config Release
-
-    - name: Prepare Release ZIP
-      shell: pwsh
-      run: |
-        Compress-Archive -Path build/Release/* -DestinationPath Game-Windows-PC.zip
-
-    - name: Upload Game.exe
-      uses: actions/upload-artifact@v4
-      with:
-        name: Game-Windows-PC-exe
-        path: build/Release/Game.exe
-
-    - name: Upload Full Game Windows Package
-      uses: actions/upload-artifact@v4
-      with:
-        name: Game-Windows-PC-Full-Package
-        path: Game-Windows-PC.zip
