@@ -76,6 +76,9 @@ static void ensure_buffer(int cw, int ch) {
     g_pixels = np;
     g_bw = cw;
     g_bh = ch;
+    /* realloc не обнуляет память: без этого после изменения размера окна в
+     * кадр попадает мусор (фиолетовые/чёрные пятна и полосы). */
+    memset(g_pixels, 0, (size_t)cw * (size_t)ch * 4u);
     screen_w = cw;
     screen_h = ch;
 }
@@ -264,6 +267,20 @@ static void render_frame(void) {
         } else {
             ds_graphics_end_frame();
         }
+        /* Игровой буфер хранит пиксели в порядке R,G,B,A (как на Android).
+         * GDI-окну нужен 32-битный DIB в порядке B,G,R,X. Меняем местами
+         * красный и синий байты и глушим альфу. Раньше здесь были маски
+         * BI_BITFIELDS — часть видеодрайверов читает их в порядке B,G,R,
+         * из-за чего каналы R/B менялись местами и «цвета ломались»
+         * (фиолетовые/чёрные тона). BI_RGB без масок работает везде. */
+        if (g_pixels) {
+            uint32_t *pp = g_pixels;
+            size_t pn = (size_t)g_bw * (size_t)g_bh;
+            for (size_t i = 0; i < pn; i++) {
+                uint32_t v = pp[i];
+                pp[i] = ((v & 0xFFu) << 16) | (v & 0xFF00u) | ((v >> 16) & 0xFFu) | 0xFF000000u;
+            }
+        }
     }
     HDC dc = GetDC(g_hwnd);
     BITMAPINFO bi;
@@ -273,10 +290,9 @@ static void render_frame(void) {
     bi.bmiHeader.biHeight = -g_bh;
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_BITFIELDS;
-    ((uint32_t *)bi.bmiColors)[0] = 0x000000FF;
-    ((uint32_t *)bi.bmiColors)[1] = 0x0000FF00;
-    ((uint32_t *)bi.bmiColors)[2] = 0x00FF0000;
+    /* BI_RGB 32bpp: байты B,G,R,X (см. swizzle выше). Без BI_BITFIELDS-масок,
+     * которые разные драйверы толкуют по-разному. */
+    bi.bmiHeader.biCompression = BI_RGB;
     StretchDIBits(dc, 0, 0, cw, ch, 0, 0, g_bw, g_bh,
                   g_pixels, &bi, DIB_RGB_COLORS, SRCCOPY);
     ReleaseDC(g_hwnd, dc);

@@ -46,3 +46,37 @@ function tr_type_message
 if language==1; return "Введите сообщение..."; else if language==2; return "メッセージを入力..."; end; return "Type a message...";end
 function tr_send
 if language==1; return "Отправить"; else if language==2; return "送信"; end; return "Send";end
+function tr_account
+if language==1; return "Аккаунт"; else if language==2; return "アカウント"; end; return "Account";end
+function tr_login_title
+if language==1; return "Ник и пароль"; else if language==2; return "ニックネームとパスワード"; end; return "Nick & Password";end
+function tr_nick
+if language==1; return "Ник"; else if language==2; return "ニック"; end; return "Nick";end
+function tr_pwd
+if language==1; return "Пароль"; else if language==2; return "パスワード"; end; return "Password";end
+function tr_nick_ph
+if language==1; return "Ник: 3-16 (буквы, цифры, _)"; else if language==2; return "ニック: 3-16モジ"; end; return "Nick: 3-16 (letters, digits, _)";end
+function tr_pwd_ph
+if language==1; return "Пароль: от 4 символов"; else if language==2; return "パスワード: 4イジョウ"; end; return "Password: 4+ characters";end
+function tr_login_go
+if language==1; return "Войти"; else if language==2; return "ログイン"; end; return "Log in";end
+function tr_logout
+if language==1; return "Выйти"; else if language==2; return "ログアウト"; end; return "Log out";end
+function tr_wrong_pwd
+if language==1; return "Неверный пароль"; else if language==2; return "パスワードが違います"; end; return "Wrong password";end
+function tr_bad_creds
+if language==1; return "Ник: 3-16 букв/цифр/_, пароль: от 4"; else if language==2; return "ニック3-16、パスワード4以上"; end; return "Nick: 3-16 letters/digits/_, password: 4+";end
+function tr_reg_title
+if language==1; return "Создать аккаунт"; else if language==2; return "アカウント作成"; end; return "Create account";end
+function tr_rep_pwd
+if language==1; return "Повторите пароль"; else if language==2; return "パスワード再入力"; end; return "Repeat password";end
+function tr_create_go
+if language==1; return "Создать"; else if language==2; return "作成"; end; return "Create";end
+function tr_switch_to_create
+if language==1; return "Создать аккаунт"; else if language==2; return "アカウント作成"; end; return "Create account";end
+function tr_switch_to_login
+if language==1; return "У меня есть аккаунт"; else if language==2; return "アカウントを持っています"; end; return "I have an account";end
+function tr_exists
+if language==1; return "Аккаунт уже существует"; else if language==2; return "アカウントは既に存在します"; end; return "Account already exists";end
+function tr_mismatch
+if language==1; return "Пароли не совпадают"; else if language==2; return "パスワードが一致しません"; end; return "Passwords do not match";end

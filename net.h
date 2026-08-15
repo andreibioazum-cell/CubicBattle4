@@ -15,6 +15,7 @@
 #define NET_LOGIN_WRONG_PWD 3
 #define NET_LOGIN_ERROR 4
 #define NET_LOGIN_INVALID 5
+#define NET_LOGIN_EXISTS 6
 #ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm);
 #endif
@@ -23,6 +24,7 @@ void net_disconnect(void);
 void net_set_data_path(const char *path);
 void net_autologin(const char *url);
 void net_login(const char *url, const char *nick, const char *pwd);
+void net_register(const char *url, const char *nick, const char *pwd);
 void net_logout(void);
 double net_login_status(void);
 const char *net_login_nick(void);

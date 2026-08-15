@@ -29,7 +29,7 @@
 #define CHAT_RESP 8192
 #define WRITE_TICK 50
 #define READ_TICK 50
-#define TIMEOUT 5000
+#define TIMEOUT 2000
 #define STALE 12000
 #define CHAT_MAX 32
 #define CHAT_TEXT_MAX 96
@@ -75,6 +75,11 @@ static struct {
     Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
 } net = { .lock = DS_MUTEX_INIT };
+#include <stdatomic.h>
+/* Пока идёт отключение (net_disconnect), HTTP-запросы используют короткий
+ * таймаут, чтобы игра не замирала на секунды, если сеть «мертва».
+ * Читается потоками сети, а пишется игровым потоком — только атомарно. */
+static atomic_int net_fast = 0;
 static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
@@ -229,6 +234,17 @@ static double safe(double v) { if (v != v) return 0; if (v > 1e300 || v < -1e300
 static void lock(void) { ds_mutex_lock(net.lock); }
 static void unlock(void) { ds_mutex_unlock(net.lock); }
 static void status(int s) { lock(); net.status=s; unlock(); }
+/* Не пишем сетевые ошибки в консоль чаще раза в 2 секунды,
+ * иначе при «мёртвой» сети консоль зальёт тысячами строк. */
+static int net_log_ok(void) {
+    /* Вызывается из нескольких потоков (writer/reader/login) — атомарно,
+     * иначе гонка по static-long long это формально UB. */
+    static atomic_llong last = 0;
+    long long now = now_ms();
+    long long prev = atomic_load(&last);
+    if (now - prev < 2000) return 0;
+    return atomic_compare_exchange_strong(&last, &prev, now);
+}
 #ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
 #endif
@@ -248,56 +264,106 @@ static int parse_http_url(const char *url, char *host, size_t host_cap, int *por
     *path = slash ? slash : "/";
     return 1;
 }
+#ifdef _WIN32
+/* Понятная диагностика сетевых ошибок для консоли игры: код WinINet
+ * (12007 = нет DNS, 12029 = не могу соединиться, 12038 = сертификат,
+ * 12002 = таймаут...) плюс ответ сервера, если он был. */
+static void log_win32_net_error(const char *what, int code, int stage) {
+    if (!net_log_ok()) return;
+    DWORD err = GetLastError();
+    char msg[256] = "";
+    if (err) {
+        FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                       NULL, err, 0, msg, sizeof(msg) - 1, NULL);
+        size_t mlen = strlen(msg);
+        while (mlen && (msg[mlen-1]=='\r'||msg[mlen-1]=='\n'||msg[mlen-1]==' '||msg[mlen-1]=='.')) msg[--mlen] = '\0';
+    }
+    if (stage == 2) {
+        char srv[512] = "";
+        DWORD slen = sizeof(srv) - 1, sidx = 0;
+        if (InternetGetLastResponseInfoA(&sidx, srv, &slen) && slen > 0) {
+            srv[slen] = '\0';
+            LOGERR("http %s: HTTP %d, wininet err %lu (%s); server: %s",
+                   what, code, err, msg[0] ? msg : "unknown", srv);
+            return;
+        }
+    }
+    LOGERR("http %s: HTTP %d, wininet err %lu (%s)", what, code, err, msg[0] ? msg : "unknown");
+}
+#endif
 static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
                    const char *header,const char *value,char *etag,size_t etag_cap) {
     char host[256]; int port = 80, secure = 0; const char *path = NULL;
     if (out && cap) out[0] = '\0';
     if (etag && etag_cap) etag[0] = '\0';
     if (!url || !parse_http_url(url, host, sizeof(host), &port, &path, &secure)) return 0;
-    HINTERNET inet = InternetOpenA("CubicBattle/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!inet) return 0;
-    HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    if (!conn) { InternetCloseHandle(inet); return 0; }
-    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI;
-    if (secure) flags |= INTERNET_FLAG_SECURE;
-    HINTERNET req = HttpOpenRequestA(conn, method, path, NULL, NULL, NULL, flags, 0);
-    if (!req) { InternetCloseHandle(conn); InternetCloseHandle(inet); return 0; }
-    char hdrs[512]; int hl = 0;
-    hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "Content-Type: application/json\r\n");
-    if (header && value) hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "%s: %s\r\n", header, value);
-    if (hl < 0 || (size_t)hl >= sizeof(hdrs)) hl = (int)sizeof(hdrs) - 1;
-    hdrs[hl] = '\0';
-    BOOL ok = HttpSendRequestA(req, hl ? hdrs : NULL, (DWORD)hl, (LPVOID)body, (DWORD)(body ? strlen(body) : 0));
-    int code = 0;
-    if (ok) {
-        DWORD len = sizeof(code), idx = 0;
-        HttpQueryInfoA(req, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &len, &idx);
-    }
-    if (etag && etag_cap) {
-        DWORD len = 0, idx = 0;
-        if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, NULL, &len, &idx) || GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-            if (len && len < etag_cap) {
-                DWORD got = len;
-                if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, etag, &got, &idx) && got < etag_cap) etag[got] = '\0';
+    /* Сначала системные настройки (IE/прокси). Если транспорт не сработал —
+     * пробуем прямое соединение: сломанный системный прокси/антивирусный
+     * фильтр не должен давать вечное «нет соединения». */
+    int modes[2] = { INTERNET_OPEN_TYPE_PRECONFIG, INTERNET_OPEN_TYPE_DIRECT };
+    int last_code = 0, last_stage = 1;
+    for (int mi = 0; mi < 2; mi++) {
+        HINTERNET inet = InternetOpenA("CubicBattle/1.0", (DWORD)modes[mi], NULL, NULL, 0);
+        if (!inet) continue;
+        HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+        if (!conn) { InternetCloseHandle(inet); continue; }
+        {
+            DWORD tmo = (DWORD)(atomic_load(&net_fast) ? 800 : TIMEOUT);
+            InternetSetOptionA(conn, INTERNET_OPTION_CONNECT_TIMEOUT, &tmo, sizeof(tmo));
+            InternetSetOptionA(conn, INTERNET_OPTION_SEND_TIMEOUT, &tmo, sizeof(tmo));
+            InternetSetOptionA(conn, INTERNET_OPTION_RECEIVE_TIMEOUT, &tmo, sizeof(tmo));
+        }
+        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI;
+        if (secure) flags |= INTERNET_FLAG_SECURE;
+        HINTERNET req = HttpOpenRequestA(conn, method, path, NULL, NULL, NULL, flags, 0);
+        if (!req) { InternetCloseHandle(conn); InternetCloseHandle(inet); continue; }
+        char hdrs[512]; int hl = 0;
+        hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "Content-Type: application/json\r\n");
+        if (header && value) hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "%s: %s\r\n", header, value);
+        if (hl < 0 || (size_t)hl >= sizeof(hdrs)) hl = (int)sizeof(hdrs) - 1;
+        hdrs[hl] = '\0';
+        BOOL ok = HttpSendRequestA(req, hl ? hdrs : NULL, (DWORD)hl, (LPVOID)body, (DWORD)(body ? strlen(body) : 0));
+        int code = 0;
+        if (ok) {
+            DWORD len = sizeof(code), idx = 0;
+            if (HttpQueryInfoA(req, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &len, &idx)) last_code = code;
+        }
+        if (etag && etag_cap) {
+            DWORD len = 0, idx = 0;
+            if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, NULL, &len, &idx) || GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+                if (len && len < etag_cap) {
+                    DWORD got = len;
+                    if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, etag, &got, &idx) && got < etag_cap) etag[got] = '\0';
+                }
             }
         }
-    }
-    if (ok && out && cap) {
-        size_t total = 0;
-        for (;;) {
-            DWORD rd = 0;
-            if (!InternetReadFile(req, out + total, (DWORD)(cap - 1 - total), &rd) || rd == 0) break;
-            total += (size_t)rd;
-            out[total] = '\0';
-            if (total + 1 >= cap) break;
+        if (ok && out && cap) {
+            size_t total = 0;
+            for (;;) {
+                DWORD rd = 0;
+                if (!InternetReadFile(req, out + total, (DWORD)(cap - 1 - total), &rd) || rd == 0) break;
+                total += (size_t)rd;
+                out[total] = '\0';
+                if (total + 1 >= cap) break;
+            }
         }
+        InternetCloseHandle(req);
+        InternetCloseHandle(conn);
+        InternetCloseHandle(inet);
+        if (ok) return code;
+        if (code) { last_code = code; last_stage = 2; break; } /* сервер ответил — прокси ни при чём */
+        last_code = 0; last_stage = 1;
     }
-    InternetCloseHandle(req);
-    InternetCloseHandle(conn);
-    InternetCloseHandle(inet);
-    return code;
+    log_win32_net_error(method, last_code, last_stage);
+    return 0;
 }
 #elif defined(__ANDROID__)
+/* JNI HTTP-клиент с полной проверкой исключений. Если после JNI-вызова
+ * остаётся «висящее» исключение и мы делаем следующий JNI-вызов — Android
+ * (CheckJNI) убивает процесс: это и был «вылет при создании аккаунта»,
+ * когда из-за пропавшего setRequestMethod PUT уходил как GET и Java
+ * бросала ProtocolException. Теперь каждый вызов проверяется, а исключение
+ * очищается, и вместо вылета игра просто показывает причину в консоли. */
 static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
                    const char *header,const char *value,char *etag,size_t etag_cap) {
     JNIEnv *env=NULL; jobject conn=NULL, stream=NULL, urlobj=NULL;
@@ -310,62 +376,78 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
         if ((*net.vm)->AttachCurrentThread(net.vm,&env,NULL)!=JNI_OK) return 0;
         attached=1;
     }
+#define JNI_CHECK() do { if ((*env)->ExceptionCheck(env)) goto done; } while (0)
     if ((*env)->PushLocalFrame(env,32)!=0) goto done;
-    urlc=(*env)->FindClass(env,"java/net/URL");
-    connc=(*env)->FindClass(env,"java/net/HttpURLConnection");
-    if (!urlc||!connc) goto done;
-    ju=(*env)->NewStringUTF(env,url);
-    urlobj=(*env)->NewObject(env,urlc,(*env)->GetMethodID(env,urlc,"<init>","(Ljava/lang/String;)V"),ju);
-    if (!urlobj||(*env)->ExceptionCheck(env)) goto done;
-    conn=(*env)->CallObjectMethod(env,urlobj,(*env)->GetMethodID(env,urlc,"openConnection","()Ljava/net/URLConnection;"));
-    if (!conn||(*env)->ExceptionCheck(env)) goto done;
-    jm=(*env)->NewStringUTF(env,method);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),5000);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),5000);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setUseCaches","(Z)V"),JNI_FALSE);
+    urlc=(*env)->FindClass(env,"java/net/URL"); JNI_CHECK();
+    connc=(*env)->FindClass(env,"java/net/HttpURLConnection"); JNI_CHECK();
+    ju=(*env)->NewStringUTF(env,url); JNI_CHECK();
+    urlobj=(*env)->NewObject(env,urlc,(*env)->GetMethodID(env,urlc,"<init>","(Ljava/lang/String;)V"),ju); JNI_CHECK();
+    conn=(*env)->CallObjectMethod(env,urlobj,(*env)->GetMethodID(env,urlc,"openConnection","()Ljava/net/URLConnection;")); JNI_CHECK();
+    jm=(*env)->NewStringUTF(env,method); JNI_CHECK();
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm); JNI_CHECK();
+    {
+        int tmo = atomic_load(&net_fast) ? 800 : TIMEOUT;
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),tmo); JNI_CHECK();
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),tmo); JNI_CHECK();
+    }
+    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setUseCaches","(Z)V"),JNI_FALSE); JNI_CHECK();
     {
         jmethodID set_header=(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V");
         jstring k=(*env)->NewStringUTF(env,"Content-Type"), v=(*env)->NewStringUTF(env,"application/json");
-        (*env)->CallVoidMethod(env,conn,set_header,k,v);
-        if(header&&value) { k=(*env)->NewStringUTF(env,header); v=(*env)->NewStringUTF(env,value); (*env)->CallVoidMethod(env,conn,set_header,k,v); }
+        (*env)->CallVoidMethod(env,conn,set_header,k,v); JNI_CHECK();
+        if(header&&value) { k=(*env)->NewStringUTF(env,header); v=(*env)->NewStringUTF(env,value); (*env)->CallVoidMethod(env,conn,set_header,k,v); JNI_CHECK(); }
     }
     if (body&&*body) {
-        jobject os; jbyteArray data; jsize len=(jsize)strlen(body);
-        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setDoOutput","(Z)V"),JNI_TRUE);
-        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setFixedLengthStreamingMode","(I)V"),len);
-        os=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,"getOutputStream","()Ljava/io/OutputStream;"));
-        if (!os||(*env)->ExceptionCheck(env)) goto done;
-        data=(*env)->NewByteArray(env,len);
+        jobject os=NULL; jbyteArray data; jsize len=(jsize)strlen(body);
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setDoOutput","(Z)V"),JNI_TRUE); JNI_CHECK();
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setFixedLengthStreamingMode","(I)V"),len); JNI_CHECK();
+        os=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,"getOutputStream","()Ljava/io/OutputStream;")); JNI_CHECK();
+        if(!os) goto done;
+        data=(*env)->NewByteArray(env,len); JNI_CHECK();
         (*env)->SetByteArrayRegion(env,data,0,len,(const jbyte*)body);
-        (*env)->CallVoidMethod(env,os,(*env)->GetMethodID(env,(*env)->GetObjectClass(env,os),"write","([B)V"),data);
-        (*env)->CallVoidMethod(env,os,(*env)->GetMethodID(env,(*env)->GetObjectClass(env,os),"close","()V"));
+        (*env)->CallVoidMethod(env,os,(*env)->GetMethodID(env,(*env)->GetObjectClass(env,os),"write","([B)V"),data); JNI_CHECK();
+        (*env)->CallVoidMethod(env,os,(*env)->GetMethodID(env,(*env)->GetObjectClass(env,os),"close","()V")); JNI_CHECK();
     }
-    code=(int)(*env)->CallIntMethod(env,conn,(*env)->GetMethodID(env,connc,"getResponseCode","()I"));
-    if ((*env)->ExceptionCheck(env)) { code=0; goto done; }
+    code=(int)(*env)->CallIntMethod(env,conn,(*env)->GetMethodID(env,connc,"getResponseCode","()I")); JNI_CHECK();
     if(etag&&etag_cap) {
-        jstring key=(*env)->NewStringUTF(env,"ETag");
-        jstring val=(jstring)(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,"getHeaderField","(Ljava/lang/String;)Ljava/lang/String;"),key);
-        if(val&&!(*env)->ExceptionCheck(env)) { const char *s=(*env)->GetStringUTFChars(env,val,NULL); if(s){snprintf(etag,etag_cap,"%s",s);(*env)->ReleaseStringUTFChars(env,val,s);} }
+        jstring key=(*env)->NewStringUTF(env,"ETag"); JNI_CHECK();
+        jstring val=(jstring)(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,"getHeaderField","(Ljava/lang/String;)Ljava/lang/String;"),key); JNI_CHECK();
+        if(val) { const char *s=(*env)->GetStringUTFChars(env,val,NULL); if(s){snprintf(etag,etag_cap,"%s",s);(*env)->ReleaseStringUTFChars(env,val,s);} }
     }
-    stream=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,code>=400?"getErrorStream":"getInputStream","()Ljava/io/InputStream;"));
-    if (!stream||(*env)->ExceptionCheck(env)) goto closeconn;
-    streamc=(*env)->GetObjectClass(env,stream);
-    buf=(*env)->NewByteArray(env,2048);
+    stream=(*env)->CallObjectMethod(env,conn,(*env)->GetMethodID(env,connc,code>=400?"getErrorStream":"getInputStream","()Ljava/io/InputStream;")); JNI_CHECK();
+    if(!stream) goto closeconn;
+    streamc=(*env)->GetObjectClass(env,stream); JNI_CHECK();
+    buf=(*env)->NewByteArray(env,2048); JNI_CHECK();
     for (;;) {
-        jint n=(*env)->CallIntMethod(env,stream,(*env)->GetMethodID(env,streamc,"read","([B)I"),buf);
-        if ((*env)->ExceptionCheck(env)||n<=0) break;
+        jint n=(*env)->CallIntMethod(env,stream,(*env)->GetMethodID(env,streamc,"read","([B)I"),buf); JNI_CHECK();
+        if (n<=0) break;
         if (out&&cap&&total+(size_t)n<cap) { (*env)->GetByteArrayRegion(env,buf,0,n,(jbyte*)(out+total)); total+=(size_t)n; out[total]='\0'; }
     }
-    (*env)->CallVoidMethod(env,stream,(*env)->GetMethodID(env,streamc,"close","()V"));
+    (*env)->CallVoidMethod(env,stream,(*env)->GetMethodID(env,streamc,"close","()V")); JNI_CHECK();
 closeconn:
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"disconnect","()V"));
+    if (conn) { (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"disconnect","()V")); (*env)->ExceptionClear(env); }
     ok=1;
 done:
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    if ((*env)->ExceptionCheck(env)) {
+        jthrowable ex = (*env)->ExceptionOccurred(env);
+        (*env)->ExceptionClear(env);
+        if (net_log_ok() && ex) {
+            jclass tcls = (*env)->GetObjectClass(env, ex);
+            jmethodID gm = tcls ? (*env)->GetMethodID(env, tcls, "getMessage", "()Ljava/lang/String;") : NULL;
+            if (gm) {
+                jstring jmsg = (jstring)(*env)->CallObjectMethod(env, ex, gm);
+                if (jmsg && !(*env)->ExceptionCheck(env)) {
+                    const char *s = (*env)->GetStringUTFChars(env, jmsg, NULL);
+                    if (s) { LOGERR("http %s: %s", method, s); (*env)->ReleaseStringUTFChars(env, jmsg, s); }
+                }
+            }
+        }
+        (*env)->ExceptionClear(env);
+    }
     (*env)->PopLocalFrame(env,NULL);
     if (attached) (*net.vm)->DetachCurrentThread(net.vm);
     return ok ? code : 0;
+#undef JNI_CHECK
 }
 #else
 static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
@@ -442,7 +524,9 @@ static int push_state(void) {
     snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",
         slot,net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
         slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
-    return http("PATCH",url,body,NULL,0)==200;
+    int c = http("PATCH",url,body,NULL,0);
+    if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d (room write denied? check Firebase rules)", c);
+    return c == 200;
 }
 typedef struct { char url[URL]; char body[BODY*2]; } HttpJob;
 static void *http_post_job(void *arg) {
@@ -484,9 +568,16 @@ static void push_bullet_only(void){
         safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
     http_async(0, url, body);
 }
-static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room); return http("GET",url,NULL,resp,cap)==200; }
+static int pull_state(char *resp,size_t cap) {
+    char url[URL];
+    snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
+    int c = http("GET",url,NULL,resp,cap);
+    if (c != 200 && net_log_ok()) LOGERR("pull state: HTTP %d", c);
+    return c == 200;
+}
 
 static int login_attempt(const char *url, const char *nick, const char *pwd);
+static int login_register(const char *url, const char *nick, const char *pwd);
 static int login_verify_session(const char *url);
 #ifdef _WIN32
 static unsigned __stdcall win_login_thread(void *arg);
@@ -521,7 +612,10 @@ static void *login_worker(void *arg) {
             lg.request = 0;
             gen = lg.gen;
             lg_unlock();
-            int st = (req == 1) ? login_attempt(url, nick, pwd) : login_verify_session(url);
+            int st;
+            if (req == 1) st = login_attempt(url, nick, pwd);
+            else if (req == 3) st = login_register(url, nick, pwd);
+            else st = login_verify_session(url);
             lg_lock();
             if (lg.request == 0 && lg.gen == gen) lg.status = st;
             lg_unlock();
@@ -537,6 +631,29 @@ static int account_check(const char *resp, const char *nick, const char *pwd, ch
     if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
     sha256_hex(salt, ":", pwd, chash);
     return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
+}
+static int login_register(const char *url, const char *nick, const char *pwd) {
+    /* «Создать аккаунт»: регистрируем ТОЛЬКО если такого ника ещё нет.
+     * Если аккаунт уже существует — NET_LOGIN_EXISTS, ничего не перезаписываем. */
+    char acc[URL], resp[RESP], etag[96], body[BODY], chash[80];
+    int code;
+    snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, nick);
+    code = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
+    if (code == 200 && resp[0] && strcmp(resp, "null") != 0) return NET_LOGIN_EXISTS;
+    {
+        char csalt[32];
+        make_salt(csalt, sizeof(csalt));
+        sha256_hex(csalt, ":", pwd, chash);
+        snprintf(body, sizeof(body), "{\"salt\":\"%s\",\"hash\":\"%s\",\"created\":%lld}", csalt, chash, (long long)now_ms());
+        int c2 = http_ex("PUT", acc, body, NULL, 0, "if-match", "null", NULL, 0);
+        if (c2 == 200) return set_session(nick, chash);
+        if (c2 == 412) return NET_LOGIN_EXISTS; /* кто-то успел занять ник */
+        if (c2 == 0 || c2 == 404 || c2 == 501) {
+            /* сервер без поддержки if-match (эмулятор/прокси): последняя попытка */
+            return http_ex("PUT", acc, body, NULL, 0, NULL, NULL, NULL, 0) == 200 ? set_session(nick, chash) : NET_LOGIN_ERROR;
+        }
+    }
+    return NET_LOGIN_ERROR;
 }
 static int login_attempt(const char *url, const char *nick, const char *pwd) {
     char acc[URL], resp[RESP], etag[96], body[BODY], chash[80];
@@ -621,6 +738,18 @@ void net_login(const char *url, const char *nick, const char *pwd) {
     lg_unlock();
     login_ensure_thread();
 }
+void net_register(const char *url, const char *nick, const char *pwd) {
+    if (!url || !nick || !pwd) return;
+    lg_lock();
+    if (lg.status == NET_LOGIN_BUSY) { lg_unlock(); return; }
+    if (!nick_valid(nick) || !pwd_valid(pwd)) { lg.status = NET_LOGIN_INVALID; lg_unlock(); return; }
+    snprintf(lg.url, sizeof(lg.url), "%s", url);
+    snprintf(lg.nick, sizeof(lg.nick), "%s", nick);
+    snprintf(lg.pwd, sizeof(lg.pwd), "%s", pwd);
+    lg.status = NET_LOGIN_BUSY; lg.request = 3; lg.gen = lg.gen + 1;
+    lg_unlock();
+    login_ensure_thread();
+}
 void net_logout(void) {
     lg_lock();
     lg.session_nick[0] = 0; lg.session_hash[0] = 0;
@@ -651,23 +780,32 @@ static int claim_slot(void) {
     char resp[RESP],url[URL],body[BODY],uid[24],etag[96]; long long t=now_ms(); int slot;
     for(slot=0;slot<NET_SLOTS;slot++) {
         unsigned long seq; int claim=0,code;
+        if (!net.run) return -1; /* отключение: не ждём все слоты */
         snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
         code=http_ex("GET",url,NULL,resp,sizeof(resp),"X-Firebase-ETag","true",etag,sizeof(etag));
-        if(code!=200||!etag[0])continue;
+        if(code!=200) { if(net_log_ok()) LOGERR("claim slot %d: HTTP %d", slot, code); continue; }
         strv(resp,"uid",uid,sizeof(uid));
         if(uid[0]&&!strcmp(uid,net.uid))return slot;
         seq=(unsigned long)num(resp,"seq",0);
         if(!uid[0])claim=1;
-        else if(strcmp(uid,seen_uid[slot])||seq!=seen_seq[slot]) { snprintf(seen_uid[slot],sizeof(seen_uid[slot]),"%s",uid); seen_seq[slot]=seq; seen_at[slot]=t; }
-        else if(t-seen_at[slot]>=STALE)claim=1;
+        else if(etag[0]&&(strcmp(uid,seen_uid[slot])||seq!=seen_seq[slot])) { snprintf(seen_uid[slot],sizeof(seen_uid[slot]),"%s",uid); seen_seq[slot]=seq; seen_at[slot]=t; }
+        else if(etag[0]&&t-seen_at[slot]>=STALE)claim=1;
         if(!claim)continue;
+        if(!etag[0]) {
+            /* Сервер/клиент не отдали ETag (например, WinINet на ПК): занимаем
+             * только гарантированно пустой слот, без if-match. Раньше такой
+             * слот просто пропускался — и на ПК получалось вечное
+             * «нет соединения». */
+            if(net_log_ok()) LOG("claim slot %d: no ETag, claiming empty slot without if-match", slot);
+        }
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
             snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid,enick);
         }
-        code=http_ex("PUT",url,body,NULL,0,"if-match",etag,NULL,0);
+        code=http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
+        if(net_log_ok()) LOGERR("claim slot %d: PUT failed, HTTP %d", slot, code);
     }
     return -1;
 }
@@ -888,7 +1026,15 @@ void net_connect(const char *url,const char *room) {
     if(!net.rthread){ net.run=0; ds_thread_join(net.thread); net.status=NET_ERROR; LOGERR("network error: cannot start reader thread"); return; }
     LOG("connect %s/%s (write %dms read %dms)",net.base,net.room,WRITE_TICK,READ_TICK);
 }
-void net_disconnect(void) { if(!net.run)return; net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
+void net_disconnect(void) {
+    if(!net.run)return;
+    /* Короткие таймауты HTTP: если сеть «мертва», не блокируем игровой поток
+     * на секунды (иначе при выходе из онлайна игра зависала и могла «вылететь»). */
+    atomic_store(&net_fast, 1);
+    net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread);
+    atomic_store(&net_fast, 0);
+    net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
+}
 void net_publish(double x,double y,double a,double hp,double alive) {
     if(!net.started) return;
     lock(); net.me.x=x; net.me.y=y; net.me.a=a; net.me.hp=hp; net.me.alive=alive;

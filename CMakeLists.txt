@@ -23,13 +23,23 @@ if(ANDROID)
     target_include_directories(ds_game PRIVATE . game ${ANDROID_NDK}/sources/android/native_app_glue)
     target_link_libraries(ds_game PRIVATE android log m)
 elseif(WIN32 OR MINGW)
-    add_executable(Game WIN32 "${GAME_C}" runtime.c main_win32.c)
+    # Картинки и шрифт зашиваются прямо в Game.exe как RCDATA-ресурсы
+    # (embed_assets.py -> embedded_assets.rc), поэтому рядом с exe в
+    # релизном пакете никаких файлов assets/ больше не лежит.
+    set(EMBED_RC "${CMAKE_CURRENT_BINARY_DIR}/embedded_assets.rc")
+    file(GLOB_RECURSE ASSET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/assets/*")
+    add_custom_command(
+        OUTPUT "${EMBED_RC}"
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "${EMBED_RC}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" ${ASSET_FILES}
+        COMMENT "Embedding game assets into Game.exe resources"
+    )
+    add_executable(Game WIN32 "${GAME_C}" runtime.c main_win32.c "${EMBED_RC}")
     target_include_directories(Game PRIVATE . game)
     target_link_libraries(Game PRIVATE gdi32 wininet user32 kernel32 shell32)
     if(NOT MSVC)
         target_link_libraries(Game PRIVATE m)
     endif()
-    add_custom_command(TARGET Game POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "$<TARGET_FILE_DIR:Game>/assets")
 else()
     add_executable(Game "${GAME_C}" runtime.c main_win32.c)
     target_include_directories(Game PRIVATE . game)
