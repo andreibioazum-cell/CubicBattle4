@@ -82,7 +82,6 @@ static char s_lg_nick_ret[24];
 static long long now_ms(void);
 static void *login_worker(void *arg);
 
-/* ---------- account login (nick + password) ---------- */
 typedef struct {
     DSThread thread; DSMutex lock;
     int run, request, status, gen;
@@ -108,7 +107,6 @@ static int pwd_valid(const char *p) {
     size_t l = p ? strlen(p) : 0;
     return l >= 4 && l <= LOGIN_PWD_MAX;
 }
-/* SHA-256 (FIPS 180-4), used so passwords are never stored or sent in plaintext */
 typedef struct { uint32_t h[8]; uint64_t len; unsigned char buf[64]; size_t buflen; } DS_SHA256;
 static const uint32_t SHA256_K[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -463,7 +461,6 @@ static void *http_put_job(void *arg);
 static unsigned __stdcall win_http_post(void *arg) { http_post_job(arg); return 0; }
 static unsigned __stdcall win_http_put(void *arg) { http_put_job(arg); return 0; }
 #endif
-/* one-shot background HTTP so the UI thread never blocks on the network */
 static void http_async(int kind, const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
@@ -489,8 +486,6 @@ static void push_bullet_only(void){
 }
 static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room); return http("GET",url,NULL,resp,cap)==200; }
 
-/* ---------- login worker ---------- */
-/* request==1: login/register with nick+pwd. request==2: verify saved session. */
 static int login_attempt(const char *url, const char *nick, const char *pwd);
 static int login_verify_session(const char *url);
 static void login_ensure_thread(void) {
@@ -525,28 +520,28 @@ static void *login_worker(void *arg) {
             lg_unlock();
             int st = (req == 1) ? login_attempt(url, nick, pwd) : login_verify_session(url);
             lg_lock();
-            /* discard the result if a newer request or a logout happened meanwhile */
             if (lg.request == 0 && lg.gen == gen) lg.status = st;
             lg_unlock();
         }
     }
     return NULL;
 }
+static int account_check(const char *resp, const char *nick, const char *pwd, char *chash) {
+    char salt[64], hash[80];
+    if (!resp || !resp[0] || !strcmp(resp, "null")) return NET_LOGIN_ERROR;
+    strv(resp, "salt", salt, sizeof(salt));
+    strv(resp, "hash", hash, sizeof(hash));
+    if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
+    sha256_hex(salt, ":", pwd, chash);
+    return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
+}
 static int login_attempt(const char *url, const char *nick, const char *pwd) {
-    char acc[URL], resp[RESP], etag[96], body[BODY], salt[64], hash[80], chash[80];
+    char acc[URL], resp[RESP], etag[96], body[BODY], chash[80];
     int code;
     snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, nick);
     code = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
-    if (code == 200 && resp[0] && strcmp(resp, "null") != 0) {
-        /* account exists -> check the password */
-        strv(resp, "salt", salt, sizeof(salt));
-        strv(resp, "hash", hash, sizeof(hash));
-        if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
-        sha256_hex(salt, ":", pwd, chash);
-        return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
-    }
+    if (code == 200 && resp[0] && strcmp(resp, "null") != 0) return account_check(resp, nick, pwd, chash);
     if (code == 404 || code == 200) {
-        /* no account -> create it atomically: only if it still does not exist */
         char csalt[32];
         make_salt(csalt, sizeof(csalt));
         sha256_hex(csalt, ":", pwd, chash);
@@ -554,20 +549,11 @@ static int login_attempt(const char *url, const char *nick, const char *pwd) {
         int c2 = http_ex("PUT", acc, body, NULL, 0, "if-match", "null", NULL, 0);
         if (c2 == 200) return set_session(nick, chash);
         if (c2 == 412) {
-            /* someone else registered the same nick at the same moment -> verify against that account */
             int c3 = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
-            if (c3 == 200 && strcmp(resp, "null") != 0) {
-                strv(resp, "salt", salt, sizeof(salt));
-                strv(resp, "hash", hash, sizeof(hash));
-                if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
-                sha256_hex(salt, ":", pwd, chash);
-                return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
-            }
+            if (c3 == 200) return account_check(resp, nick, pwd, chash);
             return NET_LOGIN_ERROR;
         }
-        /* server without conditional support: plain create (last write wins) */
-        int c4 = http_ex("PUT", acc, body, NULL, 0, NULL, NULL, NULL, 0);
-        return c4 == 200 ? set_session(nick, chash) : NET_LOGIN_ERROR;
+        return http_ex("PUT", acc, body, NULL, 0, NULL, NULL, NULL, 0) == 200 ? set_session(nick, chash) : NET_LOGIN_ERROR;
     }
     return NET_LOGIN_ERROR;
 }
@@ -582,11 +568,10 @@ static int login_verify_session(const char *url) {
     if (!snick[0] || !shash[0]) return NET_LOGIN_IDLE;
     snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, snick);
     code = http("GET", acc, NULL, resp, sizeof(resp));
-    if (code != 200) return NET_LOGIN_OK; /* offline: keep the saved session */
+    if (code != 200) return NET_LOGIN_OK;
     strv(resp, "salt", salt, sizeof(salt));
     strv(resp, "hash", hash, sizeof(hash));
     if (!salt[0] || !hash[0] || strcmp(hash, shash) != 0) {
-        /* the account no longer matches this password -> drop the session */
         lg_lock(); lg.session_nick[0] = 0; lg.session_hash[0] = 0; lg_unlock();
         session_clear();
         return NET_LOGIN_IDLE;
