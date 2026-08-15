@@ -75,6 +75,10 @@ static void handle_cmd(struct android_app *app, int32_t command) {
         case APP_CMD_CONFIG_CHANGED:
             /* adjustResize changes the game surface while the IME is open. */
             if (app->window) {
+                /* Re-assert the pixel format: some devices switch the surface
+                 * format after an IME-driven resize, which made ANativeWindow_lock
+                 * return buffers the renderer would reject (blank/crashy frames). */
+                ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
                 int w = ANativeWindow_getWidth(app->window);
                 int h = ANativeWindow_getHeight(app->window);
                 if (w > 0 && h > 0) { screen_w = w; screen_h = h; }
