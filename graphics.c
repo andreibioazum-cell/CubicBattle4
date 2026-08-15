@@ -242,8 +242,32 @@ static int open_asset(const char *n, uint8_t **out, size_t *sz) {
     *out = buf; *sz = (size_t)len; return 1;
 }
 #else
+#ifdef _WIN32
+/* Картинки и шрифт встроены прямо в Game.exe как RCDATA-ресурсы
+ * (embed_assets.py генерирует embedded_assets.rc в CMake). Имена ресурсов
+ * совпадают с путями относительно game/assets и используют прямые слэши,
+ * например "grass.png" или "fonts/ChillRoundGothic_Heavy.ttf".
+ * Рядом с exe никаких файлов больше не нужно. */
+static int open_asset_resource(const char *n, uint8_t **out, size_t *sz) {
+    HRSRC r = FindResourceA(NULL, n, RT_RCDATA);
+    if (!r) return 0;
+    DWORD len = SizeofResource(NULL, r);
+    if (!len || (uint64_t)len > (uint64_t)SIZE_MAX) return 0;
+    HGLOBAL g = LoadResource(NULL, r);
+    if (!g) return 0;
+    const uint8_t *data = (const uint8_t *)LockResource(g);
+    if (!data) return 0;
+    uint8_t *buf = (uint8_t *)malloc((size_t)len);
+    if (!buf) return 0;
+    memcpy(buf, data, (size_t)len);
+    *out = buf; *sz = (size_t)len; return 1;
+}
+#endif
 static int open_asset(const char *n, uint8_t **out, size_t *sz) {
     if (!n || !out || !sz) return 0;
+#ifdef _WIN32
+    if (open_asset_resource(n, out, sz)) return 1;
+#endif
     char paths[4][1024]; int np = 0;
     snprintf(paths[np], sizeof(paths[np]), "%s", n); np++;
     snprintf(paths[np], sizeof(paths[np]), "game/assets/%s", n); np++;

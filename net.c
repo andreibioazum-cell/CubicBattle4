@@ -75,9 +75,11 @@ static struct {
     Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
 } net = { .lock = DS_MUTEX_INIT };
+#include <stdatomic.h>
 /* Пока идёт отключение (net_disconnect), HTTP-запросы используют короткий
- * таймаут, чтобы игра не замирала на секунды, если сеть «мертва». */
-static int net_fast = 0;
+ * таймаут, чтобы игра не замирала на секунды, если сеть «мертва».
+ * Читается потоками сети, а пишется игровым потоком — только атомарно. */
+static atomic_int net_fast = 0;
 static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
@@ -235,11 +237,13 @@ static void status(int s) { lock(); net.status=s; unlock(); }
 /* Не пишем сетевые ошибки в консоль чаще раза в 2 секунды,
  * иначе при «мёртвой» сети консоль зальёт тысячами строк. */
 static int net_log_ok(void) {
-    static long long last = 0;
+    /* Вызывается из нескольких потоков (writer/reader/login) — атомарно,
+     * иначе гонка по static-long long это формально UB. */
+    static atomic_llong last = 0;
     long long now = now_ms();
-    if (now - last < 2000) return 0;
-    last = now;
-    return 1;
+    long long prev = atomic_load(&last);
+    if (now - prev < 2000) return 0;
+    return atomic_compare_exchange_strong(&last, &prev, now);
 }
 #ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
@@ -304,7 +308,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
         HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
         if (!conn) { InternetCloseHandle(inet); continue; }
         {
-            DWORD tmo = (DWORD)(net_fast ? 800 : TIMEOUT);
+            DWORD tmo = (DWORD)(atomic_load(&net_fast) ? 800 : TIMEOUT);
             InternetSetOptionA(conn, INTERNET_OPTION_CONNECT_TIMEOUT, &tmo, sizeof(tmo));
             InternetSetOptionA(conn, INTERNET_OPTION_SEND_TIMEOUT, &tmo, sizeof(tmo));
             InternetSetOptionA(conn, INTERNET_OPTION_RECEIVE_TIMEOUT, &tmo, sizeof(tmo));
@@ -382,7 +386,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     jm=(*env)->NewStringUTF(env,method); JNI_CHECK();
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm); JNI_CHECK();
     {
-        int tmo = net_fast ? 800 : TIMEOUT;
+        int tmo = atomic_load(&net_fast) ? 800 : TIMEOUT;
         (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),tmo); JNI_CHECK();
         (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),tmo); JNI_CHECK();
     }
@@ -1026,9 +1030,9 @@ void net_disconnect(void) {
     if(!net.run)return;
     /* Короткие таймауты HTTP: если сеть «мертва», не блокируем игровой поток
      * на секунды (иначе при выходе из онлайна игра зависала и могла «вылететь»). */
-    net_fast = 1;
+    atomic_store(&net_fast, 1);
     net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread);
-    net_fast = 0;
+    atomic_store(&net_fast, 0);
     net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
 }
 void net_publish(double x,double y,double a,double hp,double alive) {
