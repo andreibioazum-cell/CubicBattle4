@@ -66,3 +66,17 @@ function tr_wrong_pwd
 if language==1; return "Неверный пароль"; else if language==2; return "パスワードが違います"; end; return "Wrong password";end
 function tr_bad_creds
 if language==1; return "Ник: 3-16 букв/цифр/_, пароль: от 4"; else if language==2; return "ニック3-16、パスワード4以上"; end; return "Nick: 3-16 letters/digits/_, password: 4+";end
+function tr_reg_title
+if language==1; return "Создать аккаунт"; else if language==2; return "アカウント作成"; end; return "Create account";end
+function tr_rep_pwd
+if language==1; return "Повторите пароль"; else if language==2; return "パスワード再入力"; end; return "Repeat password";end
+function tr_create_go
+if language==1; return "Создать"; else if language==2; return "作成"; end; return "Create";end
+function tr_switch_to_create
+if language==1; return "Создать аккаунт"; else if language==2; return "アカウント作成"; end; return "Create account";end
+function tr_switch_to_login
+if language==1; return "У меня есть аккаунт"; else if language==2; return "アカウントを持っています"; end; return "I have an account";end
+function tr_exists
+if language==1; return "Аккаунт уже существует"; else if language==2; return "アカウントは既に存在します"; end; return "Account already exists";end
+function tr_mismatch
+if language==1; return "Пароли не совпадают"; else if language==2; return "パスワードが一致しません"; end; return "Passwords do not match";end

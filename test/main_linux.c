@@ -25,8 +25,8 @@
 #include "net.h"
 
 /* globals generated into game.c (non-static) — read them for debugging */
-extern double game_state, chat_open, login_field, login_status, t_dir, t_target, t_fade;
-extern const char *login_nick, *login_pwd, *chat_input;
+extern double game_state, chat_open, login_field, login_status, login_mode, t_dir;
+extern const char *login_nick, *login_pwd, *login_pwd2, *chat_input;
 
 static uint32_t *g_pixels = NULL;
 static int g_w = 1280, g_h = 720;
@@ -103,7 +103,6 @@ int test_http_impl(const char *method, const char *url, const char *body,
         if (n >= cap) n = cap - 1;
         memcpy(out, rb, n); out[n] = '\0';
     }
-    fprintf(stderr, "HTTP %s %s -> %d etag=[%s] body=[%.80s]\n", method, path, code, etag && etag[0] ? etag : "-", out && out[0] ? out : "");
     return code;
 }
 
@@ -118,13 +117,6 @@ static void protected_draw(void *u) { draw((Buffer *)u); }
 typedef struct { float x, y; int action, id; } TouchCall;
 static void protected_touch(void *u) { TouchCall *c = (TouchCall *)u; touch(c->x, c->y, c->action, c->id); }
 
-static int start_script(void) {
-    ds_clear_runtime_error(); ds_clear_script_restart(); ds_string_pool_reset();
-    if (!ds_call_protected(protected_init, NULL, "init")) return 0;
-    script_active = 1;
-    return 1;
-}
-
 static void feed_text(const char *s) { keyboard_type(s); }
 
 static void do_tap(float x, float y) {
@@ -136,6 +128,89 @@ static void do_tap(float x, float y) {
 }
 
 static long g_frame = 0;
+static void run_frames(int n) {
+    for (int i = 0; i < n; i++) {
+        dt = 1.0 / 60.0;
+        if (script_active) {
+            if (!ds_call_protected(protected_update, NULL, "update")) {
+                printf("[frame %ld] UPDATE FAILED: %s\n", g_frame, ds_runtime_error_message());
+                script_active = 0; return;
+            }
+        }
+        Buffer buf = { g_pixels, g_w, g_h, g_w };
+        if (!ds_graphics_begin_frame(&buf)) { printf("[frame %ld] begin_frame failed\n", g_frame); return; }
+        if (script_active) {
+            if (!ds_call_protected(protected_draw, &buf, "draw")) {
+                printf("[frame %ld] DRAW FAILED: %s\n", g_frame, ds_runtime_error_message());
+                script_active = 0;
+            }
+        }
+        ds_graphics_end_frame();
+        g_frame++;
+    }
+}
+
+static int start_script(void) {
+    ds_clear_runtime_error(); ds_clear_script_restart(); ds_string_pool_reset();
+    if (!ds_call_protected(protected_init, NULL, "init")) return 0;
+    script_active = 1;
+    return 1;
+}
+
+static int wait_state(double want, int max_iters) {
+    /* ждём и состояние, и конец фейда перехода (t_dir==0), иначе тапы
+     * во время затемнения игнорируются игрой */
+    for (int i = 0; i < max_iters; i++) {
+        run_frames(2);
+        if (game_state == want && t_dir == 0) return 1;
+    }
+    return 0;
+}
+
+static int wait_net_login(double want, int max_iters) {
+    for (int i = 0; i < max_iters; i++) {
+        run_frames(5);
+        if (net_login_status() == want) return 1;
+    }
+    return 0;
+}
+
+static int wait_slot(int max_iters) {
+    for (int i = 0; i < max_iters; i++) {
+        run_frames(5);
+        if (net_slot() >= 0 && net_status() == NET_PLAYING) return 1;
+    }
+    return 0;
+}
+
+/* Экран аккаунта (1280x720): fy = screen_h/2-130 */
+#define FY (g_h / 2 - 130)
+static void tap_nick(void) { do_tap((float)(g_w / 2), (float)(FY + 25)); }
+static void tap_pwd(void) { do_tap((float)(g_w / 2), (float)(FY + 87)); }
+static void tap_rep(void) { do_tap((float)(g_w / 2), (float)(FY + 149)); }
+static void tap_login_btn(void) { do_tap((float)(g_w / 2), (float)(FY + 146 + 32)); }
+static void tap_create_btn(void) { do_tap((float)(g_w / 2), (float)(FY + 208 + 32)); }
+/* в режиме «вход» переключатель на yt=440 (центр 472), в режиме «создание» на yt=502 (центр 534) */
+static void tap_toggle_to_create(void) { do_tap((float)(g_w / 2), (float)(FY + 210 + 32)); }
+static void tap_toggle_to_login(void) { do_tap((float)(g_w / 2), (float)(FY + 272 + 32)); }
+static void tap_logout(void) { do_tap((float)(g_w - 190 + 85), 48); }
+
+/* Заполнить поле заново: тап (переключение поля чистит клавиатуру), затем текст */
+static void fill_field(void (*tap)(void), const char *text) {
+    tap();
+    run_frames(5);
+    keyboard_clear();
+    feed_text(text);
+    run_frames(5);
+}
+
+/* Лобби: Play (center y 360-40+32=352) */
+static void tap_play(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 8)); }
+/* Моды: Solo (y 360-40+32=352), Online (360+40+32=432) */
+static void tap_solo(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 8)); }
+static void tap_online(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 72)); }
+static void tap_back(void) { do_tap((float)(g_w - 280) / 2 + 140, 32 + 32); }
+static void tap_account(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 152)); }
 
 static void save_bmp(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -171,165 +246,114 @@ static void save_bmp(const char *path) {
     fclose(f);
     printf("screenshot: %s\n", path);
 }
-static void run_frames(int n) {
-    for (int i = 0; i < n; i++) {
-        dt = 1.0 / 60.0;
-        if (script_active) {
-            if (!ds_call_protected(protected_update, NULL, "update")) {
-                printf("[frame %ld] UPDATE FAILED: %s\n", g_frame, ds_runtime_error_message());
-                script_active = 0; return;
-            }
-        }
-        Buffer buf = { g_pixels, g_w, g_h, g_w };
-        if (!ds_graphics_begin_frame(&buf)) { printf("[frame %ld] begin_frame failed\n", g_frame); return; }
-        if (script_active) {
-            if (!ds_call_protected(protected_draw, &buf, "draw")) {
-                printf("[frame %ld] DRAW FAILED: %s\n", g_frame, ds_runtime_error_message());
-                script_active = 0;
-            }
-        }
-        ds_graphics_end_frame();
-        g_frame++;
-    }
-}
-
-/* Login screen geometry (same math as draw_login/touch_login). */
-static double lg_fy(void) { return (double)screen_h / 2 - 95; }
-static void tap_nick_field(void) { do_tap((float)(screen_w / 2), (float)(lg_fy() + 29)); }
-static void tap_pwd_field(void) { do_tap((float)(screen_w / 2), (float)(lg_fy() + 101)); }
-static void tap_login_go(void) { do_tap((float)(screen_w / 2), (float)(lg_fy() + 156 + 32)); }
-static void tap_logout(void) { do_tap((float)(screen_w / 2), (float)(lg_fy() + 156 + 80 + 32)); }
-
-static int wait_login_status(double want, int max_iters) {
-    for (int i = 0; i < max_iters; i++) {
-        run_frames(5);
-        if (net_login_status() == want) return 1;
-    }
-    return 0;
-}
-
-static int wait_state(double want, int max_iters) {
-    /* ждём и состояние, и конец фейда перехода (t_dir==0), иначе тапы
-     * во время затемнения игнорируются игрой */
-    for (int i = 0; i < max_iters; i++) {
-        run_frames(2);
-        if (game_state == want && t_dir == 0) return 1;
-    }
-    return 0;
-}
-
-static int wait_slot(int max_iters) {
-    for (int i = 0; i < max_iters; i++) {
-        run_frames(5);
-        if (net_slot() >= 0 && net_status() == NET_PLAYING) return 1;
-    }
-    return 0;
-}
-
-static void login_as(const char *nick, const char *pwd) {
-    tap_nick_field();
-    run_frames(5);
-    feed_text(nick);
-    run_frames(5);
-    tap_pwd_field();
-    run_frames(5);
-    feed_text(pwd);
-    run_frames(5);
-    tap_login_go();
-}
 
 int main(void) {
     screen_w = g_w; screen_h = g_h;
     g_pixels = (uint32_t *)calloc((size_t)g_w * g_h, 4);
     if (!g_pixels) { printf("OOM\n"); return 2; }
 
+    /* уникальный ник на каждый запуск, чтобы сервер не хранил старые аккаунты */
+    char nick[32];
+    snprintf(nick, sizeof(nick), "User%ld", (long)(time(NULL) % 100000));
+
     if (!start_script()) { printf("init failed: %s\n", ds_runtime_error_message()); return 2; }
     printf("=== init ok (frame %ld)\n", g_frame);
     run_frames(10);
 
-    /* --- 1. Lobby -> Account -> login screen, register new nick --- */
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 + 152); /* Account */
-    wait_state(7, 30);
-    printf("=== account screen open (state=%g) login_status=%g (frame %ld)\n", game_state, net_login_status(), g_frame);
-    save_bmp("/home/user/Gig1.0/test/shot_login.bmp");
+    /* --- 1. Account screen opens in login mode --- */
+    tap_account();
+    if (!wait_state(7, 30)) { printf("!! account screen did not open\n"); return 3; }
+    printf("=== account screen, mode=%g status=%g (frame %ld)\n", login_mode, login_status, g_frame);
 
-    login_as("TestUser", "pass1234");
-    printf("  [probe] after login_as: nick=[%s] pwd=[%s] ds_login_status=%g c_login_status=%g t_dir=%g state=%g (frame %ld)\n",
-           login_nick, login_pwd, login_status, net_login_status(), t_dir, game_state, g_frame);
-    if (!wait_login_status(2, 40)) { printf("!! login (register) did not succeed, status=%g\n", net_login_status()); return 3; }
-    printf("  [probe] c-status=2 reached, ds_login_status=%g t_dir=%g state=%g (frame %ld)\n", login_status, t_dir, game_state, g_frame);
-    wait_state(0, 30); /* после входа уходим в лобби */
-    printf("=== registered+logged in as TestUser (state=%g, frame %ld)\n", game_state, g_frame);
+    /* --- 2. Switch to create mode --- */
+    tap_toggle_to_create();
+    run_frames(10);
+    if (login_mode != 1) { printf("!! toggle to create mode failed, mode=%g\n", login_mode); return 3; }
+    printf("=== create mode on (frame %ld)\n", g_frame);
 
-    /* --- 2. Solo must work without any login gate --- */
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 - 8); /* Play */
-    wait_state(2, 30);
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 - 8); /* Solo */
-    wait_state(1, 30);
+    /* --- 3. Password mismatch must be rejected without network --- */
+    fill_field(tap_nick, nick);
+    fill_field(tap_pwd, "secret99");
+    fill_field(tap_rep, "secret9X");
+    tap_create_btn();
+    run_frames(10);
+    if (login_status != 7) { printf("!! mismatch not detected, status=%g net=%g\n", login_status, net_login_status()); return 3; }
+    printf("=== passwords mismatch rejected (frame %ld)\n", g_frame);
+
+    /* --- 4. Fix repeat password, create account --- */
+    keyboard_clear();
+    feed_text("secret99");
+    run_frames(5);
+    tap_create_btn();
+    if (!wait_net_login(2, 40)) { printf("!! register did not succeed, net status=%g script status=%g\n", net_login_status(), login_status); return 3; }
+    if (!wait_state(0, 30)) { printf("!! did not return to lobby after register\n"); return 3; }
+    printf("=== account created (%s), back in lobby (frame %ld)\n", nick, g_frame);
+
+    /* --- 5. Solo works --- */
+    tap_play(); wait_state(2, 30);
+    tap_solo(); wait_state(1, 30);
     run_frames(40);
     printf("=== solo battle ok (frame %ld)\n", g_frame);
-    do_tap((float)(screen_w - 280) / 2 + 140, 32 + 32); /* Back */
-    wait_state(0, 30);
+    tap_back(); wait_state(0, 40);
 
-    /* --- 3. Online while logged in: goes straight in --- */
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 - 8); /* Play */
-    wait_state(2, 30);
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 + 72); /* Online */
-    wait_state(5, 30);
+    /* --- 6. Online straight in (logged in) + chat --- */
+    tap_play(); wait_state(2, 30);
+    tap_online(); wait_state(5, 30);
     if (!wait_slot(60)) { printf("!! online entry failed\n"); return 3; }
     printf("=== online straight in: status=%g slot=%g count=%g (frame %ld)\n", net_status(), net_slot(), net_count(), g_frame);
-
-    /* chat: open, type, send, close */
-    do_tap(16 + 70, 150 + 24);
+    do_tap(86, 174);
     run_frames(10);
-    printf("  [probe] after open tap: chat_open=%g state=%g\n", chat_open, game_state);
     feed_text("hi from test");
     run_frames(10);
-    printf("  [probe] after feed: chat_open=%g chat_input=[%s]\n", chat_open, chat_input);
     do_tap(1188, 654); /* send */
     run_frames(30);
-    printf("  [probe] after send tap: chat_open=%g chat_input=[%s] state=%g\n", chat_open, chat_input, game_state);
-    if (net_chat_count() < 1) { printf("!! chat message was not sent\n"); return 3; }
     do_tap(1192, 51); /* close */
     run_frames(10);
-    save_bmp("/home/user/Gig1.0/test/shot_chat.bmp");
-    printf("=== chat ok: count=%g (frame %ld)\n", net_chat_count(), g_frame);
+    if (net_chat_count() < 1) { printf("!! chat message was not sent\n"); return 3; }
+    printf("=== chat ok count=%g (frame %ld)\n", net_chat_count(), g_frame);
+    tap_back(); wait_state(2, 40);
+    tap_back(); wait_state(0, 40);
+    printf("=== left online (frame %ld)\n", g_frame);
 
-    /* leave online */
-    do_tap((float)(screen_w - 280) / 2 + 140, 32 + 32);
-    wait_state(2, 40);
-    printf("=== left online status=%g (frame %ld)\n", net_status(), g_frame);
-
-    /* --- 4. Logout, then online must demand login --- */
-    do_tap((float)(screen_w - 280) / 2 + 140, 32 + 32); /* back to lobby */
-    wait_state(0, 40);
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 + 152); /* Account */
-    wait_state(7, 30);
+    /* --- 7. Logout --- */
+    tap_account(); wait_state(7, 30);
     tap_logout();
-    wait_state(0, 40);
-    printf("=== logged out, login_status=%g (frame %ld)\n", net_login_status(), g_frame);
+    run_frames(20);
+    if (net_login_status() == 2) { printf("!! logout failed\n"); return 3; }
+    printf("=== logged out (frame %ld)\n", g_frame);
+    tap_back(); wait_state(0, 40);
 
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 - 8); /* Play */
-    wait_state(2, 30);
-    do_tap((float)(screen_w - 280) / 2 + 140, (float)screen_h / 2 + 72); /* Online -> gate */
-    wait_state(7, 30);
-    printf("=== online gate demands login after logout (frame %ld)\n", g_frame);
+    /* --- 8. Online gate demands login after logout --- */
+    tap_play(); wait_state(2, 30);
+    tap_online(); wait_state(7, 30);
+    printf("=== online gate demands login (frame %ld)\n", g_frame);
 
-    /* --- 5. Wrong password must NOT let in --- */
-    login_as("TestUser", "WRONGpass");
-    wait_login_status(3, 40);
+    /* --- 9. Creating an existing nick is rejected --- */
+    tap_toggle_to_create(); run_frames(10);
+    fill_field(tap_nick, nick);
+    fill_field(tap_pwd, "secret99");
+    fill_field(tap_rep, "secret99");
+    tap_create_btn();
+    if (!wait_net_login(6, 40)) { printf("!! existing nick was not rejected, net=%g\n", net_login_status()); return 3; }
+    run_frames(10);
+    if (login_status != 6) { printf("!! script status not 6, got %g\n", login_status); return 3; }
+    printf("=== existing nick rejected (frame %ld)\n", g_frame);
+
+    /* --- 10. Login mode: wrong password rejected, correct password goes online --- */
+    tap_toggle_to_login(); run_frames(10);
+    fill_field(tap_nick, nick);
+    fill_field(tap_pwd, "WRONGpass");
+    tap_login_btn();
+    if (!wait_net_login(3, 40)) { printf("!! wrong password was not rejected, net=%g\n", net_login_status()); return 3; }
+    run_frames(10);
     printf("=== wrong password rejected (frame %ld)\n", g_frame);
-
-    /* fix the password: clear field, type the right one, log in -> straight online */
-    tap_pwd_field();
-    run_frames(5);
     keyboard_clear();
-    feed_text("pass1234");
+    feed_text("secret99");
     run_frames(5);
-    tap_login_go();
-    wait_login_status(2, 40);
-    wait_state(5, 30);
-    if (!wait_slot(60)) { printf("!! online after relogin failed\n"); return 3; }
+    tap_login_btn();
+    if (!wait_net_login(2, 40)) { printf("!! correct password did not login, net=%g\n", net_login_status()); return 3; }
+    if (!wait_state(5, 30)) { printf("!! did not jump into online\n"); return 3; }
+    if (!wait_slot(60)) { printf("!! online after login failed\n"); return 3; }
     printf("=== online after correct password: status=%g slot=%g (frame %ld)\n", net_status(), net_slot(), g_frame);
 
     printf("=== console tail:\n");

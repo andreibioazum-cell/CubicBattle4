@@ -7,7 +7,7 @@ BUILTINS=frozenset({
     'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive',
     'net_player_bullet_active','net_player_bullet_x','net_player_bullet_y','net_player_bullet_dx','net_player_bullet_dy','net_player_bullet_shot','net_player_bullet_tr','net_player_nick',
     'net_chat_send','net_chat_count','net_chat_text','net_chat_uid','net_chat_time',
-    'net_set_data_path','net_autologin','net_login','net_logout','net_login_status','net_login_nick',
+    'net_set_data_path','net_autologin','net_login','net_register','net_logout','net_login_status','net_login_nick',
     'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_visible','keyboard_enter_pressed','keyboard_type','keyboard_backspace',
     'str_len','str_eq',
     'ds_log','console_count','console_line','console_type','console_clear',
