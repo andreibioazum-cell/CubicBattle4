@@ -488,6 +488,9 @@ static int pull_state(char *resp,size_t cap) { char url[URL]; snprintf(url,sizeo
 
 static int login_attempt(const char *url, const char *nick, const char *pwd);
 static int login_verify_session(const char *url);
+#ifdef _WIN32
+static unsigned __stdcall win_login_thread(void *arg);
+#endif
 static void login_ensure_thread(void) {
     if (lg.run) return;
     lg.run = 1;
