@@ -407,6 +407,9 @@ double str_len(const char *s){ return s ? (double)strlen(s) : 0; }
 int str_eq(const char *a, const char *b){ if(a==b) return 1; if(!a||!b) return 0; return strcmp(a,b)==0; }
 
 #ifdef __ANDROID__
+#include <android/native_activity.h>
+#include <android/keycodes.h>
+#include <jni.h>
 #define KB_BUF 384
 static ANativeActivity *kb_activity = NULL;
 static char kb_text[KB_BUF] = {0};
