@@ -5,7 +5,7 @@ import sys
 from ds_compiler import DimScriptCompiler
 def find_ds_files(directory):
     files = glob.glob(os.path.join(directory, '*.ds'))
-    order = ["config.ds", "entities.ds", "ui.ds", "chat.ds", "menu.ds", "battle.ds", "engine.ds",
+    order = ["config.ds", "locale.ds", "entities.ds", "ui.ds", "chat.ds", "menu.ds", "battle.ds", "engine.ds",
              "core.ds", "game.ds"]
     has_plain = any(os.path.basename(f) in order or not os.path.basename(f)[0].isdigit() for f in files)
     if has_plain:

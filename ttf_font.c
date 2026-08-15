@@ -390,9 +390,28 @@ static int init_tables(DSFont *f) {
     return f->cmap4 || f->cmap12;
 }
 static int add_cp(DSFont *f, uint32_t cp) {
-    if (f->gcount >= DS_FONT_MAX) return 1;
     for (int i = 0; i < f->gcount; i++) if (f->glyphs[i].codepoint == cp) return 1;
+    if (f->gcount >= DS_FONT_MAX) return 0;
     f->glyphs[f->gcount++].codepoint = cp;
+    return 1;
+}
+static int add_utf8(DSFont *f, const char *text) {
+    const uint8_t *p = (const uint8_t *)text;
+    while (p && *p) {
+        uint32_t cp;
+        if (*p < 0x80) { cp = *p++; }
+        else if ((*p & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
+            cp = ((uint32_t)(p[0] & 0x1f) << 6) | (uint32_t)(p[1] & 0x3f); p += 2;
+        } else if ((*p & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+            cp = ((uint32_t)(p[0] & 0x0f) << 12) | ((uint32_t)(p[1] & 0x3f) << 6) |
+                 (uint32_t)(p[2] & 0x3f); p += 3;
+        } else if ((*p & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 &&
+                   (p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
+            cp = ((uint32_t)(p[0] & 7) << 18) | ((uint32_t)(p[1] & 0x3f) << 12) |
+                 ((uint32_t)(p[2] & 0x3f) << 6) | (uint32_t)(p[3] & 0x3f); p += 4;
+        } else { p++; continue; }
+        if (!add_cp(f, cp)) return 0;
+    }
     return 1;
 }
 DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
@@ -413,6 +432,14 @@ DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
     if (f->line_h < ph) f->line_h = (float)ph;
     for (int cp = 32; cp <= 126; cp++) add_cp(f, (uint32_t)cp);
     for (int cp = 0x0410; cp <= 0x044F; cp++) add_cp(f, (uint32_t)cp);
+    add_cp(f, 0x0401); add_cp(f, 0x0451);
+    if (!add_utf8(f,
+        "日本語遊ぶ設定ソロオンラインコンソール上へ下へ消去戻る"
+        "チャットオンラインチャットメッセージなし閉じるキーボード"
+        "メッセージを入力送信攻撃タップして戻る勝利相手を倒した"
+        "敗北相手の勝利接続なし接続中倒されました")) {
+        ds_font_destroy(f); return NULL;
+    }
     add_cp(f, '?');
     int ax = 1, ay = 1, rh = 0;
     for (int i = 0; i < f->gcount; i++) {
