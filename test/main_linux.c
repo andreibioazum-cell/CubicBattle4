@@ -260,6 +260,24 @@ int main(void) {
     printf("=== init ok (frame %ld)\n", g_frame);
     run_frames(10);
 
+    /* Проверка формата кадра (Windows-баг «цвета ломаются»):
+     * кнопка Play (0x5F10A0) в буфере должна лежать как R,G,B,A ->
+     * uint32 0xFFA0105F. После своппинга R<->B для GDI (B,G,R,X) должно
+     * получиться 0xFF5FA010. */
+    {
+        uint32_t px = g_pixels[520 + 340 * g_w];
+        if (px != 0xFFA0105Fu) {
+            printf("!! pixel format broken: button pixel = 0x%08X, expected 0xFFA0105F\n", px);
+            return 3;
+        }
+        uint32_t sw = ((px & 0xFFu) << 16) | (px & 0xFF00u) | ((px >> 16) & 0xFFu) | 0xFF000000u;
+        if (sw != 0xFF5F10A0u) {
+            printf("!! swizzle formula broken: got 0x%08X, expected 0xFF5F10A0 (BGRX)\n", sw);
+            return 3;
+        }
+        printf("=== framebuffer pixel format OK (RGBA -> BGRX swizzle verified)\n");
+    }
+
     /* --- 1. Account screen opens in login mode --- */
     tap_account();
     if (!wait_state(7, 30)) { printf("!! account screen did not open\n"); return 3; }
