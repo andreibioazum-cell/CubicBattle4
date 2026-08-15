@@ -1,8 +1,26 @@
 function draw_lobby
-rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF;button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h
+rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF;button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;button tr_account(),(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h;if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;num lw=text_ink_width(ln)*0.5;text_scaled ln,(screen_w-lw)/2,18,0x9B9BC0,0.5;end;end
 end
 function draw_modes
 rect 0,0,screen_w,screen_h,0x1a1a2e;button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;draw_back;end
+function draw_login
+// Экран входа/регистрации: ник + пароль. Если аккаунта с таким ником ещё нет —
+// он создаётся автоматически (регистрация). Если есть, но пароль другой — не пустит.
+rect 0,0,screen_w,screen_h,0x1a1a2e;text tr_login_title(),24,34,0xFFFFFF
+num bw=screen_w-120, bx=(screen_w-bw)/2, fy=screen_h/2-95
+text tr_nick(),bx,fy-24,0x9B9BC0
+if login_field==1; roundrect bx,fy,bw,58,14,0xFF4B2E83; else; roundrect bx,fy,bw,58,14,0xFF2A2A40; end
+if str_len(login_nick)==0; text_in_field tr_nick_ph(),bx+16,fy,58,0x666688,0.6; else; text_in_field login_nick,bx+16,fy,58,0xFFFFFF,0.6; end
+num py=fy+72
+text tr_pwd(),bx,py-24,0x9B9BC0
+if login_field==2; roundrect bx,py,bw,58,14,0xFF4B2E83; else; roundrect bx,py,bw,58,14,0xFF2A2A40; end
+if str_len(login_pwd)==0; text_in_field tr_pwd_ph(),bx+16,py,58,0x666688,0.6; else; num pn=str_len(login_pwd), i=0, px=bx+16, aw=text_ink_width("*")*0.6; if aw<6; aw=8; end; loop i<pn; text_in_field "*",px,py,58,0xFFFFFF,0.6; px=px+aw; i=i+1; end; end
+num by2=py+84
+button tr_login_go(),(screen_w-btn_w)/2,by2,btn_w,btn_h
+if net_login_status()==2; button tr_logout(),(screen_w-btn_w)/2,by2+80,btn_w,btn_h; end
+num sy=by2+104
+if login_status==1; ctext tr_connecting(),sy,0xFFF176; else if login_status==3; ctext tr_wrong_pwd(),sy,0xFF8A80; else if login_status==4; ctext tr_no_connection(),sy,0xFF8A80; else if login_status==5; ctext tr_bad_creds(),sy,0xFF8A80; end
+draw_back;end
 function draw_settings
 rect 0,0,screen_w,screen_h,0x1a1a2e;num x=(screen_w-btn_w)/2, y=screen_h/2-110;button "English",x,y,btn_w,btn_h;button "Русский",x,y+80,btn_w,btn_h;button "日本語",x,y+160,btn_w,btn_h;button tr_console(),x,y+240,btn_w,btn_h;draw_back;end
 function draw_console
@@ -10,9 +28,35 @@ rect 0,0,screen_w,screen_h,0xFF000000;ctext tr_console(),48,0xFF00FF00;num total
 li=total-1-(console_scroll+i); col=0xFF00FF00;if console_type(li)==1; col=0xFFFF0000; end;text_scaled console_line(li),18,cy,col,0.75;end;cy=cy+lh; i=i+1;end;num bw=(screen_w-76)/3, by=screen_h-78;button tr_up(),16,by,bw,btn_h;button tr_down(),screen_w/2-bw/2,by,bw,btn_h
 button tr_clear(),screen_w-bw-16,by,bw,btn_h;draw_back;end
 function touch_lobby num x, num y, num action
-if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end;if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 2; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 4; end;end
+if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end;if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 2; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 4; return; end;if y>=screen_h/2+112&&y<=screen_h/2+192; login_after=0; start_transition 7; end;end
+function login_do
+if net_login_status()==1; return; end
+if str_len(login_nick)<3||str_len(login_nick)>16; login_status=5; return; end
+if str_len(login_pwd)<4; login_status=5; return; end
+login_status=1; keyboard_hide; net_login FIREBASE,login_nick,login_pwd;end
+function update_login
+if login_status==1
+if net_login_status()!=1
+if net_login_status()==2; login_status=2; keyboard_hide; keyboard_clear; start_transition login_after; else if net_login_status()==3; login_status=3; else if net_login_status()==4; login_status=4; else if net_login_status()==5; login_status=5; end
+end
+else
+str raw=keyboard_get_raw(); if str_eq(raw,last_kb)==0; last_kb=keyboard_get_text(); if login_field==1; login_nick=last_kb; else if login_field==2; login_pwd=last_kb; end; end
+if keyboard_enter_pressed()==1; login_do; end
+end
+end
+function touch_login num x, num y, num action
+if action!=0; return; end
+if back_hit(x,y)==1; keyboard_hide; keyboard_clear; if login_after==5; start_transition 2; else; start_transition 0; end; return; end
+num bw=screen_w-120, bx=(screen_w-bw)/2, fy=screen_h/2-95
+if x>=bx&&x<=bx+bw&&y>=fy&&y<=fy+58; if login_field!=1; login_field=1; keyboard_clear; if str_len(login_nick)>0; keyboard_type login_nick; end; last_kb=keyboard_get_text(); end; keyboard_show; return; end
+num py=fy+72
+if x>=bx&&x<=bx+bw&&y>=py&&y<=py+58; if login_field!=2; login_field=2; keyboard_clear; if str_len(login_pwd)>0; keyboard_type login_pwd; end; last_kb=keyboard_get_text(); end; keyboard_show; return; end
+num by2=py+84
+if x>=(screen_w-btn_w)/2-12&&x<=(screen_w-btn_w)/2+btn_w+12&&y>=by2-8&&y<=by2+btn_h+8; login_do; return; end
+if net_login_status()==2&&x>=(screen_w-btn_w)/2-12&&x<=(screen_w-btn_w)/2+btn_w+12&&y>=by2+80-8&&y<=by2+80+btn_h+8; net_logout; login_status=0; keyboard_hide; keyboard_clear; start_transition login_after; end
+end
 function touch_menu num x, num y, num action
-if action!=0; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
+if action!=0; return; end;if game_state==7; touch_login x,y,action; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
 if x>=screen_w/2-bw/2&&x<=screen_w/2+bw/2&&y>=by&&y<=by+btn_h; console_scroll=console_scroll-10; if console_scroll<0; console_scroll=0; end; return; end;if x>=screen_w-bw-16&&x<=screen_w-16&&y>=by&&y<=by+btn_h; console_clear; console_scroll=0; end
-return;end;num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end;if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 5; end;else if game_state==4
+return;end;num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end;if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; if net_login_status()==2; start_transition 5; else; login_after=5; start_transition 7; end; end;else if game_state==4
 num sy=screen_h/2-110;if y>=sy-8&&y<sy+72; language=0;else if y>=sy+72&&y<sy+152; language=1;else if y>=sy+152&&y<sy+232; language=2;else if y>=sy+232&&y<=sy+312; start_transition 6;end;end;end

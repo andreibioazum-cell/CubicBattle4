@@ -29,7 +29,7 @@
 #define CHAT_RESP 8192
 #define WRITE_TICK 50
 #define READ_TICK 50
-#define TIMEOUT 5000
+#define TIMEOUT 2000
 #define STALE 12000
 #define CHAT_MAX 32
 #define CHAT_TEXT_MAX 96
@@ -75,6 +75,9 @@ static struct {
     Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
 } net = { .lock = DS_MUTEX_INIT };
+/* Пока идёт отключение (net_disconnect), HTTP-запросы используют короткий
+ * таймаут, чтобы игра не замирала на секунды, если сеть «мертва». */
+static int net_fast = 0;
 static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
@@ -258,6 +261,12 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     if (!inet) return 0;
     HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!conn) { InternetCloseHandle(inet); return 0; }
+    {
+        DWORD tmo = (DWORD)(net_fast ? 800 : TIMEOUT);
+        InternetSetOptionA(conn, INTERNET_OPTION_CONNECT_TIMEOUT, &tmo, sizeof(tmo));
+        InternetSetOptionA(conn, INTERNET_OPTION_SEND_TIMEOUT, &tmo, sizeof(tmo));
+        InternetSetOptionA(conn, INTERNET_OPTION_RECEIVE_TIMEOUT, &tmo, sizeof(tmo));
+    }
     DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI;
     if (secure) flags |= INTERNET_FLAG_SECURE;
     HINTERNET req = HttpOpenRequestA(conn, method, path, NULL, NULL, NULL, flags, 0);
@@ -320,9 +329,11 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     conn=(*env)->CallObjectMethod(env,urlobj,(*env)->GetMethodID(env,urlc,"openConnection","()Ljava/net/URLConnection;"));
     if (!conn||(*env)->ExceptionCheck(env)) goto done;
     jm=(*env)->NewStringUTF(env,method);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),5000);
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),5000);
+    {
+        int tmo = net_fast ? 800 : TIMEOUT;
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),tmo);
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),tmo);
+    }
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setUseCaches","(Z)V"),JNI_FALSE);
     {
         jmethodID set_header=(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V");
@@ -651,6 +662,7 @@ static int claim_slot(void) {
     char resp[RESP],url[URL],body[BODY],uid[24],etag[96]; long long t=now_ms(); int slot;
     for(slot=0;slot<NET_SLOTS;slot++) {
         unsigned long seq; int claim=0,code;
+        if (!net.run) return -1; /* отключение: не ждём все слоты */
         snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
         code=http_ex("GET",url,NULL,resp,sizeof(resp),"X-Firebase-ETag","true",etag,sizeof(etag));
         if(code!=200||!etag[0])continue;
@@ -888,7 +900,15 @@ void net_connect(const char *url,const char *room) {
     if(!net.rthread){ net.run=0; ds_thread_join(net.thread); net.status=NET_ERROR; LOGERR("network error: cannot start reader thread"); return; }
     LOG("connect %s/%s (write %dms read %dms)",net.base,net.room,WRITE_TICK,READ_TICK);
 }
-void net_disconnect(void) { if(!net.run)return; net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread); net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets)); }
+void net_disconnect(void) {
+    if(!net.run)return;
+    /* Короткие таймауты HTTP: если сеть «мертва», не блокируем игровой поток
+     * на секунды (иначе при выходе из онлайна игра зависала и могла «вылететь»). */
+    net_fast = 1;
+    net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread);
+    net_fast = 0;
+    net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
+}
 void net_publish(double x,double y,double a,double hp,double alive) {
     if(!net.started) return;
     lock(); net.me.x=x; net.me.y=y; net.me.a=a; net.me.hp=hp; net.me.alive=alive;
