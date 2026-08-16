@@ -1,4 +1,4 @@
-import os, re, sys
+import re, sys
 TYPES={'num':'double','str':'const char*','col':'uint32_t','arr':'DSArray*'}
 BUILTINS=frozenset({
     'rect','roundrect','circle','ring','line','tex','text','text_scaled','text_ink_width','text_ink_height','text_ink_top','png_load',
@@ -62,9 +62,21 @@ def find_assign(line):
     return -1
 def used_outside_strings(text,name):
     pat=re.compile(r'\b'+re.escape(name)+r'\b'); _,quoted=scan(text)
-    for m in pat.finditer(text):
-        if not quoted[m.start()]: return True
-    return False
+    return any(not quoted[m.start()] for m in pat.finditer(text))
+def sub_unquoted(e,pat,repl):
+    """Replace pat with repl outside string literals."""
+    _,quoted=scan(e)
+    if not any(quoted): return pat.sub(repl,e)
+    out=[]; start=0
+    for m in pat.finditer(e):
+        if quoted[m.start()]: continue
+        out.append(e[start:m.start()]); out.append(m.expand(repl)); start=m.end()
+    out.append(e[start:]); return ''.join(out)
+def strip_kw(cond,kw):
+    """Drop an optional trailing 'then'/'do' and/or ':' from a block header."""
+    for suf in (' '+kw,' '+kw+':'):
+        if cond.endswith(suf): cond=cond[:-len(suf)].strip(); break
+    return cond[:-1].strip() if cond.endswith(':') else cond
 class DimScriptCompiler:
     def __init__(self):
         self.objects={}; self.vars={}; self.functions={}; self.func_ret={}; self.top=[]; self.lines=[]; self.errors=0; self.output=[]; self.indent=0; self.scope={}; self.blocks=[]
@@ -78,9 +90,7 @@ class DimScriptCompiler:
                         if not line: continue
                         if line[0]=='c' and len(line)>1 and line[1] in ' \t"':
                             self.lines.append(line); continue
-                        for part in split_top(line,';'):
-                            q=part.strip()
-                            if q: self.lines.append(q)
+                        self.lines.extend(q for q in map(str.strip,split_top(line,';')) if q)
             except OSError as e: self._error(f"cannot read '{p}': {e}"); return False
         return True
     def _decl_list(self,line):
@@ -88,16 +98,15 @@ class DimScriptCompiler:
         if not m: return None
         t,rest=m.group(1),m.group(2).strip()
         if t not in TYPES and t not in self.objects and t!='joy': return None
-        parts=split_top(rest,','); res=[]
-        for part in parts:
+        res=[]
+        for part in split_top(rest,','):
             part=part.strip()
             if not part: continue
             mm=re.match(r'^('+_NAME+r')(?:\s*=\s*(.*))?$',part)
             if not mm: return None
-            n,v=mm.group(1),mm.group(2)
-            if v: v=v.strip()
-            res.append((t,n,v))
-        return res if res else None
+            v=mm.group(2)
+            res.append((t,mm.group(1),v.strip() if v else v))
+        return res or None
     def parse(self):
         i=0
         while i < len(self.lines):
@@ -111,9 +120,13 @@ class DimScriptCompiler:
     def _decl_all(self,line):
         lst=self._decl_list(line)
         if not lst: return None
-        for t,n,v in lst:
-            if t not in TYPES and t not in self.objects: return None
+        if any(t not in TYPES and t not in self.objects for t,n,v in lst): return None
         return lst
+    def _obj_fields(self,name,fields,lst):
+        for t,n,v in lst:
+            if t not in TYPES: self._error(f"object '{name}': expected type")
+            elif n in fields: self._error(f"dup field '{name}.{n}'")
+            else: fields[n]=(t,v)
     def _parse_object(self,i):
         m=re.match(r'^object\s+('+_NAME+r')(?:\s+(.+))?$',self.lines[i])
         if not m: self._error(f"invalid object: {self.lines[i]}"); return i+1
@@ -122,21 +135,14 @@ class DimScriptCompiler:
         fields={}
         if rest and rest!='end':
             lst=self._decl_list(rest)
-            if lst:
-                for t,n,v in lst:
-                    if t not in TYPES: self._error(f"object '{name}': expected type")
-                    else: fields[n]=(t,v)
+            if lst: self._obj_fields(name,fields,lst)
         j=i+1
         while j < len(self.lines):
             line=self.lines[j]
             if line=='end': self.objects[name]=fields; return j+1
             lst=self._decl_all(line)
             if not lst: self._error(f"object '{name}': expected 'type name = value', got {line}")
-            else:
-                for t,n,v in lst:
-                    if t not in TYPES: self._error(f"object '{name}': expected type")
-                    elif n in fields: self._error(f"dup field '{name}.{n}'")
-                    else: fields[n]=(t,v)
+            else: self._obj_fields(name,fields,lst)
             j+=1
         self._error(f"object '{name}' no end"); return j
     def _parse_function(self,i):
@@ -163,8 +169,7 @@ class DimScriptCompiler:
             if not ch: break
     def _parse_params(self,text):
         params=[]
-        if not text.strip(): return params
-        for part in split_top(text,','):
+        for part in split_top(text,',') if text.strip() else []:
             w=part.split()
             if len(w)!=2 or (w[0] not in TYPES and w[0] not in self.objects): self._error(f"invalid param '{part}'"); continue
             params.append((w[0],w[1]))
@@ -183,9 +188,7 @@ class DimScriptCompiler:
             body.append(line); i+=1
         self._error(f"{what} no end"); return body,i
     def _parse_global(self,line):
-        lst=self._decl_all(line)
-        if not lst: return
-        for t,n,v in lst:
+        for t,n,v in self._decl_all(line) or []:
             if n in self.vars: self._error(f"dup var '{n}'"); continue
             if t in self.objects:
                 if not v or not re.match(r'^new\s+'+re.escape(t)+r'\s*\(\)?\s*$',v): self._error(f"'{n}': must be 'new {t}()'"); continue
@@ -224,23 +227,14 @@ class DimScriptCompiler:
     def _fields(self,e):
         names=[n for n in self.vars if self.vars[n][0] in self.objects]+[n for n,t in self.scope.items() if t in self.objects]
         for n in sorted(names,key=len,reverse=True):
-            pat=re.compile(r'\b'+re.escape(n)+r'\.('+_NAME+r')'); repl=n+r'->\1'
-            _,quoted=scan(e)
-            if not any(quoted): e=pat.sub(repl,e); continue
-            out=[]; start=0
-            for m in pat.finditer(e):
-                if quoted[m.start()]: continue
-                out.append(e[start:m.start()]); out.append(m.expand(repl)); start=m.end()
-            out.append(e[start:]); e=''.join(out)
+            e=sub_unquoted(e,re.compile(r'\b'+re.escape(n)+r'\.('+_NAME+r')'),n+r'->\1')
         return self._calls(e)
     def _calls(self,e):
         if not self.functions: return e
-        _,quoted=scan(e); pattern=re.compile(r'\b('+_NAME+r')\s*\(')
-        out=[]; start=0
-        for m in pattern.finditer(e):
-            name=m.group(1)
-            if quoted[m.start()] or name not in self.functions: continue
-            out.append(e[start:m.start()]); out.append('ds_fn_'+name+'('); start=m.end()
+        _,quoted=scan(e); out=[]; start=0
+        for m in re.finditer(r'\b('+_NAME+r')\s*\(',e):
+            if quoted[m.start()] or m.group(1) not in self.functions: continue
+            out.append(e[start:m.start()]); out.append('ds_fn_'+m.group(1)+'('); start=m.end()
         out.append(e[start:]); return ''.join(out)
     def as_str(self,e):
         if self.expr_type(e)=='str': return self.expr(e)
@@ -251,26 +245,17 @@ class DimScriptCompiler:
         if line and line[0]=='c' and len(line)>1 and line[1] in ' \t"':
             raw=line[1:].strip()
             if raw.startswith('"') and raw.endswith('"') and len(raw)>=2:
-                inner=raw[1:-1].replace('\\"', '"').replace('\\\\','\\'); self._out(inner)
+                self._out(raw[1:-1].replace('\\"', '"').replace('\\\\','\\'))
             elif raw:
-                if raw.endswith((';','{','}')): self._out(raw)
-                else: self._out(raw+';')
+                self._out(raw if raw.endswith((';','{','}')) else raw+';')
             return
         if line=='end':
             if not self.blocks: self._error("unexpected 'end'"); return
             self.blocks.pop(); self.indent-=1; self._out('}'); return
         if line.startswith('if '):
-            cond=line[3:].strip()
-            if cond.endswith(' then'): cond=cond[:-5].strip()
-            elif cond.endswith(' then:'): cond=cond[:-6].strip()
-            if cond.endswith(':'): cond=cond[:-1].strip()
-            self._open_block(f'if ({self.expr(cond)})'); return
+            self._open_block(f'if ({self.expr(strip_kw(line[3:].strip(),"then"))})'); return
         if line.startswith('loop '):
-            cond=line[5:].strip()
-            if cond.endswith(' do'): cond=cond[:-3].strip()
-            elif cond.endswith(' do:'): cond=cond[:-4].strip()
-            if cond.endswith(':'): cond=cond[:-1].strip()
-            self._open_block(f'while ({self.expr(cond)})'); return
+            self._open_block(f'while ({self.expr(strip_kw(line[5:].strip(),"do"))})'); return
         if line=='else' or line.startswith('else if '):
             if not self.blocks: self._error("'else' without 'if'"); return
             header='else' if line=='else' else f'else if ({self.expr(line[8:])})'
@@ -297,7 +282,7 @@ class DimScriptCompiler:
             fn=f'ds_fn_{name}'
         elif name in BUILTINS: fn=name
         else: return
-        args_c=', '.join(self.expr(a) for a in args); self._out(f'{fn}({args_c});')
+        self._out(f'{fn}({", ".join(self.expr(a) for a in args)});')
     def _emit_assign(self,lhs,rhs):
         m=_LHS_RE.match(lhs)
         if not m: return
@@ -345,10 +330,9 @@ class DimScriptCompiler:
         for n in init_lines:
             t=self.vars[n][0]
             if t in self.objects: self._out(f'{n} = ds_new_{t}();')
-            else:
-                if n in self.vars and self.vars[n][1]:
-                    try: self._out(f'{n} = {self.expr(self.vars[n][1])};')
-                    except: pass
+            elif self.vars[n][1]:
+                try: self._out(f'{n} = {self.expr(self.vars[n][1])};')
+                except: pass
         for line in self.top: self._emit_line(line)
         self._emit('    return 0;'); self._emit('}'); self._emit('')
         self._emit('void reset(void) {'); self.indent=1
@@ -368,8 +352,7 @@ class DimScriptCompiler:
         if 'touch' in self.functions:
             args=[]
             for i,(pt,_pn) in enumerate(self.functions['touch'][0]):
-                if i>=4: break
-                if pt=='str': break
+                if i>=4 or pt=='str': break
                 args.append(f'({self.c_type(pt)}){("x","y","action","pointer_id")[i]}')
             self._out(f'ds_fn_touch({", ".join(args)});')
         else: self._out('(void)x; (void)y; (void)action; (void)pointer_id;')

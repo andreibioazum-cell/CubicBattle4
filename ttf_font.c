@@ -236,18 +236,50 @@ static int flatten(const DSPoint *p, int n, DSFC *flat) {
     }
     return 1;
 }
-static int inside(const DSFC *c, int n, float x, float y) {
-    int in = 0;
-    for (int i = 0; i < n; i++) {
-        const DSFC *poly = &c[i];
-        for (int k = 0, j = poly->count-1; k < poly->count; j = k++) {
-            float yi = poly->points[k].y, yj = poly->points[j].y;
-            if (((yi > y) != (yj > y)) &&
-                x < (poly->points[j].x-poly->points[k].x)*(y-yi)/(yj-yi+1e-6f)+poly->points[k].x)
-                in = !in;
+/* Быстрая scanline-растеризация (even-odd): для каждой строки сэмплов
+ * собираем пересечения рёбер, сортируем и заливаем интервалы. Это заменяет
+ * старый вариант «16 проверок точка-в-многоугольнике на каждый пиксель»,
+ * из-за которого запекание атласа занимало секунды и при старте игры
+ * долго висел чёрный экран. */
+static void raster_glyph(DSFont *f, const DSFC *flat, int fc,
+                         int mnx, int mxy, int ax, int ay, int w, int h) {
+    int *accum = (int *)calloc((size_t)w * h, sizeof(int));
+    float xs[128];
+    if (!accum) return;
+    float sxs = f->scale * DS_FONT_SS;
+    int rows = h * DS_FONT_SS, max_i = w * DS_FONT_SS - 1;
+    for (int row = 0; row < rows; row++) {
+        float fy = (float)mxy - ((float)row + 0.5f) / sxs;
+        int nx = 0;
+        for (int cn = 0; cn < fc; cn++) {
+            const DSFC *poly = &flat[cn];
+            for (int k = 0, j = poly->count-1; k < poly->count; j = k++) {
+                float yi = poly->points[k].y, yj = poly->points[j].y;
+                if ((yi > fy) == (yj > fy)) continue;
+                float xh = poly->points[j].x +
+                    (poly->points[k].x - poly->points[j].x) * (fy - yj) / (yi - yj);
+                if (nx < (int)(sizeof(xs)/sizeof(xs[0])))
+                    xs[nx++] = (xh - (float)mnx) * sxs;
+            }
+        }
+        for (int a = 1; a < nx; a++) {
+            float v = xs[a]; int b = a;
+            while (b > 0 && xs[b-1] > v) { xs[b] = xs[b-1]; b--; }
+            xs[b] = v;
+        }
+        int py = row / DS_FONT_SS;
+        for (int k = 0; k + 1 < nx; k += 2) {
+            int i0 = (int)ceilf(xs[k] - 0.5f), i1 = (int)floorf(xs[k+1] - 0.5f);
+            if (i0 < 0) i0 = 0;
+            if (i1 > max_i) i1 = max_i;
+            for (int i = i0; i <= i1; i++) accum[py*w + i/DS_FONT_SS]++;
         }
     }
-    return in;
+    for (int py = 0; py < h; py++)
+        for (int px = 0; px < w; px++)
+            f->alpha[(size_t)(ay+py) * f->aw + (ax+px)] =
+                (uint8_t)((accum[py*w+px]*255)/(DS_FONT_SS*DS_FONT_SS));
+    free(accum);
 }
 static int g_metrics(const DSFont *f, int g, int *adv, int *lsb) {
     if (!f || g < 0 || g >= f->ng || !f->hmtx) return 0;
@@ -339,19 +371,7 @@ static int bake_glyph(DSFont *f, DSFontGlyph *g, int ax, int ay, int rh) {
         }
         fc++; st = en + 1;
     }
-    for (int py = 0; py < h; py++) {
-        for (int px = 0; px < w; px++) {
-            int cov = 0;
-            for (int sy = 0; sy < DS_FONT_SS; sy++)
-                for (int sx = 0; sx < DS_FONT_SS; sx++) {
-                    float fx = mnx + ((float)px + ((float)sx+0.5f)/DS_FONT_SS) / s;
-                    float fy = mxy - ((float)py + ((float)sy+0.5f)/DS_FONT_SS) / s;
-                    if (inside(flat, fc, fx, fy)) cov++;
-                }
-            f->alpha[(size_t)(ay+py) * f->aw + (ax+px)] =
-                (uint8_t)((cov*255)/(DS_FONT_SS*DS_FONT_SS));
-        }
-    }
+    raster_glyph(f, flat, fc, mnx, mxy, ax, ay, w, h);
     g->u0 = (float)ax / f->aw;       g->v0 = (float)ay / f->ah;
     g->u1 = (float)(ax+w) / f->aw;   g->v1 = (float)(ay+h) / f->ah;
     for (int cn = 0; cn < fc; cn++) free(flat[cn].points);
