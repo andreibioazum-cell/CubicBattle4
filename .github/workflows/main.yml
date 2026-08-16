@@ -8,7 +8,7 @@ jobs:
   build-android:
     name: Build Android APK (Android 10-14 arm64+arm32)
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
     - uses: android-actions/setup-android@v3
@@ -34,15 +34,15 @@ jobs:
         NDK_ROOT=$ANDROID_NDK_ROOT
         TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
         GLUE="$NDK_ROOT/sources/android/native_app_glue"
-        
+
         mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/assets
-        
+
         # arm64-v8a — min API 29 (Android 10)
         "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/arm64-v8a/libds_game.so
-        
+
         # arm32 armeabi-v7a — min API 29
         "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
@@ -53,11 +53,11 @@ jobs:
       run: |
         SDK_ROOT=$ANDROID_HOME
         BT="$SDK_ROOT/build-tools/34.0.0"
-        
+
         "$BT/aapt" package -f -M game/AndroidManifest.xml \
           -I "$SDK_ROOT/platforms/android-34/android.jar" \
           -F unsigned.apk ./staging/
-        
+
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
         keytool -genkey -v -keystore debug.keystore -storepass android \
           -alias debug -keypass android -keyalg RSA -keysize 2048 \
@@ -88,16 +88,12 @@ jobs:
     - name: Build Game.exe
       run: cmake --build build --config Release
 
+    # Картинки и шрифт уже внутри Game.exe (RCDATA-ресурсы) — в пакете
+    # только сам exe, без папки assets/.
     - name: Prepare Release ZIP
       shell: pwsh
       run: |
-        Compress-Archive -Path build/Release/* -DestinationPath Game-Windows-PC.zip
-
-    - name: Upload Game.exe
-      uses: actions/upload-artifact@v4
-      with:
-        name: Game-Windows-PC-exe
-        path: build/Release/Game.exe
+        Compress-Archive -Path build/Release/Game.exe -DestinationPath Game-Windows-PC.zip
 
     - name: Upload Full Game Windows Package
       uses: actions/upload-artifact@v4
