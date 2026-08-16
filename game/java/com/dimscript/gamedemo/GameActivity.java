@@ -26,6 +26,22 @@ import android.widget.FrameLayout;
  * itself; this one-pixel editor makes every soft IME deliver commitText events.
  */
 public final class GameActivity extends NativeActivity {
+    /*
+     * NativeActivity loads the game .so with dlopen(), which does NOT register
+     * it with the Java runtime: without an explicit System.loadLibrary the
+     * first call to any native method below threw UnsatisfiedLinkError and
+     * crashed the app the moment the keyboard was opened.
+     */
+    private static boolean nativeReady;
+    static {
+        try {
+            System.loadLibrary("ds_game");
+            nativeReady = true;
+        } catch (UnsatisfiedLinkError error) {
+            nativeReady = false;
+        }
+    }
+
     private EditText chatEditor;
     private boolean syncingFromNative;
     private boolean keyboardWasVisible;
@@ -33,6 +49,16 @@ public final class GameActivity extends NativeActivity {
     private native void nativeReplaceText(String text);
     private native void nativeSubmitText();
     private native void nativeKeyboardHidden();
+
+    private void replaceTextNative(String text) {
+        if (nativeReady) try { nativeReplaceText(text); } catch (UnsatisfiedLinkError ignored) { }
+    }
+    private void submitTextNative() {
+        if (nativeReady) try { nativeSubmitText(); } catch (UnsatisfiedLinkError ignored) { }
+    }
+    private void keyboardHiddenNative() {
+        if (nativeReady) try { nativeKeyboardHidden(); } catch (UnsatisfiedLinkError ignored) { }
+    }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -63,7 +89,7 @@ public final class GameActivity extends NativeActivity {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
             @Override public void afterTextChanged(Editable value) {
-                if (!syncingFromNative) nativeReplaceText(value.toString());
+                if (!syncingFromNative) replaceTextNative(value.toString());
             }
         });
         chatEditor.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -74,7 +100,7 @@ public final class GameActivity extends NativeActivity {
                         || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
                             && event.getAction() == KeyEvent.ACTION_DOWN);
                 if (enter) {
-                    nativeSubmitText();
+                    submitTextNative();
                     return true;
                 }
                 return false;
@@ -97,7 +123,7 @@ public final class GameActivity extends NativeActivity {
                             keyboardWasVisible = true;
                         } else if (keyboardWasVisible) {
                             keyboardWasVisible = false;
-                            nativeKeyboardHidden();
+                            keyboardHiddenNative();
                         }
                     }
                 });
@@ -149,7 +175,7 @@ public final class GameActivity extends NativeActivity {
                 }
                 chatEditor.clearFocus();
                 chatEditor.setVisibility(View.INVISIBLE);
-                nativeKeyboardHidden();
+                keyboardHiddenNative();
             }
         });
     }
