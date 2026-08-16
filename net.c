@@ -30,12 +30,17 @@
 #define CHAT_RESP 8192
 #define WRITE_TICK 50
 #define READ_TICK 50
-#define TIMEOUT 2000
-#define STALE 12000
+/* Таймауты HTTP: 4 секунды вместо 2 — на мобильном интернете короткие
+ * всплески задержки (DNS, переподключение к вышке) раньше выглядели как
+ * «Нет соединения» у второго игрока. */
+#define TIMEOUT 4000
+/* Через сколько секунд молчания чужой слот считается «призрачным» (приложение
+ * убили без выхода из онлайна) и занимается. Раньше 12 с — друг, перезашедший
+ * после краша, видел «Подключение.../Нет соединения» почти полминуты. */
+#define STALE 6000
 #define CHAT_MAX 32
 #define CHAT_TEXT_MAX 96
 #define LOGIN_NICK_MAX 16
-#define LOGIN_PWD_MAX 64
 #define SESSION_FILE "auth.dat"
 #ifdef _WIN32
 typedef SRWLOCK DSMutex;
@@ -87,14 +92,13 @@ static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
 static char s_lg_nick_ret[24];
 static long long now_ms(void);
-static void *login_worker(void *arg);
 
+/* Вход в онлайн — только ник: ни пароля, ни запросов в сеть, ни потоков.
+ * Ник хранится в session_nick, сохраняется в файл и читается при старте. */
 typedef struct {
-    DSThread thread; DSMutex lock;
-    int run, request, status, gen;
-    char url[URL];
-    char nick[LOGIN_NICK_MAX+1], pwd[LOGIN_PWD_MAX+1];
-    char session_nick[LOGIN_NICK_MAX+1], session_hash[80];
+    DSMutex lock;
+    int status;
+    char session_nick[LOGIN_NICK_MAX+1];
     char path[256];
 } Login;
 static Login lg = { .lock = DS_MUTEX_INIT };
@@ -110,110 +114,12 @@ static int nick_valid(const char *n) {
     }
     return 1;
 }
-static int pwd_valid(const char *p) {
-    size_t l = p ? strlen(p) : 0;
-    return l >= 4 && l <= LOGIN_PWD_MAX;
-}
-typedef struct { uint32_t h[8]; uint64_t len; unsigned char buf[64]; size_t buflen; } DS_SHA256;
-static const uint32_t SHA256_K[64] = {
-    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
-};
-#define SHA256_ROR(x,n) (((x)>>(n))|((x)<<(32-(n))))
-static void sha256_block(DS_SHA256 *c, const unsigned char *p) {
-    uint32_t w[64], a, b, cc, d, e, f, g, h, t1, t2; int i;
-    for (i = 0; i < 16; i++) w[i] = ((uint32_t)p[i*4]<<24)|((uint32_t)p[i*4+1]<<16)|((uint32_t)p[i*4+2]<<8)|p[i*4+3];
-    for (i = 16; i < 64; i++) {
-        uint32_t s0 = SHA256_ROR(w[i-15],7)^SHA256_ROR(w[i-15],18)^(w[i-15]>>3);
-        uint32_t s1 = SHA256_ROR(w[i-2],17)^SHA256_ROR(w[i-2],19)^(w[i-2]>>10);
-        w[i] = w[i-16]+s0+w[i-7]+s1;
-    }
-    a=c->h[0]; b=c->h[1]; cc=c->h[2]; d=c->h[3]; e=c->h[4]; f=c->h[5]; g=c->h[6]; h=c->h[7];
-    for (i = 0; i < 64; i++) {
-        uint32_t S1 = SHA256_ROR(e,6)^SHA256_ROR(e,11)^SHA256_ROR(e,25);
-        uint32_t ch = (e&f)^((~e)&g);
-        uint32_t temp1 = h + S1 + ch + SHA256_K[i] + w[i];
-        uint32_t S0 = SHA256_ROR(a,2)^SHA256_ROR(a,13)^SHA256_ROR(a,22);
-        uint32_t maj = (a&b)^(a&cc)^(b&cc);
-        uint32_t temp2 = S0 + maj;
-        h=g; g=f; f=e; e=d+temp1; d=cc; cc=b; b=a; a=temp1+temp2;
-    }
-    c->h[0]+=a; c->h[1]+=b; c->h[2]+=cc; c->h[3]+=d; c->h[4]+=e; c->h[5]+=f; c->h[6]+=g; c->h[7]+=h;
-}
-static void sha256_init(DS_SHA256 *c) {
-    c->h[0]=0x6a09e667; c->h[1]=0xbb67ae85; c->h[2]=0x3c6ef372; c->h[3]=0xa54ff53a;
-    c->h[4]=0x510e527f; c->h[5]=0x9b05688c; c->h[6]=0x1f83d9ab; c->h[7]=0x5be0cd19;
-    c->len=0; c->buflen=0;
-}
-static void sha256_update(DS_SHA256 *c, const void *data, size_t n) {
-    const unsigned char *p = (const unsigned char*)data;
-    c->len += (uint64_t)n;
-    while (n) {
-        size_t take = 64 - c->buflen; if (take > n) take = n;
-        memcpy(c->buf + c->buflen, p, take);
-        c->buflen += take; p += take; n -= take;
-        if (c->buflen == 64) { sha256_block(c, c->buf); c->buflen = 0; }
-    }
-}
-static void sha256_final(DS_SHA256 *c, unsigned char out[32]) {
-    uint64_t bits = c->len * 8; unsigned char b, lenb[8]; int i;
-    b = 0x80; sha256_update(c, &b, 1);
-    b = 0x00;
-    while (c->buflen != 56) sha256_update(c, &b, 1);
-    for (i = 0; i < 8; i++) lenb[i] = (unsigned char)(bits >> (56 - i*8));
-    sha256_update(c, lenb, 8);
-    for (i = 0; i < 8; i++) {
-        out[i*4]   = (unsigned char)(c->h[i] >> 24);
-        out[i*4+1] = (unsigned char)(c->h[i] >> 16);
-        out[i*4+2] = (unsigned char)(c->h[i] >> 8);
-        out[i*4+3] = (unsigned char)c->h[i];
-    }
-}
-static void sha256_hex(const char *a, const char *b, const char *c, char *out /* 65 */) {
-    DS_SHA256 s; unsigned char d[32]; int i;
-    sha256_init(&s);
-    sha256_update(&s, a, strlen(a));
-    if (b) sha256_update(&s, b, strlen(b));
-    if (c) sha256_update(&s, c, strlen(c));
-    sha256_final(&s, d);
-    for (i = 0; i < 32; i++) snprintf(out + i*2, 3, "%02x", d[i]);
-}
-static void make_salt(char *out, size_t cap) {
-    unsigned long long v = (unsigned long long)now_ms() * 2654435761ull;
-    v ^= (unsigned long long)(uintptr_t)&out << 32;
-#ifdef _WIN32
-    v ^= (unsigned long long)_getpid() * 1000003ull;
-#else
-    v ^= (unsigned long long)getpid() * 1000003ull;
-#endif
-    snprintf(out, cap, "%016llx", v);
-}
-static void session_save(const char *nick, const char *hash) {
+static void session_save(const char *nick) {
     char path[320]; FILE *f;
     if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
     else snprintf(path, sizeof(path), "%s", SESSION_FILE);
     f = fopen(path, "w");
-    if (f) { fprintf(f, "%s\n%s\n", nick, hash); fclose(f); }
-}
-static void session_clear(void) {
-    char path[320];
-    if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
-    else snprintf(path, sizeof(path), "%s", SESSION_FILE);
-    remove(path);
-}
-static int set_session(const char *nick, const char *hash) {
-    lg_lock();
-    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
-    snprintf(lg.session_hash, sizeof(lg.session_hash), "%s", hash);
-    lg_unlock();
-    session_save(nick, hash);
-    return NET_LOGIN_OK;
+    if (f) { fprintf(f, "%s\n", nick); fclose(f); }
 }
 static long long now_ms(void) {
 #ifdef _WIN32
@@ -315,7 +221,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
         HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
         if (!conn) { InternetCloseHandle(inet); continue; }
         {
-            DWORD tmo = (DWORD)(net_fast ? 800 : TIMEOUT);
+            DWORD tmo = (DWORD)(net_fast ? 1200 : TIMEOUT);
             InternetSetOptionA(conn, INTERNET_OPTION_CONNECT_TIMEOUT, &tmo, sizeof(tmo));
             InternetSetOptionA(conn, INTERNET_OPTION_SEND_TIMEOUT, &tmo, sizeof(tmo));
             InternetSetOptionA(conn, INTERNET_OPTION_RECEIVE_TIMEOUT, &tmo, sizeof(tmo));
@@ -393,7 +299,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     jm=(*env)->NewStringUTF(env,method); JNI_CHECK();
     (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm); JNI_CHECK();
     {
-        int tmo = net_fast ? 800 : TIMEOUT;
+        int tmo = net_fast ? 1200 : TIMEOUT;
         (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),tmo); JNI_CHECK();
         (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setReadTimeout","(I)V"),tmo); JNI_CHECK();
     }
@@ -583,128 +489,6 @@ static int pull_state(char *resp,size_t cap) {
     return c == 200;
 }
 
-static int login_attempt(const char *url, const char *nick, const char *pwd);
-static int login_register(const char *url, const char *nick, const char *pwd);
-static int login_verify_session(const char *url);
-#ifdef _WIN32
-static unsigned __stdcall win_login_thread(void *arg);
-#endif
-static void login_ensure_thread(void) {
-    if (lg.run) return;
-    lg.run = 1;
-#ifdef _WIN32
-    lg.thread = ds_thread_start(win_login_thread, NULL);
-#else
-    lg.thread = ds_thread_start(login_worker, NULL);
-#endif
-    if (!lg.thread) {
-        lg.run = 0;
-        lg_lock(); lg.status = NET_LOGIN_ERROR; lg.request = 0; lg_unlock();
-        LOGERR("network error: cannot start login thread");
-    }
-}
-static void *login_worker(void *arg) {
-    (void)arg;
-    while (lg.run) {
-        int req;
-        lg_lock(); req = lg.request; lg_unlock();
-        if (!req) { sleep_ms(80); continue; }
-        {
-            char url[URL], nick[LOGIN_NICK_MAX+1], pwd[LOGIN_PWD_MAX+1];
-            int gen;
-            lg_lock();
-            snprintf(url, sizeof(url), "%s", lg.url);
-            snprintf(nick, sizeof(nick), "%s", lg.nick);
-            snprintf(pwd, sizeof(pwd), "%s", lg.pwd);
-            lg.request = 0;
-            gen = lg.gen;
-            lg_unlock();
-            int st;
-            if (req == 1) st = login_attempt(url, nick, pwd);
-            else if (req == 3) st = login_register(url, nick, pwd);
-            else st = login_verify_session(url);
-            lg_lock();
-            if (lg.request == 0 && lg.gen == gen) lg.status = st;
-            lg_unlock();
-        }
-    }
-    return NULL;
-}
-static int account_check(const char *resp, const char *nick, const char *pwd, char *chash) {
-    char salt[64], hash[80];
-    if (!resp || !resp[0] || !strcmp(resp, "null")) return NET_LOGIN_ERROR;
-    strv(resp, "salt", salt, sizeof(salt));
-    strv(resp, "hash", hash, sizeof(hash));
-    if (!salt[0] || !hash[0]) return NET_LOGIN_ERROR;
-    sha256_hex(salt, ":", pwd, chash);
-    return strcmp(chash, hash) == 0 ? set_session(nick, chash) : NET_LOGIN_WRONG_PWD;
-}
-static int login_register(const char *url, const char *nick, const char *pwd) {
-    /* «Создать аккаунт»: регистрируем ТОЛЬКО если такого ника ещё нет.
-     * Если аккаунт уже существует — NET_LOGIN_EXISTS, ничего не перезаписываем. */
-    char acc[URL], resp[RESP], etag[96], body[BODY], chash[80];
-    int code;
-    snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, nick);
-    code = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
-    if (code == 200 && resp[0] && strcmp(resp, "null") != 0) return NET_LOGIN_EXISTS;
-    {
-        char csalt[32];
-        make_salt(csalt, sizeof(csalt));
-        sha256_hex(csalt, ":", pwd, chash);
-        snprintf(body, sizeof(body), "{\"salt\":\"%s\",\"hash\":\"%s\",\"created\":%lld}", csalt, chash, (long long)now_ms());
-        int c2 = http_ex("PUT", acc, body, NULL, 0, "if-match", "null", NULL, 0);
-        if (c2 == 200) return set_session(nick, chash);
-        if (c2 == 412) return NET_LOGIN_EXISTS; /* кто-то успел занять ник */
-        if (c2 == 0 || c2 == 404 || c2 == 501) {
-            /* сервер без поддержки if-match (эмулятор/прокси): последняя попытка */
-            return http_ex("PUT", acc, body, NULL, 0, NULL, NULL, NULL, 0) == 200 ? set_session(nick, chash) : NET_LOGIN_ERROR;
-        }
-    }
-    return NET_LOGIN_ERROR;
-}
-static int login_attempt(const char *url, const char *nick, const char *pwd) {
-    char acc[URL], resp[RESP], etag[96], body[BODY], chash[80];
-    int code;
-    snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, nick);
-    code = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
-    if (code == 200 && resp[0] && strcmp(resp, "null") != 0) return account_check(resp, nick, pwd, chash);
-    if (code == 404 || code == 200) {
-        char csalt[32];
-        make_salt(csalt, sizeof(csalt));
-        sha256_hex(csalt, ":", pwd, chash);
-        snprintf(body, sizeof(body), "{\"salt\":\"%s\",\"hash\":\"%s\",\"created\":%lld}", csalt, chash, (long long)now_ms());
-        int c2 = http_ex("PUT", acc, body, NULL, 0, "if-match", "null", NULL, 0);
-        if (c2 == 200) return set_session(nick, chash);
-        if (c2 == 412) {
-            int c3 = http_ex("GET", acc, NULL, resp, sizeof(resp), "X-Firebase-ETag", "true", etag, sizeof(etag));
-            if (c3 == 200) return account_check(resp, nick, pwd, chash);
-            return NET_LOGIN_ERROR;
-        }
-        return http_ex("PUT", acc, body, NULL, 0, NULL, NULL, NULL, 0) == 200 ? set_session(nick, chash) : NET_LOGIN_ERROR;
-    }
-    return NET_LOGIN_ERROR;
-}
-static int login_verify_session(const char *url) {
-    char acc[URL], resp[RESP], salt[64], hash[80];
-    char snick[LOGIN_NICK_MAX+1], shash[80];
-    int code;
-    lg_lock();
-    snprintf(snick, sizeof(snick), "%s", lg.session_nick);
-    snprintf(shash, sizeof(shash), "%s", lg.session_hash);
-    lg_unlock();
-    if (!snick[0] || !shash[0]) return NET_LOGIN_IDLE;
-    snprintf(acc, sizeof(acc), "%s/accounts/%s.json", url, snick);
-    code = http("GET", acc, NULL, resp, sizeof(resp));
-    if (code != 200) return NET_LOGIN_OK;
-    strv(resp, "salt", salt, sizeof(salt));
-    strv(resp, "hash", hash, sizeof(hash));
-    if (!salt[0] || !hash[0] || strcmp(hash, shash) != 0) {
-        lg_lock(); lg.session_nick[0] = 0; lg.session_hash[0] = 0; lg_unlock();
-        session_clear();
-        return NET_LOGIN_IDLE;
-    }
-    return NET_LOGIN_OK;
-}
 void net_set_data_path(const char *path) {
     lg_lock();
     if (path && *path) snprintf(lg.path, sizeof(lg.path), "%s", path);
@@ -712,57 +496,36 @@ void net_set_data_path(const char *path) {
     lg_unlock();
 }
 void net_autologin(const char *url) {
-    char path[320], nick[LOGIN_NICK_MAX+2], hash[96];
-    FILE *f; int got;
-    if (!url || !*url) return;
+    /* Вход без пароля: просто читаем сохранённый ник из файла сессии. */
+    char path[320], nick[LOGIN_NICK_MAX+2];
+    FILE *f;
+    (void)url;
     lg_lock();
-    if (lg.status == NET_LOGIN_OK || lg.status == NET_LOGIN_BUSY || lg.request) { lg_unlock(); return; }
+    if (lg.status == NET_LOGIN_OK) { lg_unlock(); return; }
     if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
     else snprintf(path, sizeof(path), "%s", SESSION_FILE);
     lg_unlock();
     f = fopen(path, "r");
     if (!f) return;
-    got = fscanf(f, "%16s %64s", nick, hash);
+    if (fscanf(f, "%17s", nick) != 1) { fclose(f); return; }
     fclose(f);
-    if (got != 2 || !nick_valid(nick) || strlen(hash) != 64) return;
+    if (!nick_valid(nick)) return;
     lg_lock();
-    snprintf(lg.url, sizeof(lg.url), "%s", url);
     snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
-    snprintf(lg.session_hash, sizeof(lg.session_hash), "%s", hash);
-    lg.status = NET_LOGIN_OK; lg.request = 2; lg.gen = lg.gen + 1;
+    lg.status = NET_LOGIN_OK;
     lg_unlock();
-    login_ensure_thread();
+    LOG("autologin: nick '%s'", nick);
 }
-void net_login(const char *url, const char *nick, const char *pwd) {
-    if (!url || !nick || !pwd) return;
+double net_set_nick(const char *nick) {
+    /* Никакой регистрации: проверяем формат, сохраняем ник и пускаем в онлайн. */
+    if (!nick || !nick_valid(nick)) return 0.0;
     lg_lock();
-    if (lg.status == NET_LOGIN_BUSY) { lg_unlock(); return; }
-    if (!nick_valid(nick) || !pwd_valid(pwd)) { lg.status = NET_LOGIN_INVALID; lg_unlock(); return; }
-    snprintf(lg.url, sizeof(lg.url), "%s", url);
-    snprintf(lg.nick, sizeof(lg.nick), "%s", nick);
-    snprintf(lg.pwd, sizeof(lg.pwd), "%s", pwd);
-    lg.status = NET_LOGIN_BUSY; lg.request = 1; lg.gen = lg.gen + 1;
+    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+    lg.status = NET_LOGIN_OK;
     lg_unlock();
-    login_ensure_thread();
-}
-void net_register(const char *url, const char *nick, const char *pwd) {
-    if (!url || !nick || !pwd) return;
-    lg_lock();
-    if (lg.status == NET_LOGIN_BUSY) { lg_unlock(); return; }
-    if (!nick_valid(nick) || !pwd_valid(pwd)) { lg.status = NET_LOGIN_INVALID; lg_unlock(); return; }
-    snprintf(lg.url, sizeof(lg.url), "%s", url);
-    snprintf(lg.nick, sizeof(lg.nick), "%s", nick);
-    snprintf(lg.pwd, sizeof(lg.pwd), "%s", pwd);
-    lg.status = NET_LOGIN_BUSY; lg.request = 3; lg.gen = lg.gen + 1;
-    lg_unlock();
-    login_ensure_thread();
-}
-void net_logout(void) {
-    lg_lock();
-    lg.session_nick[0] = 0; lg.session_hash[0] = 0;
-    lg.status = NET_LOGIN_IDLE; lg.request = 0; lg.gen = lg.gen + 1;
-    lg_unlock();
-    session_clear();
+    session_save(nick);
+    LOG("nick set: '%s'", nick);
+    return 1.0;
 }
 double net_login_status(void) {
     double v;
@@ -954,10 +717,8 @@ static int pull_chat(char *resp, size_t cap){
 #ifdef _WIN32
 static void *thread_main(void *arg);
 static void *reader_thread(void *arg);
-static void *login_worker(void *arg);
 static unsigned __stdcall win_thread_main(void *arg){ thread_main(arg); return 0; }
 static unsigned __stdcall win_reader_thread(void *arg){ reader_thread(arg); return 0; }
-static unsigned __stdcall win_login_thread(void *arg){ login_worker(arg); return 0; }
 #endif
 static void *thread_main(void *arg) {
     int fails=0; (void)arg;
@@ -966,11 +727,14 @@ static void *thread_main(void *arg) {
         lock(); slot=net.slot; unlock();
         if(slot<0) {
             status(NET_CONNECTING); slot=claim_slot();
-            if(slot<0){ if(++fails>3){status(NET_ERROR); LOGERR("network error: cannot claim player slot in room '%s'", net.room);} sleep_ms(500); continue; }
+            /* Ошибка показывается только после 6 неудач подряд (раньше 3): на
+             * мобильном интернете 2-3 случайных таймаута больше не рисуют
+             * «Нет соединения», подключение просто продолжается. */
+            if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot in room '%s'", net.room);} sleep_ms(500); continue; }
             lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.bullets[slot]=net.my_bullet; net.players[slot].online=1; unlock(); fails=0;
             LOG("slot %d claimed", (int)net.slot);
         }
-        if(!push_state()){ if(++fails>3){status(NET_ERROR); LOGERR("network error: failed to push player state");} sleep_ms(300); continue; }
+        if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push player state");} sleep_ms(300); continue; }
         fails=0; status(NET_PLAYING);
         long long spent=now_ms()-start; if(spent<WRITE_TICK)sleep_ms((int)(WRITE_TICK-spent));
     }

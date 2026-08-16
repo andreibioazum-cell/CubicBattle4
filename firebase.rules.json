@@ -3,20 +3,6 @@
     ".read": false,
     ".write": false,
 
-    "accounts": {
-      ".read": false,
-      ".write": false,
-      "$nick": {
-        ".read": true,
-        ".write": true,
-        ".validate": "newData.hasChildren(['salt','hash']) && $nick.matches(/^[A-Za-z0-9_]{3,16}$/)",
-        "salt":    { ".validate": "newData.isString() && newData.val().length <= 64" },
-        "hash":    { ".validate": "newData.isString() && newData.val().length == 64" },
-        "created": { ".validate": "newData.isNumber()" },
-        "$other":  { ".validate": false }
-      }
-    },
-
     "rooms": {
       ".read": false,
       ".write": false,

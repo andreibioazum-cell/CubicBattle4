@@ -6,7 +6,7 @@ staging/
 *.apk
 debug.keystore
 
-# Session file created by the game (nick/password login)
+# Session file created by the game (saved nick)
 auth.dat
 # Headless test harness build artifacts
 test/net_test.c
