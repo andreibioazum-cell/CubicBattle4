@@ -3,39 +3,19 @@ rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFF
 end
 function draw_modes
 rect 0,0,screen_w,screen_h,0x1a1a2e;button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;draw_back;end
-function draw_pwd_field num x, num y, num w, str val, num fh
-// Поле пароля: рамка, плейсхолдер или звёздочки (пароль не показывается).
-if fh==3; roundrect x,y,w,login_fh,14,0xFF4B2E83; else; roundrect x,y,w,login_fh,14,0xFF2A2A40; end
-if str_len(val)==0; text_in_field tr_pwd_ph(),x+16,y,login_fh,0x666688,0.6
-else; num pn=str_len(val), i=0, px=x+16, aw=text_ink_width("*")*0.6; if aw<6; aw=8; end
-loop i<pn; text_in_field "*",px,y,login_fh,0xFFFFFF,0.6; px=px+aw; i=i+1; end
-end
-end
 function draw_login
-// Экран «Вход» и «Создать аккаунт»: ник + пароль (+ повтор пароля при создании).
-// Раскладка вынесена в login_* константы (config.ds): поля чуть правее и выше,
-// между полями хватает места на подпись, кнопки больше не налезают друг на друга.
+// Экран входа в онлайн: спрашиваем ТОЛЬКО ник — без пароля и регистрации.
+// Ник сохраняется и при следующем запуске сразу пускает игрока в онлайн.
 rect 0,0,screen_w,screen_h,0x1a1a2e
-if login_mode==0; text tr_login_title(),24+login_ox,26,0xFFFFFF; else; text tr_reg_title(),24+login_ox,26,0xFFFFFF; end
-num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-130+login_oy
+text tr_login_title(),24+login_ox,26,0xFFFFFF
+num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-60+login_oy
 text tr_nick(),bx,fy-login_lab,0x9B9BC0
 if login_field==1; roundrect bx,fy,bw,login_fh,14,0xFF4B2E83; else; roundrect bx,fy,bw,login_fh,14,0xFF2A2A40; end
 if str_len(login_nick)==0; text_in_field tr_nick_ph(),bx+16,fy,login_fh,0x666688,0.6; else; text_in_field login_nick,bx+16,fy,login_fh,0xFFFFFF,0.6; end
-num py=fy+login_gap
-text tr_pwd(),bx,py-login_lab,0x9B9BC0
-draw_pwd_field bx,py,bw,login_pwd,login_field
-num ry=py+login_gap
-if login_mode==1
-text tr_rep_pwd(),bx,ry-login_lab,0x9B9BC0
-draw_pwd_field bx,ry,bw,login_pwd2,login_field
-end
-num yb=py+login_gap+8; if login_mode==1; yb=ry+login_gap+8; end
-if login_mode==0; button tr_login_go(),(screen_w-btn_w)/2,yb,btn_w,btn_h; else; button tr_create_go(),(screen_w-btn_w)/2,yb,btn_w,btn_h; end
-num yt=yb+btn_h+login_bgap
-if login_mode==0; button tr_switch_to_create(),(screen_w-btn_w)/2,yt,btn_w,btn_h; else; button tr_switch_to_login(),(screen_w-btn_w)/2,yt,btn_w,btn_h; end
-if net_login_status()==2; button tr_logout(),screen_w-190,24,170,48; end
-num sy=yt+btn_h+34
-if login_status==1; ctext tr_connecting(),sy,0xFFF176; else if login_status==3; ctext tr_wrong_pwd(),sy,0xFF8A80; else if login_status==4; ctext tr_no_connection(),sy,0xFF8A80; else if login_status==5; ctext tr_bad_nick(),sy,0xFF8A80; else if login_status==6; ctext tr_exists(),sy,0xFF8A80; else if login_status==7; ctext tr_mismatch(),sy,0xFF8A80; else if login_status==8; ctext tr_short_pwd(),sy,0xFF8A80; end
+num yb=fy+login_fh+40
+button tr_play(),(screen_w-btn_w)/2,yb,btn_w,btn_h
+num sy=yb+btn_h+34
+if login_status==5; ctext tr_bad_nick(),sy,0xFF8A80; end
 draw_back;end
 function draw_settings
 rect 0,0,screen_w,screen_h,0x1a1a2e;num x=(screen_w-btn_w)/2, y=screen_h/2-110;button "English",x,y,btn_w,btn_h;button "Русский",x,y+80,btn_w,btn_h;button "日本語",x,y+160,btn_w,btn_h;button tr_console(),x,y+240,btn_w,btn_h;draw_back;end
@@ -45,50 +25,26 @@ li=total-1-(console_scroll+i); col=0xFF00FF00;if console_type(li)==1; col=0xFFFF
 button tr_clear(),screen_w-bw-16,by,bw,btn_h;draw_back;end
 function touch_lobby num x, num y, num action
 if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end;if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 2; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 4; return; end;if y>=screen_h/2+112&&y<=screen_h/2+192; login_after=0; start_transition 7; end;end
-function login_switch_mode
-login_mode=1-login_mode; login_status=0; login_pwd=""; login_pwd2=""; login_field=0; keyboard_hide; keyboard_clear; last_kb=""
-end
 function login_do
-if net_login_status()==1; return; end
-if str_len(login_nick)<3||str_len(login_nick)>16; login_status=5; return; end
-// Короткий пароль — отдельное простое сообщение, а не общая простыня про ник.
-if str_len(login_pwd)<4; login_status=8; return; end
-if login_mode==1
-// Создание аккаунта: пароль и его повтор должны совпадать.
-if str_eq(login_pwd,login_pwd2)==0; login_status=7; return; end
-login_status=1; keyboard_hide; net_register FIREBASE,login_nick,login_pwd
-else
-login_status=1; keyboard_hide; net_login FIREBASE,login_nick,login_pwd
-end
+// Никакой сети для входа не нужно: ник проверяется и сохраняется на месте.
+if net_set_nick(login_nick)==1; login_status=0; keyboard_hide; keyboard_clear; start_transition login_after
+else; login_status=5; end
 end
 function update_login
-if login_status==1
-if net_login_status()!=1
-if net_login_status()==2; login_status=2; keyboard_hide; keyboard_clear; start_transition login_after
-else if net_login_status()==3; login_status=3
-else if net_login_status()==4; login_status=4
-else if net_login_status()==5; if str_len(login_pwd)<4; login_status=8; else; login_status=5; end
-else if net_login_status()==6; login_status=6; end
+// Синхронизируем ник с клавиатурой только когда поле активно, чтобы чужой
+// текст из чата не подставлялся сам при открытии экрана.
+if login_field==1
+str raw=keyboard_get_raw(); if str_eq(raw,last_kb)==0; last_kb=keyboard_get_text(); login_nick=last_kb; end
 end
-else
-str raw=keyboard_get_raw(); if str_eq(raw,last_kb)==0; last_kb=keyboard_get_text(); if login_field==1; login_nick=last_kb; else if login_field==2; login_pwd=last_kb; else if login_field==3; login_pwd2=last_kb; end; end
 if keyboard_enter_pressed()==1; login_do; end
-end
 end
 function touch_login num x, num y, num action
 if action!=0; return; end
 if back_hit(x,y)==1; keyboard_hide; keyboard_clear; if login_after==5; start_transition 2; else; start_transition 0; end; return; end
-num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-130+login_oy
+num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-60+login_oy
 if x>=bx&&x<=bx+bw&&y>=fy&&y<=fy+login_fh; if login_field!=1; login_field=1; keyboard_clear; if str_len(login_nick)>0; keyboard_type login_nick; end; last_kb=keyboard_get_text(); end; keyboard_show; return; end
-num py=fy+login_gap
-if x>=bx&&x<=bx+bw&&y>=py&&y<=py+login_fh; if login_field!=2; login_field=2; keyboard_clear; if str_len(login_pwd)>0; keyboard_type login_pwd; end; last_kb=keyboard_get_text(); end; keyboard_show; return; end
-num ry=py+login_gap
-if login_mode==1&&x>=bx&&x<=bx+bw&&y>=ry&&y<=ry+login_fh; if login_field!=3; login_field=3; keyboard_clear; if str_len(login_pwd2)>0; keyboard_type login_pwd2; end; last_kb=keyboard_get_text(); end; keyboard_show; return; end
-num yb=py+login_gap+8; if login_mode==1; yb=ry+login_gap+8; end
+num yb=fy+login_fh+40
 if x>=(screen_w-btn_w)/2-12&&x<=(screen_w-btn_w)/2+btn_w+12&&y>=yb-8&&y<=yb+btn_h+8; login_do; return; end
-num yt=yb+btn_h+login_bgap
-if x>=(screen_w-btn_w)/2-12&&x<=(screen_w-btn_w)/2+btn_w+12&&y>=yt-8&&y<=yt+btn_h+8; login_switch_mode; return; end
-if net_login_status()==2&&x>=screen_w-190-8&&x<=screen_w-190+170+8&&y>=16&&y<=80; net_logout; login_status=0; keyboard_hide; keyboard_clear; end
 end
 function touch_menu num x, num y, num action
 if action!=0; return; end;if game_state==7; touch_login x,y,action; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end

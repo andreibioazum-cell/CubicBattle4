@@ -7,7 +7,7 @@ BUILTINS=frozenset({
     'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive',
     'net_player_bullet_active','net_player_bullet_x','net_player_bullet_y','net_player_bullet_dx','net_player_bullet_dy','net_player_bullet_shot','net_player_bullet_tr','net_player_nick',
     'net_chat_send','net_chat_count','net_chat_text','net_chat_uid','net_chat_time',
-    'net_set_data_path','net_autologin','net_login','net_register','net_logout','net_login_status','net_login_nick',
+    'net_set_data_path','net_autologin','net_set_nick','net_login_status','net_login_nick',
     'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_visible','keyboard_enter_pressed','keyboard_type','keyboard_backspace',
     'str_len','str_eq',
     'ds_log','console_count','console_line','console_type','console_clear',
@@ -307,9 +307,12 @@ class DimScriptCompiler:
         self._emit('')
         init_lines=[]
         for n,(t,v) in self.vars.items():
-            if t in self.objects: self._emit(f'{t} *{n} = NULL;'); init_lines.append(n)
+            if t in self.objects: self._emit(f'{t} *{n} = NULL;')
             elif v and self.static_expr(v): self._emit(f'{self.c_type(t)} {n} = {self.expr(v)};')
             else: self._emit(f'{self.c_type(t)} {n} = {self.default_value(t)};')
+            # Ровно одно добавление: раньше объект с инициализатором попадал в
+            # init_lines дважды, и ds_main() выделял Player/Enemy/Punch два
+            # раза — первая копия утекала (видел LeakSanitizer в тестах).
             if v: init_lines.append(n)
         if self.vars: self._emit('')
         for n,(params,_b) in self.functions.items(): self._emit(f'static {self._ret_c(n)} ds_fn_{n}({self._params_c(params)});')

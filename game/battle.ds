@@ -4,7 +4,7 @@
 
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aiming=0; aim_id=-1; aim_a=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aiming=0; aim_id=-1; aim_a=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
 arr_clear remotes; arr_clear rbullets; num i=0; loop i<max_players*6; arr_push rbullets,0; i=i+1; end
 end
@@ -24,7 +24,7 @@ loop i<50
 enemy.x=margin+rand()%(screen_w-140); enemy.y=margin+rand()%(screen_h-140)
 if dist(enemy.x,enemy.y,player.x,player.y)>280; i=50; else; i=i+1; end
 end
-enemy.state=0; enemy.state_time=0; enemy.cooldown=enemy_first_delay; enemy.hit=0
+enemy.state=0; enemy.state_time=0; enemy.cooldown=enemy_first_delay; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0
 if rand()%2==0; enemy.strafe=-1; else; enemy.strafe=1; end
 end
 function sprite_a num a
@@ -94,7 +94,11 @@ function start_enemy_attack
 enemy.state=1; enemy.state_time=enemy_windup; enemy.hit=0; enemy_face_prediction
 end
 function update_enemy
+// Бот равен игроку по цифрам (урон 1, HP 10, цикл атаки 0.3 с), но играет как
+// живой соперник: уклоняется от удара игрока, после своего удара отходит за
+// дальность чужого удара и стрейфит, а не стоит под ударами.
 if enemy.cooldown>0; enemy.cooldown=enemy.cooldown-dt; if enemy.cooldown<0; enemy.cooldown=0; end; end
+if enemy.dodge_cd>0; enemy.dodge_cd=enemy.dodge_cd-dt; if enemy.dodge_cd<0; enemy.dodge_cd=0; end; end
 num dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
 if d<1; d=1; end
 // Замах: бот ещё следит за целью, затем заранее фиксирует направление удара.
@@ -111,7 +115,7 @@ if enemy.hit==0&&player_in_enemy_punch()==1
 enemy.hit=1; player.hp=player.hp-enemy_damage; ds_log "enemy punch! hp %g",player.hp
 if player.hp<=0; player.hp=0; finish_game 2; return; end
 end
-if enemy.state_time<=0; enemy.state=3; enemy.state_time=enemy_recovery; enemy.cooldown=enemy_attack_cooldown; end
+if enemy.state_time<=0; enemy.state=3; enemy.state_time=enemy_recovery; enemy.cooldown=enemy_attack_cooldown; enemy.think=enemy_think_min+(rand()%100)/100.0*(enemy_think_max-enemy_think_min); end
 return
 end
 // После удара бот отступает, а не прилипает к игроку.
@@ -123,7 +127,42 @@ if d<enemy_attack_distance+28; enemy_move rvx,rvy; end
 if enemy.state_time<=0; enemy.state=0; if rand()%2==0; enemy.strafe=-enemy.strafe; end; end
 return
 end
+// Уклонение: быстрый шаг в сторону от линии удара игрока и чуть назад.
+// Направление удара игрока берётся из его угла — как видит сам игрок.
+if enemy.state==4
+enemy.state_time=enemy.state_time-dt; enemy_face_prediction
+num dpx=cos(player.angle), dpy=sin(player.angle)
+num dvx=-dpy*enemy.strafe*bot_dodge_speed-dpx*bot_speed*0.6
+num dvy=dpx*enemy.strafe*bot_dodge_speed-dpy*bot_speed*0.6
+enemy_move dvx,dvy
+if enemy.state_time<=0; enemy.state=0; enemy.dodge_cd=enemy_dodge_cooldown; end
+return
+end
 enemy_face_prediction
+// Реакция на удар игрока: если бот в зоне поражения и уклонение готово —
+// уходим с линии удара в ту сторону, где бот уже стоит. Реакция не мгновенная
+// (enemy_reaction): быстрый удар в упор успевает попасть до начала шага.
+if punch_left>0&&punch_left<=punch_time-enemy_reaction&&enemy.dodge_cd<=0
+num pxx=cos(player.angle), pyy=sin(player.angle)
+num rxx=enemy.x-player.x, ryy=enemy.y-player.y
+num fw2=rxx*pxx+ryy*pyy, sd2=ryy*pxx-rxx*pyy
+if fw2>-30&&fw2<punch_reach+enemy.size&&sd2*sd2<=punch_width*punch_width
+if sd2>=0; enemy.strafe=1; else; enemy.strafe=-1; end
+enemy.state=4; enemy.state_time=enemy_dodge_time
+return
+end
+end
+// Передышка после своей атаки: бот отходит за дальность удара игрока и
+// стрейфит, заходя на следующий удар сбоку — как игрок, который держит дистанцию.
+if enemy.think>0
+enemy.think=enemy.think-dt
+num safe=punch_reach+enemy.size
+num radial=clamp((d-safe)*2.2,-bot_speed,bot_speed)
+num tvx=dx/d*radial-dy/d*bot_strafe_speed*enemy.strafe
+num tvy=dy/d*radial+dx/d*bot_strafe_speed*enemy.strafe
+enemy_move tvx,tvy
+return
+end
 // Подойти только до дистанции удара, затем двигаться вокруг игрока и выбирать момент.
 if d>enemy_attack_distance
 num tx=player.x+joy.dx*joy_speed*enemy_prediction, ty=player.y+joy.dy*joy_speed*enemy_prediction
@@ -138,9 +177,9 @@ return
 end
 if enemy.cooldown<=0; start_enemy_attack; return; end
 // Пока атака на перезарядке, бот стрейфит и удерживает удобную дистанцию.
-num radial=clamp((d-(enemy_attack_distance+enemy_min_distance)/2)*1.8,-38,38)
-num vx=dx/d*radial-dy/d*bot_strafe_speed*enemy.strafe
-num vy=dy/d*radial+dx/d*bot_strafe_speed*enemy.strafe
+num radial2=clamp((d-(enemy_attack_distance+enemy_min_distance)/2)*1.8,-38,38)
+num vx=dx/d*radial2-dy/d*bot_strafe_speed*enemy.strafe
+num vy=dy/d*radial2+dx/d*bot_strafe_speed*enemy.strafe
 enemy_move vx,vy
 end
 function update_game
@@ -222,8 +261,13 @@ function draw_result str title, str note
 rect 0,0,screen_w,screen_h,0x99000000; num y=screen_h/2-85; roundrect screen_w/2-165,y,330,170,24,0x5F10A0; ctext title,y+34,0xFFFFFF; ctext note,y+75,0xFFFFFF; ctext tr_tap_to_return(),y+118,0xFFCDD2
 end
 function draw_game
-// У бота нет отладочной рамки хитбокса. Спрайт удара сам показывает активную атаку.
+// Прицел удара бота: красная полупрозрачная полоса показывает, куда попадёт
+// удар (во время замаха и в активное окно) — от неё честно уворачиваемся.
 draw_field
+if (enemy.state==1||enemy.state==2)&&finished==0
+num aex=enemy.x+cos(enemy.angle)*enemy_punch_reach, aey=enemy.y+sin(enemy.angle)*enemy_punch_reach
+line enemy.x,enemy.y,aex,aey,enemy_punch_width,0xAAE94560
+end
 num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
 if enemy.state==1||enemy.state==2; tex enemy.x-ehw,enemy.y-ehw,PUNCH_TEX,sprite_a(enemy.angle),es
 else; tex enemy.x-ehw,enemy.y-ehw,ORDINARY_TEX,sprite_a(enemy.angle),es; end
@@ -235,9 +279,14 @@ end
 function draw_online
 draw_field; num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale; str myn=net_player_nick(net_slot()); if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end; num i=0; loop i<arr_len(remotes)/7; num b=i*7; if arr_get(remotes,b+5)==1
 num rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3), slot=arr_get(remotes,b); str rn=net_player_nick(slot)
-if arr_get(rbullets,slot*6)==1; tex rx-hw,ry-hw,PUNCH_TEX,sprite_a(ra),ps; else; tex rx-hw,ry-hw,ORDINARY_TEX,sprite_a(ra),ps; end
+if arr_get(rbullets,slot*6)==1
+// Прицел удара соперника: та же красная полоса, что и у бота в оффлайне.
+num lx2=rx+arr_get(rbullets,slot*6+3)*punch_reach, ly2=ry+arr_get(rbullets,slot*6+4)*punch_reach
+line rx,ry,lx2,ly2,punch_width,0xAAE94560
+tex rx-hw,ry-hw,PUNCH_TEX,sprite_a(ra),ps
+else; tex rx-hw,ry-hw,ORDINARY_TEX,sprite_a(ra),ps; end
 if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5; end
-end; i=i+1; end; num w=screen_w/3; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; draw_controls; draw_chat; num st=net_status(), sy=back_y+btn_h+18; if st==4; ctext tr_no_connection(),sy,0xFF8A80; else if st==1; ctext tr_connecting(),sy,0xFFF176; end; if finished==2; draw_result tr_defeat(),tr_you_were_defeated(); end
+end; i=i+1; end; num w=screen_w/3; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; draw_controls; draw_chat; num st=net_status(), sy=back_y+btn_h+18; if st==4; ctext tr_no_connection(),sy,0xFF8A80; ctext tr_reconnecting(),sy+32,0xFFF176; else if st==1; ctext tr_connecting(),sy,0xFFF176; end; if finished==2; draw_result tr_defeat(),tr_you_were_defeated(); end
 end
 function drop_joy
 joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
