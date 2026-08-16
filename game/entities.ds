@@ -5,7 +5,8 @@ num x=0, y=0, size=30, angle=0, hp=10, max_hp=10
 end
 object Enemy
 // state: 0 = преследование/стрейф, 1 = замах, 2 = удар, 3 = восстановление
-num x=0, y=0, size=25, hp=3, max_hp=3, angle=0, state=0, state_time=0, cooldown=0, hit=0, strafe=1
+// hp/max_hp такие же, как у игрока (10): бот не «толще» игрока.
+num x=0, y=0, size=25, hp=10, max_hp=10, angle=0, state=0, state_time=0, cooldown=0, hit=0, strafe=1
 end
 object Punch
 num x=0, y=0, dx=0, dy=0, active=0, ox=0, oy=0, shot=0, tr=0, hit=0

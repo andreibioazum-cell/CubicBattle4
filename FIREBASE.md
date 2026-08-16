@@ -27,36 +27,90 @@
 
 ## 3. Правила
 
-Realtime Database → вкладка **Rules** → вставь и Publish:
+Realtime Database → вкладка **Rules** → вставь **целиком** содержимое файла
+[`firebase.rules.json`](firebase.rules.json) из репозитория и нажми **Publish**.
+Это же — здесь:
 
 ```json
 {
   "rules": {
+    ".read": false,
+    ".write": false,
+
     "accounts": {
+      ".read": false,
+      ".write": false,
       "$nick": {
         ".read": true,
-        ".write": true
+        ".write": true,
+        ".validate": "newData.hasChildren(['salt','hash']) && $nick.matches(/^[A-Za-z0-9_]{3,16}$/)",
+        "salt":    { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "hash":    { ".validate": "newData.isString() && newData.val().length == 64" },
+        "created": { ".validate": "newData.isNumber()" },
+        "$other":  { ".validate": false }
       }
     },
+
     "rooms": {
-      "main": {
+      ".read": false,
+      ".write": false,
+      "$room": {
         ".read": true,
-        ".write": true
+        ".write": true,
+
+        "players": {
+          ".read": true,
+          ".write": true,
+          "$slot": {
+            ".read": true,
+            ".write": true,
+            ".validate": "$slot.matches(/^[0-3]$/)"
+          }
+        },
+
+        "bullets": {
+          ".read": true,
+          ".write": true,
+          "$slot": {
+            ".read": true,
+            ".write": true,
+            ".validate": "$slot.matches(/^[0-3]$/)"
+          }
+        },
+
+        "chat": {
+          ".read": true,
+          ".write": true,
+          ".indexOn": ".key",
+          "$msg": { ".read": true, ".write": true }
+        }
       }
     }
   }
 }
 ```
 
-`accounts/<ник>/` — регистрация и вход: там лежат `salt`, `hash`, `created`
-(SHA-256 от соли и пароля; сам пароль нигде не хранится). Правило `"$nick"` с
-`true` на чтение и запись нужно, иначе клиент не сможет ни создать аккаунт, ни
-проверить пароль. Ник — это имя ключа (буквы, цифры, `_`), поэтому два
-одинаковых ника существовать не могут, а чужой пароль не подойдёт.
+### Почему друг видел «Нет соединения» / «нет доступа»
 
-Если онлайн «не подключается» — открой в игре Настройки → Консоль: там теперь
-пишется конкретная причина (код WinINet на ПК, текст исключения на Android,
-HTTP-статус, например 401 = правила запрещают, 404 = URL/проект неправильный).
+Старые правила разрешали только `rooms/main` и `accounts/$nick`, и этого не
+хватало в трёх случаях:
+
+1. **Test mode истёк.** «Start in test mode» открывает базу на 30 дней, потом
+   Firebase сам ставит `".read": false, ".write": false` на весь корень — у
+   всех, кто зашёл позже, всё падает с `401 Permission denied`. Новые правила
+   постоянные, срок у них не истекает.
+2. **Чтение всей комнаты одним запросом.** Клиент делает `GET /rooms/main.json`
+   и `GET /rooms/main/chat.json?orderBy="$key"&limitToLast=20`. Правило,
+   висевшее только на `rooms/main`, работало, но любое переименование комнаты
+   (`ROOM` в `config.ds`) сразу ломало доступ. Теперь правило на `$room` —
+   работает для любого имени комнаты.
+3. **Запрос чата с `orderBy="$key"`.** Без `".indexOn": ".key"` Firebase на
+   больших чатах отвечает предупреждением/ошибкой индекса. Индекс добавлен.
+
+Правила проверяют формат данных, но **не требуют аутентификации Firebase Auth**:
+игра ходит в базу обычным HTTPS REST без токена, свои аккаунты она держит сама в
+`accounts/` (соль + SHA-256). Если поставить `auth != null`, игра перестанет
+подключаться у всех.
 
 До 4 игроков в одной папке `rooms/main`. Клиент сам занимает первый свободный
 слот (`players/0` ... `players/3`), поэтому экран ожидания не нужен.
