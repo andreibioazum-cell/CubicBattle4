@@ -1,5 +1,5 @@
 function draw_lobby
-rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF;button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;button tr_account(),(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h;if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;num lw=text_ink_width(ln)*0.5;text_scaled ln,(screen_w-lw)/2,18,0x9B9BC0,0.5;end;end
+rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF;button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;button tr_account(),(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h;if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;num lw=text_ink_width(ln)*0.5;text_scaled ln,(screen_w-lw)/2,18,0xFFFFFF,0.5;end;end
 end
 function draw_modes
 rect 0,0,screen_w,screen_h,0x1a1a2e;button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;draw_back;end
@@ -9,7 +9,7 @@ function draw_login
 rect 0,0,screen_w,screen_h,0x1a1a2e
 text tr_login_title(),24+login_ox,26,0xFFFFFF
 num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-60+login_oy
-text tr_nick(),bx,fy-login_lab,0x9B9BC0
+text tr_nick(),bx+login_lab_ox,fy-login_lab,0xFFFFFF
 if login_field==1; roundrect bx,fy,bw,login_fh,14,0xFF4B2E83; else; roundrect bx,fy,bw,login_fh,14,0xFF2A2A40; end
 if str_len(login_nick)==0; text_in_field tr_nick_ph(),bx+16,fy,login_fh,0x666688,0.6; else; text_in_field login_nick,bx+16,fy,login_fh,0xFFFFFF,0.6; end
 num yb=fy+login_fh+40
@@ -18,7 +18,15 @@ num sy=yb+btn_h+34
 if login_status==5; ctext tr_bad_nick(),sy,0xFF8A80; end
 draw_back;end
 function draw_settings
-rect 0,0,screen_w,screen_h,0x1a1a2e;num x=(screen_w-btn_w)/2, y=screen_h/2-110;button "English",x,y,btn_w,btn_h;button "Русский",x,y+80,btn_w,btn_h;button "日本語",x,y+160,btn_w,btn_h;button tr_console(),x,y+240,btn_w,btn_h;draw_back;end
+rect 0,0,screen_w,screen_h,0x1a1a2e;num x=(screen_w-btn_w)/2, y=screen_h/2-110;button "English",x,y,btn_w,btn_h;button "Русский",x,y+80,btn_w,btn_h;button "日本語",x,y+160,btn_w,btn_h;button tr_console(),x,y+240,btn_w,btn_h;draw_nick_line;draw_back;end
+function draw_nick_line
+// Снизу экрана настроек — свой ник белым текстом: Ваш ник: "ник"
+if net_login_status()!=2; return; end
+str n=net_login_nick(); if str_len(n)==0; return; end
+str s=tr_your_nick()+"\""+n+"\""
+num w=text_ink_width(s)*0.6
+text_scaled s,(screen_w-w)/2,screen_h-72,0xFFFFFF,0.6
+end
 function draw_console
 rect 0,0,screen_w,screen_h,0xFF000000;ctext tr_console(),48,0xFF00FF00;num total=console_count(), lh=30, max=floor((screen_h-230)/lh);if max<3; max=3; end; if max>22; max=22; end;num cy=100, i=0, li=0, col=0;loop i<max;if console_scroll+i<total
 li=total-1-(console_scroll+i); col=0xFF00FF00;if console_type(li)==1; col=0xFFFF0000; end;text_scaled console_line(li),18,cy,col,0.75;end;cy=cy+lh; i=i+1;end;num bw=(screen_w-76)/3, by=screen_h-78;button tr_up(),16,by,bw,btn_h;button tr_down(),screen_w/2-bw/2,by,bw,btn_h

@@ -589,10 +589,12 @@ static void read_players(const char *resp) {
         if(slot==local) { lock(); ps[slot]=net.me; bs[slot]=net.my_bullet; ps[slot].online=local>=0; unlock(); if(local>=0)count++; continue; }
         snprintf(bp,sizeof(bp),"players/%d",slot); snprintf(p,sizeof(p),"%s/uid",bp); strv(resp,p,uid,sizeof(uid));
         if(!uid[0]||!strcmp(uid,net.uid)){ lseq[slot]=0; lch[slot]=0; continue; }
-        snprintf(p,sizeof(p),"%s/nick",bp); strv(resp,p,ps[slot].nick,sizeof(ps[slot].nick));
         snprintf(p,sizeof(p),"%s/seq",bp); sq=(unsigned long)num(resp,p,0);
         if(sq!=lseq[slot]){ lseq[slot]=sq; lch[slot]=t; } else if(!lch[slot]) lch[slot]=t;
+        /* Игрок, который вышел (или молчит дольше TIMEOUT), удаляется целиком:
+         * ник тоже не переносится, иначе его имя оставалось бы «призраком». */
         online=t-lch[slot]<TIMEOUT; if(!online)continue;
+        snprintf(p,sizeof(p),"%s/nick",bp); strv(resp,p,ps[slot].nick,sizeof(ps[slot].nick));
         snprintf(p,sizeof(p),"%s/x",bp); ps[slot].x=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/y",bp); ps[slot].y=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/angle",bp); ps[slot].a=num(resp,p,0);

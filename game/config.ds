@@ -1,21 +1,25 @@
 // config — все глобальные константы игры, строки через запятую
 // Игрок и одиночный бот одного размера; физический размер совпадает с видимым спрайтом.
 // Бот равен игроку по цифрам: урон enemy_damage=punch_damage, хитбокс удара
-// enemy_punch_reach/width = punch_reach/width, цикл атаки 0.3 с (замах 0.1 +
-// удар 0.2 = punch_cooldown игрока), HP 10 как у игрока. Сила бота — не в
+// enemy_punch_reach/width = punch_reach/width, HP 10 как у игрока. Бьёт он
+// чуть быстрее игрока (замах 0.07 + удар 0.16) и с рандомной перезарядкой
+// enemy_cooldown_min..max, чтобы ритм боя не был предсказуемым. Сила бота — не в
 // цифрах, а в поведении: он держит дистанцию, отходит после размена и
 // уклоняется от удара игрока (dodge), как живой соперник.
-num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=170, bot_strafe_speed=96, bot_dodge_speed=330, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_in=0.05, aim_fade_out=0.1
+num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=170, bot_strafe_speed=96, bot_dodge_speed=330, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_in=0.05, aim_fade_out=0.1, aim_max_alpha=102
 // Поведение бота: enemy_attack_distance — дистанция, с которой он бьёт;
 // enemy_dodge_time/cooldown — окно и перезарядка уклонения от удара игрока;
 // enemy_think_min/max — случайная пауза между заходами (бот отходит за
 // дальность удара игрока и стрейфит, вместо того чтобы стоять под ударами).
-num enemy_attack_distance=100, enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.1, enemy_lock_time=0.05, enemy_punch_time=0.2, enemy_recovery=0, enemy_attack_cooldown=0, enemy_damage=1, enemy_prediction=0.18, enemy_first_delay=0.45, enemy_dodge_time=0.24, enemy_dodge_cooldown=0.8, enemy_reaction=0.06, enemy_think_min=0.35, enemy_think_max=0.7
+// enemy_cooldown_min/max — случайная перезарядка удара бота: каждый раз новое
+// значение в диапазоне, но не быстрее enemy_cooldown_min (0.1 с).
+num enemy_attack_distance=100, enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.07, enemy_lock_time=0.04, enemy_punch_time=0.16, enemy_recovery=0, enemy_cooldown_min=0.1, enemy_cooldown_max=0.4, enemy_damage=1, enemy_prediction=0.18, enemy_first_delay=0.45, enemy_dodge_time=0.24, enemy_dodge_cooldown=0.8, enemy_reaction=0.06, enemy_think_min=0.18, enemy_think_max=0.36
 // Экран ника: вход в онлайн спрашивает только ник, без пароля и регистрации.
 // login_field — активное поле (всегда 1), login_status: 0=идл, 5=неверный ник,
 // login_after — куда перейти после ника (0=лобби, 5=онлайн).
 num login_field=0, login_status=0, login_after=0
 // Раскладка экрана ника: login_ox/login_oy — сдвиг блока, login_fh — высота
-// поля ввода, login_lab — отступ подписи над полем.
-num login_ox=10, login_oy=-26, login_fh=54, login_lab=28
+// поля ввода, login_lab — отступ подписи «Ник» над полем (больше = выше),
+// login_lab_ox — сдвиг этой подписи вправо.
+num login_ox=10, login_oy=-26, login_fh=54, login_lab=40, login_lab_ox=16
 str GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main", login_nick="", last_kb=""

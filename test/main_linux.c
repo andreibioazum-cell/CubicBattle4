@@ -29,6 +29,12 @@
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
+extern DSArray *remotes;
+extern double finished, enemy_cooldown_min, enemy_cooldown_max;
+/* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
+ * angle,state,state_time,cooldown,... — читаем их как массив double. */
+#define ENEMY_STATE 6
+#define ENEMY_COOLDOWN 8
 
 static uint32_t *g_pixels = NULL;
 static int g_w = 1280, g_h = 720;
@@ -169,6 +175,17 @@ static int wait_state(double want, int max_iters) {
     return 0;
 }
 
+/* Ждём, пока список удалённых игроков не станет нужной длины: сеть живёт в
+ * отдельном потоке и опрашивает сервер в реальном времени. */
+static int wait_remotes(int want_players, int max_iters) {
+    for (int i = 0; i < max_iters; i++) {
+        run_frames(2);
+        if ((int)(arr_len(remotes) / 7) == want_players) return 1;
+        { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+    }
+    return 0;
+}
+
 static int wait_slot(int max_iters) {
     for (int i = 0; i < max_iters; i++) {
         run_frames(5);
@@ -216,8 +233,9 @@ static void save_bmp(const char *path) {
     memcpy(hdr+14, &dib, 4);
     memcpy(hdr+18, &w, 4);
     memcpy(hdr+22, &h, 4);
-    unsigned short bpp = 24;
-    memcpy(hdr+26, &bpp, 2);
+    unsigned short planes = 1, bpp = 24;
+    memcpy(hdr+26, &planes, 2);
+    memcpy(hdr+28, &bpp, 2);
     memcpy(hdr+34, &img, 4);
     fwrite(hdr, 1, 54, f);
     unsigned char *line = (unsigned char *)malloc((size_t)row);
@@ -309,14 +327,27 @@ int main(void) {
     if (net_chat_count() < 1) { printf("!! chat message was not sent\n"); return 3; }
     printf("=== chat ok count=%g (frame %ld)\n", net_chat_count(), g_frame);
 
-    /* --- 6. Немного боя в онлайне (движение + удар) --- */
+    /* --- 6. Вышедший игрок удаляется из списка --- */
+    if (!wait_remotes(1, 200)) { printf("!! remote player never appeared, remotes=%g\n", arr_len(remotes)); return 3; }
+    printf("=== remote player visible (remotes=%g)\n", arr_len(remotes) / 7);
+    {   /* убираем этого игрока с сервера — как будто он вышел из игры */
+        int rslot = (int)arr_get(remotes, 0);
+        char url[128];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/players/%d.json", TEST_PORT, rslot);
+        test_http_impl("DELETE", url, NULL, NULL, 0, NULL, NULL, NULL, 0);
+        printf("=== remote slot %d deleted on the server\n", rslot);
+    }
+    if (!wait_remotes(0, 300)) { printf("!! player who left was not removed, remotes=%g\n", arr_len(remotes) / 7); return 3; }
+    printf("=== player who left removed from the list (frame %ld)\n", g_frame);
+
+    /* --- 7. Немного боя в онлайне (движение + удар) --- */
     do_tap(130, (float)(g_h - 150)); run_frames(5);
     do_tap((float)(g_w - 140), (float)(g_h - 150)); run_frames(30);
     tap_back();
     if (!wait_state(0, 60)) { printf("!! did not return to lobby from online\n"); return 3; }
     printf("=== left online (frame %ld)\n", g_frame);
 
-    /* --- 7. Ник сохранён в auth.dat --- */
+    /* --- 8. Ник сохранён в auth.dat --- */
     {
         FILE *f = fopen("auth.dat", "r");
         char saved[64] = "";
@@ -327,14 +358,40 @@ int main(void) {
         printf("=== nick persisted to auth.dat\n");
     }
 
-    /* --- 8. Соло-бой работает --- */
+    /* --- 9. Соло-бой работает --- */
     tap_play(); wait_state(2, 30);
     tap_solo(); wait_state(1, 30);
     run_frames(40);
-    tap_back(); wait_state(0, 40);
     printf("=== solo battle ok (frame %ld)\n", g_frame);
 
-    /* --- 9. Повторный вход в онлайн: ник уже сохранён, экран ника не нужен --- */
+    /* Бот бьёт быстро, а перезарядка удара каждый раз случайная и не короче
+     * enemy_cooldown_min. */
+    {
+        const double *e = (const double *)enemy;
+        double prev = e[ENEMY_STATE], cds[64];
+        int attacks = 0, ncd = 0, distinct = 0;
+        for (int i = 0; i < 900 && finished == 0; i++) {
+            run_frames(1);
+            double st = e[ENEMY_STATE];
+            if (st == 1 && prev != 1) attacks++;
+            if (st == 3 && prev == 2 && ncd < 64) cds[ncd++] = e[ENEMY_COOLDOWN];
+            prev = st;
+        }
+        if (attacks < 4) { printf("!! bot attacked only %d times in 15s\n", attacks); return 3; }
+        for (int i = 0; i < ncd; i++) {
+            if (cds[i] < enemy_cooldown_min - 1e-9 || cds[i] > enemy_cooldown_max + 1e-9) {
+                printf("!! bot cooldown %g out of range [%g..%g]\n", cds[i], enemy_cooldown_min, enemy_cooldown_max);
+                return 3;
+            }
+            if (i && cds[i] != cds[0]) distinct = 1;
+        }
+        if (ncd < 3 || !distinct) { printf("!! bot cooldown is not random (%d samples)\n", ncd); return 3; }
+        printf("=== bot attacks fast, cooldown random: %d attacks, %d cooldowns in [%g..%g]\n",
+               attacks, ncd, enemy_cooldown_min, enemy_cooldown_max);
+    }
+    tap_back(); wait_state(0, 40);
+
+    /* --- 10. Повторный вход в онлайн: ник уже сохранён, экран ника не нужен --- */
     tap_play(); wait_state(2, 30);
     tap_online();
     if (!wait_state(5, 30)) { printf("!! saved nick did not skip the nick screen, state=%g\n", game_state); return 3; }
