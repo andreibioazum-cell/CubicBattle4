@@ -183,16 +183,20 @@ static int wait_slot(int max_iters) {
     return 0;
 }
 
-/* Экран аккаунта (1280x720): fy = screen_h/2-130 */
-#define FY (g_h / 2 - 130)
-static void tap_nick(void) { do_tap((float)(g_w / 2), (float)(FY + 25)); }
-static void tap_pwd(void) { do_tap((float)(g_w / 2), (float)(FY + 87)); }
-static void tap_rep(void) { do_tap((float)(g_w / 2), (float)(FY + 149)); }
-static void tap_login_btn(void) { do_tap((float)(g_w / 2), (float)(FY + 146 + 32)); }
-static void tap_create_btn(void) { do_tap((float)(g_w / 2), (float)(FY + 208 + 32)); }
-/* в режиме «вход» переключатель на yt=440 (центр 472), в режиме «создание» на yt=502 (центр 534) */
-static void tap_toggle_to_create(void) { do_tap((float)(g_w / 2), (float)(FY + 210 + 32)); }
-static void tap_toggle_to_login(void) { do_tap((float)(g_w / 2), (float)(FY + 272 + 32)); }
+/* Экран аккаунта (1280x720): fy = screen_h/2-130 + login_oy, login_oy = -26.
+ * Шаг между полями login_gap = 94, высота поля login_fh = 54,
+ * зазор между кнопками login_bgap = 22 (см. game/config.ds). */
+#define FY (g_h / 2 - 130 - 26)
+#define LGAP 94
+#define LBTN(n) (FY + LGAP * (n) + 8 + 32)
+static void tap_nick(void) { do_tap((float)(g_w / 2), (float)(FY + 27)); }
+static void tap_pwd(void) { do_tap((float)(g_w / 2), (float)(FY + LGAP + 27)); }
+static void tap_rep(void) { do_tap((float)(g_w / 2), (float)(FY + 2 * LGAP + 27)); }
+static void tap_login_btn(void) { do_tap((float)(g_w / 2), (float)LBTN(2)); }
+static void tap_create_btn(void) { do_tap((float)(g_w / 2), (float)LBTN(3)); }
+/* переключатель режима стоит на кнопку ниже: yb + btn_h(64) + login_bgap(22) */
+static void tap_toggle_to_create(void) { do_tap((float)(g_w / 2), (float)(LBTN(2) + 86)); }
+static void tap_toggle_to_login(void) { do_tap((float)(g_w / 2), (float)(LBTN(3) + 86)); }
 static void tap_logout(void) { do_tap((float)(g_w - 190 + 85), 48); }
 
 /* Заполнить поле заново: тап (переключение поля чистит клавиатуру), затем текст */

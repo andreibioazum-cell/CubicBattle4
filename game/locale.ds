@@ -66,6 +66,10 @@ function tr_wrong_pwd
 if language==1; return "Неверный пароль"; else if language==2; return "パスワードが違います"; end; return "Wrong password";end
 function tr_bad_creds
 if language==1; return "Ник: 3-16 букв/цифр/_, пароль: от 4"; else if language==2; return "ニック3-16、パスワード4以上"; end; return "Nick: 3-16 letters/digits/_, password: 4+";end
+function tr_bad_nick
+if language==1; return "Неверный ник"; else if language==2; return "ニックが正しくありません"; end; return "Invalid nick";end
+function tr_short_pwd
+if language==1; return "Слишком маленькая длина пароля"; else if language==2; return "パスワードが短すぎます"; end; return "Password too short";end
 function tr_reg_title
 if language==1; return "Создать аккаунт"; else if language==2; return "アカウント作成"; end; return "Create account";end
 function tr_rep_pwd
