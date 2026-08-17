@@ -45,6 +45,8 @@ public final class GameActivity extends NativeActivity {
     private EditText chatEditor;
     private boolean syncingFromNative;
     private boolean keyboardWasVisible;
+    /* Читается из игрового потока: пока true, весь текст ведёт этот редактор. */
+    private volatile boolean editorActive;
 
     private native void nativeReplaceText(String text);
     private native void nativeSubmitText();
@@ -73,9 +75,10 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setCursorVisible(false);
         chatEditor.setAlpha(0.01f);
         chatEditor.setGravity(Gravity.BOTTOM | Gravity.START);
+        // Никакого автодополнения и автозамены: IME больше не восстанавливает
+        // только что стёртые символы и не склеивает их с новым вводом.
         chatEditor.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-                | InputType.TYPE_TEXT_FLAG_AUTO_CORRECT);
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         chatEditor.setImeOptions(EditorInfo.IME_ACTION_SEND
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         chatEditor.setFilters(new InputFilter[] { new InputFilter.LengthFilter(95) });
@@ -90,6 +93,13 @@ public final class GameActivity extends NativeActivity {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
             @Override public void afterTextChanged(Editable value) {
                 if (!syncingFromNative) replaceTextNative(value.toString());
+            }
+        });
+        chatEditor.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View view, boolean focused) {
+                editorActive = nativeReady && focused
+                        && chatEditor.getVisibility() == View.VISIBLE;
             }
         });
         chatEditor.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -138,6 +148,7 @@ public final class GameActivity extends NativeActivity {
                 chatEditor.setVisibility(View.VISIBLE);
                 replaceEditorText(currentText);
                 chatEditor.requestFocus();
+                editorActive = nativeReady && chatEditor.hasFocus();
                 chatEditor.postDelayed(new Runnable() {
                     @Override
                     public void run() {
@@ -162,6 +173,14 @@ public final class GameActivity extends NativeActivity {
         });
     }
 
+    /**
+     * Called from the native game thread: true when this editor owns the text,
+     * so the native side must not append key events into its own buffer.
+     */
+    public boolean gameKeyboardActive() {
+        return editorActive;
+    }
+
     /** Called from native code when chat is closed or the online game is left. */
     public void hideGameKeyboard() {
         runOnUiThread(new Runnable() {
@@ -173,8 +192,10 @@ public final class GameActivity extends NativeActivity {
                 if (input != null) {
                     input.hideSoftInputFromWindow(chatEditor.getWindowToken(), 0);
                 }
+                editorActive = false;
                 chatEditor.clearFocus();
                 chatEditor.setVisibility(View.INVISIBLE);
+                clearEditorText();
                 keyboardHiddenNative();
             }
         });
@@ -188,6 +209,16 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setText(safe);
         chatEditor.setSelection(chatEditor.length());
         syncingFromNative = false;
+        // Сбрасываем composing-регион IME: без этого клавиатура держит у себя
+        // уже удалённые буквы и приклеивает их к следующему слову.
+        InputMethodManager input = (InputMethodManager)
+                getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (input != null) input.restartInput(chatEditor);
+    }
+
+    /** Полная очистка поля, чтобы закрытая клавиатура не хранила старый текст. */
+    private void clearEditorText() {
+        replaceEditorText("");
     }
 
     @Override

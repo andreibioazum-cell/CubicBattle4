@@ -58,3 +58,5 @@ function tr_nick_ph
 if language==1; return "Ник: 3-16 (буквы, цифры, _)"; else if language==2; return "ニック: 3-16モジ"; end; return "Nick: 3-16 (letters, digits, _)";end
 function tr_bad_nick
 if language==1; return "Ник: 3-16 символов, только буквы, цифры и _"; else if language==2; return "ニック: 3-16モジ、エイスウジト_ノミ"; end; return "Nick: 3-16 chars, letters, digits and _ only";end
+function tr_your_nick
+if language==1; return "Ваш ник: "; else if language==2; return "ニック: "; end; return "Your nick: ";end

@@ -344,6 +344,23 @@ static int kb_call_text_method(const char *name, const char *value) {
     return ok;
 }
 
+static int kb_call_bool_method(const char *name) {
+    int attached = 0, result = 0;
+    JNIEnv *env = kb_get_env(&attached);
+    if (!env || !kb_activity || !kb_activity->clazz) return 0;
+    if ((*env)->PushLocalFrame(env, 4) != 0) { kb_release_env(attached); return 0; }
+    jclass cls = (*env)->GetObjectClass(env, kb_activity->clazz);
+    jmethodID method = cls ? (*env)->GetMethodID(env, cls, name, "()Z") : NULL;
+    if (method) {
+        jboolean value = (*env)->CallBooleanMethod(env, kb_activity->clazz, method);
+        if (!(*env)->ExceptionCheck(env)) result = value ? 1 : 0;
+    }
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->PopLocalFrame(env, NULL);
+    kb_release_env(attached);
+    return result;
+}
+
 static int kb_call_void_method(const char *name) {
     int attached = 0, ok = 0;
     JNIEnv *env = kb_get_env(&attached);
@@ -362,6 +379,21 @@ static int kb_call_void_method(const char *name) {
 }
 
 void ds_set_activity(void *act) { kb_activity = (ANativeActivity *)act; }
+
+/* Единственный источник правды для текста — системный редактор в Java.
+ * Любое изменение буфера на стороне игры немедленно зеркалим обратно в него,
+ * иначе редактор помнит уже стёртые символы и дописывает их к новому вводу
+ * ("Q" + "qwerty" -> "Qqwerty"). */
+static void kb_sync_editor(void) {
+    char copy[KB_BUF];
+    pthread_mutex_lock(&kb_mutex);
+    snprintf(copy, sizeof(copy), "%s", kb_text);
+    pthread_mutex_unlock(&kb_mutex);
+    (void)kb_call_text_method("setGameKeyboardText", copy);
+}
+
+/* 1, если текст сейчас ведёт системный EditText (он и получает клавиши). */
+int keyboard_uses_editor(void) { return kb_call_bool_method("gameKeyboardActive"); }
 
 void keyboard_show(void) {
     char current[KB_BUF];
@@ -436,6 +468,7 @@ void keyboard_type(const char *text) {
         if (cp=='\n' || cp=='\r') kb_enter=1; else if (cp>=0x20) kb_append_cp_locked(cp);
     }
     pthread_mutex_unlock(&kb_mutex);
+    kb_sync_editor();
 }
 
 /* Стираем целый UTF-8 символ, а не один байт. */
@@ -447,6 +480,7 @@ void keyboard_backspace(void) {
         if ((c & 0xC0) != 0x80) break;
     }
     pthread_mutex_unlock(&kb_mutex);
+    kb_sync_editor();
 }
 
 /* Физическая клавиатура: KeyEvent.getUnicodeChar с учётом раскладки. */
@@ -478,28 +512,31 @@ done:
 
 int keyboard_handle_key(int keycode, int action, int meta) {
     (void)action;
+    /* Пока клавиши получает системный EditText, игра их не трогает: два
+     * источника текста расходятся, и стёртые символы «воскресают». */
+    if (keyboard_uses_editor()) return 0;
     if (keycode==AKEYCODE_DEL || keycode==AKEYCODE_FORWARD_DEL) { keyboard_backspace(); return 1; }
     if (keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER) {
         pthread_mutex_lock(&kb_mutex); kb_enter=1; pthread_mutex_unlock(&kb_mutex); return 1;
     }
     if (keycode==AKEYCODE_SPACE) {
-        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked(' '); pthread_mutex_unlock(&kb_mutex); return 1;
+        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked(' '); pthread_mutex_unlock(&kb_mutex); kb_sync_editor(); return 1;
     }
     {
         unsigned int cp = kb_unicode(keycode, meta);
         if (cp>=0x20 && cp!=0x7F) {
-            pthread_mutex_lock(&kb_mutex); kb_append_cp_locked(cp); pthread_mutex_unlock(&kb_mutex); return 1;
+            pthread_mutex_lock(&kb_mutex); kb_append_cp_locked(cp); pthread_mutex_unlock(&kb_mutex); kb_sync_editor(); return 1;
         }
     }
     if (keycode>=AKEYCODE_A && keycode<=AKEYCODE_Z) {
-        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked((unsigned int)('a'+keycode-AKEYCODE_A)); pthread_mutex_unlock(&kb_mutex); return 1;
+        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked((unsigned int)('a'+keycode-AKEYCODE_A)); pthread_mutex_unlock(&kb_mutex); kb_sync_editor(); return 1;
     }
     if (keycode>=AKEYCODE_0 && keycode<=AKEYCODE_9) {
-        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked((unsigned int)('0'+keycode-AKEYCODE_0)); pthread_mutex_unlock(&kb_mutex); return 1;
+        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked((unsigned int)('0'+keycode-AKEYCODE_0)); pthread_mutex_unlock(&kb_mutex); kb_sync_editor(); return 1;
     }
     if (keycode==AKEYCODE_COMMA || keycode==AKEYCODE_PERIOD || keycode==AKEYCODE_MINUS) {
         unsigned int cp = keycode==AKEYCODE_COMMA ? ',' : keycode==AKEYCODE_PERIOD ? '.' : '-';
-        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked(cp); pthread_mutex_unlock(&kb_mutex); return 1;
+        pthread_mutex_lock(&kb_mutex); kb_append_cp_locked(cp); pthread_mutex_unlock(&kb_mutex); kb_sync_editor(); return 1;
     }
     return 0;
 }
@@ -573,6 +610,7 @@ void keyboard_backspace(void){
     }
 }
 int keyboard_handle_key(int keycode, int action, int meta){ (void)keycode; (void)action; (void)meta; return 0; }
+int keyboard_uses_editor(void){ return 0; }
 void ds_set_activity(void *act){ (void)act; }
 void keyboard_show(void){ kb_show=1; }
 void keyboard_hide(void){ kb_show=0; }
