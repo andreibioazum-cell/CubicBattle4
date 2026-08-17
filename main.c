@@ -125,6 +125,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             if (keyboard_handle_key(key, action, meta)) return 1;
         }
         if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) return 0;
+        /* Когда текст ведёт системный EditText, клавиши (в том числе Backspace)
+         * должны дойти до него, иначе удаление применяется только к буферу игры,
+         * редактор остаётся со старым текстом и дописывает его к новому вводу. */
+        if (keyboard_visible() && keyboard_uses_editor()) return 0;
         return 1;
     }
     return 0;

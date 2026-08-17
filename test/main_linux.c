@@ -318,6 +318,29 @@ int main(void) {
     /* --- 5. Чат: открыть -> написать -> отправить --- */
     do_tap(86, 174);
     run_frames(10);
+
+    /* 5a. Удалённое из поля не возвращается: "Q" + Backspace + "qwerty"
+     *     должно дать ровно "qwerty", а не "Qqwerty". */
+    feed_text("Q");
+    run_frames(5);
+    keyboard_backspace();
+    run_frames(5);
+    if (chat_input && chat_input[0]) {
+        printf("!! backspace left text in the field: '%s'\n", chat_input); return 3;
+    }
+    feed_text("qwerty");
+    run_frames(5);
+    if (!chat_input || strcmp(chat_input, "qwerty") != 0) {
+        printf("!! deleted char came back: '%s' (expected 'qwerty')\n", chat_input ? chat_input : "(null)");
+        return 3;
+    }
+    printf("=== field delete ok: '%s' (frame %ld)\n", chat_input, g_frame);
+    keyboard_clear();
+    run_frames(5);
+    if (chat_input && chat_input[0]) {
+        printf("!! clear left text in the field: '%s'\n", chat_input); return 3;
+    }
+
     feed_text("hi from test");
     run_frames(10);
     do_tap(1188, 654); /* send */

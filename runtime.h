@@ -80,6 +80,7 @@ void keyboard_clear(void);
 int keyboard_visible(void);
 int keyboard_enter_pressed(void);
 int keyboard_handle_key(int keycode, int action, int meta);
+int keyboard_uses_editor(void);
 void keyboard_type(const char *text);
 void keyboard_backspace(void);
 void keyboard_commit_utf8(const char *utf8);
