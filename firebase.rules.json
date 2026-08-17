@@ -2,42 +2,19 @@
   "rules": {
     ".read": false,
     ".write": false,
-
     "rooms": {
-      ".read": false,
-      ".write": false,
       "$room": {
-        ".read": true,
-        ".write": true,
-
         "players": {
           ".read": true,
-          ".write": true,
           "$slot": {
-            ".read": true,
             ".write": true,
             ".validate": "$slot.matches(/^[0-3]$/)"
           }
         },
-
-        "bullets": {
-          ".read": true,
-          ".write": true,
-          "$slot": {
-            ".read": true,
-            ".write": true,
-            ".validate": "$slot.matches(/^[0-3]$/)"
-          }
-        },
-
         "chat": {
           ".read": true,
           ".write": true,
-          ".indexOn": ".key",
-          "$msg": {
-            ".read": true,
-            ".write": true
-          }
+          ".indexOn": ".key"
         }
       }
     }

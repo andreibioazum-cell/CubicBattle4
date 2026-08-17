@@ -29,7 +29,7 @@
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
-extern DSArray *remotes;
+extern DSArray *remotes, *remote_punches;
 extern double finished, enemy_cooldown_min, enemy_cooldown_max;
 /* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
@@ -175,12 +175,21 @@ static int wait_state(double want, int max_iters) {
     return 0;
 }
 
-/* Ждём, пока список удалённых игроков не станет нужной длины: сеть живёт в
- * отдельном потоке и опрашивает сервер в реальном времени. */
+/* В remotes лежат четыре постоянных слота по 10 чисел; первое поле говорит,
+ * занят ли слот соперником. Такая схема проще добавления/удаления записей. */
+static int remote_count(void) {
+    int count = 0;
+    for (int slot = 0; slot < 4; slot++) if (arr_get(remotes, slot * 10) == 1) count++;
+    return count;
+}
+static int first_remote_slot(void) {
+    for (int slot = 0; slot < 4; slot++) if (arr_get(remotes, slot * 10) == 1) return slot;
+    return -1;
+}
 static int wait_remotes(int want_players, int max_iters) {
     for (int i = 0; i < max_iters; i++) {
         run_frames(2);
-        if ((int)(arr_len(remotes) / 7) == want_players) return 1;
+        if (remote_count() == want_players) return 1;
         { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
     }
     return 0;
@@ -344,7 +353,12 @@ int main(void) {
     feed_text("hi from test");
     run_frames(10);
     do_tap(1188, 654); /* send */
-    run_frames(30);
+    /* Чат специально опрашивается реже боевого состояния, поэтому здесь ждём
+     * реальные часы, а не прогоняем мгновенно 30 кадров. */
+    for (int i = 0; i < 100 && net_chat_count() < 1; i++) {
+        run_frames(1);
+        { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+    }
     do_tap(1192, 51); /* close */
     run_frames(10);
     if (net_chat_count() < 1) { printf("!! chat message was not sent\n"); return 3; }
@@ -352,15 +366,51 @@ int main(void) {
 
     /* --- 6. Вышедший игрок удаляется из списка --- */
     if (!wait_remotes(1, 200)) { printf("!! remote player never appeared, remotes=%g\n", arr_len(remotes)); return 3; }
-    printf("=== remote player visible (remotes=%g)\n", arr_len(remotes) / 7);
+    printf("=== remote player visible (remotes=%d)\n", remote_count());
+
+    /* У события намеренно нет короткого active=1. Клиент обязан заметить
+     * изменившийся счётчик punch и всё равно показать анимацию с хитбоксом. */
+    {
+        int rslot = first_remote_slot(), seen = 0;
+        /* Точка (710,360) лежит внутри будущего хитбокса, но уже за спрайтом. */
+        uint32_t before_hitbox = g_pixels[710 + 360 * g_w];
+        char url[128];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/players/%d.json", TEST_PORT, rslot);
+        test_http_impl("PATCH", url,
+                       "{\"px\":0.5,\"py\":0.5,\"pdx\":1,\"pdy\":0,\"punch\":101}",
+                       NULL, 0, NULL, NULL, NULL, 0);
+        for (int i = 0; i < 100 && !seen; i++) {
+            run_frames(1);
+            seen = arr_get(remote_punches, rslot * 6) == 1;
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (!seen) { printf("!! remote punch event was lost\n"); return 3; }
+        /* Чёрный слой с alpha=102 должен одинаково затемнить R, G и B.
+         * Красный хитбокс эту проверку не пройдёт. */
+        {
+            uint32_t after = g_pixels[710 + 360 * g_w];
+            for (int shift = 0; shift <= 16; shift += 8) {
+                int old_c = (int)((before_hitbox >> shift) & 255u);
+                int got = (int)((after >> shift) & 255u);
+                int want = (old_c * 153 + 127) / 255;
+                if (got < want - 2 || got > want + 2) {
+                    printf("!! remote hitbox is not black: before=%08X after=%08X\n",
+                           before_hitbox, after);
+                    return 3;
+                }
+            }
+        }
+        printf("=== remote punch received; animation and black hitbox are visible\n");
+    }
+
     {   /* убираем этого игрока с сервера — как будто он вышел из игры */
-        int rslot = (int)arr_get(remotes, 0);
+        int rslot = first_remote_slot();
         char url[128];
         snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/players/%d.json", TEST_PORT, rslot);
         test_http_impl("DELETE", url, NULL, NULL, 0, NULL, NULL, NULL, 0);
         printf("=== remote slot %d deleted on the server\n", rslot);
     }
-    if (!wait_remotes(0, 300)) { printf("!! player who left was not removed, remotes=%g\n", arr_len(remotes) / 7); return 3; }
+    if (!wait_remotes(0, 300)) { printf("!! player who left was not removed, remotes=%d\n", remote_count()); return 3; }
     printf("=== player who left removed from the list (frame %ld)\n", g_frame);
 
     /* --- 7. Немного боя в онлайне (движение + удар) --- */

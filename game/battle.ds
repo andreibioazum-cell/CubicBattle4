@@ -4,9 +4,11 @@
 
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aiming=0; aim_id=-1; aim_a=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
-arr_clear remotes; arr_clear rbullets; num i=0; loop i<max_players*6; arr_push rbullets,0; i=i+1; end
+arr_clear remotes; arr_clear remote_punches
+num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
+i=0; loop i<max_players*punch_fields; arr_push remote_punches,0; i=i+1; end
 end
 function init_game
 reset_battle; enemy.hp=enemy.max_hp; spawn_enemy
@@ -264,80 +266,107 @@ end
 end
 update_enemy
 end
-function ridx num s
-num i=0; loop i<arr_len(remotes)/7; if arr_get(remotes,i*7)==s; return i; end; i=i+1; end; return -1
+function clear_remote_punch num s
+num rb=s*punch_fields, k=0; loop k<punch_fields; arr_set remote_punches,rb+k,0; k=k+1; end
 end
-function drop_remote num i
-// Удаление записи вышедшего игрока: на её место переносим последнюю запись
-// списка и укорачиваем массив на 7 полей.
-num last=arr_len(remotes)/7-1, b=i*7, lb=last*7, k=0
-if i<last; loop k<7; arr_set remotes,b+k,arr_get(remotes,lb+k); k=k+1; end; end
-k=0; loop k<7; arr_pop remotes; k=k+1; end
-end
-function purge_left
-// Игроки, которые вышли из комнаты (слот больше не онлайн), удаляются из
-// списка вместе со своим ударом — иначе они висели бы «призраками» и
-// занимали место, из-за которого новый игрок уже не попадал в список.
-num i=0
-loop i<arr_len(remotes)/7
-num s=arr_get(remotes,i*7)
-if net_player_online(s)==0||s==net_slot()
-num rb=s*6, k=0; loop k<6; arr_set rbullets,rb+k,0; k=k+1; end
-ds_log "player left: slot %g",s
-drop_remote i
-else; i=i+1; end
-end
+function start_remote_punch num s
+// Счётчик punch не исчезает через 0.2 с, поэтому новый удар будет замечен
+// даже при медленном запросе. Координаты и направление берём из самого события.
+num rb=s*punch_fields
+arr_set remote_punches,rb,1
+arr_set remote_punches,rb+1,net_player_punch_x(s)*screen_w
+arr_set remote_punches,rb+2,net_player_punch_y(s)*screen_h
+arr_set remote_punches,rb+3,net_player_punch_dx(s)
+arr_set remote_punches,rb+4,net_player_punch_dy(s)
+arr_set remote_punches,rb+5,0
 end
 function read_remotes
-// без интерполяции — просто частое чтение, прямое присваивание x,y убирает тряску и лаги
-if net_slot()<0; return; end; purge_left; num i=0; loop i<arr_len(remotes)/7; arr_set remotes,i*7+5,0; i=i+1; end
-num s=0; loop s<max_players; if net_player_online(s)==1&&s!=net_slot()
-num x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h; i=ridx(s)
-if i<0&&arr_len(remotes)/7<max_players-1; i=arr_len(remotes)/7; num v=0; loop v<7; arr_push remotes,0; v=v+1; end; num nb=i*7; arr_set remotes,nb,s; arr_set remotes,nb+1,x; arr_set remotes,nb+2,y; arr_set remotes,nb+6,net_player_bullet_shot(s); end
-if i>=0; num b=i*7; arr_set remotes,b+1,x; arr_set remotes,b+2,y; arr_set remotes,b+3,net_player_angle(s); arr_set remotes,b+4,net_player_hp(s); arr_set remotes,b+5,net_player_alive(s)
-num sh=net_player_bullet_shot(s); if sh!=arr_get(remotes,b+6); arr_set remotes,b+6,sh; if net_player_bullet_active(s)==1; num rb=s*6; arr_set rbullets,rb,1; arr_set rbullets,rb+1,x; arr_set rbullets,rb+2,y; arr_set rbullets,rb+3,net_player_bullet_dx(s); arr_set rbullets,rb+4,net_player_bullet_dy(s); arr_set rbullets,rb+5,0; end; end; end; end; s=s+1; end
+if net_slot()<0; return; end
+// У каждого из четырёх сетевых слотов своё постоянное место в массиве.
+// Поля: present, рисуемые x/y/angle, hp, alive, punch, сетевые x/y/angle.
+num s=0
+loop s<max_players
+num b=s*remote_fields
+if net_player_online(s)==1&&s!=net_slot()
+num x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h, a=net_player_angle(s)
+if arr_get(remotes,b)==0
+arr_set remotes,b,1; arr_set remotes,b+1,x; arr_set remotes,b+2,y; arr_set remotes,b+3,a
+arr_set remotes,b+6,net_player_punch(s); arr_set remotes,b+7,x; arr_set remotes,b+8,y; arr_set remotes,b+9,a
+end
+arr_set remotes,b+4,net_player_hp(s); arr_set remotes,b+5,net_player_alive(s)
+arr_set remotes,b+7,x; arr_set remotes,b+8,y; arr_set remotes,b+9,a
+num p=net_player_punch(s)
+if p!=arr_get(remotes,b+6); arr_set remotes,b+6,p; start_remote_punch s; end
+else if arr_get(remotes,b)==1
+// Слот освободился: прячем модель и сразу гасим её старый удар.
+arr_set remotes,b,0; arr_set remotes,b+5,0; clear_remote_punch s
+end
+s=s+1
+end
+end
+function smooth_remotes
+// Между редкими сетевыми снимками двигаем модель каждый кадр. Телепорт не
+// размазываем по экрану: большой разрыв применяется сразу.
+num i=0, t=clamp(dt*remote_smooth,0,1)
+loop i<max_players
+num b=i*remote_fields, dx=arr_get(remotes,b+7)-arr_get(remotes,b+1), dy=arr_get(remotes,b+8)-arr_get(remotes,b+2)
+if dx*dx+dy*dy>remote_snap*remote_snap; arr_set remotes,b+1,arr_get(remotes,b+7); arr_set remotes,b+2,arr_get(remotes,b+8)
+else; arr_set remotes,b+1,arr_get(remotes,b+1)+dx*t; arr_set remotes,b+2,arr_get(remotes,b+2)+dy*t; end
+num da=arr_get(remotes,b+9)-arr_get(remotes,b+3); if da>pi; da=da-2*pi; end; if da<0-pi; da=da+2*pi; end
+arr_set remotes,b+3,arr_get(remotes,b+3)+da*t
+i=i+1
+end
+end
+function update_remote_punches
+// Урон и видимая анимация живут одинаковые punch_time секунд.
+num i=0
+loop i<max_players
+num rb=i*punch_fields
+if arr_get(remote_punches,rb)==1
+num tr=arr_get(remote_punches,rb+5)+dt; arr_set remote_punches,rb+5,tr
+if tr>=punch_time; arr_set remote_punches,rb,0
+else if player.hp>0&&in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
+arr_set remote_punches,rb,0; player.hp=player.hp-punch_damage; ds_log "hit! hp %g",player.hp
+if player.hp<=0; player.hp=0; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end
+end
+end
+i=i+1
+end
 end
 function update_online
-if online_ready==0&&net_slot()>=0; place_online; end; read_remotes; update_aim; if finished!=0||online_ready==0; return; end; move_player
+if online_ready==0&&net_slot()>=0; place_online; end
+read_remotes; smooth_remotes; update_aim
+if finished!=0||online_ready==0; return; end
+move_player
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
-follow_punch
-if punch.active==1&&punch_left<=0; punch.active=0; net_publish_bullet punch.ox/screen_w,punch.oy/screen_h,punch.dx,punch.dy,0,punch.shot,0; end
-// частая публикация позиции каждый кадр (net.c пишет каждые 50мс) — без лага
-num alive=1; if player.hp<=0; alive=0; end; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive
-// чужие удары: короткий таймер и широкий недлинный хитбокс от точки удара
-num i=0; loop i<max_players; num rb=i*6; if arr_get(rbullets,rb)==1
-num tr=arr_get(rbullets,rb+5)+dt; arr_set rbullets,rb+5,tr
-if tr>=punch_time; arr_set rbullets,rb,0
-else if player.hp>0&&in_punch_box(arr_get(rbullets,rb+1),arr_get(rbullets,rb+2),arr_get(rbullets,rb+3),arr_get(rbullets,rb+4),player.x,player.y)==1
-arr_set rbullets,rb,0; player.hp=player.hp-punch_damage; ds_log "hit! hp %g",player.hp
-if player.hp<=0; player.hp=0; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end
-end; end; i=i+1; end
+follow_punch; if punch.active==1&&punch_left<=0; punch.active=0; end
+// Игра обновляет локальную копию каждый кадр, а сетевой поток отправляет
+// последний снимок отдельно — рендер никогда не ждёт HTTP.
+num alive=1; if player.hp<=0; alive=0; end
+net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive
+update_remote_punches
 end
 function fire_punch
 // удар: пуля не вылетает — хитбокс и удар, спрайт обычный -> ordinary_punch
 // между ударами пауза punch_cooldown (0.3 c); сам урон наносится в update_game
 // во время анимации удара (пока punch_left>0), а не мгновенно в момент нажатия
 if punch_cd>0; return; end
-punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.ox=punch.x; punch.oy=punch.y; punch.tr=0; punch.active=1; punch.hit=0; punch.shot=punch.shot+1; punch_left=punch_time; punch_cd=punch_cooldown
-if game_state==5; net_publish_bullet punch.ox/screen_w,punch.oy/screen_h,punch.dx,punch.dy,1,punch.shot,0; end
+punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.active=1; punch.hit=0; punch.shot=punch.shot+1; punch_left=punch_time; punch_cd=punch_cooldown
+if game_state==5; net_publish_punch punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot; end
 end
 function finish_game num result
-finished=result; aiming=0; aim_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
+finished=result; aim_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
+end
+function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num alpha
+// Общая отрисовка для себя, бота и сетевого соперника. RGB всегда 000000;
+// меняется только альфа, поэтому красного хитбокса здесь быть не может.
+num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
+if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
 end
 function draw_field
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end; rect 0,0,screen_w,screen_h,0x33000000
-// хитбокс удара: чёрный, слегка прозрачный прямоугольник, повёрнутый по направлению
-// взгляда игрока (длина punch_reach, ширина punch_width). Рисуется только в момент
-// удара (когда меняется текстура и наносится урон) и всегда следует за игроком.
-if aim_a>0&&finished==0
-num aa=floor(aim_a*aim_max_alpha)
-if aa>0
-num px=player.x, py=player.y, pdx=cos(player.angle), pdy=sin(player.angle)
-num ax=px+pdx*punch_reach, ay=py+pdy*punch_reach
-// Цвет всегда чисто чёрный, прозрачность задаётся только альфа-каналом.
-line px,py,ax,ay,punch_width,aa*0x1000000
-end
-end
+// Хитбокс рисуется в то же окно, в которое действует удар.
+if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 if punch_left>0; tex player.x-hw,player.y-hw,PUNCH_TEX,sprite_a(player.angle),ps; else; tex player.x-hw,player.y-hw,ORDINARY_TEX,sprite_a(player.angle),ps; end
 end
@@ -354,10 +383,7 @@ function draw_game
 // Прицел удара бота: такая же чёрная полупрозрачная полоса, как у игрока —
 // показывает, куда попадёт удар (замах и активное окно), можно увернуться.
 draw_field
-if (enemy.state==1||enemy.state==2)&&finished==0
-num aex=enemy.x+cos(enemy.angle)*enemy_punch_reach, aey=enemy.y+sin(enemy.angle)*enemy_punch_reach
-line enemy.x,enemy.y,aex,aey,enemy_punch_width,aim_max_alpha*0x1000000
-end
+if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
 num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
 if enemy.state==1||enemy.state==2; tex enemy.x-ehw,enemy.y-ehw,PUNCH_TEX,sprite_a(enemy.angle),es
 else; tex enemy.x-ehw,enemy.y-ehw,ORDINARY_TEX,sprite_a(enemy.angle),es; end
@@ -367,16 +393,33 @@ draw_controls
 if finished==1; draw_result tr_victory(),tr_opponent_defeated(); else if finished==2; draw_result tr_defeat(),tr_opponent_won(); end
 end
 function draw_online
-draw_field; num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale; str myn=net_player_nick(net_slot()); if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end; num i=0; loop i<arr_len(remotes)/7; num b=i*7; if arr_get(remotes,b+5)==1
-num rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3), slot=arr_get(remotes,b); str rn=net_player_nick(slot)
-if arr_get(rbullets,slot*6)==1
-// Прицел удара соперника: та же чёрная полоса, что и у игрока.
-num lx2=rx+arr_get(rbullets,slot*6+3)*punch_reach, ly2=ry+arr_get(rbullets,slot*6+4)*punch_reach
-line rx,ry,lx2,ly2,punch_width,aim_max_alpha*0x1000000
-tex rx-hw,ry-hw,PUNCH_TEX,sprite_a(ra),ps
+draw_field
+num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+str myn=net_player_nick(net_slot())
+if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end
+num i=0
+loop i<max_players
+num b=i*remote_fields
+if arr_get(remotes,b+5)==1
+num rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3), slot=i, rb=slot*punch_fields
+str rn=net_player_nick(slot)
+if arr_get(remote_punches,rb)==1
+// Тот же helper, что у игрока: чёрный хитбокс и точно такое же активное окно.
+num px=arr_get(remote_punches,rb+1), py=arr_get(remote_punches,rb+2), pdx=arr_get(remote_punches,rb+3), pdy=arr_get(remote_punches,rb+4)
+draw_punch_box px,py,pdx,pdy,punch_reach,punch_width,1
+tex rx-hw,ry-hw,PUNCH_TEX,sprite_a(atan2(pdy,pdx)),ps
 else; tex rx-hw,ry-hw,ORDINARY_TEX,sprite_a(ra),ps; end
 if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5; end
-end; i=i+1; end; num w=screen_w/3; hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; draw_controls; draw_chat; num st=net_status(), sy=back_y+btn_h+18; if st==4; ctext tr_no_connection(),sy,0xFF8A80; ctext tr_reconnecting(),sy+32,0xFFF176; else if st==1; ctext tr_connecting(),sy,0xFFF176; end; if finished==2; draw_result tr_defeat(),tr_you_were_defeated(); end
+end
+i=i+1
+end
+num w=screen_w/3
+hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
+draw_controls; draw_chat
+num st=net_status(), sy=back_y+btn_h+18
+if st==4; ctext tr_no_connection(),sy,0xFF8A80; ctext tr_reconnecting(),sy+32,0xFFF176
+else if st==1; ctext tr_connecting(),sy,0xFFF176; end
+if finished==2; draw_result tr_defeat(),tr_you_were_defeated(); end
 end
 function drop_joy
 joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
@@ -385,5 +428,5 @@ function joy_touch num x, num y, num action, num id
 if action==1; if id==joy_id; drop_joy; end; return; end; if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end; if id!=joy_id; return; end; num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy); if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
 end
 function touch_game num x, num y, num action, num id
-if finished!=0; if action==0; start_transition 0; end; return; end; if action==3; aiming=0; aim_id=-1; drop_joy; return; end; if game_state==5&&touch_chat(x,y,action)==1; return; end; if back_hit(x,y)==1&&action!=2; start_transition 0; return; end; if chat_open==1; return; end; if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aiming=1; aim_id=id; return; end; if action==1&&id==aim_id; aiming=0; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end; joy_touch x,y,action,id
+if finished!=0; if action==0; start_transition 0; end; return; end; if action==3; aim_id=-1; drop_joy; return; end; if game_state==5&&touch_chat(x,y,action)==1; return; end; if back_hit(x,y)==1&&action!=2; start_transition 0; return; end; if chat_open==1; return; end; if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aim_id=id; return; end; if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end; joy_touch x,y,action,id
 end

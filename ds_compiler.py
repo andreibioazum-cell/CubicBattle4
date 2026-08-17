@@ -3,16 +3,16 @@ TYPES={'num':'double','str':'const char*','col':'uint32_t','arr':'DSArray*'}
 BUILTINS=frozenset({
     'rect','roundrect','circle','ring','line','tex','text','text_scaled','text_ink_width','text_ink_height','text_ink_top','png_load',
     'sqrt','sin','cos','atan2','floor','rand',
-    'net_connect','net_disconnect','net_publish','net_publish_bullet','net_status','net_slot','net_count',
-    'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive',
-    'net_player_bullet_active','net_player_bullet_x','net_player_bullet_y','net_player_bullet_dx','net_player_bullet_dy','net_player_bullet_shot','net_player_bullet_tr','net_player_nick',
-    'net_chat_send','net_chat_count','net_chat_text','net_chat_uid','net_chat_time',
-    'net_set_data_path','net_autologin','net_set_nick','net_login_status','net_login_nick',
-    'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_visible','keyboard_enter_pressed','keyboard_type','keyboard_backspace',
+    'net_connect','net_disconnect','net_publish','net_publish_punch','net_status','net_slot',
+    'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive','net_player_nick',
+    'net_player_punch_x','net_player_punch_y','net_player_punch_dx','net_player_punch_dy','net_player_punch',
+    'net_chat_send','net_chat_count','net_chat_text','net_chat_uid',
+    'net_autologin','net_set_nick','net_login_status','net_login_nick',
+    'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_enter_pressed','keyboard_type',
     'str_len','str_eq',
     'ds_log','console_count','console_line','console_type','console_clear',
-    'arr_new','arr_push','arr_pop','arr_get','arr_set','arr_len','arr_clear','arr_free',
-    'clamp','lerp','dist','now'
+    'arr_new','arr_push','arr_get','arr_set','arr_len','arr_clear',
+    'clamp','lerp','dist'
 })
 ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy'}
 STR_BUILTINS=frozenset({'console_line','keyboard_get_text','net_chat_text','net_chat_uid','net_login_nick','net_player_nick'})
@@ -88,8 +88,6 @@ class DimScriptCompiler:
                     for raw in f:
                         line=strip_comment(raw).strip()
                         if not line: continue
-                        if line[0]=='c' and len(line)>1 and line[1] in ' \t"':
-                            self.lines.append(line); continue
                         self.lines.extend(q for q in map(str.strip,split_top(line,';')) if q)
             except OSError as e: self._error(f"cannot read '{p}': {e}"); return False
         return True
@@ -242,13 +240,6 @@ class DimScriptCompiler:
     def _out(self,s): self.output.append('    '*self.indent+s)
     def _emit(self,s): self.output.append(s)
     def _emit_line(self,line):
-        if line and line[0]=='c' and len(line)>1 and line[1] in ' \t"':
-            raw=line[1:].strip()
-            if raw.startswith('"') and raw.endswith('"') and len(raw)>=2:
-                self._out(raw[1:-1].replace('\\"', '"').replace('\\\\','\\'))
-            elif raw:
-                self._out(raw if raw.endswith((';','{','}')) else raw+';')
-            return
         if line=='end':
             if not self.blocks: self._error("unexpected 'end'"); return
             self.blocks.pop(); self.indent-=1; self._out('}'); return
