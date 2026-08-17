@@ -12,3 +12,4 @@ auth.dat
 test/net_test.c
 test/game_test
 test/shot_*.bmp
+test/ai_sim
