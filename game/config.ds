@@ -13,7 +13,14 @@ num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration
 // дальность удара игрока и стрейфит, вместо того чтобы стоять под ударами).
 // enemy_cooldown_min/max — случайная перезарядка удара бота: каждый раз новое
 // значение в диапазоне, но не быстрее enemy_cooldown_min (0.1 с).
-num enemy_attack_distance=100, enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.07, enemy_lock_time=0.04, enemy_punch_time=0.16, enemy_recovery=0, enemy_cooldown_min=0.1, enemy_cooldown_max=0.4, enemy_damage=1, enemy_prediction=0.18, enemy_first_delay=0.45, enemy_dodge_time=0.24, enemy_dodge_cooldown=0.8, enemy_reaction=0.06, enemy_think_min=0.18, enemy_think_max=0.36
+num enemy_attack_distance=100, enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.07, enemy_lock_time=0.04, enemy_punch_time=0.16, enemy_recovery=0.05, enemy_cooldown_min=0.09, enemy_cooldown_max=0.26, enemy_damage=1, enemy_prediction=0.18, enemy_first_delay=0.45, enemy_dodge_time=0.2, enemy_dodge_cooldown=0.6, enemy_reaction=0.06, enemy_think_min=0.04, enemy_think_max=0.12
+// Новый «мозг» бота: enemy_lead — на сколько секунд вперёд он упреждает удар
+// (замах + половина активного окна), enemy_hit_margin — запас по дальности,
+// чтобы удар гарантированно доставал, enemy_close_gain — резкость подхода к
+// нужной дистанции, enemy_flank_time — как часто он перезаходит с фланга,
+// enemy_still_speed — порог «игрок стоит», enemy_punish_react — задержка,
+// с которой бот замечает промах игрока и идёт наказывать.
+num enemy_lead=0.15, enemy_hit_margin=12, enemy_close_gain=4.5, enemy_flank_time=0.9, enemy_still_speed=25, enemy_punish_react=0.05
 // Экран ника: вход в онлайн спрашивает только ник, без пароля и регистрации.
 // login_field — активное поле (всегда 1), login_status: 0=идл, 5=неверный ник,
 // login_after — куда перейти после ника (0=лобби, 5=онлайн).
