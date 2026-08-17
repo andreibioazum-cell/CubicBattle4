@@ -6,14 +6,17 @@
 // enemy_cooldown_min..max, чтобы ритм боя не был предсказуемым. Сила бота — не в
 // цифрах, а в поведении: он держит дистанцию, отходит после размена и
 // уклоняется от удара игрока (dodge), как живой соперник.
-num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=170, bot_strafe_speed=96, bot_dodge_speed=330, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_in=0.05, aim_fade_out=0.1, aim_max_alpha=102
-// Поведение бота: enemy_attack_distance — дистанция, с которой он бьёт;
-// enemy_dodge_time/cooldown — окно и перезарядка уклонения от удара игрока;
+num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=170, bot_strafe_speed=96, bot_dodge_speed=330, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_out=0.1, aim_max_alpha=102
+// Онлайн: в remotes по 10 чисел, в remote_punches по 6. Координаты соперника
+// плавно догоняют сетевую цель; большой скачок считается телепортом.
+num remote_fields=10, punch_fields=6, remote_smooth=14, remote_snap=220
+// Поведение бота: enemy_dodge_time/cooldown — окно и перезарядка
+// уклонения от удара игрока;
 // enemy_think_min/max — случайная пауза между заходами (бот отходит за
 // дальность удара игрока и стрейфит, вместо того чтобы стоять под ударами).
 // enemy_cooldown_min/max — случайная перезарядка удара бота: каждый раз новое
 // значение в диапазоне, но не быстрее enemy_cooldown_min (0.1 с).
-num enemy_attack_distance=100, enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.07, enemy_lock_time=0.04, enemy_punch_time=0.16, enemy_recovery=0.05, enemy_cooldown_min=0.09, enemy_cooldown_max=0.26, enemy_damage=1, enemy_prediction=0.18, enemy_first_delay=0.45, enemy_dodge_time=0.2, enemy_dodge_cooldown=0.6, enemy_reaction=0.06, enemy_think_min=0.04, enemy_think_max=0.12
+num enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.07, enemy_lock_time=0.04, enemy_punch_time=0.16, enemy_recovery=0.05, enemy_cooldown_min=0.09, enemy_cooldown_max=0.26, enemy_damage=1, enemy_first_delay=0.45, enemy_dodge_time=0.2, enemy_dodge_cooldown=0.6, enemy_reaction=0.06, enemy_think_min=0.04, enemy_think_max=0.12
 // Новый «мозг» бота: enemy_lead — на сколько секунд вперёд он упреждает удар
 // (замах + половина активного окна), enemy_hit_margin — запас по дальности,
 // чтобы удар гарантированно доставал, enemy_close_gain — резкость подхода к

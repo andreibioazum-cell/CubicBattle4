@@ -28,8 +28,12 @@
 #define BODY 1024
 #define RESP 4096
 #define CHAT_RESP 8192
-#define WRITE_TICK 50
-#define READ_TICK 50
+/* Бой обновляется часто, чат — отдельно раз в секунду. Раньше каждый цикл
+ * скачивал всю комнату вместе со всей историей чата, а потом ещё раз чат.
+ * По мере роста истории это и создавало основную часть сетевых лагов. */
+#define WRITE_TICK 60
+#define READ_TICK 60
+#define CHAT_TICK 1000
 /* Таймауты HTTP: 4 секунды вместо 2 — на мобильном интернете короткие
  * всплески задержки (DNS, переподключение к вышке) раньше выглядели как
  * «Нет соединения» у второго игрока. */
@@ -67,9 +71,15 @@ static DSThread ds_thread_start(void *(*fn)(void *), void *arg) {
 static void ds_thread_join(DSThread t) { if (t) pthread_join(t, NULL); }
 static void ds_thread_detach(DSThread t) { if (t) pthread_detach(t); }
 #endif
-typedef struct { double x,y,a,hp,alive; int online; char nick[24]; } Actor;
-typedef struct { double x,y,dx,dy,active,shot,tr; } Bullet;
-typedef struct { char uid[24]; char nick[24]; char text[CHAT_TEXT_MAX]; unsigned long ts; int valid; } ChatMsg;
+/* Удар хранится рядом с игроком. Один маленький GET /players.json теперь
+ * содержит всё, что нужно бою; история чата в этот ответ не попадает. */
+typedef struct {
+    double x,y,a,hp,alive;
+    double punch_x,punch_y,punch_dx,punch_dy,punch;
+    int online;
+    char nick[24];
+} Actor;
+typedef struct { char uid[24]; char nick[24]; char text[CHAT_TEXT_MAX]; int valid; } ChatMsg;
 static struct {
     DSThread thread, rthread; DSMutex lock;
 #ifdef __ANDROID__
@@ -77,8 +87,8 @@ static struct {
 #endif
     int run, started, slot, status;
     char base[256], room[48], uid[24];
-    Actor me; Bullet my_bullet; unsigned long seq, count;
-    Actor players[NET_SLOTS]; Bullet bullets[NET_SLOTS];
+    Actor me; unsigned long seq, count;
+    Actor players[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
 } net = { .lock = DS_MUTEX_INIT };
 /* Пока идёт отключение (net_disconnect), HTTP-запросы используют короткий
@@ -429,61 +439,50 @@ static void json_escape(const char *src, char *dst, size_t cap){
     dst[o]='\0';
 }
 static int push_state(void) {
-    Actor a; Bullet b; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
-    lock(); a=net.me; b=net.my_bullet; slot=net.slot; seq=++net.seq; unlock();
+    Actor a; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
+    lock(); a=net.me; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
     json_escape(a.nick,enick,sizeof(enick));
-    snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
-    snprintf(body,sizeof(body),"{\"players/%d\":{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"angle\":%.4f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu},\"bullets/%d\":{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}}",
-        slot,net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
-        slot,safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
-    int c = http("PATCH",url,body,NULL,0);
+    snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
+    /* Пять знаков у координат дают субпиксельную точность. Старые %.2f
+     * округляли движение до скачков примерно по 13 px на широком экране. */
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f}",
+        net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
+        safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch));
+    int c = http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d (room write denied? check Firebase rules)", c);
     return c == 200;
 }
+
+/* Только чат отправляется отдельной фоновой задачей. Удар больше не создаёт
+ * по потоку на каждый тап и не может перезаписать новое состояние старым. */
 typedef struct { char url[URL]; char body[BODY*2]; } HttpJob;
 static void *http_post_job(void *arg) {
     HttpJob *j = (HttpJob*)arg;
     if (j) { http("POST", j->url, j->body, NULL, 0); free(j); }
     return NULL;
 }
-static void *http_put_job(void *arg) {
-    HttpJob *j = (HttpJob*)arg;
-    if (j) { http("PUT", j->url, j->body, NULL, 0); free(j); }
-    return NULL;
-}
 #ifdef _WIN32
-static void *http_post_job(void *arg);
-static void *http_put_job(void *arg);
 static unsigned __stdcall win_http_post(void *arg) { http_post_job(arg); return 0; }
-static unsigned __stdcall win_http_put(void *arg) { http_put_job(arg); return 0; }
 #endif
-static void http_async(int kind, const char *url, const char *body) {
+static void http_post_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
     snprintf(j->url, sizeof(j->url), "%s", url);
     snprintf(j->body, sizeof(j->body), "%s", body);
 #ifdef _WIN32
-    t = ds_thread_start(kind == 1 ? win_http_post : win_http_put, j);
+    t = ds_thread_start(win_http_post, j);
 #else
-    t = ds_thread_start(kind == 1 ? http_post_job : http_put_job, j);
+    t = ds_thread_start(http_post_job, j);
 #endif
     if (t) { ds_thread_detach(t); return; }
     free(j);
 }
-static void push_bullet_only(void){
-    Bullet b; int slot; char url[URL], body[BODY];
-    lock(); b=net.my_bullet; slot=net.slot; unlock();
-    if(slot<0) return;
-    snprintf(url,sizeof(url),"%s/rooms/%s/bullets/%d.json",net.base,net.room,slot);
-    snprintf(body,sizeof(body),"{\"x\":%.2f,\"y\":%.2f,\"dx\":%.4f,\"dy\":%.4f,\"active\":%.0f,\"shot\":%.0f,\"tr\":%.1f}",
-        safe(b.x),safe(b.y),safe(b.dx),safe(b.dy),safe(b.active),safe(b.shot),safe(b.tr));
-    http_async(0, url, body);
-}
 static int pull_state(char *resp,size_t cap) {
     char url[URL];
-    snprintf(url,sizeof(url),"%s/rooms/%s.json",net.base,net.room);
+    /* Важно: читаем только players, а не всю комнату с растущим чатом. */
+    snprintf(url,sizeof(url),"%s/rooms/%s/players.json",net.base,net.room);
     int c = http("GET",url,NULL,resp,cap);
     if (c != 200 && net_log_ok()) LOGERR("pull state: HTTP %d", c);
     return c == 200;
@@ -543,7 +542,6 @@ const char *net_login_nick(void) {
 static void release_slot(void) {
     int slot; char url[URL]; lock(); slot=net.slot; net.slot=-1; unlock(); if(slot<0)return;
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
-    snprintf(url,sizeof(url),"%s/rooms/%s/bullets/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
 }
 static int claim_slot(void) {
     static unsigned long seen_seq[NET_SLOTS]; static long long seen_at[NET_SLOTS]; static char seen_uid[NET_SLOTS][24];
@@ -571,7 +569,7 @@ static int claim_slot(void) {
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
-            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0}",net.uid,enick);
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0}",net.uid,enick);
         }
         code=http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
@@ -581,13 +579,15 @@ static int claim_slot(void) {
 }
 static void read_players(const char *resp) {
     static unsigned long lseq[NET_SLOTS]; static long long lch[NET_SLOTS];
-    Actor ps[NET_SLOTS]; Bullet bs[NET_SLOTS]; long long t=now_ms(); int local,count=0,slot;
-    memset(ps,0,sizeof(ps)); memset(bs,0,sizeof(bs));
+    Actor ps[NET_SLOTS]; long long t=now_ms(); int local,count=0,slot;
+    memset(ps,0,sizeof(ps));
     lock(); local=net.slot; unlock();
     for(slot=0;slot<NET_SLOTS;slot++) {
         char bp[24],p[40],uid[24]; unsigned long sq; int online;
-        if(slot==local) { lock(); ps[slot]=net.me; bs[slot]=net.my_bullet; ps[slot].online=local>=0; unlock(); if(local>=0)count++; continue; }
-        snprintf(bp,sizeof(bp),"players/%d",slot); snprintf(p,sizeof(p),"%s/uid",bp); strv(resp,p,uid,sizeof(uid));
+        if(slot==local) { lock(); ps[slot]=net.me; ps[slot].online=local>=0; unlock(); if(local>=0)count++; continue; }
+        /* Ответ уже начинается с players, поэтому путь короче: "1/x", а не
+         * "players/1/x". Это также не даёт чату попасть в боевой ответ. */
+        snprintf(bp,sizeof(bp),"%d",slot); snprintf(p,sizeof(p),"%s/uid",bp); strv(resp,p,uid,sizeof(uid));
         if(!uid[0]||!strcmp(uid,net.uid)){ lseq[slot]=0; lch[slot]=0; continue; }
         snprintf(p,sizeof(p),"%s/seq",bp); sq=(unsigned long)num(resp,p,0);
         if(sq!=lseq[slot]){ lseq[slot]=sq; lch[slot]=t; } else if(!lch[slot]) lch[slot]=t;
@@ -600,18 +600,14 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/angle",bp); ps[slot].a=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/hp",bp); ps[slot].hp=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/alive",bp); ps[slot].alive=num(resp,p,0);
-        ps[slot].online=1;
-        snprintf(bp,sizeof(bp),"bullets/%d",slot);
-        snprintf(p,sizeof(p),"%s/x",bp); bs[slot].x=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/y",bp); bs[slot].y=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/dx",bp); bs[slot].dx=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/dy",bp); bs[slot].dy=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/active",bp); bs[slot].active=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/shot",bp); bs[slot].shot=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/tr",bp); bs[slot].tr=num(resp,p,0);
-        count++;
+        snprintf(p,sizeof(p),"%s/px",bp); ps[slot].punch_x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/py",bp); ps[slot].punch_y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/pdx",bp); ps[slot].punch_dx=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/pdy",bp); ps[slot].punch_dy=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/punch",bp); ps[slot].punch=num(resp,p,0);
+        ps[slot].online=1; count++;
     }
-    lock(); memcpy(net.players,ps,sizeof(ps)); memcpy(net.bullets,bs,sizeof(bs)); net.count=count; unlock();
+    lock(); memcpy(net.players,ps,sizeof(ps)); net.count=count; unlock();
 }
 static void parse_and_store_chat(const char *json){
     if(!json || !*json) return;
@@ -686,16 +682,9 @@ static void parse_and_store_chat(const char *json){
             }
         }
         text[oi]='\0';
-        unsigned long ts=0;
-        const char *ts_key=strstr(q2, "\"ts\"");
-        if(ts_key && (!next_uid || ts_key<next_uid)){
-            const char *tc=strchr(ts_key, ':');
-            if(tc){ ts=strtoul(tc+1,NULL,10); }
-        }
         strncpy(tmp[tmp_cnt].uid, uid, sizeof(tmp[tmp_cnt].uid)-1);
         strncpy(tmp[tmp_cnt].nick, nick, sizeof(tmp[tmp_cnt].nick)-1);
         strncpy(tmp[tmp_cnt].text, text, sizeof(tmp[tmp_cnt].text)-1);
-        tmp[tmp_cnt].ts=ts;
         tmp[tmp_cnt].valid=1;
         tmp_cnt++;
         p=tq2+1;
@@ -733,7 +722,7 @@ static void *thread_main(void *arg) {
              * мобильном интернете 2-3 случайных таймаута больше не рисуют
              * «Нет соединения», подключение просто продолжается. */
             if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot in room '%s'", net.room);} sleep_ms(500); continue; }
-            lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.bullets[slot]=net.my_bullet; net.players[slot].online=1; unlock(); fails=0;
+            lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.players[slot].online=1; unlock(); fails=0;
             LOG("slot %d claimed", (int)net.slot);
         }
         if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push player state");} sleep_ms(300); continue; }
@@ -743,15 +732,20 @@ static void *thread_main(void *arg) {
     release_slot(); status(NET_OFFLINE); return NULL;
 }
 static void *reader_thread(void *arg) {
-    char resp[RESP];
-    char chat_resp[CHAT_RESP];
+    char resp[RESP], chat_resp[CHAT_RESP];
+    long long next_chat=0;
     (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
         lock(); slot=net.slot; unlock();
         if(slot<0){ sleep_ms(50); continue; }
         if(pull_state(resp,sizeof(resp))) read_players(resp);
-        if(pull_chat(chat_resp,sizeof(chat_resp))) parse_and_store_chat(chat_resp);
+        /* Сообщения не влияют на бой, поэтому нет смысла скачивать их 16 раз
+         * в секунду. Так редкий запрос чата не забивает канал позиций. */
+        if(start>=next_chat) {
+            if(pull_chat(chat_resp,sizeof(chat_resp))) parse_and_store_chat(chat_resp);
+            next_chat=now_ms()+CHAT_TICK;
+        }
         long long spent=now_ms()-start; if(spent<READ_TICK)sleep_ms((int)(READ_TICK-spent));
     }
     return NULL;
@@ -772,7 +766,7 @@ static void make_uid(void) {
 void net_connect(const char *url,const char *room) {
     size_t n;
     if(net.run||!url||!*url)return;
-    memset(&net.me,0,sizeof(net.me)); memset(&net.my_bullet,0,sizeof(net.my_bullet)); memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
+    memset(&net.me,0,sizeof(net.me)); memset(net.players,0,sizeof(net.players));
     memset(net.chats,0,sizeof(net.chats));
     net.count=0; net.chat_count=0; net.slot=-1; net.seq=0;
     snprintf(net.base,sizeof(net.base),"%s",url); n=strlen(net.base); while(n&&net.base[n-1]=='/')net.base[--n]=0;
@@ -806,19 +800,22 @@ void net_disconnect(void) {
     net_fast = 1;
     net.run=0; ds_thread_join(net.thread); ds_thread_join(net.rthread);
     net_fast = 0;
-    net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players)); memset(net.bullets,0,sizeof(net.bullets));
+    net.status=NET_OFFLINE; net.slot=-1; net.count=0; memset(net.players,0,sizeof(net.players));
 }
 void net_publish(double x,double y,double a,double hp,double alive) {
     if(!net.started) return;
     lock(); net.me.x=x; net.me.y=y; net.me.a=a; net.me.hp=hp; net.me.alive=alive;
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; } unlock();
 }
-void net_publish_bullet(double x,double y,double dx,double dy,double active,double shot,double tr) {
+void net_publish_punch(double x,double y,double dx,double dy,double punch) {
     if(!net.started) return;
-    lock(); net.my_bullet.x=x; net.my_bullet.y=y; net.my_bullet.dx=dx; net.my_bullet.dy=dy; net.my_bullet.active=active; net.my_bullet.shot=shot; net.my_bullet.tr=tr; if(net.slot>=0)net.bullets[net.slot]=net.my_bullet; unlock();
-    if(active>0.5){
-        push_bullet_only();
-    }
+    /* punch только растёт. Получателю достаточно заметить новое число: даже
+     * медленный GET не пропустит короткий флаг active=1, как было раньше. */
+    lock();
+    net.me.punch_x=x; net.me.punch_y=y;
+    net.me.punch_dx=dx; net.me.punch_dy=dy; net.me.punch=punch;
+    if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
+    unlock();
 }
 void net_chat_send(const char *text){
     if(!net.started || !text || !*text) return;
@@ -828,8 +825,8 @@ void net_chat_send(const char *text){
     json_escape(text, esc, sizeof(esc));
     lock(); nick = net.me.nick[0] ? net.me.nick : net.uid; json_escape(nick, enick, sizeof(enick)); unlock();
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json",net.base,net.room);
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"text\":\"%s\",\"ts\":%lld}",net.uid,enick,esc,(long long)now_ms());
-    http_async(1, url, body);
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"text\":\"%s\"}",net.uid,enick,esc);
+    http_post_async(url, body);
     LOG("chat send %s",text);
 }
 double net_chat_count(void){ double v; lock(); v=net.chat_count; unlock(); return v; }
@@ -858,11 +855,6 @@ const char* net_chat_uid(double idx){
     unlock();
     return s_chat_uid_ret;
 }
-double net_chat_time(double idx){
-    int i=(int)idx; double v=0;
-    lock(); if(i>=0 && i<net.chat_count) v=(double)net.chats[i].ts; unlock();
-    return v;
-}
 static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
@@ -886,11 +878,9 @@ READER(net_player_y, net.players[i].y)
 READER(net_player_angle, net.players[i].a)
 READER(net_player_hp, net.players[i].hp)
 READER(net_player_alive, net.players[i].alive)
-READER(net_player_bullet_active, net.bullets[i].active)
-READER(net_player_bullet_x, net.bullets[i].x)
-READER(net_player_bullet_y, net.bullets[i].y)
-READER(net_player_bullet_dx, net.bullets[i].dx)
-READER(net_player_bullet_dy, net.bullets[i].dy)
-READER(net_player_bullet_shot, net.bullets[i].shot)
-READER(net_player_bullet_tr, net.bullets[i].tr)
+READER(net_player_punch_x, net.players[i].punch_x)
+READER(net_player_punch_y, net.players[i].punch_y)
+READER(net_player_punch_dx, net.players[i].punch_dx)
+READER(net_player_punch_dy, net.players[i].punch_dy)
+READER(net_player_punch, net.players[i].punch)
 #undef READER

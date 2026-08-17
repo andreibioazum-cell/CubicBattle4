@@ -17,13 +17,6 @@ if str_len(chat_input)==0; return; end
 net_chat_send chat_input; ds_log "chat: %s",chat_input
 chat_input=""; keyboard_clear
 end
-function uid_short num idx
-// net_chat_uid возвращает ник, а для старых сообщений — сокращённый технический uid.
-c static char ub[20]
-c { const char *u = net_chat_uid(idx); int n = 0; while (u && u[n] && n < 16) { ub[n] = u[n]; n++; } ub[n] = 0; }
-str s=ub
-return s
-end
 function draw_chat
 if game_state!=5; return; end
 if chat_open==0
@@ -47,7 +40,8 @@ num idx=start, yy=ly
 loop idx<total
 if yy+line_h>iy-8; idx=total
 else
-str line=uid_short(idx)+": "+net_chat_text(idx)
+// Для новых сообщений здесь ник, для старых — короткий технический uid.
+str line=net_chat_uid(idx)+": "+net_chat_text(idx)
 text_scaled line,lx,yy,0xE0E0FF,0.5; yy=yy+line_h; idx=idx+1
 end
 end

@@ -22,9 +22,9 @@ ETAG_COUNTER = [0]
 # Seed: a remote player in slot 1 so the game exercises read_remotes/draw nick.
 DB["rooms"]["main"]["players"] = {
     "1": {"uid": "00000000000000aa", "nick": "BotRival", "x": 0.5, "y": 0.5,
-          "angle": 1.2, "hp": 10, "alive": 1, "seq": 100},
+          "angle": 1.2, "hp": 10, "alive": 1, "seq": 100,
+          "px": 0.5, "py": 0.5, "pdx": 1, "pdy": 0, "punch": 100},
 }
-DB["rooms"]["main"]["bullets"] = {}
 
 
 def deep_get(node, parts):

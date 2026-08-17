@@ -4,7 +4,6 @@
 #ifndef _WIN32
 #include <pthread.h>
 #endif
-#include <time.h>
 #define DS_ERROR_MESSAGE_SIZE 1024
 #define DS_CONSOLE_MAX 256
 #define DS_CONSOLE_LINE_MAX 192
@@ -227,10 +226,6 @@ void arr_push(DSArray* a, double v) {
     }
     a->data[a->len++] = v;
 }
-double arr_pop(DSArray* a) {
-    if (!a || a->len==0) return 0;
-    return a->data[--a->len];
-}
 double arr_get(DSArray* a, double idx) {
     if (!a) return 0;
     long i = (long)idx;
@@ -249,21 +244,9 @@ void arr_set(DSArray* a, double idx, double v) {
 double arr_len(DSArray* a) { return a ? (double)a->len : 0; }
 void arr_clear(DSArray* a) { if (a) a->len=0; }
 void arr_free(DSArray* a) { if (!a) return; free(a->data); free(a); }
-static long long now_ms(void){
-#ifdef _WIN32
-    return (long long)GetTickCount64();
-#else
-    struct timespec ts;
-#ifdef CLOCK_MONOTONIC
-    if (clock_gettime(CLOCK_MONOTONIC,&ts)==0) return (long long)ts.tv_sec*1000 + ts.tv_nsec/1000000;
-#endif
-    return (long long)time(NULL)*1000;
-#endif
-}
 double clamp(double v, double lo, double hi){ if(v<lo) return lo; if(v>hi) return hi; return v; }
 double lerp(double a, double b, double t){ return a + (b-a)*t; }
 double dist(double x1, double y1, double x2, double y2){ double dx=x2-x1, dy=y2-y1; return sqrt(dx*dx+dy*dy); }
-double now(void){ return now_ms()/1000.0; }
 double str_len(const char *s){ return s ? (double)strlen(s) : 0; }
 int str_eq(const char *a, const char *b){ if(a==b) return 1; if(!a||!b) return 0; return strcmp(a,b)==0; }
 
