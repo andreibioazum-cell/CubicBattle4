@@ -12,8 +12,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Меняем пакет на com.CB4 во всех трёх местах: манифест, Java, JNI-имена в runtime.c.
-    # Замена обязана затронуть runtime.c, иначе сломаются нативные вызовы клавиатуры/чата.
+    # Меняем пакет на com.CB4 во ВСЕХ трёх местах: манифест, Java и JNI-имена
+    # в runtime.c. Замена обязана затронуть runtime.c, иначе сломаются нативные
+    # вызовы клавиатуры/чата (Java_com_dimscript_gamedemo_GameActivity_*).
     - name: Rename package to com.CB4
       run: |
         sed -i 's/com\.dimscript\.gamedemo/com.CB4/g' \
@@ -59,7 +60,14 @@ jobs:
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/armeabi-v7a/libds_game.so
 
-    - name: Package APK
+    # Подпись постоянная: берём keystore из GitHub Secrets, а не генерим новый
+    # на каждом билде. Так Android ID не меняется между релизами и админ не
+    # слетает при переустановке. Схема V1+V2 подходит для Android 14.
+    - name: Decode signing keystore
+      run: |
+        echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > keystore.jks
+
+    - name: Package APK (Android 10 to 14, target API 34)
       run: |
         SDK_ROOT=$ANDROID_HOME
         BT="$SDK_ROOT/build-tools/34.0.0"
@@ -99,12 +107,15 @@ jobs:
     - name: Build Game.exe
       run: cmake --build build --config Release
 
+    # Картинки и шрифт уже внутри Game.exe (RCDATA-ресурсы) — в пакете
+    # только сам exe, без папки assets/.
     - name: Prepare Release ZIP
       shell: pwsh
       run: |
         Compress-Archive -Path build/Release/Game.exe -DestinationPath Game-Windows-PC.zip
 
-    - uses: actions/upload-artifact@v4
+    - name: Upload Full Game Windows Package
+      uses: actions/upload-artifact@v4
       with:
         name: Game-Windows-PC-Full-Package
         path: Game-Windows-PC.zip
