@@ -316,6 +316,24 @@ int main(void) {
         return 3;
     }
     printf("=== nick field accepts typing without a tap\n");
+
+    /* Клавиатуру смахнули жестом, пока поле активно (на Android именно так
+     * ломался ввод ника: флаг видимости залипал, тап клавиатуру не возвращал).
+     * Тап по полю обязан заново открыть IME и не потерять набранное. */
+    keyboard_hide();
+    run_frames(5);
+    if (keyboard_visible()) { printf("!! keyboard did not hide\n"); return 3; }
+    tap_nick();
+    run_frames(5);
+    if (!keyboard_visible()) { printf("!! tap on the field did not reopen the keyboard\n"); return 3; }
+    feed_text("StillHere");
+    run_frames(5);
+    if (!login_nick || strcmp(login_nick, "TypeMeStillHere") != 0) {
+        printf("!! typed text lost after keyboard reopen: '%s' (expected 'TypeMeStillHere')\n",
+               login_nick ? login_nick : "(null)");
+        return 3;
+    }
+    printf("=== keyboard reopen on tap keeps the typed text\n");
     keyboard_clear();
     run_frames(5);
 
