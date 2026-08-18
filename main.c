@@ -116,7 +116,8 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         int32_t action = AKeyEvent_getAction(event);
         int32_t key = AKeyEvent_getKeyCode(event);
         int32_t meta = AKeyEvent_getMetaState(event);
-        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_DOWN && keyboard_visible()) {
+        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_DOWN &&
+            (keyboard_visible() || keyboard_uses_editor())) {
             keyboard_hide();
             return 1;
         }
@@ -127,8 +128,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) return 0;
         /* Когда текст ведёт системный EditText, клавиши (в том числе Backspace)
          * должны дойти до него, иначе удаление применяется только к буферу игры,
-         * редактор остаётся со старым текстом и дописывает его к новому вводу. */
-        if (keyboard_visible() && keyboard_uses_editor()) return 0;
+         * редактор остаётся со старым текстом и дописывает его к новому вводу.
+         * Проверяем именно редактор, а не флаг видимости: на ландшафте эвристика
+         * «клавиатура видна» может ошибаться, и клавиши не должны теряться. */
+        if (keyboard_uses_editor()) return 0;
         return 1;
     }
     return 0;

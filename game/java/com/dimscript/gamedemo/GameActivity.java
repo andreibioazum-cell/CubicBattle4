@@ -47,6 +47,9 @@ public final class GameActivity extends NativeActivity {
     private boolean keyboardWasVisible;
     /* Читается из игрового потока: пока true, весь текст ведёт этот редактор. */
     private volatile boolean editorActive;
+    /* Видна ли IME прямо сейчас (по реальному размеру экрана в onGlobalLayout). */
+    private volatile boolean imeLooksVisible;
+    private int showAttempts;
 
     private native void nativeReplaceText(String text);
     private native void nativeSubmitText();
@@ -136,6 +139,7 @@ public final class GameActivity extends NativeActivity {
                         root.getWindowVisibleDisplayFrame(visible);
                         boolean keyboardVisible = root.getHeight() - visible.bottom
                                 > root.getHeight() * 0.15f;
+                        imeLooksVisible = keyboardVisible;
                         if (keyboardVisible) {
                             keyboardWasVisible = true;
                         } else if (keyboardWasVisible) {
@@ -160,20 +164,39 @@ public final class GameActivity extends NativeActivity {
                 getWindow().setSoftInputMode(
                         WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
                                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-                chatEditor.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (chatEditor == null) return;
-                        chatEditor.requestFocus();
-                        InputMethodManager input = (InputMethodManager)
-                                getSystemService(Context.INPUT_METHOD_SERVICE);
-                        if (input != null) {
-                            input.showSoftInput(chatEditor, InputMethodManager.SHOW_FORCED);
-                        }
-                    }
-                });
+                if (imeLooksVisible) {
+                    /* IME уже на экране: не перезапускаем её, просто держим фокус. */
+                    if (!chatEditor.hasFocus()) chatEditor.requestFocus();
+                    return;
+                }
+                showAttempts = 0;
+                requestShowWhenReady();
             }
         });
+    }
+
+    /* showSoftInput молча возвращает false, пока редактор не стал целью IME:
+     * фокус и input-подключение привязываются только на следующем
+     * layout-проходе после setVisibility(VISIBLE)/requestFocus. Поэтому первый
+     * запрос отложен, и пока клавиатура реально не появилась (onGlobalLayout
+     * видит уменьшившийся экран), запрос повторяется. */
+    private void requestShowWhenReady() {
+        if (chatEditor == null) return;
+        final int attempt = showAttempts++;
+        if (attempt >= 10) return;
+        chatEditor.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (chatEditor == null || !editorActive || imeLooksVisible) return;
+                if (!chatEditor.hasFocus()) chatEditor.requestFocus();
+                InputMethodManager input = (InputMethodManager)
+                        getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (input != null && input.isActive(chatEditor)) {
+                    input.showSoftInput(chatEditor, InputMethodManager.SHOW_FORCED);
+                }
+                requestShowWhenReady();
+            }
+        }, attempt == 0 ? 60 : 120);
     }
 
     /** Keeps the hidden editor in sync after the native Send button clears it. */
@@ -206,6 +229,8 @@ public final class GameActivity extends NativeActivity {
                     input.hideSoftInputFromWindow(chatEditor.getWindowToken(), 0);
                 }
                 editorActive = false;
+                imeLooksVisible = false;
+                showAttempts = 10; /* остановить незавершённые повторы показа */
                 getWindow().setSoftInputMode(
                         WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 chatEditor.clearFocus();
@@ -241,10 +266,9 @@ public final class GameActivity extends NativeActivity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus && editorActive && chatEditor != null) {
             chatEditor.requestFocus();
-            InputMethodManager input = (InputMethodManager)
-                    getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (input != null) {
-                input.showSoftInput(chatEditor, InputMethodManager.SHOW_FORCED);
+            if (!imeLooksVisible) {
+                showAttempts = 0;
+                requestShowWhenReady();
             }
         }
     }
