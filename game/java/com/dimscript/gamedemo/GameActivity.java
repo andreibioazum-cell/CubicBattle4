@@ -66,6 +66,8 @@ public final class GameActivity extends NativeActivity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
 
         chatEditor = new EditText(this);
         chatEditor.setSingleLine(true);
@@ -73,19 +75,24 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setHintTextColor(Color.TRANSPARENT);
         chatEditor.setBackgroundColor(Color.TRANSPARENT);
         chatEditor.setCursorVisible(false);
-        chatEditor.setAlpha(0.01f);
+        chatEditor.setAlpha(0.02f);
         chatEditor.setGravity(Gravity.BOTTOM | Gravity.START);
+        chatEditor.setFocusable(true);
+        chatEditor.setFocusableInTouchMode(true);
         // Никакого автодополнения и автозамены: IME больше не восстанавливает
         // только что стёртые символы и не склеивает их с новым вводом.
         chatEditor.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        chatEditor.setImeOptions(EditorInfo.IME_ACTION_SEND
-                | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        chatEditor.setImeOptions(EditorInfo.IME_ACTION_DONE
+                | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_FLAG_NO_FULLSCREEN);
         chatEditor.setFilters(new InputFilter[] { new InputFilter.LengthFilter(95) });
         chatEditor.setVisibility(View.INVISIBLE);
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(2, 2,
-                Gravity.BOTTOM | Gravity.START);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, 48,
+                Gravity.BOTTOM);
         addContentView(chatEditor, params);
 
         chatEditor.addTextChangedListener(new TextWatcher() {
@@ -146,19 +153,25 @@ public final class GameActivity extends NativeActivity {
             public void run() {
                 if (chatEditor == null) return;
                 chatEditor.setVisibility(View.VISIBLE);
+                chatEditor.bringToFront();
                 replaceEditorText(currentText);
                 chatEditor.requestFocus();
-                editorActive = nativeReady && chatEditor.hasFocus();
-                chatEditor.postDelayed(new Runnable() {
+                editorActive = true;
+                getWindow().setSoftInputMode(
+                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+                                | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                chatEditor.post(new Runnable() {
                     @Override
                     public void run() {
+                        if (chatEditor == null) return;
+                        chatEditor.requestFocus();
                         InputMethodManager input = (InputMethodManager)
                                 getSystemService(Context.INPUT_METHOD_SERVICE);
                         if (input != null) {
-                            input.showSoftInput(chatEditor, InputMethodManager.SHOW_IMPLICIT);
+                            input.showSoftInput(chatEditor, InputMethodManager.SHOW_FORCED);
                         }
                     }
-                }, 80);
+                });
             }
         });
     }
@@ -193,6 +206,8 @@ public final class GameActivity extends NativeActivity {
                     input.hideSoftInputFromWindow(chatEditor.getWindowToken(), 0);
                 }
                 editorActive = false;
+                getWindow().setSoftInputMode(
+                        WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 chatEditor.clearFocus();
                 chatEditor.setVisibility(View.INVISIBLE);
                 clearEditorText();
@@ -219,6 +234,19 @@ public final class GameActivity extends NativeActivity {
     /** Полная очистка поля, чтобы закрытая клавиатура не хранила старый текст. */
     private void clearEditorText() {
         replaceEditorText("");
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && editorActive && chatEditor != null) {
+            chatEditor.requestFocus();
+            InputMethodManager input = (InputMethodManager)
+                    getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (input != null) {
+                input.showSoftInput(chatEditor, InputMethodManager.SHOW_FORCED);
+            }
+        }
     }
 
     @Override

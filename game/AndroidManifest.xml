@@ -18,7 +18,7 @@
             android:name="com.dimscript.gamedemo.GameActivity"
             android:configChanges="orientation|keyboard|keyboardHidden|screenSize"
             android:screenOrientation="landscape"
-            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
 
             <meta-data

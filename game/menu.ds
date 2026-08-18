@@ -19,7 +19,7 @@ text tr_login_title(),24+login_ox,26,0xFFFFFF
 num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-60+login_oy
 text tr_nick(),bx+login_lab_ox,fy-login_lab,0xFFFFFF
 if login_field==1; roundrect bx,fy,bw,login_fh,14,0xFF4B2E83; else; roundrect bx,fy,bw,login_fh,14,0xFF2A2A40; end
-if str_len(login_nick)==0; text_in_field tr_nick_ph(),bx+16,fy,login_fh,0x666688,0.6; else; text_in_field login_nick,bx+16,fy,login_fh,0xFFFFFF,0.6; end
+if str_len(login_nick)==0; if login_field==1; text_in_field "|",bx+16,fy,login_fh,0xFFFFFF,0.6; else; text_in_field tr_nick_ph(),bx+16,fy,login_fh,0x666688,0.6; end; else; if login_field==1; text_in_field login_nick+"|",bx+16,fy,login_fh,0xFFFFFF,0.6; else; text_in_field login_nick,bx+16,fy,login_fh,0xFFFFFF,0.6; end; end
 num yb=fy+login_fh+40
 button tr_play(),(screen_w-btn_w)/2,yb,btn_w,btn_h
 num sy=yb+btn_h+34
@@ -41,26 +41,38 @@ li=total-1-(console_scroll+i); col=0xFF00FF00;if console_type(li)==1; col=0xFFFF
 button tr_clear(),screen_w-bw-16,by,bw,btn_h;draw_back;end
 function touch_lobby num x, num y, num action
 if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end;if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 2; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 4; return; end;if y>=screen_h/2+112&&y<=screen_h/2+192; login_after=0; start_transition 7; end;end
+function login_focus
+// Поле всегда одно: сразу берём фокус и открываем клавиатуру.
+login_field=1
+keyboard_clear
+if str_len(login_nick)>0; keyboard_type login_nick; end
+last_kb=keyboard_get_text()
+keyboard_show
+end
+function login_open
+// Экран ника: очищаем чужой текст (чат) и сразу даём писать, без лишнего тапа.
+login_field=1; login_status=0; last_kb=""; login_nick=""
+keyboard_clear; keyboard_show
+end
 function login_do
 // Никакой сети для входа не нужно: ник проверяется и сохраняется на месте.
 if net_set_nick(login_nick)==1; login_status=0; keyboard_hide; keyboard_clear; start_transition login_after
 else; login_status=5; end
 end
 function update_login
-// Синхронизируем ник с клавиатурой только когда поле активно, чтобы чужой
-// текст из чата не подставлялся сам при открытии экрана.
-if login_field==1
-str raw=keyboard_get_raw(); if str_eq(raw,last_kb)==0; last_kb=keyboard_get_text(); login_nick=last_kb; end
-end
+// Поле в фокусе с открытия экрана: каждый кадр забираем текст с клавиатуры.
+if login_field!=1; login_focus; end
+login_nick=keyboard_get_text()
 if keyboard_enter_pressed()==1; login_do; end
 end
 function touch_login num x, num y, num action
 if action!=0; return; end
 if back_hit(x,y)==1; keyboard_hide; keyboard_clear; if login_after==5; start_transition 2; else; start_transition 0; end; return; end
 num bw=screen_w-120, bx=(screen_w-bw)/2+login_ox, fy=screen_h/2-60+login_oy
-if x>=bx&&x<=bx+bw&&y>=fy&&y<=fy+login_fh; if login_field!=1; login_field=1; keyboard_clear; if str_len(login_nick)>0; keyboard_type login_nick; end; last_kb=keyboard_get_text(); end; keyboard_show; return; end
 num yb=fy+login_fh+40
 if x>=(screen_w-btn_w)/2-12&&x<=(screen_w-btn_w)/2+btn_w+12&&y>=yb-8&&y<=yb+btn_h+8; login_do; return; end
+// Тап в поле или мимо кнопок снова открывает клавиатуру, чтобы можно было писать.
+login_focus
 end
 function touch_menu num x, num y, num action
 if action!=0; return; end;if game_state==7; touch_login x,y,action; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
