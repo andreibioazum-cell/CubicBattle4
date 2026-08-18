@@ -8,14 +8,22 @@ roundrect x,y,w,h,20,0x5F10A0
 text_in_box label,x,y,w,h,0xFFFFFF,0.5
 end
 function chat_sync_input
-str raw=keyboard_get_raw()
-if str_eq(raw,chat_input)==0; chat_input=keyboard_get_text(); end
+// Всегда берём актуальный буфер клавиатуры. Раньше сравнение raw/chat_input
+// могло оставить поле пустым, если указатель на строку уже не совпадал с
+// тем, что рисует игра, хотя символы в IME уже были.
+chat_input=keyboard_get_text()
 end
 function chat_send
 chat_sync_input
 if str_len(chat_input)==0; return; end
 net_chat_send chat_input; ds_log "chat: %s",chat_input
 chat_input=""; keyboard_clear
+end
+function chat_update
+// Ввод обрабатываем в update, а не в draw: иначе Enter и текст зависят от кадра.
+if game_state!=5||chat_open==0; return; end
+chat_sync_input
+if keyboard_enter_pressed()==1; chat_send; end
 end
 function draw_chat
 if game_state!=5; return; end
@@ -48,9 +56,11 @@ end
 end
 roundrect lx,iy,lw-122,ih,10,0xFF2A2A40
 chat_sync_input
-if keyboard_enter_pressed()==1; chat_send; end
-if str_len(chat_input)==0; text_in_field tr_type_message(),lx+10,iy,ih,0x666688,0.55
-else; text_in_field chat_input,lx+10,iy,ih,0xFFFFFF,0.55; end
+str shown=chat_input
+if keyboard_visible()==1; shown=chat_input+"|"; end
+if str_len(chat_input)==0&&keyboard_visible()==0; text_in_field tr_type_message(),lx+10,iy,ih,0x666688,0.55
+else if str_len(shown)==0; text_in_field "|",lx+10,iy,ih,0xFFFFFF,0.55
+else; text_in_field shown,lx+10,iy,ih,0xFFFFFF,0.55; end
 chat_button tr_send(),lx+lw-112,iy,112,ih
 end
 function chat_hit num x, num y, num bx, num by, num bw, num bh
@@ -65,7 +75,12 @@ end
 num pw=screen_w-40, ph=screen_h-40, px=20, py=20, lx=px+16, lw=pw-32
 if chat_hit(x,y,px+pw-120,py+10,104,42)==1; chat_open=0; keyboard_hide; return 1; end
 num iy=py+ph-72, ih=52
-if chat_hit(x,y,lx,iy,lw-122,ih)==1; keyboard_show; return 1; end
+if chat_hit(x,y,lx,iy,lw-122,ih)==1
+// Повторный тап по уже открытому полю не перезапускает IME — иначе
+// composing сбрасывается и только что набранное пропадает с экрана.
+if keyboard_visible()==0; keyboard_show; end
+return 1
+end
 if chat_hit(x,y,lx+lw-112,iy,112,ih)==1; chat_send; return 1; end
 return 1
 end

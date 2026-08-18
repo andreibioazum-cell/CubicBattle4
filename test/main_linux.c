@@ -27,10 +27,11 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
+extern double player_class, azum_revived, finished;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
 extern DSArray *remotes, *remote_punches;
-extern double finished, enemy_cooldown_min, enemy_cooldown_max;
+extern double enemy_cooldown_min, enemy_cooldown_max;
 /* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
 #define ENEMY_STATE 6
@@ -225,6 +226,10 @@ static void tap_solo(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 
 static void tap_online(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 72)); }
 static void tap_back(void) { do_tap((float)(g_w - 280) / 2 + 140, 32 + 32); }
 static void tap_account(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 152)); }
+/* Вкладка классов справа сверху в лобби; карточки на экране выбора. */
+static void tap_classes_tab(void) { do_tap((float)(g_w - 106), 40.0f); }
+static void tap_class_ordinary(void) { do_tap(470.0f, 260.0f); }
+static void tap_class_azum(void) { do_tap(810.0f, 260.0f); }
 
 static void save_bmp(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -475,6 +480,45 @@ int main(void) {
                attacks, ncd, enemy_cooldown_min, enemy_cooldown_max);
     }
     tap_back(); wait_state(0, 40);
+
+    /* --- 9b. Классы: вкладка, выбор Азума, одно возрождение за бой --- */
+    tap_classes_tab();
+    if (!wait_state(8, 30)) { printf("!! classes tab did not open, state=%g\n", game_state); return 3; }
+    tap_class_azum();
+    run_frames(5);
+    if (player_class != 1) { printf("!! Azum class was not selected, class=%g\n", player_class); return 3; }
+    tap_class_ordinary();
+    run_frames(5);
+    if (player_class != 0) { printf("!! Ordinary class was not selected, class=%g\n", player_class); return 3; }
+    tap_class_azum();
+    run_frames(4);
+    tap_back();
+    if (!wait_state(0, 30)) { printf("!! did not return from classes\n"); return 3; }
+    if (player_class != 1) { printf("!! class was lost after leaving the tab\n"); return 3; }
+    printf("=== classes tab: Azum selected (frame %ld)\n", g_frame);
+
+    tap_play(); wait_state(2, 30);
+    tap_solo(); wait_state(1, 30);
+    {
+        double *pl = (double *)player;
+        pl[4] = 0;
+        run_frames(4);
+        if (azum_revived != 1 || pl[4] < 9) {
+            printf("!! Azum did not revive: revived=%g hp=%g\n", azum_revived, pl[4]);
+            return 3;
+        }
+        printf("=== Azum revived once, hp=%g\n", pl[4]);
+        pl[4] = 0;
+        run_frames(4);
+        if (finished != 2) { printf("!! Azum revived a second time, finished=%g hp=%g\n", finished, pl[4]); return 3; }
+        printf("=== second death stays dead (Azum revive is once per match)\n");
+    }
+    do_tap((float)(g_w / 2), (float)(g_h / 2));
+    wait_state(0, 40);
+    tap_classes_tab(); wait_state(8, 30);
+    tap_class_ordinary();
+    run_frames(3);
+    tap_back(); wait_state(0, 30);
 
     /* --- 10. Повторный вход в онлайн: ник уже сохранён, экран ника не нужен --- */
     tap_play(); wait_state(2, 30);

@@ -1,5 +1,46 @@
+function class_name
+if player_class==1; return tr_class_azum(); end
+return tr_class_ordinary()
+end
 function draw_lobby
-rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF;button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;button tr_account(),(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h;if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;num lw=text_ink_width(ln)*0.5;text_scaled ln,(screen_w-lw)/2,18,0xFFFFFF,0.5;end;end
+rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF
+// Вкладка классов — отдельная кнопка справа сверху, чтобы не сдвигать Play/Настройки.
+button_scaled tr_classes(),screen_w-196,16,180,48,0.6
+str cn=tr_your_class()+class_name()
+num cw=text_ink_width(cn)*0.45
+text_scaled cn,screen_w-196+(180-cw)/2,68,0xC8B8FF,0.45
+button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;button tr_account(),(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h;if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;num lw=text_ink_width(ln)*0.5;text_scaled ln,(screen_w-lw)/2,18,0xFFFFFF,0.5;end;end
+end
+function draw_class_card num x, num y, num w, num h, num cls, str title, str desc, str texname
+num sel=0; if player_class==cls; sel=1; end
+if sel==1; roundrect x-5,y-5,w+10,h+10,26,0xFFE0B0FF; end
+if cls==1; roundrect x,y,w,h,22,0xFF3A1A5C; else; roundrect x,y,w,h,22,0xFF2A2A40; end
+num ts=2.2, spr=50*ts
+tex x+(w-spr)/2,y+28,texname,0,ts
+num tw=text_ink_width(title)
+text title,x+(w-tw)/2,y+150,0xFFFFFF
+num dw=text_ink_width(desc)*0.5
+text_scaled desc,x+(w-dw)/2,y+198,0xC8C8E0,0.5
+if sel==1; button_scaled tr_class_selected(),x+24,y+h-72,w-48,48,0.55
+else; button_scaled tr_class_pick(),x+24,y+h-72,w-48,48,0.55; end
+end
+function draw_classes
+rect 0,0,screen_w,screen_h,0x1a1a2e
+num cw=300, ch=300, gap=40
+num x1=(screen_w-cw*2-gap)/2, x2=x1+cw+gap, y=back_y+btn_h+16
+draw_class_card x1,y,cw,ch,0,tr_class_ordinary(),tr_class_ordinary_desc(),ORDINARY_TEX
+draw_class_card x2,y,cw,ch,1,tr_class_azum(),tr_class_azum_desc(),AZUM_TEX
+draw_back
+end
+function touch_classes num x, num y, num action
+if action!=0; return; end
+if back_hit(x,y)==1; start_transition 0; return; end
+num cw=300, ch=300, gap=40
+num x1=(screen_w-cw*2-gap)/2, x2=x1+cw+gap, cy=back_y+btn_h+16
+if y>=cy&&y<=cy+ch
+if x>=x1&&x<=x1+cw; player_class=0; return; end
+if x>=x2&&x<=x2+cw; player_class=1; return; end
+end
 end
 function draw_modes
 rect 0,0,screen_w,screen_h,0x1a1a2e
@@ -40,10 +81,15 @@ rect 0,0,screen_w,screen_h,0xFF000000;ctext tr_console(),48,0xFF00FF00;num total
 li=total-1-(console_scroll+i); col=0xFF00FF00;if console_type(li)==1; col=0xFFFF0000; end;text_scaled console_line(li),18,cy,col,0.75;end;cy=cy+lh; i=i+1;end;num bw=(screen_w-76)/3, by=screen_h-78;button tr_up(),16,by,bw,btn_h;button tr_down(),screen_w/2-bw/2,by,bw,btn_h
 button tr_clear(),screen_w-bw-16,by,bw,btn_h;draw_back;end
 function touch_lobby num x, num y, num action
-if action!=0; return; end; num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end;if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 2; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 4; return; end;if y>=screen_h/2+112&&y<=screen_h/2+192; login_after=0; start_transition 7; end;end
+if action!=0; return; end
+if x>=screen_w-204&&x<=screen_w-8&&y>=8&&y<=72; start_transition 8; return; end
+num cx=(screen_w-btn_w)/2; if x<cx-12||x>cx+btn_w+12; return; end;if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 2; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; start_transition 4; return; end;if y>=screen_h/2+112&&y<=screen_h/2+192; login_after=0; start_transition 7; end;end
 function login_focus
 // Поле всегда одно: сразу берём фокус и открываем клавиатуру.
+// Если IME уже открыта, не чистим и не перезапускаем её — иначе набранное
+// пропадает, а на телефоне поле выглядит мёртвым.
 login_field=1
+if keyboard_visible()==1; return; end
 keyboard_clear
 if str_len(login_nick)>0; keyboard_type login_nick; end
 last_kb=keyboard_get_text()
@@ -75,7 +121,7 @@ if x>=(screen_w-btn_w)/2-12&&x<=(screen_w-btn_w)/2+btn_w+12&&y>=yb-8&&y<=yb+btn_
 login_focus
 end
 function touch_menu num x, num y, num action
-if action!=0; return; end;if game_state==7; touch_login x,y,action; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
+if action!=0; return; end;if game_state==7; touch_login x,y,action; return; end;if game_state==8; touch_classes x,y,action; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
 if x>=screen_w/2-bw/2&&x<=screen_w/2+bw/2&&y>=by&&y<=by+btn_h; console_scroll=console_scroll-10; if console_scroll<0; console_scroll=0; end; return; end;if x>=screen_w-bw-16&&x<=screen_w-16&&y>=by&&y<=by+btn_h; console_clear; console_scroll=0; end
 return;end;num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end;if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; if net_login_status()==2; start_transition 5; else; login_after=5; start_transition 7; end; return; end; if y>=screen_h/2+112&&y<=screen_h/2+192; if disco_safe==1; disco_safe=0; else; disco_safe=1; end; return; end;else if game_state==4
 num sy=screen_h/2-110;if y>=sy-8&&y<sy+72; language=0;else if y>=sy+72&&y<sy+152; language=1;else if y>=sy+152&&y<sy+232; language=2;else if y>=sy+232&&y<=sy+312; start_transition 6;end;end;end
