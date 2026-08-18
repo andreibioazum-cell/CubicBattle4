@@ -11,6 +11,16 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    # Меняем пакет на com.CB4 во всех трёх местах: манифест, Java, JNI-имена в runtime.c.
+    # Замена обязана затронуть runtime.c, иначе сломаются нативные вызовы клавиатуры/чата.
+    - name: Rename package to com.CB4
+      run: |
+        sed -i 's/com\.dimscript\.gamedemo/com.CB4/g' \
+          game/AndroidManifest.xml \
+          game/java/com/dimscript/gamedemo/GameActivity.java \
+          runtime.c
+
     - uses: android-actions/setup-android@v3
     - uses: nttld/setup-ndk@v1
       with:
@@ -49,7 +59,7 @@ jobs:
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/armeabi-v7a/libds_game.so
 
-    - name: Package APK (Android 10 to 14, target API 34)
+    - name: Package APK
       run: |
         SDK_ROOT=$ANDROID_HOME
         BT="$SDK_ROOT/build-tools/34.0.0"
@@ -59,10 +69,11 @@ jobs:
           -F unsigned.apk ./staging/
 
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
-        keytool -genkey -v -keystore debug.keystore -storepass android \
-          -alias debug -keypass android -keyalg RSA -keysize 2048 \
-          -validity 10000 -dname "CN=Debug" 2>/dev/null || true
-        "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
+        "$BT/apksigner" sign \
+          --ks keystore.jks \
+          --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+          --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
+          --key-pass pass:${{ secrets.KEY_PASSWORD }} \
           --out Game.apk aligned.apk
 
     - uses: actions/upload-artifact@v4
@@ -88,15 +99,12 @@ jobs:
     - name: Build Game.exe
       run: cmake --build build --config Release
 
-    # Картинки и шрифт уже внутри Game.exe (RCDATA-ресурсы) — в пакете
-    # только сам exe, без папки assets/.
     - name: Prepare Release ZIP
       shell: pwsh
       run: |
         Compress-Archive -Path build/Release/Game.exe -DestinationPath Game-Windows-PC.zip
 
-    - name: Upload Full Game Windows Package
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
         name: Game-Windows-PC-Full-Package
         path: Game-Windows-PC.zip
