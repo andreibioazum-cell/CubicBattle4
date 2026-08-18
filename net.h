@@ -32,6 +32,7 @@ void net_publish_punch(double x, double y, double dx, double dy, double punch);
 double net_status(void);
 double net_slot(void);
 double net_count(void);
+double net_event(void); /* 1 — ивент «диско» включён, 0 — ивента нет */
 double net_player_online(double slot);
 double net_player_x(double slot);
 double net_player_y(double slot);

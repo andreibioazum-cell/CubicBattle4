@@ -15,6 +15,10 @@
           ".read": true,
           ".write": true,
           ".indexOn": ".key"
+        },
+        "event": {
+          ".read": true,
+          ".write": true
         }
       }
     }

@@ -334,6 +334,7 @@ i=i+1
 end
 end
 function update_online
+update_disco
 if online_ready==0&&net_slot()>=0; place_online; end
 read_remotes; smooth_remotes; update_aim
 if finished!=0||online_ready==0; return; end
@@ -392,8 +393,37 @@ hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,
 draw_controls
 if finished==1; draw_result tr_victory(),tr_opponent_defeated(); else if finished==2; draw_result tr_defeat(),tr_opponent_won(); end
 end
+function disco_color num phase
+// Цвет для диско-пульсации: перелив RGB по синусоидам. Выражение проходит
+// напрямую в C, поэтому здесь работают сдвиги и (int)-приведения. Альфа
+// (старший байт) пульсирует, чтобы экран мигал, а не просто лил один цвет.
+num r=127+127*sin(phase)
+num g=127+127*sin(phase+2.094)
+num b=127+127*sin(phase+4.188)
+num a=55+90*(0.5+0.5*sin(disco_t*8))
+return ((((int)a)<<24)|(((int)r)<<16)|(((int)g)<<8)|((int)b))
+end
+function draw_disco
+// «Диско»-ивент: всё мигает и переливается. Если включён безопасный для
+// эпилептиков режим (disco_safe==1) или ивента нет (event_mode==0) — ничего
+// не моргает, чтобы люди не ослепли.
+if event_mode==0||disco_safe==1; return; end
+num col=disco_color(disco_t*9)
+rect 0,0,screen_w,screen_h,col
+num ct=disco_t*6
+num r1=70+50*sin(ct), r2=70+50*sin(ct+3.14)
+ring screen_w/2,screen_h/2,r1,8,0xA0FFFFFF
+ring screen_w/2,screen_h/2,r2,8,0xA000FFFF
+circle screen_w/2,screen_h/2,30,0xA0FF00FF
+end
+function update_disco
+// Таймер диско двигается только пока ивент активен и не выключен защитой.
+event_mode=net_event()
+if event_mode==1&&disco_safe==0; disco_t=disco_t+dt; else; disco_t=0; end
+end
 function draw_online
 draw_field
+draw_disco
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str myn=net_player_nick(net_slot())
 if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end
