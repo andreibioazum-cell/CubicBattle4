@@ -16,7 +16,7 @@ BUILTINS=frozenset({
     'clamp','lerp','dist'
 })
 ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy'}
-STR_BUILTINS=frozenset({'console_line','keyboard_get_text','net_chat_text','net_chat_uid','net_login_nick','net_player_nick'})
+STR_BUILTINS=frozenset({'console_line','keyboard_get_text','keyboard_get_raw','net_chat_text','net_chat_uid','net_login_nick','net_player_nick'})
 _NAME=r'[A-Za-z_]\w*'
 _FUNC_RE=re.compile(r'^function\s+('+_NAME+r')(?:\s+(.*))?$')
 _NUM_RE=re.compile(r'^(?:[-+]?\d+(?:\.\d+)?|0[xX][0-9a-fA-F]+)$')

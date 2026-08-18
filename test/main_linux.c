@@ -302,6 +302,18 @@ int main(void) {
     tap_online(); wait_state(7, 30);
     printf("=== nick screen opened (frame %ld)\n", g_frame);
 
+    /* Поле в фокусе сразу: писать можно без тапа по нему. */
+    feed_text("TypeMe");
+    run_frames(5);
+    if (!login_nick || strcmp(login_nick, "TypeMe") != 0) {
+        printf("!! cannot type into nick field without tapping it: '%s'\n",
+               login_nick ? login_nick : "(null)");
+        return 3;
+    }
+    printf("=== nick field accepts typing without a tap\n");
+    keyboard_clear();
+    run_frames(5);
+
     /* --- 2. Короткий ник отклоняется на месте, без сети --- */
     fill_field(tap_nick, "ab");
     tap_nick_go();
