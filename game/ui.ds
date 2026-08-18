@@ -22,6 +22,10 @@ end
 function button str label, num x, num y, num w, num h
 roundrect x,y,w,h,20,0x5F10A0; text_in_box label,x,y,w,h,0xFFFFFF,1
 end
+function button_scaled str label, num x, num y, num w, num h, num scale
+// Та же кнопка, но текст меньше — для длинных подписей, чтобы не вылезали за рамки.
+roundrect x,y,w,h,20,0x5F10A0; text_in_box label,x,y,w,h,0xFFFFFF,scale
+end
 function hud_bar num bx, num by, num w, num h, num cur, num max, col color, num from_right
 roundrect bx,by,w,h,h/2,0xDD171923; num shown=cur; if shown<0; shown=0; end; num fill_w=(w-8)*shown/max
 if fill_w>0; if from_right==1; roundrect bx+w-4-fill_w,by+4,fill_w,h-8,(h-8)/2,color; else; roundrect bx+4,by+4,fill_w,h-8,(h-8)/2,color; end; end

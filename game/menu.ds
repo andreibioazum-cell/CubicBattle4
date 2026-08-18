@@ -6,9 +6,10 @@ rect 0,0,screen_w,screen_h,0x1a1a2e
 button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h
 button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h
 // Третья кнопка в выборе режима: защита для эпилептиков (выключает мигание).
+// Текст поменьше обычного, чтобы целиком помещался в кнопку размером с «Онлайн».
 str lbl=tr_disco_epilepsy()+" ("+tr_mode_off()+")"
 if disco_safe==1; lbl=tr_disco_epilepsy()+" ("+tr_mode_on()+")"; end
-button lbl,(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h
+button_scaled lbl,(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h,0.7
 draw_back;end
 function draw_login
 // Экран входа в онлайн: спрашиваем ТОЛЬКО ник — без пароля и регистрации.
