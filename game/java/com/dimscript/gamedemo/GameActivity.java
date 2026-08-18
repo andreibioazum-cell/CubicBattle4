@@ -81,29 +81,31 @@ public final class GameActivity extends NativeActivity {
 
         chatEditor = new EditText(this);
         chatEditor.setSingleLine(true);
+        // Прозрачный текст, но alpha=1: при alpha=0 Gboard/системная IME
+        // считают поле мёртвым и не отдают символы (даже латиницу).
         chatEditor.setTextColor(Color.TRANSPARENT);
         chatEditor.setHintTextColor(Color.TRANSPARENT);
         chatEditor.setBackgroundColor(Color.TRANSPARENT);
         chatEditor.setCursorVisible(false);
-        chatEditor.setAlpha(0f);
-        chatEditor.setGravity(Gravity.BOTTOM | Gravity.START);
+        chatEditor.setAlpha(1f);
+        chatEditor.setGravity(Gravity.TOP | Gravity.START);
         chatEditor.setFocusable(true);
         chatEditor.setFocusableInTouchMode(true);
-        // Никакого автодополнения и автозамены: IME больше не восстанавливает
-        // только что стёртые символы и не склеивает их с новым вводом.
+        chatEditor.setClickable(false);
+        chatEditor.setLongClickable(false);
         chatEditor.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         chatEditor.setImeOptions(EditorInfo.IME_ACTION_DONE
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_FLAG_NO_FULLSCREEN);
         chatEditor.setFilters(new InputFilter[] { new InputFilter.LengthFilter(95) });
         chatEditor.setVisibility(View.INVISIBLE);
 
-        /* 1x1: the game draws the real field. A full-width bar stole taps
-         * from Send / the in-game field and was never meant to be visible. */
+        /* Реальный размер нужен InputConnection. Ставим в угол вне джойстика. */
+        float density = getResources().getDisplayMetrics().density;
+        int editorSize = Math.max(48, (int) (48f * density));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                1, 1, Gravity.BOTTOM | Gravity.START);
+                editorSize, editorSize, Gravity.TOP | Gravity.END);
         addContentView(chatEditor, params);
 
         chatEditor.addTextChangedListener(new TextWatcher() {

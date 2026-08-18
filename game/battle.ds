@@ -180,9 +180,14 @@ function enemy_engage num desired
 num dx=aim_tx-enemy.x, dy=aim_ty-enemy.y, d=sqrt(dx*dx+dy*dy); if d<1; d=1; end
 num radial=clamp((d-desired)*enemy_close_gain,-bot_speed,bot_speed)
 num orbit=bot_strafe_speed*enemy.strafe
-// В упор обходить некогда — доводим удар; далеко обходить бессмысленно — догоняем.
-if d>desired+120||d<desired*0.45; orbit=orbit*0.35; end
-enemy_move dx/d*radial-dy/d*orbit,dy/d*radial+dx/d*orbit
+// Орбита всегда сильная: иначе бот «плывёт» по прямой в точку, а не кружит.
+if d>desired+180; orbit=orbit*0.85; end
+if d<desired*0.4; orbit=orbit*0.7; end
+// Сглаживаем скорость, чтобы шаг не дёргался при смене цели.
+num vx=dx/d*radial-dy/d*orbit, vy=dy/d*radial+dx/d*orbit
+num sp=sqrt(vx*vx+vy*vy), cap=bot_speed
+if sp>cap&&sp>0.001; vx=vx/sp*cap; vy=vy/sp*cap; end
+enemy_move vx,vy
 end
 function update_enemy
 // Бот равен игроку по цифрам (урон 1, HP 10), но играет тактически:
@@ -206,7 +211,10 @@ if enemy.state_time>enemy_lock_time; enemy_face_prediction; end
 // Доводка: в замахе бот доступает до цели, если игрок начал уходить.
 enemy_predict enemy_lead
 num adx=aim_tx-enemy.x, ady=aim_ty-enemy.y, ad=sqrt(adx*adx+ady*ady); if ad<1; ad=1; end
-if ad>reach-enemy_hit_margin; enemy_move adx/ad*bot_speed,ady/ad*bot_speed; end
+if ad>reach-enemy_hit_margin
+num ovx=-ady/ad*bot_strafe_speed*enemy.strafe*0.55, ovy=adx/ad*bot_strafe_speed*enemy.strafe*0.55
+enemy_move adx/ad*bot_speed*0.85+ovx,ady/ad*bot_speed*0.85+ovy
+end
 if enemy.state_time<=0; enemy.state=2; enemy.state_time=enemy_punch_time; enemy.hit=0; end
 return
 end
@@ -411,18 +419,12 @@ if punch_left>0; tex player.x-hw,player.y-hw,player_punch_tex(),sprite_a(player.
 end
 function draw_revive
 if revive_flash<=0; return; end
-num a=floor(160*revive_flash/1.5)
+num a=floor(120*revive_flash/1.5)
 if a<0; a=0; end
-if a>200; a=200; end
-rect 0,0,screen_w,screen_h,a*0x1000000+0xE8D0FF
-ctext tr_revived(),screen_h/2-24,0xFFFFFF
+if a>160; a=160; end
+rect 0,0,screen_w,screen_h,a*0x1000000+0xFFFFFF
 end
 function draw_class_hud
-if player_class!=1; return; end
-str s=tr_revive_ready()
-if azum_revived==1; s=tr_revive_used(); end
-num sw=text_ink_width(s)*0.45
-text_scaled s,20,54,0xE0B0FF,0.45
 end
 function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000

@@ -13,8 +13,8 @@ button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings
 end
 function draw_class_card num x, num y, num w, num h, num cls, str title, str desc, str texname
 num sel=0; if player_class==cls; sel=1; end
-if sel==1; roundrect x-5,y-5,w+10,h+10,26,0xFFE0B0FF; end
-if cls==1; roundrect x,y,w,h,22,0xFF3A1A5C; else; roundrect x,y,w,h,22,0xFF2A2A40; end
+if sel==1; roundrect x-5,y-5,w+10,h+10,26,0xFF5A5A78; end
+roundrect x,y,w,h,22,0xFF2A2A40
 num ts=2.2, spr=50*ts
 tex x+(w-spr)/2,y+28,texname,0,ts
 num tw=text_ink_width(title)
