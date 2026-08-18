@@ -22,8 +22,13 @@ import android.widget.FrameLayout;
 
 /**
  * NativeActivity with a real, focusable Android text editor used only as the
- * input connection for the in-game chat. The game continues to draw the field
- * itself; this one-pixel editor makes every soft IME deliver commitText events.
+ * input connection for in-game fields. The game continues to draw the field
+ * itself; this 1-pixel editor makes every soft IME deliver commitText events.
+ *
+ * NativeActivity's surface steals view-focus after IME-driven resizes. If the
+ * editor loses focus, the keyboard stays on screen but typed characters go
+ * nowhere. wantKeyboard stays true until the game hides the IME, and we
+ * reclaim focus whenever the native surface takes it away.
  */
 public final class GameActivity extends NativeActivity {
     /*
@@ -45,6 +50,8 @@ public final class GameActivity extends NativeActivity {
     private EditText chatEditor;
     private boolean syncingFromNative;
     private boolean keyboardWasVisible;
+    /* Game asked for the IME. Stays true across transient focus losses. */
+    private volatile boolean wantKeyboard;
     /* Читается из игрового потока: пока true, весь текст ведёт этот редактор. */
     private volatile boolean editorActive;
     /* Видна ли IME прямо сейчас (по реальному размеру экрана в onGlobalLayout). */
@@ -78,7 +85,7 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setHintTextColor(Color.TRANSPARENT);
         chatEditor.setBackgroundColor(Color.TRANSPARENT);
         chatEditor.setCursorVisible(false);
-        chatEditor.setAlpha(0.02f);
+        chatEditor.setAlpha(0f);
         chatEditor.setGravity(Gravity.BOTTOM | Gravity.START);
         chatEditor.setFocusable(true);
         chatEditor.setFocusableInTouchMode(true);
@@ -93,9 +100,10 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setFilters(new InputFilter[] { new InputFilter.LengthFilter(95) });
         chatEditor.setVisibility(View.INVISIBLE);
 
+        /* 1x1: the game draws the real field. A full-width bar stole taps
+         * from Send / the in-game field and was never meant to be visible. */
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, 48,
-                Gravity.BOTTOM);
+                1, 1, Gravity.BOTTOM | Gravity.START);
         addContentView(chatEditor, params);
 
         chatEditor.addTextChangedListener(new TextWatcher() {
@@ -108,8 +116,22 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View view, boolean focused) {
-                editorActive = nativeReady && focused
-                        && chatEditor.getVisibility() == View.VISIBLE;
+                if (focused) {
+                    editorActive = nativeReady && wantKeyboard
+                            && chatEditor.getVisibility() == View.VISIBLE;
+                    return;
+                }
+                /* Native surface often steals focus after adjustResize.
+                 * If the game still wants the keyboard, take focus back
+                 * instead of marking the editor dead — otherwise the IME
+                 * stays up and typed characters never reach the field. */
+                if (wantKeyboard && chatEditor.getVisibility() == View.VISIBLE) {
+                    chatEditor.post(new Runnable() {
+                        @Override public void run() { claimEditorFocus(); }
+                    });
+                } else {
+                    editorActive = false;
+                }
             }
         });
         chatEditor.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -140,14 +162,22 @@ public final class GameActivity extends NativeActivity {
                         boolean keyboardVisible = root.getHeight() - visible.bottom
                                 > root.getHeight() * 0.15f;
                         imeLooksVisible = keyboardVisible;
+                        if (wantKeyboard) claimEditorFocus();
                         if (keyboardVisible) {
                             keyboardWasVisible = true;
                         } else if (keyboardWasVisible) {
                             keyboardWasVisible = false;
-                            keyboardHiddenNative();
+                            if (!wantKeyboard) keyboardHiddenNative();
                         }
                     }
                 });
+    }
+
+    private void claimEditorFocus() {
+        if (chatEditor == null || !wantKeyboard) return;
+        if (chatEditor.getVisibility() != View.VISIBLE) chatEditor.setVisibility(View.VISIBLE);
+        if (!chatEditor.hasFocus()) chatEditor.requestFocus();
+        editorActive = nativeReady;
     }
 
     /** Called from native code. It is safe to call from the native game thread. */
@@ -156,17 +186,17 @@ public final class GameActivity extends NativeActivity {
             @Override
             public void run() {
                 if (chatEditor == null) return;
+                wantKeyboard = true;
                 chatEditor.setVisibility(View.VISIBLE);
                 chatEditor.bringToFront();
                 replaceEditorText(currentText);
-                chatEditor.requestFocus();
-                editorActive = true;
+                claimEditorFocus();
                 getWindow().setSoftInputMode(
                         WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
                                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 if (imeLooksVisible) {
                     /* IME уже на экране: не перезапускаем её, просто держим фокус. */
-                    if (!chatEditor.hasFocus()) chatEditor.requestFocus();
+                    claimEditorFocus();
                     return;
                 }
                 showAttempts = 0;
@@ -187,11 +217,12 @@ public final class GameActivity extends NativeActivity {
         chatEditor.postDelayed(new Runnable() {
             @Override
             public void run() {
-                if (chatEditor == null || !editorActive || imeLooksVisible) return;
-                if (!chatEditor.hasFocus()) chatEditor.requestFocus();
+                if (chatEditor == null || !wantKeyboard || imeLooksVisible) return;
+                claimEditorFocus();
                 InputMethodManager input = (InputMethodManager)
                         getSystemService(Context.INPUT_METHOD_SERVICE);
-                if (input != null && input.isActive(chatEditor)) {
+                if (input != null) {
+                    if (!input.isActive(chatEditor)) chatEditor.requestFocus();
                     input.showSoftInput(chatEditor, InputMethodManager.SHOW_FORCED);
                 }
                 requestShowWhenReady();
@@ -205,6 +236,7 @@ public final class GameActivity extends NativeActivity {
             @Override
             public void run() {
                 replaceEditorText(text);
+                if (wantKeyboard) claimEditorFocus();
             }
         });
     }
@@ -214,7 +246,7 @@ public final class GameActivity extends NativeActivity {
      * so the native side must not append key events into its own buffer.
      */
     public boolean gameKeyboardActive() {
-        return editorActive;
+        return wantKeyboard;
     }
 
     /** Called from native code when chat is closed or the online game is left. */
@@ -223,6 +255,7 @@ public final class GameActivity extends NativeActivity {
             @Override
             public void run() {
                 if (chatEditor == null) return;
+                wantKeyboard = false;
                 InputMethodManager input = (InputMethodManager)
                         getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (input != null) {
@@ -264,8 +297,8 @@ public final class GameActivity extends NativeActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && editorActive && chatEditor != null) {
-            chatEditor.requestFocus();
+        if (hasFocus && wantKeyboard && chatEditor != null) {
+            claimEditorFocus();
             if (!imeLooksVisible) {
                 showAttempts = 0;
                 requestShowWhenReady();

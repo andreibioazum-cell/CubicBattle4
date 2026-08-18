@@ -9,7 +9,7 @@ BUILTINS=frozenset({
     'net_event',
     'net_chat_send','net_chat_count','net_chat_text','net_chat_uid',
     'net_autologin','net_set_nick','net_login_status','net_login_nick',
-    'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_enter_pressed','keyboard_type',
+    'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_enter_pressed','keyboard_type','keyboard_visible',
     'str_len','str_eq',
     'ds_log','console_count','console_line','console_type','console_clear',
     'arr_new','arr_push','arr_get','arr_set','arr_len','arr_clear',

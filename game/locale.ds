@@ -66,3 +66,25 @@ function tr_mode_on
 if language==1; return "вкл"; else if language==2; return "オン"; end; return "on";end
 function tr_mode_off
 if language==1; return "выкл"; else if language==2; return "オフ"; end; return "off";end
+function tr_classes
+if language==1; return "Классы"; else if language==2; return "クラス"; end; return "Classes";end
+function tr_class_ordinary
+if language==1; return "Обычный"; else if language==2; return "ノーマル"; end; return "Ordinary";end
+function tr_class_azum
+if language==1; return "Азум"; else if language==2; return "アズム"; end; return "Azum";end
+function tr_class_ordinary_desc
+if language==1; return "Стандартный боец"; else if language==2; return "ふつうのせんし"; end; return "Standard fighter";end
+function tr_class_azum_desc
+if language==1; return "Возрождение 1 раз за игру"; else if language==2; return "1試合に1回復活"; end; return "Revive once per match";end
+function tr_class_selected
+if language==1; return "Выбран"; else if language==2; return "せんたくちゅう"; end; return "Selected";end
+function tr_class_pick
+if language==1; return "Выбрать"; else if language==2; return "えらぶ"; end; return "Select";end
+function tr_revived
+if language==1; return "Возрождение!"; else if language==2; return "復活!"; end; return "Revived!";end
+function tr_revive_ready
+if language==1; return "Возрождение готово"; else if language==2; return "復活OK"; end; return "Revive ready";end
+function tr_revive_used
+if language==1; return "Возрождение использовано"; else if language==2; return "復活ずみ"; end; return "Revive used";end
+function tr_your_class
+if language==1; return "Класс: "; else if language==2; return "クラス: "; end; return "Class: ";end

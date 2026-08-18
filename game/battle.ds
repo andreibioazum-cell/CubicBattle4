@@ -2,9 +2,31 @@
 // Ближний бой: пуль больше нет — прицел и удар.
 // Хитбокс удара широкий (punch_width) и недлинный (punch_reach).
 
+function player_idle_tex
+if player_class==1; return AZUM_TEX; end
+return ORDINARY_TEX
+end
+function player_punch_tex
+if player_class==1; return AZUM_PUNCH_TEX; end
+return PUNCH_TEX
+end
+function try_revive
+// Азум один раз за бой встаёт с полным HP. Обычный класс сразу проигрывает.
+if player.hp>0; return 0; end
+if player_class!=1; return 0; end
+if azum_revived==1; return 0; end
+azum_revived=1; player.hp=player.max_hp; revive_flash=1.5; revive_prot=1.2
+ds_log "azum revived"
+return 1
+end
+function tick_revive
+if revive_flash>0; revive_flash=revive_flash-dt; if revive_flash<0; revive_flash=0; end; end
+if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; end; end
+end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
+azum_revived=0; revive_flash=0; revive_prot=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
 arr_clear remotes; arr_clear remote_punches
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
@@ -192,8 +214,11 @@ end
 if enemy.state==2
 enemy.state_time=enemy.state_time-dt
 if enemy.hit==0&&player_in_enemy_punch()==1
-enemy.hit=1; player.hp=player.hp-enemy_damage; ds_log "enemy punch! hp %g",player.hp
-if player.hp<=0; player.hp=0; finish_game 2; return; end
+enemy.hit=1
+if revive_prot<=0
+player.hp=player.hp-enemy_damage; ds_log "enemy punch! hp %g",player.hp
+if player.hp<=0; player.hp=0; if try_revive()==0; finish_game 2; return; end; end
+end
 end
 if enemy.state_time<=0
 enemy.state=3; enemy.state_time=enemy_recovery; enemy.cooldown=enemy_roll_cooldown()
@@ -254,7 +279,10 @@ enemy_predict enemy_lead
 enemy_engage desired
 end
 function update_game
-update_aim; if finished!=0; return; end; move_player
+tick_revive
+update_aim; if finished!=0; return; end
+if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
+move_player
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
 follow_punch
 // урон игрока наносится только в активное окно его анимации удара
@@ -325,19 +353,29 @@ num rb=i*punch_fields
 if arr_get(remote_punches,rb)==1
 num tr=arr_get(remote_punches,rb+5)+dt; arr_set remote_punches,rb+5,tr
 if tr>=punch_time; arr_set remote_punches,rb,0
-else if player.hp>0&&in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
-arr_set remote_punches,rb,0; player.hp=player.hp-punch_damage; ds_log "hit! hp %g",player.hp
-if player.hp<=0; player.hp=0; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end
+else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
+arr_set remote_punches,rb,0
+if revive_prot<=0&&player.hp>0
+player.hp=player.hp-punch_damage; ds_log "hit! hp %g",player.hp
+if player.hp<=0
+player.hp=0
+if try_revive()==1; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,1
+else; net_publish player.x/screen_w,player.y/screen_h,player.angle,0,0; finish_game 2; end
+end
+end
 end
 end
 i=i+1
 end
 end
 function update_online
+tick_revive
+chat_update
 update_disco
 if online_ready==0&&net_slot()>=0; place_online; end
 read_remotes; smooth_remotes; update_aim
 if finished!=0||online_ready==0; return; end
+if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
 follow_punch; if punch.active==1&&punch_left<=0; punch.active=0; end
@@ -369,7 +407,22 @@ num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; 
 // Хитбокс рисуется в то же окно, в которое действует удар.
 if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-if punch_left>0; tex player.x-hw,player.y-hw,PUNCH_TEX,sprite_a(player.angle),ps; else; tex player.x-hw,player.y-hw,ORDINARY_TEX,sprite_a(player.angle),ps; end
+if punch_left>0; tex player.x-hw,player.y-hw,player_punch_tex(),sprite_a(player.angle),ps; else; tex player.x-hw,player.y-hw,player_idle_tex(),sprite_a(player.angle),ps; end
+end
+function draw_revive
+if revive_flash<=0; return; end
+num a=floor(160*revive_flash/1.5)
+if a<0; a=0; end
+if a>200; a=200; end
+rect 0,0,screen_w,screen_h,a*0x1000000+0xE8D0FF
+ctext tr_revived(),screen_h/2-24,0xFFFFFF
+end
+function draw_class_hud
+if player_class!=1; return; end
+str s=tr_revive_ready()
+if azum_revived==1; s=tr_revive_used(); end
+num sw=text_ink_width(s)*0.45
+text_scaled s,20,54,0xE0B0FF,0.45
 end
 function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
@@ -390,7 +443,9 @@ if enemy.state==1||enemy.state==2; tex enemy.x-ehw,enemy.y-ehw,PUNCH_TEX,sprite_
 else; tex enemy.x-ehw,enemy.y-ehw,ORDINARY_TEX,sprite_a(enemy.angle),es; end
 num w=screen_w/4
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1
+draw_class_hud
 draw_controls
+draw_revive
 if finished==1; draw_result tr_victory(),tr_opponent_defeated(); else if finished==2; draw_result tr_defeat(),tr_opponent_won(); end
 end
 function disco_color num phase
@@ -447,7 +502,9 @@ i=i+1
 end
 num w=screen_w/3
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
+draw_class_hud
 draw_controls; draw_chat
+draw_revive
 num st=net_status(), sy=back_y+btn_h+18
 if st==4; ctext tr_no_connection(),sy,0xFF8A80; ctext tr_reconnecting(),sy+32,0xFFF176
 else if st==1; ctext tr_connecting(),sy,0xFFF176; end
