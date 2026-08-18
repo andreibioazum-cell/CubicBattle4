@@ -60,13 +60,10 @@ jobs:
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/armeabi-v7a/libds_game.so
 
-    # Подпись постоянная: берём keystore из GitHub Secrets, а не генерим новый
-    # на каждом билде. Так Android ID не меняется между релизами и админ не
-    # слетает при переустановке. Схема V1+V2 подходит для Android 14.
-    - name: Decode signing keystore
-      run: |
-        echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > keystore.jks
-
+    # Подпись — временный debug.keystore, как в исходной сборке (без секретов).
+    # ВНИМАНИЕ: каждый билд создаёт новый ключ, поэтому Android ID будет разным
+    # на каждом релизе, и админ по Android ID будет слетать. Для стабильной
+    # подписи используй один постоянный keystore.
     - name: Package APK (Android 10 to 14, target API 34)
       run: |
         SDK_ROOT=$ANDROID_HOME
@@ -77,11 +74,10 @@ jobs:
           -F unsigned.apk ./staging/
 
         "$BT/zipalign" -v 4 unsigned.apk aligned.apk
-        "$BT/apksigner" sign \
-          --ks keystore.jks \
-          --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-          --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
-          --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+        keytool -genkey -v -keystore debug.keystore -storepass android \
+          -alias debug -keypass android -keyalg RSA -keysize 2048 \
+          -validity 10000 -dname "CN=Debug" 2>/dev/null || true
+        "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
           --out Game.apk aligned.apk
 
     - uses: actions/upload-artifact@v4
