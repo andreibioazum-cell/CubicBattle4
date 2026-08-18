@@ -404,17 +404,19 @@ num a=55+90*(0.5+0.5*sin(disco_t*8))
 return ((((int)a)<<24)|(((int)r)<<16)|(((int)g)<<8)|((int)b))
 end
 function draw_disco
-// «Диско»-ивент: всё мигает и переливается. Если включён безопасный для
-// эпилептиков режим (disco_safe==1) или ивента нет (event_mode==0) — ничего
+// «Диско»-ивент: экран мерцает и переливается светом. Если включён безопасный
+// для эпилептиков режим (disco_safe==1) или ивента нет (event_mode==0) — ничего
 // не моргает, чтобы люди не ослепли.
 if event_mode==0||disco_safe==1; return; end
 num col=disco_color(disco_t*9)
 rect 0,0,screen_w,screen_h,col
+// Пульсирующий белый кружок-контур (без заливки) — мерцает вместе с диско.
 num ct=disco_t*6
-num r1=70+50*sin(ct), r2=70+50*sin(ct+3.14)
-ring screen_w/2,screen_h/2,r1,8,0xA0FFFFFF
-ring screen_w/2,screen_h/2,r2,8,0xA000FFFF
-circle screen_w/2,screen_h/2,30,0xA0FF00FF
+num r=110+40*sin(ct)
+ring screen_w/2,screen_h/2,r,7,0xC0FFFFFF
+// Колонка-индикатор музыки (Column.png) по центру, поверх кружка.
+num sc=0.55
+tex screen_w/2-250*sc,screen_h/2-250*sc,COLUMN,0,sc
 end
 function update_disco
 // Таймер диско двигается только пока ивент активен и не выключен защитой.
