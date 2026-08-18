@@ -34,6 +34,9 @@
 #define WRITE_TICK 60
 #define READ_TICK 60
 #define CHAT_TICK 1000
+/* Ивент (диско) читаем реже боя — это крошечный узел, реагировать на него с
+ * задержкой в полсекунды для мигания более чем достаточно. */
+#define EVENT_TICK 500
 /* Таймауты HTTP: 4 секунды вместо 2 — на мобильном интернете короткие
  * всплески задержки (DNS, переподключение к вышке) раньше выглядели как
  * «Нет соединения» у второго игрока. */
@@ -90,6 +93,9 @@ static struct {
     Actor me; unsigned long seq, count;
     Actor players[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
+    /* Ивент комнаты: маленький узел rooms/<room>/event. 1 = «диско» режим
+     * включён, 0 = никакого ивента. Читается отдельно от боя, как чат. */
+    int event;
 } net = { .lock = DS_MUTEX_INIT };
 /* Пока идёт отключение (net_disconnect), HTTP-запросы используют короткий
  * таймаут, чтобы игра не замирала на секунды, если сеть «мертва».
@@ -487,6 +493,15 @@ static int pull_state(char *resp,size_t cap) {
     if (c != 200 && net_log_ok()) LOGERR("pull state: HTTP %d", c);
     return c == 200;
 }
+/* Узел event — число 1/0 или true/false прямо в корне базы (не внутри комнаты).
+ * Если узла нет (null), num() вернёт запасное значение 0: никакого ивента. */
+static int pull_event(char *resp,size_t cap) {
+    char url[URL];
+    snprintf(url,sizeof(url),"%s/event.json",net.base);
+    int c = http("GET",url,NULL,resp,cap);
+    if (c != 200 && net_log_ok()) LOGERR("pull event: HTTP %d", c);
+    return c == 200;
+}
 
 void net_set_data_path(const char *path) {
     lg_lock();
@@ -732,8 +747,8 @@ static void *thread_main(void *arg) {
     release_slot(); status(NET_OFFLINE); return NULL;
 }
 static void *reader_thread(void *arg) {
-    char resp[RESP], chat_resp[CHAT_RESP];
-    long long next_chat=0;
+    char resp[RESP], chat_resp[CHAT_RESP], event_resp[RESP];
+    long long next_chat=0, next_event=0;
     (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
@@ -745,6 +760,14 @@ static void *reader_thread(void *arg) {
         if(start>=next_chat) {
             if(pull_chat(chat_resp,sizeof(chat_resp))) parse_and_store_chat(chat_resp);
             next_chat=now_ms()+CHAT_TICK;
+        }
+        /* Ивент (диско) читаем отдельно и реже: значение 1 включает мигание
+         * у всех, кто сейчас в комнате. Узел крошечный, но всё равно не нужно
+         * дёргать его 16 раз в секунду вместе с позициями. */
+        if(start>=next_event) {
+            if(pull_event(event_resp,sizeof(event_resp)))
+                lock(); net.event = num(event_resp,"",0)!=0 ? 1 : 0; unlock();
+            next_event=now_ms()+EVENT_TICK;
         }
         long long spent=now_ms()-start; if(spent<READ_TICK)sleep_ms((int)(READ_TICK-spent));
     }
@@ -858,6 +881,7 @@ const char* net_chat_uid(double idx){
 static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
+double net_event(void){ double v; lock(); v=net.event; unlock(); return v; }
 double net_count(void){ double v; lock(); v=net.count; unlock(); return v; }
 const char* net_player_nick(double slot){
     int i=sidx(slot);

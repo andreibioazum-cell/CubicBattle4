@@ -2,7 +2,14 @@ function draw_lobby
 rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF;button tr_play(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_settings(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;button tr_account(),(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h;if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;num lw=text_ink_width(ln)*0.5;text_scaled ln,(screen_w-lw)/2,18,0xFFFFFF,0.5;end;end
 end
 function draw_modes
-rect 0,0,screen_w,screen_h,0x1a1a2e;button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h;button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h;draw_back;end
+rect 0,0,screen_w,screen_h,0x1a1a2e
+button tr_solo(),(screen_w-btn_w)/2,screen_h/2-40,btn_w,btn_h
+button tr_online(),(screen_w-btn_w)/2,screen_h/2+40,btn_w,btn_h
+// Третья кнопка в выборе режима: защита для эпилептиков (выключает мигание).
+str lbl=tr_disco_epilepsy()+" ("+tr_mode_off()+")"
+if disco_safe==1; lbl=tr_disco_epilepsy()+" ("+tr_mode_on()+")"; end
+button lbl,(screen_w-btn_w)/2,screen_h/2+120,btn_w,btn_h
+draw_back;end
 function draw_login
 // Экран входа в онлайн: спрашиваем ТОЛЬКО ник — без пароля и регистрации.
 // Ник сохраняется и при следующем запуске сразу пускает игрока в онлайн.
@@ -57,5 +64,5 @@ end
 function touch_menu num x, num y, num action
 if action!=0; return; end;if game_state==7; touch_login x,y,action; return; end;if back_hit(x,y)==1; if game_state==6; start_transition 4; else; start_transition 0; end; return; end;if game_state==6;num bw=(screen_w-76)/3, by=screen_h-78, m=console_count()-1;if x>=16&&x<=16+bw&&y>=by&&y<=by+btn_h; if m>=0; if console_scroll+10<m; console_scroll=console_scroll+10; else; console_scroll=m; end; end; return; end
 if x>=screen_w/2-bw/2&&x<=screen_w/2+bw/2&&y>=by&&y<=by+btn_h; console_scroll=console_scroll-10; if console_scroll<0; console_scroll=0; end; return; end;if x>=screen_w-bw-16&&x<=screen_w-16&&y>=by&&y<=by+btn_h; console_clear; console_scroll=0; end
-return;end;num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end;if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; if net_login_status()==2; start_transition 5; else; login_after=5; start_transition 7; end; end;else if game_state==4
+return;end;num mx=(screen_w-btn_w)/2; if x<mx-12||x>mx+btn_w+12; return; end;if game_state==2; if y>=screen_h/2-48&&y<=screen_h/2+32; start_transition 1; return; end; if y>=screen_h/2+32&&y<=screen_h/2+112; if net_login_status()==2; start_transition 5; else; login_after=5; start_transition 7; end; return; end; if y>=screen_h/2+112&&y<=screen_h/2+192; if disco_safe==1; disco_safe=0; else; disco_safe=1; end; return; end;else if game_state==4
 num sy=screen_h/2-110;if y>=sy-8&&y<sy+72; language=0;else if y>=sy+72&&y<sy+152; language=1;else if y>=sy+152&&y<sy+232; language=2;else if y>=sy+232&&y<=sy+312; start_transition 6;end;end;end
