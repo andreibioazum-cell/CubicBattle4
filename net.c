@@ -493,11 +493,11 @@ static int pull_state(char *resp,size_t cap) {
     if (c != 200 && net_log_ok()) LOGERR("pull state: HTTP %d", c);
     return c == 200;
 }
-/* Узел rooms/<room>/event — число 1/0 или true/false. Если узла нет (null),
- * num() вернёт запасное значение 0: никакого ивента. */
+/* Узел event — число 1/0 или true/false прямо в корне базы (не внутри комнаты).
+ * Если узла нет (null), num() вернёт запасное значение 0: никакого ивента. */
 static int pull_event(char *resp,size_t cap) {
     char url[URL];
-    snprintf(url,sizeof(url),"%s/rooms/%s/event.json",net.base,net.room);
+    snprintf(url,sizeof(url),"%s/event.json",net.base);
     int c = http("GET",url,NULL,resp,cap);
     if (c != 200 && net_log_ok()) LOGERR("pull event: HTTP %d", c);
     return c == 200;

@@ -2,6 +2,10 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "event": {
+      ".read": true,
+      ".write": true
+    },
     "rooms": {
       "$room": {
         "players": {
@@ -15,10 +19,6 @@
           ".read": true,
           ".write": true,
           ".indexOn": ".key"
-        },
-        "event": {
-          ".read": true,
-          ".write": true
         }
       }
     }
