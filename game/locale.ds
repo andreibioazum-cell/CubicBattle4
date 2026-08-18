@@ -61,7 +61,7 @@ if language==1; return "Ник: 3-16 символов, только буквы, 
 function tr_your_nick
 if language==1; return "Ваш ник: "; else if language==2; return "ニック: "; end; return "Your nick: ";end
 function tr_disco_epilepsy
-if language==1; return "Эпилептикам (без мигания)"; else if language==2; return "光過敏症対策"; end; return "Epilepsy safe (no flashing)";end
+if language==1; return "Эпилептикам"; else if language==2; return "光過敏症対策"; end; return "Epilepsy safe";end
 function tr_mode_on
 if language==1; return "вкл"; else if language==2; return "オン"; end; return "on";end
 function tr_mode_off
