@@ -442,8 +442,13 @@ function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num 
 num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
 if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
 end
+function draw_grass
+// Только плитки травы (game/assets/Grass.png) — отдельный слой, чтобы он мог
+// оказаться под музыкальной колонкой (Column.png), но под игроком и HUD.
+num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end
+end
 function draw_field
-num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end; rect 0,0,screen_w,screen_h,0x33000000
+rect 0,0,screen_w,screen_h,0x33000000
 // Хитбокс рисуется в то же окно, в которое действует удар.
 if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
@@ -470,6 +475,7 @@ end
 function draw_game
 // Прицел удара бота: такая же чёрная полупрозрачная полоса, как у игрока —
 // показывает, куда попадёт удар (замах и активное окно), можно увернуться.
+draw_grass
 draw_field
 if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
 num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
@@ -513,8 +519,12 @@ event_mode=net_event()
 if event_mode==1&&disco_safe==0; disco_t=disco_t+dt; else; disco_t=0; end
 end
 function draw_online
-draw_field
+// Трава — самый нижний слой.
+draw_grass
+// Колонка-индикатор музыки (Column.png) выше травы, но ниже игроков и HUD.
 draw_disco
+// Затемнение, игрок, ник и весь остальной UI рисуется поверх Column.
+draw_field
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str myn=net_player_nick(net_slot())
 if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end
