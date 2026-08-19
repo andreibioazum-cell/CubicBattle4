@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.dimscript.gamedemo">
+    package="com.CB4">
 
     <!-- Android 10 (API 29) до Android 14 (API 34), arm64 и arm32 -->
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
@@ -15,7 +15,7 @@
         android:extractNativeLibs="true">
 
         <activity
-            android:name="com.dimscript.gamedemo.GameActivity"
+            android:name="com.CB4.GameActivity"
             android:configChanges="orientation|keyboard|keyboardHidden|screenSize"
             android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustResize"
