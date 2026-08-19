@@ -15,18 +15,24 @@ function try_revive
 if player.hp>0; return 0; end
 if player_class!=1; return 0; end
 if azum_revived==1; return 0; end
-azum_revived=1; player.hp=player.max_hp; revive_flash=1.5; revive_prot=1.2
+azum_revived=1; player.hp=player.max_hp; revive_prot=1.2
+// Никакой вспышки на экране — Азум просто встаёт в случайной точке арены,
+// подальше от бота, чтобы не воскреснуть прямо под его ударом.
+num k=0
+loop k<50
+num rx=70+rand()%(screen_w-140), ry=70+rand()%(screen_h-140)
+if dist(rx,ry,enemy.x,enemy.y)>200; k=50; player.x=rx; player.y=ry; else; k=k+1; end
+end
 ds_log "azum revived"
 return 1
 end
 function tick_revive
-if revive_flash>0; revive_flash=revive_flash-dt; if revive_flash<0; revive_flash=0; end; end
 if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; end; end
 end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
-azum_revived=0; revive_flash=0; revive_prot=0
+azum_revived=0; revive_prot=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
 arr_clear remotes; arr_clear remote_punches
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
@@ -443,8 +449,7 @@ num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
 if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
 end
 function draw_grass
-// Только плитки травы (game/assets/Grass.png) — отдельный слой, чтобы он мог
-// оказаться под музыкальной колонкой (Column.png), но под игроком и HUD.
+// Только плитки травы (game/assets/Grass.png) — нижний слой под игроком и HUD.
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end
 end
 function draw_field
@@ -453,15 +458,6 @@ rect 0,0,screen_w,screen_h,0x33000000
 if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 if punch_left>0; tex player.x-hw,player.y-hw,player_punch_tex(),sprite_a(player.angle),ps; else; tex player.x-hw,player.y-hw,player_idle_tex(),sprite_a(player.angle),ps; end
-end
-function draw_revive
-if revive_flash<=0; return; end
-num a=floor(120*revive_flash/1.5)
-if a<0; a=0; end
-if a>160; a=160; end
-rect 0,0,screen_w,screen_h,a*0x1000000+0xFFFFFF
-end
-function draw_class_hud
 end
 function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
@@ -483,35 +479,33 @@ if enemy.state==1||enemy.state==2; tex enemy.x-ehw,enemy.y-ehw,PUNCH_TEX,sprite_
 else; tex enemy.x-ehw,enemy.y-ehw,ORDINARY_TEX,sprite_a(enemy.angle),es; end
 num w=screen_w/4
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1
-draw_class_hud
 draw_controls
-draw_revive
 if finished==1; draw_result tr_victory(),tr_opponent_defeated(); else if finished==2; draw_result tr_defeat(),tr_opponent_won(); end
 end
 function disco_color num phase
 // Цвет для диско-пульсации: перелив RGB по синусоидам. Выражение проходит
 // напрямую в C, поэтому здесь работают сдвиги и (int)-приведения. Альфа
 // (старший байт) пульсирует, чтобы экран мигал, а не просто лил один цвет.
+// Частоты ×2 от исходных: экран мигает и переливается заметно быстрее.
+// Сдвиги делаются в unsigned, чтобы (int)a<<24 не был переполнением int.
 num r=127+127*sin(phase)
 num g=127+127*sin(phase+2.094)
 num b=127+127*sin(phase+4.188)
-num a=55+90*(0.5+0.5*sin(disco_t*8))
-return ((((int)a)<<24)|(((int)r)<<16)|(((int)g)<<8)|((int)b))
+num a=55+90*(0.5+0.5*sin(disco_t*16))
+return ((((unsigned)(int)a)<<24)|(((unsigned)(int)r)<<16)|(((unsigned)(int)g)<<8)|((unsigned)(int)b))
 end
 function draw_disco
 // «Диско»-ивент: экран мерцает и переливается светом. Если включён безопасный
 // для эпилептиков режим (disco_safe==1) или ивента нет (event_mode==0) — ничего
-// не моргает, чтобы люди не ослепли.
+// не моргает, чтобы люди не ослепли. Диско-шар убран — остаются только
+// быстрое мерцание экрана и пульсирующий контур.
 if event_mode==0||disco_safe==1; return; end
-num col=disco_color(disco_t*9)
+num col=disco_color(disco_t*18)
 rect 0,0,screen_w,screen_h,col
 // Пульсирующий белый кружок-контур (без заливки) — мерцает вместе с диско.
-num ct=disco_t*6
+num ct=disco_t*12
 num r=110+40*sin(ct)
 ring screen_w/2,screen_h/2,r,7,0xC0FFFFFF
-// Колонка-индикатор музыки (Column.png) по центру, поверх кружка.
-num sc=0.55
-tex screen_w/2-250*sc,screen_h/2-250*sc,COLUMN,0,sc
 end
 function update_disco
 // Таймер диско двигается только пока ивент активен и не выключен защитой.
@@ -521,9 +515,9 @@ end
 function draw_online
 // Трава — самый нижний слой.
 draw_grass
-// Колонка-индикатор музыки (Column.png) выше травы, но ниже игроков и HUD.
+// Диско-мерцание выше травы, но ниже игроков и HUD.
 draw_disco
-// Затемнение, игрок, ник и весь остальной UI рисуется поверх Column.
+// Затемнение, игрок, ник и весь остальной UI рисуется поверх.
 draw_field
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str myn=net_player_nick(net_slot())
@@ -546,9 +540,7 @@ i=i+1
 end
 num w=screen_w/3
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
-draw_class_hud
 draw_controls; draw_chat
-draw_revive
 num st=net_status(), sy=back_y+btn_h+18
 if st==4; ctext tr_no_connection(),sy,0xFF8A80; ctext tr_reconnecting(),sy+32,0xFFF176
 else if st==1; ctext tr_connecting(),sy,0xFFF176; end
