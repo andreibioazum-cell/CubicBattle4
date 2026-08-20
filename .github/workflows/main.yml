@@ -12,8 +12,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Пакет com.CB4 зашит прямо в исходники: манифест, GameActivity.java и
-    # JNI-имена Java_com_CB4_GameActivity_* в runtime.c. Никаких sed-замен на
+    # Пакет com.cb4 зашит прямо в исходники: манифест, GameActivity.java и
+    # JNI-имена Java_com_cb4_GameActivity_* в runtime.c. Никаких sed-замен на
     # лету. Раньше здесь стояла замена "com.dimscript.gamedemo -> com.CB4",
     # которая НЕ трогала JNI-символы (в них подчёркивания, а не точки):
     # Java-класс становился com.CB4.GameActivity, а в .so оставались символы
@@ -23,13 +23,13 @@ jobs:
     - name: Check package name consistency
       run: |
         set -e
-        grep -q 'package="com.CB4"' game/AndroidManifest.xml
-        grep -q 'android:name="com.CB4.GameActivity"' game/AndroidManifest.xml
-        grep -q '^package com.CB4;' game/java/com/dimscript/gamedemo/GameActivity.java
-        grep -q 'Java_com_CB4_GameActivity_nativeReplaceText' runtime.c
-        grep -q 'Java_com_CB4_GameActivity_nativeSubmitText' runtime.c
-        grep -q 'Java_com_CB4_GameActivity_nativeKeyboardHidden' runtime.c
-        ! grep -rn 'dimscript\.gamedemo\|Java_com_dimscript' \
+        grep -q 'package="com.cb4"' game/AndroidManifest.xml
+        grep -q 'android:name="com.cb4.GameActivity"' game/AndroidManifest.xml
+        grep -q '^package com.cb4;' game/java/com/dimscript/gamedemo/GameActivity.java
+        grep -q 'Java_com_cb4_GameActivity_nativeReplaceText' runtime.c
+        grep -q 'Java_com_cb4_GameActivity_nativeSubmitText' runtime.c
+        grep -q 'Java_com_cb4_GameActivity_nativeKeyboardHidden' runtime.c
+        ! grep -rn 'dimscript\.gamedemo\|Java_com_dimscript\|com\.CB4\|Java_com_CB4' \
           game/AndroidManifest.xml game/java runtime.c
 
     - uses: android-actions/setup-android@v3
