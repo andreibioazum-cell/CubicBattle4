@@ -84,6 +84,22 @@ public final class GameActivity extends NativeActivity {
         if (nativeReady) try { nativeKeyboardHidden(); } catch (UnsatisfiedLinkError ignored) { }
     }
 
+    /**
+     * Keeps the game surface fullscreen. The legacy flags are supported by the
+     * complete Android 10–14 range targeted by this APK; sticky mode lets a
+     * swipe reveal system bars only temporarily.
+     */
+    @SuppressWarnings("deprecation")
+    private void enterImmersiveMode() {
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
