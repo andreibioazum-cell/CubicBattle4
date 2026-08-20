@@ -84,7 +84,8 @@ typedef struct {
     int online;
     char nick[24];
 } Actor;
-typedef struct { char uid[24]; char nick[24]; char text[CHAT_TEXT_MAX]; int valid; } ChatMsg;
+typedef struct { char key[28]; char uid[24]; char nick[24]; char text[CHAT_TEXT_MAX]; int valid; } ChatMsg;
+static int chat_keep = 20;
 static struct {
     DSThread thread, rthread; DSMutex lock;
 #ifdef __ANDROID__
@@ -559,6 +560,30 @@ static void http_post_async(const char *url, const char *body) {
     if (t) { ds_thread_detach(t); return; }
     free(j);
 }
+static void *http_delete_job(void *arg) {
+    char *url = (char*)arg;
+    if (url) { http("DELETE", url, NULL, NULL, 0); free(url); }
+    return NULL;
+}
+#ifdef _WIN32
+static unsigned __stdcall win_http_delete(void *arg) { http_delete_job(arg); return 0; }
+#endif
+static void chat_delete_key_async(const char *key) {
+    char *url;
+    DSThread t;
+    if (!key || !*key) return;
+    if (strchr(key, '/') || strchr(key, '.') || strchr(key, '#')) return;
+    url = (char*)malloc(URL);
+    if (!url) return;
+    snprintf(url, URL, "%s/rooms/%s/chat/%s.json", net.base, net.room, key);
+#ifdef _WIN32
+    t = ds_thread_start(win_http_delete, url);
+#else
+    t = ds_thread_start(http_delete_job, url);
+#endif
+    if (t) { ds_thread_detach(t); return; }
+    free(url);
+}
 static int pull_state(char *resp,size_t cap) {
     char url[URL];
     /* Важно: читаем только players, а не всю комнату с растущим чатом. */
@@ -699,102 +724,96 @@ static void read_players(const char *resp) {
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); net.count=count; unlock();
 }
-static void parse_and_store_chat(const char *json){
-    if(!json || !*json) return;
-    ChatMsg tmp[CHAT_MAX];
+static int parse_chat_list(const char *json, ChatMsg *tmp, int cap){
     int tmp_cnt=0;
-    const char *p=json;
-    while(*p && tmp_cnt<CHAT_MAX){
-        const char *uid_key=strstr(p, "\"uid\"");
-        if(!uid_key) break;
-        const char *uid_colon=strchr(uid_key, ':');
-        if(!uid_colon) break;
-        const char *q1=strchr(uid_colon, '\"');
-        if(!q1) break; q1++;
-        const char *q2=strchr(q1, '\"');
-        if(!q2) break;
-        char uid[24]={0};
-        size_t ul=q2-q1; if(ul>=sizeof(uid)) ul=sizeof(uid)-1;
-        memcpy(uid,q1,ul); uid[ul]='\0';
-        const char *next_uid=strstr(uid_key+1, "\"uid\"");
-        const char *text_key=strstr(q2, "\"text\"");
-        if(!text_key) break;
-        if(next_uid && text_key>next_uid){
-            p=q2+1; continue;
-        }
-        char nick[24]={0};
-        {
-            const char *nk=strstr(q2, "\"nick\"");
-            if(nk && (!next_uid || nk<next_uid) && nk<text_key){
-                const char *nc=strchr(nk, ':');
-                if(nc){
-                    const char *nq1=strchr(nc, '"');
-                    if(nq1){
-                        nq1++;
-                        const char *nq2=strchr(nq1, '"');
-                        if(nq2){
-                            size_t nl=nq2-nq1;
-                            if(nl>=sizeof(nick)) nl=sizeof(nick)-1;
-                            memcpy(nick,nq1,nl); nick[nl]=0;
-                        }
-                    }
-                }
-            }
-        }
-        const char *t_colon=strchr(text_key, ':');
-        if(!t_colon){ p=text_key+6; continue; }
-        const char *tq1=strchr(t_colon, '\"');
-        if(!tq1){ p=t_colon+1; continue; } tq1++;
-        const char *tq2=tq1;
-        while(*tq2){
-            if(*tq2=='\"' && *(tq2-1)!='\\') break;
-            tq2++;
-        }
-        if(!*tq2) break;
-        size_t tl=tq2-tq1;
-        if(tl>=CHAT_TEXT_MAX) tl=CHAT_TEXT_MAX-1;
-        char raw[CHAT_TEXT_MAX*2];
-        size_t rl=tl; if(rl>=sizeof(raw)) rl=sizeof(raw)-1;
-        memcpy(raw,tq1,rl); raw[rl]='\0';
-        char text[CHAT_TEXT_MAX]={0};
-        size_t oi=0;
-        for(size_t i=0;i<rl && oi+1<sizeof(text);i++){
-            if(raw[i]=='\\' && i+1<rl){
-                char esc=raw[i+1];
-                if(esc=='\"'){ text[oi++]='\"'; i++; }
-                else if(esc=='\\'){ text[oi++]='\\'; i++; }
-                else if(esc=='n'){ text[oi++]=' '; i++; }
-                else if(esc=='r'){ i++; }
-                else if(esc=='/'){ text[oi++]='/'; i++; }
-                else { text[oi++]=esc; i++; }
-            }else{
-                text[oi++]=raw[i];
-            }
-        }
-        text[oi]='\0';
-        strncpy(tmp[tmp_cnt].uid, uid, sizeof(tmp[tmp_cnt].uid)-1);
-        strncpy(tmp[tmp_cnt].nick, nick, sizeof(tmp[tmp_cnt].nick)-1);
-        strncpy(tmp[tmp_cnt].text, text, sizeof(tmp[tmp_cnt].text)-1);
+    const char *p=skip_ws(json);
+    if(!p||!*p||!strncmp(p,"null",4)) return 0;
+    if(*p!='{') return 0;
+    for(p=skip_ws(p+1); p&&*p&&*p!='}'&&tmp_cnt<cap; ){
+        if(*p!='"') break;
+        const char *kend=skip_str(p);
+        if(!kend) break;
+        char key[28]={0};
+        size_t kl=(size_t)(kend-p-2);
+        if(kl>=sizeof(key)) kl=sizeof(key)-1;
+        memcpy(key,p+1,kl); key[kl]=0;
+        p=skip_ws(kend);
+        if(*p!=':') break;
+        p=skip_ws(p+1);
+        const char *obj=p;
+        p=skip_val(p);
+        if(!p) break;
+        memset(&tmp[tmp_cnt], 0, sizeof(tmp[tmp_cnt]));
+        strncpy(tmp[tmp_cnt].key, key, sizeof(tmp[tmp_cnt].key)-1);
+        strv(obj,"uid",tmp[tmp_cnt].uid,sizeof(tmp[tmp_cnt].uid));
+        strv(obj,"nick",tmp[tmp_cnt].nick,sizeof(tmp[tmp_cnt].nick));
+        strv(obj,"text",tmp[tmp_cnt].text,sizeof(tmp[tmp_cnt].text));
         tmp[tmp_cnt].valid=1;
         tmp_cnt++;
-        p=tq2+1;
+        p=skip_ws(p);
+        if(p&&*p==',') p=skip_ws(p+1);
+    }
+    return tmp_cnt;
+}
+static void parse_and_store_chat(const char *json){
+    ChatMsg tmp[CHAT_MAX+16];
+    int tmp_cnt, keep, start, i;
+    char extra[CHAT_MAX+16][28];
+    int nextra=0;
+    if(!json || !*json) return;
+    tmp_cnt=parse_chat_list(json, tmp, CHAT_MAX+16);
+    if(tmp_cnt<=0) return;
+    lock(); keep=chat_keep; unlock();
+    if(keep<1) keep=1;
+    if(keep>CHAT_MAX) keep=CHAT_MAX;
+    start=0;
+    if(tmp_cnt>keep){
+        int drop=tmp_cnt-keep;
+        for(i=0;i<drop;i++){
+            if(tmp[i].key[0]){
+                strncpy(extra[nextra], tmp[i].key, sizeof(extra[0])-1);
+                extra[nextra][sizeof(extra[0])-1]=0;
+                nextra++;
+            }
+        }
+        start=drop;
     }
     lock();
-    if(tmp_cnt>0){
-        int start=0;
-        if(tmp_cnt>CHAT_MAX) start=tmp_cnt-CHAT_MAX;
-        net.chat_count=0;
-        for(int i=start;i<tmp_cnt;i++){
-            net.chats[net.chat_count++]=tmp[i];
-        }
-    }
+    net.chat_count=0;
+    for(i=start;i<tmp_cnt && net.chat_count<CHAT_MAX;i++)
+        net.chats[net.chat_count++]=tmp[i];
     unlock();
+    for(i=0;i<nextra;i++) chat_delete_key_async(extra[i]);
 }
 static int pull_chat(char *resp, size_t cap){
     char url[URL];
-    snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=20",net.base,net.room);
+    snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=%d",net.base,net.room,CHAT_MAX);
     return http("GET",url,NULL,resp,cap)==200;
 }
+static void prune_old_chat(void){
+    char url[URL], resp[CHAT_RESP];
+    ChatMsg oldm[16];
+    char keepkeys[CHAT_MAX][28];
+    int n, nk=0, count, keep, i, j;
+    lock(); keep=chat_keep; count=net.chat_count;
+    for(i=0;i<net.chat_count;i++){
+        strncpy(keepkeys[nk], net.chats[i].key, sizeof(keepkeys[0])-1);
+        keepkeys[nk][sizeof(keepkeys[0])-1]=0;
+        nk++;
+    }
+    unlock();
+    if(count<keep || keep<1) return;
+    snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToFirst=16",net.base,net.room);
+    if(http("GET",url,NULL,resp,sizeof(resp))!=200) return;
+    n=parse_chat_list(resp, oldm, 16);
+    for(i=0;i<n;i++){
+        int kept=0;
+        if(!oldm[i].key[0]) continue;
+        for(j=0;j<nk;j++) if(!strcmp(oldm[i].key, keepkeys[j])){ kept=1; break; }
+        if(!kept) chat_delete_key_async(oldm[i].key);
+    }
+}
+
 #ifdef _WIN32
 static void *thread_main(void *arg);
 static void *reader_thread(void *arg);
@@ -833,7 +852,10 @@ static void *reader_thread(void *arg) {
         /* Сообщения не влияют на бой, поэтому нет смысла скачивать их 16 раз
          * в секунду. Так редкий запрос чата не забивает канал позиций. */
         if(start>=next_chat) {
-            if(pull_chat(chat_resp,sizeof(chat_resp))) parse_and_store_chat(chat_resp);
+            if(pull_chat(chat_resp,sizeof(chat_resp))) {
+                parse_and_store_chat(chat_resp);
+                prune_old_chat();
+            }
             next_chat=now_ms()+CHAT_TICK;
         }
         /* Ивент (диско) читаем отдельно и реже: значение 1 включает мигание
@@ -927,6 +949,30 @@ void net_chat_send(const char *text){
     snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"text\":\"%s\"}",net.uid,enick,esc);
     http_post_async(url, body);
     LOG("chat send %s",text);
+}
+void net_chat_trim(double keep){
+    int k=(int)keep;
+    char extra[CHAT_MAX][28];
+    int nextra=0, drop, i;
+    if(k<1) k=1;
+    if(k>CHAT_MAX) k=CHAT_MAX;
+    lock();
+    chat_keep=k;
+    if(net.chat_count>k){
+        drop=net.chat_count-k;
+        for(i=0;i<drop;i++){
+            if(net.chats[i].key[0]){
+                strncpy(extra[nextra], net.chats[i].key, sizeof(extra[0])-1);
+                extra[nextra][sizeof(extra[0])-1]=0;
+                nextra++;
+            }
+        }
+        memmove(net.chats, net.chats+drop, (size_t)k*sizeof(net.chats[0]));
+        net.chat_count=k;
+        if(k<CHAT_MAX) memset(net.chats+k, 0, (size_t)(CHAT_MAX-k)*sizeof(net.chats[0]));
+    }
+    unlock();
+    for(i=0;i<nextra;i++) chat_delete_key_async(extra[i]);
 }
 double net_chat_count(void){ double v; lock(); v=net.chat_count; unlock(); return v; }
 const char* net_chat_text(double idx){

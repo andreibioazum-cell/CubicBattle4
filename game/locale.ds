@@ -86,6 +86,10 @@ function tr_your_class
 if language==1; return "Класс: "; else if language==2; return "クラス: "; end; return "Class: ";end
 function tr_levels
 if language==1; return "Уровни"; else if language==2; return "レベル"; end; return "Levels";end
+function tr_level
+if language==1; return "Уровень"; else if language==2; return "レベル"; end; return "Level";end
+function tr_level_absorb
+if language==1; return "Поглощение урона"; else if language==2; return "ダメージ吸収"; end; return "Damage absorb";end
 function tr_levels_soon
 if language==1; return "Скоро!"; else if language==2; return "近日公開!"; end; return "Coming soon!";end
 function tr_cups

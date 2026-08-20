@@ -27,13 +27,14 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
-extern double player_class, azum_revived, finished, cups, azum_owned, cups_awarded;
+extern double player_class, azum_revived, finished, cups, azum_owned, cups_awarded, player_level;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
 extern DSArray *remotes, *remote_punches;
 extern double enemy_cooldown_min, enemy_cooldown_max;
 /* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
+#define ENEMY_ANGLE 5
 #define ENEMY_STATE 6
 #define ENEMY_COOLDOWN 8
 
@@ -231,6 +232,11 @@ static void tap_account(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h
 static void tap_classes(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 112)); }
 static void tap_class_ordinary(void) { do_tap(470.0f, 260.0f); }
 static void tap_class_azum(void) { do_tap(810.0f, 260.0f); }
+static void tap_levels_btn(void) { do_tap(810.0f, 484.0f); }
+static void tap_level_row(int n) {
+    float y = 32.0f + 64.0f + 52.0f + (float)(n - 1) * 88.0f + 39.0f;
+    do_tap((float)(g_w / 2), y);
+}
 
 static void save_bmp(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -363,6 +369,15 @@ int main(void) {
     /* --- 5. Чат: открыть -> написать -> отправить --- */
     do_tap(86, 174);
     run_frames(10);
+    if (chat_open != 1) { printf("!! chat did not open\n"); return 3; }
+    {
+        uint32_t edge = g_pixels[2 + 400 * g_w];
+        if (edge != 0xFF2F1E1Eu) {
+            printf("!! chat is not fullscreen: edge pixel=0x%08X expected 0xFF2F1E1E\n", edge);
+            return 3;
+        }
+        printf("=== chat covers the whole screen\n");
+    }
 
     /* 5a. Удалённое из поля не возвращается: "Q" + Backspace + "qwerty"
      *     должно дать ровно "qwerty", а не "Qqwerty". */
@@ -395,9 +410,31 @@ int main(void) {
         run_frames(1);
         { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
     }
-    do_tap(1192, 51); /* close */
-    run_frames(10);
     if (net_chat_count() < 1) { printf("!! chat message was not sent\n"); return 3; }
+    {
+        char url[128];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/chat.json", TEST_PORT);
+        for (int i = 0; i < 24; i++) {
+            char body[96];
+            snprintf(body, sizeof(body), "{\"uid\":\"flood\",\"nick\":\"flood\",\"text\":\"m%d\"}", i);
+            test_http_impl("POST", url, body, NULL, 0, NULL, NULL, NULL, 0);
+        }
+        for (int i = 0; i < 150; i++) {
+            run_frames(1);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+            if (net_chat_count() >= 8) break;
+        }
+        run_frames(5);
+        if (net_chat_count() > 18) {
+            printf("!! old chat messages were not auto-deleted, count=%g\n", net_chat_count());
+            return 3;
+        }
+        printf("=== chat auto-trim ok count=%g\n", net_chat_count());
+    }
+    do_tap(1124, 64); /* close: размер как у «Играть», справа сверху */
+    run_frames(10);
+    if (chat_open != 0) { printf("!! chat did not close\n"); return 3; }
+    if (game_state != 5) { printf("!! close left online, state=%g\n", game_state); return 3; }
     printf("=== chat ok count=%g (frame %ld)\n", net_chat_count(), g_frame);
 
     /* --- 6. Вышедший игрок удаляется из списка --- */
@@ -495,16 +532,25 @@ int main(void) {
     /* Бот бьёт быстро, а перезарядка удара каждый раз случайная и не короче
      * enemy_cooldown_min. */
     {
-        const double *e = (const double *)enemy;
-        double prev = e[ENEMY_STATE], cds[64];
-        int attacks = 0, ncd = 0, distinct = 0;
+        double *e = (double *)enemy;
+        double *pl = (double *)player;
+        double prev = e[ENEMY_STATE], cds[64], locked_ang = 0;
+        int attacks = 0, ncd = 0, distinct = 0, snap = 0, have_lock = 0;
         for (int i = 0; i < 900 && finished == 0; i++) {
             run_frames(1);
             double st = e[ENEMY_STATE];
             if (st == 1 && prev != 1) attacks++;
+            if (st == 2) {
+                if (!have_lock) { locked_ang = e[ENEMY_ANGLE]; have_lock = 1; }
+                else {
+                    pl[0] += 25;
+                    if (e[ENEMY_ANGLE] < locked_ang - 0.08 || e[ENEMY_ANGLE] > locked_ang + 0.08) snap = 1;
+                }
+            } else have_lock = 0;
             if (st == 3 && prev == 2 && ncd < 64) cds[ncd++] = e[ENEMY_COOLDOWN];
             prev = st;
         }
+        if (snap) { printf("!! bot snap-aimed at the player during the punch\n"); return 3; }
         if (attacks < 4) { printf("!! bot attacked only %d times in 15s\n", attacks); return 3; }
         for (int i = 0; i < ncd; i++) {
             if (cds[i] < enemy_cooldown_min - 1e-9 || cds[i] > enemy_cooldown_max + 1e-9) {
@@ -575,6 +621,16 @@ int main(void) {
     tap_classes(); wait_state(8, 30);
     tap_class_ordinary();
     run_frames(3);
+    tap_levels_btn();
+    if (!wait_state(9, 30)) { printf("!! levels screen did not open, state=%g\n", game_state); return 3; }
+    tap_level_row(3);
+    run_frames(4);
+    if (player_level != 3) { printf("!! level 3 was not selected, level=%g\n", player_level); return 3; }
+    tap_level_row(1);
+    run_frames(4);
+    if (player_level != 1) { printf("!! level 1 was not selected, level=%g\n", player_level); return 3; }
+    printf("=== levels: absorb 10%% at level 1, selectable (frame %ld)\n", g_frame);
+    tap_back(); wait_state(8, 30);
     tap_back(); wait_state(0, 30);
 
     /* --- 10. Повторный вход в онлайн: ник уже сохранён, экран ника не нужен --- */

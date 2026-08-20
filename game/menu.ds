@@ -74,13 +74,31 @@ end
 end
 function draw_levels
 rect 0,0,screen_w,screen_h,0x1a1a2e
-ctext tr_levels(),screen_h/2-190,0xFFFFFF
-ctext tr_levels_soon(),screen_h/2-70,0xC8C8E0
+ctext tr_levels(),back_y+btn_h+8,0xFFFFFF
+num n=1, row_h=78, y=back_y+btn_h+52, w=520, x=(screen_w-w)/2
+loop n<=max_level
+num sel=0; if player_level==n; sel=1; end
+if sel==1; roundrect x-4,y-4,w+8,row_h+8,24,0xFF5A5A78; end
+roundrect x,y,w,row_h,20,0xFF2A2A40
+str title=tr_level()+" "+n
+str desc=tr_level_absorb()+" "+(n*10)+"%"
+num tw=text_ink_width(title)*0.7
+text_scaled title,x+(w-tw)/2,y+12,0xFFFFFF,0.7
+num dw=text_ink_width(desc)*0.5
+text_scaled desc,x+(w-dw)/2,y+42,0xC8C8E0,0.5
+n=n+1; y=y+row_h+10
+end
+draw_cups
 draw_back
 end
 function touch_levels num x, num y, num action
 if action!=0; return; end
 if back_hit(x,y)==1; start_transition 8; return; end
+num n=1, row_h=78, ry=back_y+btn_h+52, w=520, rx=(screen_w-w)/2
+loop n<=max_level
+if x>=rx&&x<=rx+w&&y>=ry&&y<=ry+row_h; player_level=n; return; end
+n=n+1; ry=ry+row_h+10
+end
 end
 function draw_modes
 rect 0,0,screen_w,screen_h,0x1a1a2e

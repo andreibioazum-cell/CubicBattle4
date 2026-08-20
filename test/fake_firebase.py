@@ -7,7 +7,8 @@ Implements just enough of the REST API that net.c uses:
   PATCH  <path>.json            (deep merge of flat "a/b": value keys)
   DELETE <path>.json
   POST   <path>/chat.json       (push key -> {"name": "-KEY"})
-  GET    .../chat.json?orderBy="$key"&limitToLast=20
+  GET    .../chat.json?orderBy="$key"&limitToLast=32
+  GET    .../chat.json?orderBy="$key"&limitToFirst=16
 """
 import json
 import re
