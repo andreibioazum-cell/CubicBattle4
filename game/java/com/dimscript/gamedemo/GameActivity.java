@@ -1,4 +1,16 @@
-package com.dimscript.gamedemo;
+/*
+ * ВАЖНО: пакет — com.cb4, он же в AndroidManifest.xml и в именах JNI-функций
+ * runtime.c (Java_com_cb4_GameActivity_*). Все три места обязаны совпадать:
+ * если хотя бы одно расходится, System.loadLibrary отработает, но нативные
+ * методы редактора (nativeReplaceText/nativeSubmitText/nativeKeyboardHidden)
+ * не найдутся, nativeReady станет false — клавиатура откроется, а текст в
+ * поле ввода не попадёт.
+ *
+ * Файл намеренно лежит в старом каталоге com/dimscript/gamedemo: путь зашит
+ * в шаг сборки .github/workflows/main.yml. Для javac это неважно — класс
+ * компилируется по объявленному пакету (classes/com/cb4/GameActivity.class).
+ */
+package com.cb4;
 
 import android.app.NativeActivity;
 import android.content.Context;
