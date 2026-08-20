@@ -29,6 +29,7 @@ const char *net_login_nick(void);
  * если счётчик изменился, удар нельзя потерять между двумя опросами сети. */
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
+void net_set_class(double cls);
 double net_status(void);
 double net_slot(void);
 double net_count(void);
@@ -45,6 +46,13 @@ double net_player_punch_y(double slot);
 double net_player_punch_dx(double slot);
 double net_player_punch_dy(double slot);
 double net_player_punch(double slot);
+double net_player_class(double slot);
+
+/* Локальный прогресс: кубки, выбранный класс и купленный Азум. */
+double net_load_cups(void);
+double net_load_class(void);
+double net_load_azum(void);
+void net_save_progress(double cups, double cls, double azum);
 
 /* Чат читается реже боевого состояния, поэтому не тормозит движение. */
 void net_chat_send(const char *text);
