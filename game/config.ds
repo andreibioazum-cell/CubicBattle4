@@ -48,3 +48,5 @@ num event_mode=0, disco_safe=0, disco_t=0
 // возрождения. Вспышки на экране нет: Азум просто встаёт в случайной точке.
 num player_class=0, azum_revived=0, revive_prot=0
 num cups=0, azum_owned=0, cup_win=5, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
+// Уровни: каждый даёт поглощение 10% входящего урона (1 ур. = 10%, 5 ур. = 50%).
+num player_level=1, max_level=5

@@ -56,6 +56,7 @@ void net_save_progress(double cups, double cls, double azum);
 
 /* Чат читается реже боевого состояния, поэтому не тормозит движение. */
 void net_chat_send(const char *text);
+void net_chat_trim(double keep); /* оставить последние keep, остальное удалить */
 double net_chat_count(void);
 const char *net_chat_text(double idx);
 const char *net_chat_uid(double idx);

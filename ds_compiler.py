@@ -8,7 +8,7 @@ BUILTINS=frozenset({
     'net_player_punch_x','net_player_punch_y','net_player_punch_dx','net_player_punch_dy','net_player_punch',
     'net_player_class',
     'net_event',
-    'net_chat_send','net_chat_count','net_chat_text','net_chat_uid',
+    'net_chat_send','net_chat_trim','net_chat_count','net_chat_text','net_chat_uid',
     'net_autologin','net_set_nick','net_login_status','net_login_nick',
     'net_load_cups','net_load_class','net_load_azum','net_save_progress',
     'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_enter_pressed','keyboard_type','keyboard_visible',
