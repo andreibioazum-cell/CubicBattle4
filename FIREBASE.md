@@ -72,7 +72,7 @@ rooms/
   main/
     players/
       0/ uid, nick, x, y, angle, hp, alive, seq,
-         px, py, pdx, pdy, punch
+         px, py, pdx, pdy, punch, cls
       1/ ...
     chat/
       <ключ>/ uid, nick, text

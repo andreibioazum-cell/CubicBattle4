@@ -27,7 +27,7 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
-extern double player_class, azum_revived, finished;
+extern double player_class, azum_revived, finished, cups, azum_owned, cups_awarded;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
 extern DSArray *remotes, *remote_punches;
@@ -176,15 +176,16 @@ static int wait_state(double want, int max_iters) {
     return 0;
 }
 
-/* В remotes лежат четыре постоянных слота по 10 чисел; первое поле говорит,
- * занят ли слот соперником. Такая схема проще добавления/удаления записей. */
+/* В remotes лежат четыре постоянных слота по 11 чисел; первое поле говорит,
+ * занят ли слот соперником. Поле 10 — класс соперника. */
+#define REMOTE_FIELDS 11
 static int remote_count(void) {
     int count = 0;
-    for (int slot = 0; slot < 4; slot++) if (arr_get(remotes, slot * 10) == 1) count++;
+    for (int slot = 0; slot < 4; slot++) if (arr_get(remotes, slot * REMOTE_FIELDS) == 1) count++;
     return count;
 }
 static int first_remote_slot(void) {
-    for (int slot = 0; slot < 4; slot++) if (arr_get(remotes, slot * 10) == 1) return slot;
+    for (int slot = 0; slot < 4; slot++) if (arr_get(remotes, slot * REMOTE_FIELDS) == 1) return slot;
     return -1;
 }
 static int wait_remotes(int want_players, int max_iters) {
@@ -226,8 +227,8 @@ static void tap_solo(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 
 static void tap_online(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 72)); }
 static void tap_back(void) { do_tap((float)(g_w - 280) / 2 + 140, 32 + 32); }
 static void tap_account(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 152)); }
-/* Вкладка классов справа сверху в лобби; карточки на экране выбора. */
-static void tap_classes_tab(void) { do_tap((float)(g_w - 106), 40.0f); }
+/* Лобби: «Классы» третья кнопка (my+160). Карточки обычного и Азума. */
+static void tap_classes(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 112)); }
 static void tap_class_ordinary(void) { do_tap(470.0f, 260.0f); }
 static void tap_class_azum(void) { do_tap(810.0f, 260.0f); }
 
@@ -403,6 +404,25 @@ int main(void) {
     if (!wait_remotes(1, 200)) { printf("!! remote player never appeared, remotes=%g\n", arr_len(remotes)); return 3; }
     printf("=== remote player visible (remotes=%d)\n", remote_count());
 
+    /* Класс соперника приходит полем cls: обычный по умолчанию, Азум после PATCH. */
+    {
+        int rslot = first_remote_slot(), seen = 0;
+        if (arr_get(remotes, rslot * REMOTE_FIELDS + 10) != 0) {
+            printf("!! remote class should start as Ordinary, got %g\n", arr_get(remotes, rslot * REMOTE_FIELDS + 10));
+            return 3;
+        }
+        char url[128];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/players/%d.json", TEST_PORT, rslot);
+        test_http_impl("PATCH", url, "{\"cls\":1}", NULL, 0, NULL, NULL, NULL, 0);
+        for (int i = 0; i < 100 && !seen; i++) {
+            run_frames(1);
+            seen = arr_get(remotes, rslot * REMOTE_FIELDS + 10) == 1;
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (!seen) { printf("!! remote class was not applied\n"); return 3; }
+        printf("=== remote Azum class visible on slot %d\n", rslot);
+    }
+
     /* У события намеренно нет короткого active=1. Клиент обязан заметить
      * изменившийся счётчик punch и всё равно показать анимацию с хитбоксом. */
     {
@@ -499,12 +519,30 @@ int main(void) {
     }
     tap_back(); wait_state(0, 40);
 
-    /* --- 9b. Классы: вкладка, выбор Азума, одно возрождение за бой --- */
-    tap_classes_tab();
+    /* --- 9b. Классы: вкладка, Азум за 50 кубков, сохранение, одно возрождение --- */
+    tap_classes();
     if (!wait_state(8, 30)) { printf("!! classes tab did not open, state=%g\n", game_state); return 3; }
     tap_class_azum();
     run_frames(5);
-    if (player_class != 1) { printf("!! Azum class was not selected, class=%g\n", player_class); return 3; }
+    if (player_class != 0 || azum_owned != 0) {
+        printf("!! Azum must stay locked without cups, class=%g owned=%g\n", player_class, azum_owned);
+        return 3;
+    }
+    cups = 50;
+    tap_class_azum();
+    run_frames(5);
+    if (player_class != 1 || azum_owned != 1 || cups != 0) {
+        printf("!! Azum buy failed: class=%g owned=%g cups=%g\n", player_class, azum_owned, cups);
+        return 3;
+    }
+    {
+        FILE *f = fopen("progress.dat", "r");
+        int pc=0, cl=0, az=0;
+        if (!f) { printf("!! progress.dat was not written after buying Azum\n"); return 3; }
+        if (fscanf(f, "%d %d %d", &pc, &cl, &az) != 3) { fclose(f); printf("!! progress.dat is unreadable\n"); return 3; }
+        fclose(f);
+        if (pc != 0 || cl != 1 || az != 1) { printf("!! progress.dat has %d %d %d, expected 0 1 1\n", pc, cl, az); return 3; }
+    }
     tap_class_ordinary();
     run_frames(5);
     if (player_class != 0) { printf("!! Ordinary class was not selected, class=%g\n", player_class); return 3; }
@@ -513,7 +551,7 @@ int main(void) {
     tap_back();
     if (!wait_state(0, 30)) { printf("!! did not return from classes\n"); return 3; }
     if (player_class != 1) { printf("!! class was lost after leaving the tab\n"); return 3; }
-    printf("=== classes tab: Azum selected (frame %ld)\n", g_frame);
+    printf("=== classes tab: Azum bought and selected (frame %ld)\n", g_frame);
 
     tap_play(); wait_state(2, 30);
     tap_solo(); wait_state(1, 30);
@@ -529,11 +567,12 @@ int main(void) {
         pl[4] = 0;
         run_frames(4);
         if (finished != 2) { printf("!! Azum revived a second time, finished=%g hp=%g\n", finished, pl[4]); return 3; }
+        if (cups_awarded != 0 || cups != 0) { printf("!! defeat awarded cups: awarded=%g cups=%g\n", cups_awarded, cups); return 3; }
         printf("=== second death stays dead (Azum revive is once per match)\n");
     }
     do_tap((float)(g_w / 2), (float)(g_h / 2));
     wait_state(0, 40);
-    tap_classes_tab(); wait_state(8, 30);
+    tap_classes(); wait_state(8, 30);
     tap_class_ordinary();
     run_frames(3);
     tap_back(); wait_state(0, 30);

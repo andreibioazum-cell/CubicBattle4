@@ -7,9 +7,10 @@
 // цифрах, а в поведении: он держит дистанцию, отходит после размена и
 // уклоняется от удара игрока (dodge), как живой соперник.
 num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=170, bot_strafe_speed=96, bot_dodge_speed=330, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_out=0.1, aim_max_alpha=102
-// Онлайн: в remotes по 10 чисел, в remote_punches по 6. Координаты соперника
+// Онлайн: в remotes по 11 чисел, в remote_punches по 6. Координаты соперника
 // плавно догоняют сетевую цель; большой скачок считается телепортом.
-num remote_fields=10, punch_fields=6, remote_smooth=14, remote_snap=220
+// Поля remotes: present, x, y, angle, hp, alive, punch, netx, nety, netangle, class.
+num remote_fields=11, punch_fields=6, remote_smooth=14, remote_snap=220
 // Поведение бота: enemy_dodge_time/cooldown — окно и перезарядка
 // уклонения от удара игрока;
 // enemy_think_min/max — случайная пауза между заходами (бот отходит за
@@ -46,3 +47,4 @@ num event_mode=0, disco_safe=0, disco_t=0
 // azum_revived — уже тратили воскрешение, revive_prot — неуязвимость после
 // возрождения. Вспышки на экране нет: Азум просто встаёт в случайной точке.
 num player_class=0, azum_revived=0, revive_prot=0
+num cups=0, azum_owned=0, cup_win=5, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
