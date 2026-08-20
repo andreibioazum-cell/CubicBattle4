@@ -88,8 +88,7 @@ public final class GameActivity extends NativeActivity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+        enterImmersiveMode();
 
         chatEditor = new EditText(this);
         chatEditor.setSingleLine(true);
