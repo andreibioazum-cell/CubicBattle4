@@ -253,6 +253,9 @@ end
 // Короткое активное окно удара. Простое касание врага урон не наносит.
 if enemy.state==2
 enemy.state_time=enemy.state_time-dt
+// В активной фазе удара взгляд фиксируется на цели без задержки:
+// бот разворачивается ровно к игроку, а не догоняет угол плавно.
+enemy.angle=atan2(player.y-enemy.y,player.x-enemy.x)
 if enemy.hit==0&&player_in_enemy_punch()==1
 enemy.hit=1
 if revive_prot<=0

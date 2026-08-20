@@ -122,13 +122,24 @@ static void lg_lock(void) { ds_mutex_lock(lg.lock); }
 static void lg_unlock(void) { ds_mutex_unlock(lg.lock); }
 
 static int nick_valid(const char *n) {
-    size_t i, l = n ? strlen(n) : 0;
-    if (l < 3 || l > LOGIN_NICK_MAX) return 0;
-    for (i = 0; i < l; i++) {
-        char c = n[i];
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) return 0;
+    /* Ник может содержать русские буквы в UTF-8, латиницу, цифры и _. */
+    size_t i=0, bytes=n ? strlen(n) : 0, chars=0;
+    if (bytes < 3 || bytes > LOGIN_NICK_MAX) return 0;
+    while (i < bytes) {
+        unsigned char c=(unsigned char)n[i]; unsigned long cp=0; size_t need=0;
+        if (c<0x80) { cp=c; need=1; }
+        else if ((c&0xE0)==0xC0) { cp=c&0x1F; need=2; }
+        else if ((c&0xF0)==0xE0) { cp=c&0x0F; need=3; }
+        else if ((c&0xF8)==0xF0) { cp=c&0x07; need=4; }
+        else return 0;
+        if (i+need>bytes) return 0;
+        size_t k; for(k=1;k<need;k++) { unsigned char q=(unsigned char)n[i+k]; if((q&0xC0)!=0x80) return 0; cp=(cp<<6)|(q&0x3F); }
+        if ((need==2&&cp<0x80)||(need==3&&cp<0x800)||(need==4&&cp<0x10000)||cp>0x10FFFF) return 0;
+        if ((cp>='a'&&cp<='z')||(cp>='A'&&cp<='Z')||(cp>='0'&&cp<='9')||cp=='_'||(cp>=0x0400&&cp<=0x04FF)) chars++;
+        else return 0;
+        i+=need;
     }
-    return 1;
+    return chars>=3 && chars<=16;
 }
 static void session_save(const char *nick) {
     char path[320]; FILE *f;
