@@ -495,14 +495,12 @@ done:
 
 int keyboard_handle_key(int keycode, int action, int meta) {
     (void)action;
-    /* Сюда попадают только клавиши, которые НЕ дошли до системного EditText:
-     * когда редактор владеет IME, события коммитятся в него и до native-очереди
-     * просто не доходят. А если редактор потерял фокус (частая история после
-     * ресайза окна под клавиатуру), события приходят сюда — и мы ОБЯЗАНЫ сами
-     * дописать их в буфер. Раньше здесь стояло «uses_editor -> return 0», и при
-     * застрявшем флаге wantKeyboard каждый символ беззвучно терялся: поле ника
-     * не принимало ввод вообще. Стёртый текст не «воскресает»: любой буферный
-     * edit зеркалится обратно в редактор через kb_sync_editor(). */
+    /* NativeActivity забирает InputQueue окна: KeyEvent от Gboard (латиница
+     * без composing) приходят СЮДА, а не в EditText. Если проглотить их из-за
+     * wantKeyboard, поле Ник открывает клавиатуру, но буквы не появляются.
+     * JNI nativeReplaceText по-прежнему заменяет буфер целиком, если IME
+     * всё же доставила символ в редактор — тогда append ниже просто дублирует
+     * уже стоящую букву, и мы это пропускаем. */
     if (keycode==AKEYCODE_DEL || keycode==AKEYCODE_FORWARD_DEL) { keyboard_backspace(); return 1; }
     if (keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER) {
         pthread_mutex_lock(&kb_mutex); kb_enter=1; pthread_mutex_unlock(&kb_mutex); return 1;

@@ -105,19 +105,25 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setFocusableInTouchMode(true);
         chatEditor.setClickable(false);
         chatEditor.setLongClickable(false);
+        // VISIBLE_PASSWORD отключает composing у Gboard: каждая латинская буква
+        // сразу коммитится в поле. Без этого IME держит «a» как composing, а
+        // restartInput/setText с нативной стороны его съедает — клавиатура
+        // открыта, буквы нажимаются, в поле Ник ничего не появляется.
         chatEditor.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         chatEditor.setImeOptions(EditorInfo.IME_ACTION_DONE
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_FLAG_NO_FULLSCREEN);
         chatEditor.setFilters(new InputFilter[] { new InputFilter.LengthFilter(95) });
         chatEditor.setVisibility(View.INVISIBLE);
 
-        /* Реальный размер нужен InputConnection. Ставим в угол вне джойстика. */
+        /* Полноширинная полоса сверху: крошечный 1×1/угол IME считает мёртвым
+         * и не отдаёт символы. Касания всё равно идут в native InputQueue. */
         float density = getResources().getDisplayMetrics().density;
-        int editorSize = Math.max(48, (int) (48f * density));
+        int editorH = Math.max(48, (int) (48f * density));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                editorSize, editorSize, Gravity.TOP | Gravity.END);
+                FrameLayout.LayoutParams.MATCH_PARENT, editorH, Gravity.TOP);
         addContentView(chatEditor, params);
 
         chatEditor.addTextChangedListener(new TextWatcher() {
@@ -297,15 +303,18 @@ public final class GameActivity extends NativeActivity {
         if (chatEditor == null) return;
         String safe = text == null ? "" : text;
         if (safe.contentEquals(chatEditor.getText())) return;
+        boolean shrinking = safe.length() < chatEditor.length();
         syncingFromNative = true;
         chatEditor.setText(safe);
         chatEditor.setSelection(chatEditor.length());
         syncingFromNative = false;
-        // Сбрасываем composing-регион IME: без этого клавиатура держит у себя
-        // уже удалённые буквы и приклеивает их к следующему слову.
-        InputMethodManager input = (InputMethodManager)
-                getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (input != null) input.restartInput(chatEditor);
+        // restartInput только при удалении/очистке: иначе IME сбрасывает
+        // только что введённую латинскую букву, и поле Ник остаётся пустым.
+        if (shrinking) {
+            InputMethodManager input = (InputMethodManager)
+                    getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (input != null) input.restartInput(chatEditor);
+        }
     }
 
     /** Полная очистка поля, чтобы закрытая клавиатура не хранила старый текст. */
