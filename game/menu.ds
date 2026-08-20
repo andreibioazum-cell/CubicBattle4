@@ -2,15 +2,27 @@ function class_name
 if player_class==1; return tr_class_azum(); end
 return tr_class_ordinary()
 end
+function save_progress
+net_save_progress cups,player_class,azum_owned
+net_set_class player_class
+end
+function draw_cups
+str cup_s=tr_cups()+": "+cups
+num cw=text_ink_width(cup_s)*0.5
+text_scaled cup_s,screen_w-cw-20,18,0xFFD54A,0.5
+end
 function draw_lobby
 rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF
 // Основное меню: классы идут сразу под настройками и имеют тот же размер.
 num mx=(screen_w-btn_w)/2, my=screen_h/2-80
 button tr_play(),mx,my,btn_w,btn_h;button tr_settings(),mx,my+80,btn_w,btn_h;button tr_classes(),mx,my+160,btn_w,btn_h;button tr_account(),mx,my+240,btn_w,btn_h
 if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;str greet="Привет, \""+ln+"\"";num lw=text_ink_width(greet)*0.5;text_scaled greet,(screen_w-lw)/2,18,0xFFFFFF,0.5;end;end
+draw_cups
 end
 function draw_class_card num x, num y, num w, num h, num cls, str title, str desc, str texname
-num sel=0; if player_class==cls; sel=1; end
+num sel=0, locked=0
+if player_class==cls; sel=1; end
+if cls==1&&azum_owned==0; locked=1; sel=0; end
 if sel==1; roundrect x-5,y-5,w+10,h+10,26,0xFF5A5A78; end
 roundrect x,y,w,h,22,0xFF2A2A40
 num ts=2.2, spr=50*ts
@@ -20,6 +32,7 @@ text title,x+(w-tw)/2,y+150,0xFFFFFF
 num dw=text_ink_width(desc)*0.5
 text_scaled desc,x+(w-dw)/2,y+198,0xC8C8E0,0.5
 if sel==1; button_scaled tr_class_selected(),x+24,y+h-72,w-48,48,0.55
+else if locked==1; button_scaled tr_class_buy(),x+24,y+h-72,w-48,48,0.55
 else; button_scaled tr_class_pick(),x+24,y+h-72,w-48,48,0.55; end
 end
 function draw_classes
@@ -30,7 +43,20 @@ draw_class_card x1,y,cw,ch,0,tr_class_ordinary(),tr_class_ordinary_desc(),ORDINA
 draw_class_card x2,y,cw,ch,1,tr_class_azum(),tr_class_azum_desc(),AZUM_TEX
 // Кнопка «Уровни» — под карточкой Азума.
 button_scaled tr_levels(),x2,y+ch+gap,cw,btn_h,0.9
+draw_cups
+if class_msg_t>0; class_msg_t=class_msg_t-dt; ctext tr_class_need_cups(),y+ch+gap+btn_h+18,0xFF8A80; end
 draw_back
+end
+function pick_class num cls
+if cls==1
+if azum_owned==0
+if cups>=azum_cost; cups=cups-azum_cost; azum_owned=1; player_class=1; save_progress; ds_log "bought azum, cups %g",cups
+else; class_msg_t=2.5; end
+return
+end
+player_class=1; save_progress; return
+end
+player_class=0; save_progress
 end
 function touch_classes num x, num y, num action
 if action!=0; return; end
@@ -38,8 +64,8 @@ if back_hit(x,y)==1; start_transition 0; return; end
 num cw=300, ch=300, gap=40
 num x1=(screen_w-cw*2-gap)/2, x2=x1+cw+gap, cy=back_y+btn_h+16
 if y>=cy&&y<=cy+ch
-if x>=x1&&x<=x1+cw; player_class=0; return; end
-if x>=x2&&x<=x2+cw; player_class=1; return; end
+if x>=x1&&x<=x1+cw; pick_class 0; return; end
+if x>=x2&&x<=x2+cw; pick_class 1; return; end
 end
 // Кнопка «Уровни» под карточкой Азума.
 if y>=cy+ch+gap&&y<=cy+ch+gap+btn_h

@@ -2,13 +2,19 @@
 // Ближний бой: пуль больше нет — прицел и удар.
 // Хитбокс удара широкий (punch_width) и недлинный (punch_reach).
 
-function player_idle_tex
-if player_class==1; return AZUM_TEX; end
+function class_idle_tex num cls
+if cls==1; return AZUM_TEX; end
 return ORDINARY_TEX
 end
-function player_punch_tex
-if player_class==1; return AZUM_PUNCH_TEX; end
+function class_punch_tex num cls
+if cls==1; return AZUM_PUNCH_TEX; end
 return PUNCH_TEX
+end
+function player_idle_tex
+return class_idle_tex(player_class)
+end
+function player_punch_tex
+return class_punch_tex(player_class)
 end
 function try_revive
 // Азум один раз за бой встаёт с полным HP. Обычный класс сразу проигрывает.
@@ -32,7 +38,7 @@ end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
-azum_revived=0; revive_prot=0
+azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
 arr_clear remotes; arr_clear remote_punches
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
@@ -42,7 +48,7 @@ function init_game
 reset_battle; enemy.hp=enemy.max_hp; spawn_enemy
 end
 function init_online
-reset_battle; chat_open=0; keyboard_hide; online_ready=0; net_connect FIREBASE,ROOM
+reset_battle; chat_open=0; keyboard_hide; online_ready=0; net_set_class player_class; net_connect FIREBASE,ROOM
 end
 function place_online
 // слот -> позиция на карте
@@ -372,6 +378,7 @@ arr_set remotes,b+6,net_player_punch(s); arr_set remotes,b+7,x; arr_set remotes,
 end
 arr_set remotes,b+4,net_player_hp(s); arr_set remotes,b+5,net_player_alive(s)
 arr_set remotes,b+7,x; arr_set remotes,b+8,y; arr_set remotes,b+9,a
+arr_set remotes,b+10,net_player_class(s)
 num p=net_player_punch(s)
 if p!=arr_get(remotes,b+6); arr_set remotes,b+6,p; start_remote_punch s; end
 else if arr_get(remotes,b)==1
@@ -417,12 +424,27 @@ end
 i=i+1
 end
 end
+function online_try_win
+// Победа в онлайне: был живой соперник, и теперь все, кто ещё в комнате, лежат.
+// Выход из игры не считается — мёртвых должно быть хотя бы один.
+if finished!=0||online_ready==0||player.hp<=0; return; end
+num living=0, dead=0, s=0
+loop s<max_players
+num b=s*remote_fields
+if arr_get(remotes,b)==1
+if arr_get(remotes,b+5)==1; living=living+1; match_seen_foe=1; else; dead=dead+1; end
+end
+s=s+1
+end
+if match_seen_foe==1&&living==0&&dead>=1; finish_game 1; end
+end
 function update_online
 tick_revive
 chat_update
 update_disco
 if online_ready==0&&net_slot()>=0; place_online; end
 read_remotes; smooth_remotes; update_aim
+online_try_win
 if finished!=0||online_ready==0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
@@ -444,6 +466,9 @@ if game_state==5; net_publish_punch punch.x/screen_w,punch.y/screen_h,punch.dx,p
 end
 function finish_game num result
 finished=result; aim_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
+if result==1&&cups_awarded==0
+cups_awarded=1; cups=cups+cup_win; save_progress; ds_log "win +%g cups -> %g",cup_win,cups
+end
 end
 function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num alpha
 // Общая отрисовка для себя, бота и сетевого соперника. RGB всегда 000000;
@@ -469,7 +494,9 @@ text_in_box tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55
 draw_back
 end
 function draw_result str title, str note
-rect 0,0,screen_w,screen_h,0x99000000; num y=screen_h/2-85; roundrect screen_w/2-165,y,330,170,24,0x5F10A0; ctext title,y+34,0xFFFFFF; ctext note,y+75,0xFFFFFF; ctext tr_tap_to_return(),y+118,0xFFCDD2
+rect 0,0,screen_w,screen_h,0x99000000; num y=screen_h/2-85; roundrect screen_w/2-165,y,330,180,24,0x5F10A0; ctext title,y+28,0xFFFFFF; ctext note,y+68,0xFFFFFF
+if cups_awarded==1; ctext tr_cups_reward(),y+100,0xFFD54A; end
+ctext tr_tap_to_return(),y+132,0xFFCDD2
 end
 function draw_game
 // Прицел удара бота: такая же чёрная полупрозрачная полоса, как у игрока —
@@ -531,12 +558,13 @@ num b=i*remote_fields
 if arr_get(remotes,b+5)==1
 num rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3), slot=i, rb=slot*punch_fields
 str rn=net_player_nick(slot)
+num rcls=arr_get(remotes,b+10)
 if arr_get(remote_punches,rb)==1
 // Тот же helper, что у игрока: чёрный хитбокс и точно такое же активное окно.
 num px=arr_get(remote_punches,rb+1), py=arr_get(remote_punches,rb+2), pdx=arr_get(remote_punches,rb+3), pdy=arr_get(remote_punches,rb+4)
 draw_punch_box px,py,pdx,pdy,punch_reach,punch_width,1
-tex rx-hw,ry-hw,PUNCH_TEX,sprite_a(atan2(pdy,pdx)),ps
-else; tex rx-hw,ry-hw,ORDINARY_TEX,sprite_a(ra),ps; end
+tex rx-hw,ry-hw,class_punch_tex(rcls),sprite_a(atan2(pdy,pdx)),ps
+else; tex rx-hw,ry-hw,class_idle_tex(rcls),sprite_a(ra),ps; end
 if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5; end
 end
 i=i+1

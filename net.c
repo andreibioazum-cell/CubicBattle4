@@ -49,6 +49,7 @@
 #define CHAT_TEXT_MAX 96
 #define LOGIN_NICK_MAX 16
 #define SESSION_FILE "auth.dat"
+#define PROGRESS_FILE "progress.dat"
 #ifdef _WIN32
 typedef SRWLOCK DSMutex;
 #define DS_MUTEX_INIT SRWLOCK_INIT
@@ -79,6 +80,7 @@ static void ds_thread_detach(DSThread t) { if (t) pthread_detach(t); }
 typedef struct {
     double x,y,a,hp,alive;
     double punch_x,punch_y,punch_dx,punch_dy,punch;
+    double cls;
     int online;
     char nick[24];
 } Actor;
@@ -108,6 +110,8 @@ static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
 static char s_lg_nick_ret[24];
 static long long now_ms(void);
+static void lock(void);
+static void unlock(void);
 
 /* Вход в онлайн — только ник: ни пароля, ни запросов в сеть, ни потоков.
  * Ник хранится в session_nick, сохраняется в файл и читается при старте. */
@@ -120,6 +124,65 @@ typedef struct {
 static Login lg = { .lock = DS_MUTEX_INIT };
 static void lg_lock(void) { ds_mutex_lock(lg.lock); }
 static void lg_unlock(void) { ds_mutex_unlock(lg.lock); }
+
+/* Кубки и класс живут рядом с ником: тот же каталог, отдельный файл, чтобы
+ * смена ника не обнуляла прогресс. pending_cls нужен, потому что net_connect
+ * обнуляет net.me уже после выбора класса в меню. */
+typedef struct {
+    DSMutex lock;
+    int loaded, cups, cls, azum;
+} Progress;
+static Progress pg = { .lock = DS_MUTEX_INIT };
+static int pending_cls = 0;
+static void pg_lock(void) { ds_mutex_lock(pg.lock); }
+static void pg_unlock(void) { ds_mutex_unlock(pg.lock); }
+static void data_file_path(char *path, size_t cap, const char *name) {
+    lg_lock();
+    if (lg.path[0]) snprintf(path, cap, "%s/%s", lg.path, name);
+    else snprintf(path, cap, "%s", name);
+    lg_unlock();
+}
+static void progress_write(int cups, int cls, int azum) {
+    char path[320]; FILE *f;
+    data_file_path(path, sizeof(path), PROGRESS_FILE);
+    f = fopen(path, "w");
+    if (f) { fprintf(f, "%d %d %d\n", cups, cls, azum); fclose(f); }
+}
+static void progress_read(void) {
+    char path[320]; FILE *f; int cups=0, cls=0, azum=0;
+    pg_lock();
+    if (pg.loaded) { pg_unlock(); return; }
+    pg_unlock();
+    data_file_path(path, sizeof(path), PROGRESS_FILE);
+    f = fopen(path, "r");
+    if (f) {
+        if (fscanf(f, "%d %d %d", &cups, &cls, &azum) < 1) { cups=0; cls=0; azum=0; }
+        fclose(f);
+    }
+    if (cups < 0) cups = 0;
+    if (cls != 1) cls = 0;
+    azum = azum ? 1 : 0;
+    if (cls == 1 && !azum) cls = 0;
+    pg_lock(); pg.cups = cups; pg.cls = cls; pg.azum = azum; pg.loaded = 1; pg_unlock();
+}
+double net_load_cups(void) { double v; progress_read(); pg_lock(); v = (double)pg.cups; pg_unlock(); return v; }
+double net_load_class(void) { double v; progress_read(); pg_lock(); v = (double)pg.cls; pg_unlock(); return v; }
+double net_load_azum(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum; pg_unlock(); return v; }
+void net_save_progress(double cups, double cls, double azum) {
+    int c = (int)cups, k = ((int)cls == 1) ? 1 : 0, a = azum ? 1 : 0;
+    if (c < 0) c = 0;
+    if (k == 1 && !a) k = 0;
+    pg_lock(); pg.cups = c; pg.cls = k; pg.azum = a; pg.loaded = 1; pg_unlock();
+    pending_cls = k;
+    progress_write(c, k, a);
+}
+void net_set_class(double cls) {
+    int k = ((int)cls == 1) ? 1 : 0;
+    pending_cls = k;
+    lock(); net.me.cls = (double)k;
+    if (net.slot >= 0) net.players[net.slot].cls = (double)k;
+    unlock();
+}
 
 static int nick_valid(const char *n) {
     /* Ник может содержать русские буквы в UTF-8, латиницу, цифры и _. */
@@ -463,9 +526,9 @@ static int push_state(void) {
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
     /* Пять знаков у координат дают субпиксельную точность. Старые %.2f
      * округляли движение до скачков примерно по 13 px на широком экране. */
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f}",
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"cls\":%.0f}",
         net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
-        safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch));
+        safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch),safe(a.cls));
     int c = http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d (room write denied? check Firebase rules)", c);
     return c == 200;
@@ -595,7 +658,7 @@ static int claim_slot(void) {
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
-            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0}",net.uid,enick);
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"cls\":%.0f}",net.uid,enick,safe(net.me.cls));
         }
         code=http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
@@ -631,6 +694,7 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/pdx",bp); ps[slot].punch_dx=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/pdy",bp); ps[slot].punch_dy=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/punch",bp); ps[slot].punch=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/cls",bp); ps[slot].cls=num(resp,p,0);
         ps[slot].online=1; count++;
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); net.count=count; unlock();
@@ -811,6 +875,7 @@ void net_connect(const char *url,const char *room) {
         lg_lock(); if (lg.status == NET_LOGIN_OK) snprintf(snick,sizeof(snick),"%s",lg.session_nick); else snick[0]=0; lg_unlock();
         if (snick[0]) snprintf(net.me.nick,sizeof(net.me.nick),"%s",snick);
     }
+    net.me.cls = (double)pending_cls;
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
 #ifdef _WIN32
@@ -918,4 +983,5 @@ READER(net_player_punch_y, net.players[i].punch_y)
 READER(net_player_punch_dx, net.players[i].punch_dx)
 READER(net_player_punch_dy, net.players[i].punch_dy)
 READER(net_player_punch, net.players[i].punch)
+READER(net_player_class, net.players[i].cls)
 #undef READER
