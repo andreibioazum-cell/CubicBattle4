@@ -110,7 +110,7 @@ static void lg_unlock(void) { ds_mutex_unlock(lg.lock); }
 
 typedef struct {
     DSMutex lock;
-    int loaded, cups, candies, cls, azum, santa;
+    int loaded, cups, candies, cls, azum, santa, level, levels_unlocked;
 } Progress;
 static Progress pg = { .lock = DS_MUTEX_INIT };
 static int pending_cls = 0;
@@ -122,22 +122,40 @@ static void data_file_path(char *path, size_t cap, const char *name) {
     else snprintf(path, cap, "%s", name);
     lg_unlock();
 }
-static void progress_write(int cups, int candies, int cls, int azum, int santa) {
+static void progress_write(int cups, int candies, int cls, int azum, int santa,
+                           int level, int levels_unlocked) {
     char path[320]; FILE *f;
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "w");
-    if (f) { fprintf(f, "%d %d %d %d %d\n", cups, cls, azum, santa, candies); fclose(f); }
+    if (f) {
+        /* Старые сборки писали пять чисел. Новые два поля — выбранный и
+         * максимально открытый уровень — добавлены в конец для совместимости. */
+        fprintf(f, "%d %d %d %d %d %d %d\n",
+                cups, cls, azum, santa, candies, level, levels_unlocked);
+        fclose(f);
+    }
 }
 static void progress_read(void) {
-    char path[320]; FILE *f; int cups=0, candies=0, cls=0, azum=0, santa=0;
+    char path[320]; FILE *f;
+    int cups=0, candies=0, cls=0, azum=0, santa=0, level=0, levels_unlocked=0;
     pg_lock();
     if (pg.loaded) { pg_unlock(); return; }
     pg_unlock();
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "r");
     if (f) {
-        int n = fscanf(f, "%d %d %d %d %d", &cups, &cls, &azum, &santa, &candies);
-        if (n < 3) { cups=0; candies=0; cls=0; azum=0; santa=0; }
+        int n = fscanf(f, "%d %d %d %d %d %d %d",
+                       &cups, &cls, &azum, &santa, &candies,
+                       &level, &levels_unlocked);
+        if (n < 3) {
+            cups=0; candies=0; cls=0; azum=0; santa=0; level=0; levels_unlocked=0;
+        } else if (n < 6) {
+            level=0; levels_unlocked=0;
+        } else if (n < 7) {
+            /* A file with only the selected level predates the separate
+             * selection/unlock fields, so that level is the highest unlocked. */
+            levels_unlocked=level;
+        }
         fclose(f);
     }
     if (cups < 0) cups = 0;
@@ -147,13 +165,21 @@ static void progress_read(void) {
     santa = santa ? 1 : 0;
     if (cls == 1 && !azum) cls = 0;
     if (cls == 2 && !santa) cls = 0;
-    pg_lock(); pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.loaded = 1; pg_unlock();
+    if (levels_unlocked < 0) levels_unlocked = 0;
+    if (levels_unlocked > 5) levels_unlocked = 5;
+    if (level < 0 || level > levels_unlocked) level = 0;
+    pg_lock();
+    pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
+    pg.level = level; pg.levels_unlocked = levels_unlocked; pg.loaded = 1;
+    pg_unlock();
 }
 double net_load_cups(void) { double v; progress_read(); pg_lock(); v = (double)pg.cups; pg_unlock(); return v; }
 double net_load_candies(void) { double v; progress_read(); pg_lock(); v = (double)pg.candies; pg_unlock(); return v; }
 double net_load_class(void) { double v; progress_read(); pg_lock(); v = (double)pg.cls; pg_unlock(); return v; }
 double net_load_azum(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum; pg_unlock(); return v; }
 double net_load_santa(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa; pg_unlock(); return v; }
+double net_load_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.level; pg_unlock(); return v; }
+double net_load_levels_unlocked(void) { double v; progress_read(); pg_lock(); v = (double)pg.levels_unlocked; pg_unlock(); return v; }
 
 /* Асинхронный патч в Firebase при сохранении прогресса */
 typedef struct { char url[URL]; char body[BODY*2]; } HttpJob;
@@ -181,16 +207,24 @@ static void http_patch_async(const char *url, const char *body) {
     free(j);
 }
 
-void net_save_progress(double cups, double candies, double cls, double azum, double santa) {
+void net_save_progress(double cups, double candies, double cls, double azum, double santa,
+                       double level, double levels_unlocked) {
     int c = (int)cups, cd = (int)candies, k = (int)cls, a = azum ? 1 : 0, sn = santa ? 1 : 0;
+    int lv = (int)level, lu = (int)levels_unlocked;
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
     if (k != 1 && k != 2) k = 0;
     if (k == 1 && !a) k = 0;
     if (k == 2 && !sn) k = 0;
-    pg_lock(); pg.cups = c; pg.candies = cd; pg.cls = k; pg.azum = a; pg.santa = sn; pg.loaded = 1; pg_unlock();
+    if (lu < 0) lu = 0;
+    if (lu > 5) lu = 5;
+    if (lv < 0 || lv > lu) lv = 0;
+    pg_lock();
+    pg.cups = c; pg.candies = cd; pg.cls = k; pg.azum = a; pg.santa = sn;
+    pg.level = lv; pg.levels_unlocked = lu; pg.loaded = 1;
+    pg_unlock();
     pending_cls = k;
-    progress_write(c, cd, k, a, sn);
+    progress_write(c, cd, k, a, sn, lv, lu);
 
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
@@ -201,8 +235,8 @@ void net_save_progress(double cups, double candies, double cls, double azum, dou
     if (nick[0] && net.base[0]) {
         char url[URL], body[BODY];
         snprintf(url, sizeof(url), "%s/users/%s.json", net.base, nick);
-        snprintf(body, sizeof(body), "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d}",
-                 c, cd, k, a, sn);
+        snprintf(body, sizeof(body), "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"level\":%d,\"levels\":%d}",
+                 c, cd, k, a, sn, lv, lu);
         http_patch_async(url, body);
     }
 }
@@ -217,7 +251,7 @@ void net_set_class(double cls) {
 
 static int nick_valid(const char *n) {
     size_t i=0, bytes=n ? strlen(n) : 0, chars=0;
-    if (bytes < 3 || bytes > LOGIN_NICK_MAX) return 0;
+    if (bytes < 1 || bytes > LOGIN_NICK_MAX) return 0;
     while (i < bytes) {
         unsigned char c=(unsigned char)n[i]; unsigned long cp=0; size_t need=0;
         if (c<0x80) { cp=c; need=1; }
@@ -232,13 +266,13 @@ static int nick_valid(const char *n) {
         else return 0;
         i+=need;
     }
-    return chars>=3 && chars<=16;
+    return chars>=1 && chars<=16;
 }
 
 static int pass_valid(const char *p) {
     if (!p) return 0;
     size_t len = strlen(p);
-    if (len < 3 || len > 32) return 0;
+    if (len < 1 || len > 32) return 0;
     for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)p[i];
         if (c < 0x20 || c == 0x7F || c == '"' || c == '\\' || c == ' ') return 0;
@@ -573,18 +607,28 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         json_escape(pass, epass, sizeof(epass));
         json_escape(nick, enick, sizeof(enick));
         snprintf(body, sizeof(body),
-                 "{\"nick\":\"%s\",\"pass\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"level\":1}",
+                 "{\"nick\":\"%s\",\"pass\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"level\":0,\"levels\":0}",
                  enick, epass);
-        int put_code = http("PUT", req_url, body, NULL, 0);
+        /* PUT только если узел всё ещё пуст. Это не даёт гонке двух
+         * регистраций перезаписать уже существующий ник. */
+        int put_code = http_ex("PUT", req_url, body, NULL, 0,
+                               "if-match", "null", NULL, 0);
+        if (put_code == 412) {
+            /* Кто-то успел зарегистрировать ник между GET и PUT. Повторный
+             * вызов увидит готовую запись и выполнит обычный вход, не создавая
+             * дубликат и не затирая её пароль/прогресс. */
+            return net_auth(base, nick, pass);
+        }
         if (put_code != 200) {
             if (net_log_ok()) LOGERR("net_auth: register failed HTTP %d", put_code);
             return (double)NET_ERROR;
         }
         pg_lock();
-        pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0; pg.loaded = 1;
+        pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0;
+        pg.level = 0; pg.levels_unlocked = 0; pg.loaded = 1;
         pg_unlock();
         pending_cls = 0;
-        progress_write(0, 0, 0, 0, 0);
+        progress_write(0, 0, 0, 0, 0, 0, 0);
         lg_lock();
         snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
         snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
@@ -605,18 +649,27 @@ double net_auth(const char *url, const char *nick, const char *pass) {
             int cls = (int)num(resp, "cls", 0);
             int azum = (int)num(resp, "azum", 0);
             int santa = (int)num(resp, "santa", 0);
+            int level = (int)num(resp, "level", 0);
+            int levels_unlocked = (int)num(resp, "levels", -1);
+            /* Старые аккаунты имели только level=1. Сохраняем этот прогресс
+             * как уже открытый первый уровень, а новые аккаунты начинают с 0. */
+            if (levels_unlocked < 0) levels_unlocked = level;
             if (cups < 0) cups = 0;
             if (candies < 0) candies = 0;
             if (cls != 1 && cls != 2) cls = 0;
             azum = azum ? 1 : 0;
             santa = santa ? 1 : 0;
+            if (levels_unlocked < 0) levels_unlocked = 0;
+            if (levels_unlocked > 5) levels_unlocked = 5;
+            if (level < 0 || level > levels_unlocked) level = 0;
             if (cls == 1 && !azum) cls = 0;
             if (cls == 2 && !santa) cls = 0;
             pg_lock();
-            pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.loaded = 1;
+            pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
+            pg.level = level; pg.levels_unlocked = levels_unlocked; pg.loaded = 1;
             pg_unlock();
             pending_cls = cls;
-            progress_write(cups, candies, cls, azum, santa);
+            progress_write(cups, candies, cls, azum, santa, level, levels_unlocked);
             lg_lock();
             snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
             snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);

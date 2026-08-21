@@ -26,7 +26,7 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
-extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, candy_count;
+extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern void *player, *enemy, *punch;
@@ -264,15 +264,18 @@ int main(void) {
     tap_online(); wait_state(7, 30);
     printf("=== nick/pass screen opened (frame %ld)\n", g_frame);
 
-    /* Поле ника в фокусе сразу */
+    /* Клавиатура появляется только после явного тапа по полю. */
+    tap_nick();
+    run_frames(5);
+    if (!keyboard_visible()) { printf("!! tap on the nick field did not open the keyboard\n"); return 3; }
     feed_text("TypeMe");
     run_frames(5);
     if (!login_nick || strcmp(login_nick, "TypeMe") != 0) {
-        printf("!! cannot type into nick field without tapping it: '%s'\n",
+        printf("!! cannot type into nick field after tapping it: '%s'\n",
                login_nick ? login_nick : "(null)");
         return 3;
     }
-    printf("=== nick field accepts typing without a tap\n");
+    printf("=== nick field accepts typing after a tap\n");
 
     keyboard_hide();
     run_frames(5);
@@ -288,17 +291,20 @@ int main(void) {
         return 3;
     }
     printf("=== keyboard reopen on tap keeps the typed text\n");
+    do_tap(40, 100);
+    run_frames(5);
+    if (keyboard_visible()) { printf("!! tapping outside the login fields did not hide the keyboard\n"); return 3; }
     keyboard_clear();
     run_frames(5);
 
-    /* --- 2. Короткий ник отклоняется --- */
-    fill_field(tap_nick, "ab");
+    /* --- 2. Пустой ник отклоняется, а ник из одного символа разрешён. --- */
+    fill_field(tap_nick, "");
     fill_field(tap_pass, pass);
     tap_login_btn();
     run_frames(10);
-    if (login_status != 5) { printf("!! short nick was not rejected, status=%g\n", login_status); return 3; }
-    if (game_state != 7) { printf("!! left login screen despite bad nick\n"); return 3; }
-    printf("=== short nick rejected locally (frame %ld)\n", g_frame);
+    if (login_status != 5) { printf("!! empty nick was not rejected, status=%g\n", login_status); return 3; }
+    if (game_state != 7) { printf("!! left login screen despite empty nick\n"); return 3; }
+    printf("=== empty nick rejected locally (frame %ld)\n", g_frame);
 
     /* --- 3. Ник с запрещёнными символами отклоняется --- */
     fill_field(tap_nick, "bad nick!");
@@ -308,13 +314,13 @@ int main(void) {
     if (login_status != 5) { printf("!! invalid-char nick was not rejected, status=%g\n", login_status); return 3; }
     printf("=== invalid-char nick rejected locally (frame %ld)\n", g_frame);
 
-    /* --- 3b. Короткий пароль отклоняется --- */
+    /* --- 3b. Пустой пароль отклоняется --- */
     fill_field(tap_nick, nick);
-    fill_field(tap_pass, "1");
+    fill_field(tap_pass, "");
     tap_login_btn();
     run_frames(10);
-    if (login_status != 7) { printf("!! short pass was not rejected, status=%g\n", login_status); return 3; }
-    printf("=== short password rejected (frame %ld)\n", g_frame);
+    if (login_status != 7) { printf("!! empty pass was not rejected, status=%g\n", login_status); return 3; }
+    printf("=== empty password rejected (frame %ld)\n", g_frame);
 
     /* --- 4. Регистрация и вход с валидным ником и паролем --- */
     fill_field(tap_nick, nick);
@@ -389,6 +395,26 @@ int main(void) {
         printf("=== wrong password rejected by server auth\n");
     }
 
+    /* Односимвольный ник проходит проверку, а существующая запись не
+     * перезаписывается неверным паролем. Возвращаем сессию основному нику. */
+    {
+        double one = net_auth("http://127.0.0.1:18765", "Z", "1");
+        if (one != (double)NET_LOGIN_OK) {
+            printf("!! one-character nick was rejected: result=%g\n", one);
+            return 3;
+        }
+        double duplicate = net_auth("http://127.0.0.1:18765", "Z", "2");
+        if (duplicate != (double)NET_LOGIN_WRONG_PASS) {
+            printf("!! existing nick was overwritten or accepted with another password: result=%g\n", duplicate);
+            return 3;
+        }
+        if (net_auth("http://127.0.0.1:18765", nick, pass) != (double)NET_LOGIN_OK) {
+            printf("!! could not restore the main account after one-character nick test\n");
+            return 3;
+        }
+        printf("=== one-character nick accepted and duplicate password rejected\n");
+    }
+
     /* --- 9. Лидерборд по кубкам --- */
     tap_play(); wait_state(2, 30);
     tap_leaderboard();
@@ -438,9 +464,32 @@ int main(void) {
     }
     tap_back(); wait_state(0, 40);
 
-    /* --- 11. Классы и сохранение в облако --- */
+    /* --- 12. Классы и сохранение в облако --- */
     tap_classes();
     if (!wait_state(8, 30)) { printf("!! classes tab did not open, state=%g\n", game_state); return 3; }
+
+    /* --- 11. Уровни открываются последовательно за 30, 40, ... кубков. --- */
+    cups = 30; levels_unlocked = 0; player_level = 0;
+    tap_levels_btn();
+    if (!wait_state(9, 30)) { printf("!! levels tab did not open, state=%g\n", game_state); return 3; }
+    tap_level_row(1);
+    run_frames(5);
+    if (player_level != 1 || levels_unlocked != 1 || cups != 0) {
+        printf("!! first level purchase failed: selected=%g unlocked=%g cups=%g\n",
+               player_level, levels_unlocked, cups);
+        return 3;
+    }
+    cups = 40;
+    tap_level_row(2);
+    run_frames(5);
+    if (player_level != 2 || levels_unlocked != 2 || cups != 0) {
+        printf("!! second level purchase failed: selected=%g unlocked=%g cups=%g\n",
+               player_level, levels_unlocked, cups);
+        return 3;
+    }
+    printf("=== levels bought for 30 then 40 cups (frame %ld)\n", g_frame);
+    tap_back(); wait_state(8, 30);
+
     cups = 50;
     tap_class_azum();
     run_frames(5);

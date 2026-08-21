@@ -23,7 +23,7 @@ if cls==2; return santa_damage; end
 return punch_damage
 end
 function take_damage num dmg
-// Уровень поглощает 10% входящего урона за ступень. Касается и бота, и онлайна.
+// Первый уровень даёт 10% защиты; пока уровень не куплен, поглощения нет.
 num absorb=player_level*0.1
 if absorb<0; absorb=0; end
 if absorb>0.9; absorb=0.9; end
