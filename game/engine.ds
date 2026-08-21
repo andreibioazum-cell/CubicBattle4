@@ -5,8 +5,9 @@ if t_dir==1; t_fade=t_fade+dt/transition_duration; if t_fade>=1; t_fade=1; t_dir
 else if t_dir==-1; t_fade=t_fade-dt/transition_duration; if t_fade<=0; t_fade=0; t_dir=0; end; end;end
 function init
 ds_log "init: loading textures";png_load GRASS; png_load ORDINARY_TEX; png_load PUNCH_TEX; png_load AZUM_TEX; png_load AZUM_PUNCH_TEX;net_autologin FIREBASE
-cups=net_load_cups(); player_class=net_load_class(); azum_owned=net_load_azum()
-if azum_owned==0; player_class=0; end
+cups=net_load_cups(); candies=net_load_candies(); player_class=net_load_class(); azum_owned=net_load_azum(); santa_owned=net_load_santa()
+if azum_owned==0&&player_class==1; player_class=0; end
+if santa_owned==0&&player_class==2; player_class=0; end
 net_set_class player_class
 ds_log "init: ready";end
 function update

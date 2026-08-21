@@ -47,6 +47,24 @@ num event_mode=0, disco_safe=0, disco_t=0
 // azum_revived — уже тратили воскрешение, revive_prot — неуязвимость после
 // возрождения. Вспышки на экране нет: Азум просто встаёт в случайной точке.
 num player_class=0, azum_revived=0, revive_prot=0
-num cups=0, azum_owned=0, cup_win=5, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
+// Валюты: кубки — за победы, леденцы — новая валюта (в ящиках и за победы).
+// Ящик в магазине покупается за кубки и выбивает леденцы/кубки/классы.
+num cups=0, candies=0, azum_owned=0, santa_owned=0, cup_win=5, candy_win=3, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
+// Результат открытия ящика: текст и таймер показа.
+str box_msg=""
+num box_msg_t=0
 // Уровни: каждый даёт поглощение 10% входящего урона (1 ур. = 10%, 5 ур. = 50%).
 num player_level=1, max_level=5
+// Дед Мороз (класс 2). Посох — обычный удар, но сильнее и с короткой
+// заморозкой врага (santa_freeze секунд, ходит со скоростью santa_freeze_slow).
+// Суператака — подарок-бомба: летит вперёд super_range, взрывается по радиусу
+// super_radius, наносит super_damage и надолго замораживает (враг еле ходит).
+// Работает против бота в соло; в онлайне посох бьёт сильнее, супер скрыт.
+num santa_damage=2, santa_freeze=1.0, santa_freeze_slow=0.35
+num super_damage=3, super_freeze=3.0, super_freeze_slow=0.12
+num super_cd_time=6.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
+// Магазин: Дед Мороз покупается за леденцы (детерминированно). Ящик стоит
+// box_cost кубков; внутри с шансами (в процентах) леденцы/кубки/Азум/Дед Мороз.
+num santa_candy_cost=100
+num box_cost=30, box_candy_min=10, box_candy_max=20, box_cups_min=20, box_cups_max=40
+num box_azum_chance=20, box_santa_chance=5, box_dup_candy=30, box_dup_santa_candy=50

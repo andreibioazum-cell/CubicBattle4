@@ -1,75 +1,125 @@
 function class_name
 if player_class==1; return tr_class_azum(); end
+if player_class==2; return tr_class_santa(); end
 return tr_class_ordinary()
 end
 function save_progress
-net_save_progress cups,player_class,azum_owned
+net_save_progress cups,candies,player_class,azum_owned,santa_owned
 net_set_class player_class
 end
-function draw_cups
+function draw_money
+// Две валюты рядом: кубки (золото) и леденцы (розовый) — в правом верхнем углу.
 str cup_s=tr_cups()+": "+cups
 num cw=text_ink_width(cup_s)*0.5
 text_scaled cup_s,screen_w-cw-20,18,0xFFD54A,0.5
+str cd_s=tr_candies()+": "+candies
+num dw=text_ink_width(cd_s)*0.5
+text_scaled cd_s,screen_w-dw-20,44,0xFFF48FB1,0.5
 end
 function draw_lobby
 rect 0,0,screen_w,screen_h,0x1a1a2e; ctext "Cubic Battle 4",screen_h/2-150,0xFFFFFF
 // Основное меню: классы идут сразу под настройками и имеют тот же размер.
 num mx=(screen_w-btn_w)/2, my=screen_h/2-80
-button tr_play(),mx,my,btn_w,btn_h;button tr_settings(),mx,my+80,btn_w,btn_h;button tr_classes(),mx,my+160,btn_w,btn_h;button tr_account(),mx,my+240,btn_w,btn_h
+button tr_play(),mx,my,btn_w,btn_h;button tr_settings(),mx,my+80,btn_w,btn_h;button tr_shop(),mx,my+160,btn_w,btn_h;button tr_account(),mx,my+240,btn_w,btn_h
 if net_login_status()==2;str ln=net_login_nick();if str_len(ln)>0;str greet="Привет, \""+ln+"\"";num lw=text_ink_width(greet)*0.5;text_scaled greet,(screen_w-lw)/2,18,0xFFFFFF,0.5;end;end
-draw_cups
+draw_money
 end
-function draw_class_card num x, num y, num w, num h, num cls, str title, str desc, str texname
+function draw_class_card num x, num y, num w, num h, num cls, num owned, num cost, str title, str desc, str texname
 num sel=0, locked=0
 if player_class==cls; sel=1; end
-if cls==1&&azum_owned==0; locked=1; sel=0; end
+if cls!=0&&owned==0; locked=1; sel=0; end
 if sel==1; roundrect x-5,y-5,w+10,h+10,26,0xFF5A5A78; end
 roundrect x,y,w,h,22,0xFF2A2A40
+if cls==2
+// Дед Мороз рисуется процедурно (спрайта нет) — маленькая копия, лицом вверх.
+draw_santa x+w/2,y+88,0-pi/2,0,2.2
+else
 num ts=2.2, spr=50*ts
 tex x+(w-spr)/2,y+28,texname,0,ts
+end
 num tw=text_ink_width(title)
 text title,x+(w-tw)/2,y+150,0xFFFFFF
 num dw=text_ink_width(desc)*0.5
 text_scaled desc,x+(w-dw)/2,y+198,0xC8C8E0,0.5
+// Валюта цены: Азум — кубки, Дед Мороз — леденцы.
+str cur=tr_cups()
+if cls==2; cur=tr_candies(); end
 if sel==1; button_scaled tr_class_selected(),x+24,y+h-72,w-48,48,0.55
-else if locked==1; button_scaled tr_class_buy(),x+24,y+h-72,w-48,48,0.55
+else if locked==1; button_scaled tr_buy_for(cost,cur),x+24,y+h-72,w-48,48,0.55
 else; button_scaled tr_class_pick(),x+24,y+h-72,w-48,48,0.55; end
 end
 function draw_classes
 rect 0,0,screen_w,screen_h,0x1a1a2e
-num cw=300, ch=300, gap=40
-num x1=(screen_w-cw*2-gap)/2, x2=x1+cw+gap, y=back_y+btn_h+16
-draw_class_card x1,y,cw,ch,0,tr_class_ordinary(),tr_class_ordinary_desc(),ORDINARY_TEX
-draw_class_card x2,y,cw,ch,1,tr_class_azum(),tr_class_azum_desc(),AZUM_TEX
-// Кнопка «Уровни» — под карточкой Азума.
-button_scaled tr_levels(),x2,y+ch+gap,cw,btn_h,0.9
-draw_cups
-if class_msg_t>0; class_msg_t=class_msg_t-dt; ctext tr_class_need_cups(),y+ch+gap+btn_h+18,0xFF8A80; end
+num cw=260, ch=300, gap=26
+num total=cw*3+gap*2, x0=(screen_w-total)/2
+num x1=x0, x2=x0+cw+gap, x3=x0+2*(cw+gap), y=back_y+btn_h+16
+draw_class_card x1,y,cw,ch,0,1,0,tr_class_ordinary(),tr_class_ordinary_desc(),ORDINARY_TEX
+draw_class_card x2,y,cw,ch,1,azum_owned,azum_cost,tr_class_azum(),tr_class_azum_desc(),AZUM_TEX
+draw_class_card x3,y,cw,ch,2,santa_owned,santa_candy_cost,tr_class_santa(),tr_class_santa_desc(),""
+// Ящик: широкая золотая кнопка под карточками, покупается за кубки.
+num by=y+ch+gap
+str box_label=tr_box()+" · "+box_cost+" "+tr_cups()
+roundrect x1,by,cw*2+gap,btn_h,20,0xFFD35400
+text_in_box box_label,x1,by,cw*2+gap,btn_h,0xFFFFFF,0.7
+button_scaled tr_levels(),x3,by,cw,btn_h,0.9
+draw_money
+if box_msg_t>0; box_msg_t=box_msg_t-dt; ctext box_msg,y+ch+gap+btn_h+18,0xFFD54A; end
+if class_msg_t>0; class_msg_t=class_msg_t-dt; ctext tr_class_need_cups(),y+ch+gap+btn_h+44,0xFF8A80; end
 draw_back
 end
+function open_box
+// Покупка и открытие ящика: списываем кубки и сразу выбиваем награду.
+// Шансы (проценты): Дед Мороз box_santa_chance, Азум box_azum_chance,
+// иначе — монетки: кубки или леденцы (в зависимости от случайного числа).
+if cups<box_cost; class_msg_t=2.5; return; end
+cups=cups-box_cost
+num amt=0, r=rand()%100
+if r<box_santa_chance
+if santa_owned==0; santa_owned=1; box_msg=tr_got()+" "+tr_class_santa()
+else; amt=box_dup_santa_candy; candies=candies+amt; box_msg=tr_got()+" "+amt+" "+tr_candies(); end
+else if r<box_santa_chance+box_azum_chance
+if azum_owned==0; azum_owned=1; box_msg=tr_got()+" "+tr_class_azum()
+else; amt=box_dup_candy; candies=candies+amt; box_msg=tr_got()+" "+amt+" "+tr_candies(); end
+else if r<box_santa_chance+box_azum_chance+30
+amt=box_cups_min+rand()%(int)(box_cups_max-box_cups_min+1); cups=cups+amt; box_msg=tr_got()+" "+amt+" "+tr_cups()
+else
+amt=box_candy_min+rand()%(int)(box_candy_max-box_candy_min+1); candies=candies+amt; box_msg=tr_got()+" "+amt+" "+tr_candies()
+end
+box_msg_t=3
+save_progress
+ds_log "box opened -> %s",box_msg
+end
 function pick_class num cls
+if cls==0; player_class=0; save_progress; return; end
+num owned=0
+if cls==1; owned=azum_owned; end
+if cls==2; owned=santa_owned; end
+if owned==1; player_class=cls; save_progress; return; end
+// Покупка: Азум — за кубки, Дед Мороз — за леденцы.
+num bought=0
 if cls==1
-if azum_owned==0
-if cups>=azum_cost; cups=cups-azum_cost; azum_owned=1; player_class=1; save_progress; ds_log "bought azum, cups %g",cups
+if cups>=azum_cost; cups=cups-azum_cost; azum_owned=1; bought=1; end
+else
+if candies>=santa_candy_cost; candies=candies-santa_candy_cost; santa_owned=1; bought=1; end
+end
+if bought==1; player_class=cls; save_progress; ds_log "bought class %g",cls
 else; class_msg_t=2.5; end
-return
-end
-player_class=1; save_progress; return
-end
-player_class=0; save_progress
 end
 function touch_classes num x, num y, num action
 if action!=0; return; end
 if back_hit(x,y)==1; start_transition 0; return; end
-num cw=300, ch=300, gap=40
-num x1=(screen_w-cw*2-gap)/2, x2=x1+cw+gap, cy=back_y+btn_h+16
+num cw=260, ch=300, gap=26
+num total=cw*3+gap*2, x0=(screen_w-total)/2
+num x1=x0, x2=x0+cw+gap, x3=x0+2*(cw+gap), cy=back_y+btn_h+16
 if y>=cy&&y<=cy+ch
 if x>=x1&&x<=x1+cw; pick_class 0; return; end
 if x>=x2&&x<=x2+cw; pick_class 1; return; end
+if x>=x3&&x<=x3+cw; pick_class 2; return; end
 end
-// Кнопка «Уровни» под карточкой Азума.
+// Ряд под карточками: слева ящик (широкая кнопка), справа «Уровни».
 if y>=cy+ch+gap&&y<=cy+ch+gap+btn_h
-if x>=x2&&x<=x2+cw; start_transition 9; return; end
+if x>=x1&&x<=x1+cw*2+gap; open_box; return; end
+if x>=x3&&x<=x3+cw; start_transition 9; return; end
 end
 end
 function draw_levels
@@ -88,7 +138,7 @@ num dw=text_ink_width(desc)*0.5
 text_scaled desc,x+(w-dw)/2,y+42,0xC8C8E0,0.5
 n=n+1; y=y+row_h+10
 end
-draw_cups
+draw_money
 draw_back
 end
 function touch_levels num x, num y, num action

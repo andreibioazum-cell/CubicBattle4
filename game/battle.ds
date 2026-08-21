@@ -16,6 +16,11 @@ end
 function player_punch_tex
 return class_punch_tex(player_class)
 end
+function class_punch_damage num cls
+// Урон обычного удара: у Деда Мороза посох бьёт сильнее (santa_damage).
+if cls==2; return santa_damage; end
+return punch_damage
+end
 function take_damage num dmg
 // Уровень поглощает 10% входящего урона за ступень. Касается и бота, и онлайна.
 num absorb=player_level*0.1
@@ -45,9 +50,10 @@ if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; e
 end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
-joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; drop_joy
+gift.active=0; gift.t=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0
+joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-300; drop_joy
 arr_clear remotes; arr_clear remote_punches
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
 i=0; loop i<max_players*punch_fields; arr_push remote_punches,0; i=i+1; end
@@ -112,12 +118,24 @@ function follow_punch
 if punch_left<=0; return; end
 punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle)
 end
+function enemy_freeze_factor
+// Пока враг заморожен, он ходит с множителем freeze_slow (меньше = медленнее).
+if enemy.freeze>0; return enemy.freeze_slow; end
+return 1
+end
+function freeze_enemy num t, num slow
+// Более сильная заморозка (дольше) перекрывает слабую, а не наоборот.
+if t>enemy.freeze; enemy.freeze=t; enemy.freeze_slow=slow; end
+end
 function enemy_move num vx, num vy
 // Единое перемещение ИИ с учётом границ экрана. Запоминаем фактическую
 // скорость кадра: по mvx/mvy спрайт разворачивается в сторону движения,
 // svx/svy служат памятью для плавного возврата в обход после уклона/замаха.
-enemy.mvx=vx; enemy.mvy=vy; enemy.svx=vx; enemy.svy=vy
-enemy.x=enemy.x+vx*dt; enemy.y=enemy.y+vy*dt
+// Заморозка замедляет только движение (mvx/mvy), а память svx/svy остаётся
+// на полной скорости, чтобы после оттаивания бот разогнался сразу.
+num f=enemy_freeze_factor()
+enemy.mvx=vx*f; enemy.mvy=vy*f; enemy.svx=vx; enemy.svy=vy
+enemy.x=enemy.x+vx*f*dt; enemy.y=enemy.y+vy*f*dt
 if enemy.x<enemy.size; enemy.x=enemy.size; end
 if enemy.x>screen_w-enemy.size; enemy.x=screen_w-enemy.size; end
 if enemy.y<enemy.size; enemy.y=enemy.size; end
@@ -244,7 +262,10 @@ enemy_track_player
 // Скорость движения этого кадра чистим заранее: если бот в этом кадре не
 // двигался, enemy_face_motion его не крутит (стоящий бот не вертится).
 enemy.mvx=0; enemy.mvy=0
-if enemy.cooldown>0; enemy.cooldown=enemy.cooldown-dt; if enemy.cooldown<0; enemy.cooldown=0; end; end
+// Заморозка тикает здесь и замедляет перезарядку удара: замороженный бот
+// почти не атакует, а двигается через enemy_move (там множитель скорости).
+if enemy.freeze>0; enemy.freeze=enemy.freeze-dt; if enemy.freeze<0; enemy.freeze=0; end; end
+if enemy.cooldown>0; enemy.cooldown=enemy.cooldown-dt*enemy_freeze_factor(); if enemy.cooldown<0; enemy.cooldown=0; end; end
 if enemy.dodge_cd>0; enemy.dodge_cd=enemy.dodge_cd-dt; if enemy.dodge_cd<0; enemy.dodge_cd=0; end; end
 if enemy.flank>0; enemy.flank=enemy.flank-dt; end
 num dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
@@ -347,13 +368,20 @@ if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
 follow_punch
+if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
+if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
 // урон игрока наносится только в активное окно его анимации удара
 if punch_left>0&&punch.active==1&&punch.hit==0
 if enemy_in_punch()==1
-punch.hit=1; enemy.hp=enemy.hp-punch_damage; ds_log "hit! enemy hp %g",enemy.hp
+punch.hit=1
+// Посох Деда Мороза дополнительно морозит врага на секунду.
+if player_class==2; freeze_enemy santa_freeze,santa_freeze_slow; end
+enemy.hp=enemy.hp-class_punch_damage(player_class); ds_log "hit! enemy hp %g",enemy.hp
 if enemy.hp<=0; finish_game 1; return; end
 end
 end
+update_gift
+if finished!=0; return; end
 update_enemy
 end
 function clear_remote_punch num s
@@ -419,7 +447,8 @@ if tr>=punch_time; arr_set remote_punches,rb,0
 else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
 arr_set remote_punches,rb,0
 if revive_prot<=0&&player.hp>0
-take_damage punch_damage; ds_log "hit! hp %g",player.hp
+// Посох Деда Мороза в онлайне тоже бьёт сильнее (класс бьющего в remotes).
+take_damage class_punch_damage(arr_get(remotes,i*remote_fields+10)); ds_log "hit! hp %g",player.hp
 if player.hp<=0
 player.hp=0
 if try_revive()==1; net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,1
@@ -471,10 +500,52 @@ if punch_cd>0; return; end
 punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.active=1; punch.hit=0; punch.shot=punch.shot+1; punch_left=punch_time; punch_cd=punch_cooldown
 if game_state==5; net_publish_punch punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot; end
 end
+function fire_super
+// Суператака Деда Мороза: подарок летит вперёд и взрывается. Работает только
+// в соло (там есть бот-враг) и только после перезарядки super_cd_time.
+if player_class!=2; return; end
+if super_cd>0; return; end
+if finished!=0; return; end
+gift.x=player.x; gift.y=player.y; gift.dx=cos(player.angle); gift.dy=sin(player.angle); gift.active=1; gift.t=0
+super_cd=super_cd_time
+ds_log "gift thrown!"
+end
+function update_gift
+// Подарок летит, взрывается при касании врага или когда пролетел дальность.
+if gift.active==0; return; end
+gift.t=gift.t+dt
+gift.x=gift.x+gift.dx*super_speed*dt; gift.y=gift.y+gift.dy*super_speed*dt
+num hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
+num touched=hd<enemy.size*0.65+24
+if gift.t>super_range/super_speed; touched=1; end
+if touched==0; return; end
+gift.active=0; boom_x=gift.x; boom_y=gift.y; boom_t=boom_time
+if dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
+freeze_enemy super_freeze,super_freeze_slow
+enemy.hp=enemy.hp-super_damage; ds_log "gift boom! enemy hp %g",enemy.hp
+if enemy.hp<=0; finish_game 1; end
+end
+end
+function draw_gift
+// Подарок-бомба: красная коробка с золотой лентой (не вращается, как бомба).
+if gift.active==0; return; end
+roundrect gift.x-13,gift.y-13,26,26,5,0xE53935
+line gift.x-13,gift.y,gift.x+13,gift.y,4,0xFFD54A
+line gift.x,gift.y-13,gift.x,gift.y+13,4,0xFFD54A
+end
+function draw_boom
+// Взрыв подарка: расходящееся ледяное кольцо на месте попадания.
+if boom_t<=0; return; end
+num p=1-boom_t/boom_time, r=super_radius*p
+ring boom_x,boom_y,r,9,0xB3E5FC
+ring boom_x,boom_y,r*0.6,6,0xE1F5FE
+circle boom_x,boom_y,super_radius*0.3,0x55B3E5FC
+end
 function finish_game num result
-finished=result; aim_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
+finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
+gift.active=0; boom_t=0
 if result==1&&cups_awarded==0
-cups_awarded=1; cups=cups+cup_win; save_progress; ds_log "win +%g cups -> %g",cup_win,cups
+cups_awarded=1; cups=cups+cup_win; candies=candies+candy_win; save_progress; ds_log "win +%g cups +%g candies",cup_win,candy_win
 end
 end
 function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num alpha
@@ -482,6 +553,51 @@ function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num 
 // меняется только альфа, поэтому красного хитбокса здесь быть не может.
 num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
 if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
+end
+function draw_santa num cx, num cy, num ang, num punching, num sc
+// Процедурный Дед Мороз (вид сверху, «лицом» в направлении ang). Спрайта нет,
+// поэтому рисуется из кругов и линий. f — смещение вперёд, r — вбок; все
+// размеры умножаются на sc. Во время удара (punching) посох вытягивается.
+num fx=cos(ang), fy=sin(ang), rx=0-fy, ry=fx
+num stick=17; if punching==1; stick=25; end
+// Ледяной посох справа от тела, смотрит вперёд.
+line cx+(0-4)*fx*sc+11*rx*sc,cy+(0-4)*fy*sc+11*ry*sc,cx+stick*fx*sc+11*rx*sc,cy+stick*fy*sc+11*ry*sc,5*sc,0x4FC3F7
+circle cx+stick*fx*sc+11*rx*sc,cy+stick*fy*sc+11*ry*sc,5.5*sc,0xB3E5FC
+// Красная шуба с белой меховой оторочкой (тело чуть сзади).
+ring cx+(0-4)*fx*sc,cy+(0-4)*fy*sc,22*sc,4*sc,0xFFFFFF
+circle cx+(0-4)*fx*sc,cy+(0-4)*fy*sc,20*sc,0xE53935
+// Белая борода-лицо по центру.
+circle cx,cy,12*sc,0xFFFFFF
+// Глаза и нос.
+circle cx+(3*fx-4*rx)*sc,cy+(3*fy-4*ry)*sc,2*sc,0x1B1B1B
+circle cx+(3*fx+4*rx)*sc,cy+(3*fy+4*ry)*sc,2*sc,0x1B1B1B
+circle cx+5*fx*sc,cy+5*fy*sc,1.8*sc,0xFF9800
+// Шапка: красный колпак, белый обод и помпон.
+circle cx+10*fx*sc,cy+10*fy*sc,8.5*sc,0xD32F2F
+line cx+(7*fx-8*rx)*sc,cy+(7*fy-8*ry)*sc,cx+(7*fx+8*rx)*sc,cy+(7*fy+8*ry)*sc,5*sc,0xFFFFFF
+circle cx+15*fx*sc,cy+15*fy*sc,4*sc,0xFFFFFF
+end
+function draw_player_model num x, num y, num ang, num punching
+// Единая отрисовка игрока: классы 0/1 — спрайты, Дед Мороз — процедурно.
+if player_class==2
+draw_santa x,y,ang,punching,cube_scale*player_scale
+return
+end
+num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+str t=player_idle_tex()
+if punching==1; t=player_punch_tex(); end
+tex x-hw,y-hw,t,sprite_a(ang),ps
+end
+function draw_remote_model num x, num y, num ang, num cls, num punching
+// То же для сетевых соперников (по классу cls из их слота).
+if cls==2
+draw_santa x,y,ang,punching,cube_scale*player_scale
+return
+end
+num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+str t=class_idle_tex(cls)
+if punching==1; t=class_punch_tex(cls); end
+tex x-hw,y-hw,t,sprite_a(ang),ps
 end
 function draw_grass
 // Только плитки травы (game/assets/Grass.png) — нижний слой под игроком и HUD.
@@ -491,13 +607,21 @@ function draw_field
 rect 0,0,screen_w,screen_h,0x33000000
 // Хитбокс рисуется в то же окно, в которое действует удар.
 if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
-num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-if punch_left>0; tex player.x-hw,player.y-hw,player_punch_tex(),sprite_a(player.angle),ps; else; tex player.x-hw,player.y-hw,player_idle_tex(),sprite_a(player.angle),ps; end
+if punch_left>0; draw_player_model player.x,player.y,player.angle,1
+else; draw_player_model player.x,player.y,player.angle,0; end
 end
 function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
 circle atk_x,atk_y,70,0xE94560; ring atk_x,atk_y,70,4,0x000000
 text_in_box tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55
+if player_class==2&&game_state==1
+// Вторая кнопка — суператака (подарок-бомба). Пока идёт перезарядка,
+// на кнопке пишется, сколько секунд осталось.
+circle atk2_x,atk2_y,52,0x42A5F5; ring atk2_x,atk2_y,52,4,0x000000
+str sl=tr_super()
+if super_cd>0; sl=tr_super()+" "+floor(super_cd+0.999); end
+text_in_box sl,atk2_x-52,atk2_y-52,104,104,0xFFFFFF,0.4
+end
 draw_back
 end
 function draw_result str title, str note
@@ -510,10 +634,12 @@ function draw_game
 // показывает, куда попадёт удар (замах и активное окно), можно увернуться.
 draw_grass
 draw_field
+draw_gift; draw_boom
 if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
 num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
 if enemy.state==1||enemy.state==2; tex enemy.x-ehw,enemy.y-ehw,PUNCH_TEX,sprite_a(enemy.angle),es
 else; tex enemy.x-ehw,enemy.y-ehw,ORDINARY_TEX,sprite_a(enemy.angle),es; end
+if enemy.freeze>0; ring enemy.x,enemy.y,enemy.size+6,4,0x81D4FA; end
 num w=screen_w/4
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1
 draw_controls
@@ -556,7 +682,7 @@ draw_grass
 draw_disco
 // Затемнение, игрок, ник и весь остальной UI рисуется поверх.
 draw_field
-num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+num hw=25*cube_scale*player_scale
 str myn=net_player_nick(net_slot())
 if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end
 num i=0
@@ -570,8 +696,8 @@ if arr_get(remote_punches,rb)==1
 // Тот же helper, что у игрока: чёрный хитбокс и точно такое же активное окно.
 num px=arr_get(remote_punches,rb+1), py=arr_get(remote_punches,rb+2), pdx=arr_get(remote_punches,rb+3), pdy=arr_get(remote_punches,rb+4)
 draw_punch_box px,py,pdx,pdy,punch_reach,punch_width,1
-tex rx-hw,ry-hw,class_punch_tex(rcls),sprite_a(atan2(pdy,pdx)),ps
-else; tex rx-hw,ry-hw,class_idle_tex(rcls),sprite_a(ra),ps; end
+draw_remote_model rx,ry,atan2(pdy,pdx),rcls,1
+else; draw_remote_model rx,ry,ra,rcls,0; end
 if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5; end
 end
 i=i+1
@@ -591,5 +717,17 @@ function joy_touch num x, num y, num action, num id
 if action==1; if id==joy_id; drop_joy; end; return; end; if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end; if id!=joy_id; return; end; num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy); if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
 end
 function touch_game num x, num y, num action, num id
-if finished!=0; if action==0; start_transition 0; end; return; end; if action==3; aim_id=-1; drop_joy; return; end; if game_state==5&&touch_chat(x,y,action)==1; return; end; if back_hit(x,y)==1&&action!=2; start_transition 0; return; end; if chat_open==1; return; end; if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aim_id=id; return; end; if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end; joy_touch x,y,action,id
+if finished!=0; if action==0; start_transition 0; end; return; end
+if action==3; aim_id=-1; super_id=-1; drop_joy; return; end
+if game_state==5&&touch_chat(x,y,action)==1; return; end
+if back_hit(x,y)==1&&action!=2; start_transition 0; return; end
+if chat_open==1; return; end
+if player_class==2&&game_state==1
+// Кнопка суператаки — отдельная, над кнопкой удара.
+if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=72; super_id=id; return; end
+if action==1&&id==super_id; super_id=-1; fire_super; return; end
+end
+if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aim_id=id; return; end
+if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end
+joy_touch x,y,action,id
 end
