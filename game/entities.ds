@@ -23,9 +23,10 @@ object Punch
 num x=0, y=0, dx=0, dy=0, active=0, shot=0, hit=0
 end
 object Gift
-// Суператака Деда Мороза: подарок летит по направлению взгляда и взрывается.
-// active — в полёте, t — сколько уже летит (для ограничения дальности).
-num x=0, y=0, dx=0, dy=0, active=0, t=0
+// Суператака Деда Мороза: снежинка летит по направлению взгляда и взрывается.
+// active — в полёте, t — сколько уже летит (для ограничения дальности),
+// shot — растущий номер броска для онлайна (как punch.shot у удара).
+num x=0, y=0, dx=0, dy=0, active=0, t=0, shot=0
 end
 Player player=new Player()
 Enemy enemy=new Enemy()
@@ -38,6 +39,12 @@ num finished=0, atk_x=0, atk_y=0, atk2_x=0, atk2_y=0, joy_id=-1, aim_id=-1, supe
 num super_cd=0, boom_t=0, boom_x=0, boom_y=0
 // freeze_a — видимая прозрачность круга заморозки (0..1), плавно растёт/гаснет.
 num freeze_a=0
+// player_freeze — сколько секунд сам игрок заморожен снежинкой соперника в
+// онлайне, player_freeze_slow — доля скорости, pfreeze_a — прозрачность круга.
+num player_freeze=0, player_freeze_slow=1, pfreeze_a=0
 arr remotes=arr_new(), remote_punches=arr_new()
+// remote_snow — чужие снежинки в онлайне: на каждого игрока snow_fields полей
+// [счётчик броска, active, t, x, y, boom_t, boom_x, boom_y].
+arr remote_snow=arr_new()
 // Леденцы-пикапы на карте: по паре координат (x,y) на каждый из candy_count.
 arr candy_x=arr_new(), candy_y=arr_new()

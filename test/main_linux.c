@@ -27,10 +27,11 @@
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
+extern double super_cd, player_freeze, pfreeze_a;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
-extern void *player, *enemy, *punch;
-extern DSArray *remotes, *remote_punches;
+extern void *player, *enemy, *punch, *gift;
+extern DSArray *remotes, *remote_punches, *remote_snow;
 extern double enemy_cooldown_min, enemy_cooldown_max;
 /* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
@@ -39,6 +40,12 @@ extern double enemy_cooldown_min, enemy_cooldown_max;
 #define ENEMY_COOLDOWN 8
 #define ENEMY_FREEZE 23
 #define ENEMY_FREEZE_SLOW 24
+/* Поля Player: x,y,size,angle,hp,max_hp. Поля Gift: x,y,dx,dy,active,t,shot. */
+#define PLAYER_HP 4
+#define GIFT_ACTIVE 4
+#define GIFT_SHOT 6
+/* Поля remote_snow на каждого игрока: счётчик, active, t, x, y, boom_t, bx, by. */
+#define SNOW_FIELDS 8
 
 static uint32_t *g_pixels = NULL;
 static int g_w = 1280, g_h = 720;
@@ -584,6 +591,97 @@ int main(void) {
     if (!wait_state(5, 30)) { printf("!! saved account did not skip login screen, state=%g\n", game_state); return 3; }
     if (!wait_slot(80)) { printf("!! online re-entry failed\n"); return 3; }
     printf("=== online straight in with saved account: slot=%g (frame %ld)\n", net_slot(), g_frame);
+    tap_back(); wait_state(0, 60);
+
+    /* --- 13. Снежинка Деда Мороза в онлайне --- */
+    /* Покупаем Деда Мороза за леденцы и выбираем класс (из лобби). */
+    candies = 100; cups = 0;
+    tap_classes();
+    if (!wait_state(8, 30)) { printf("!! classes tab did not open for santa\n"); return 3; }
+    tap_class_santa();
+    run_frames(5);
+    if (player_class != 2 || santa_owned != 1) {
+        printf("!! Santa buy failed: class=%g owned=%g\n", player_class, santa_owned); return 3;
+    }
+    printf("=== santa bought with candies (frame %ld)\n", g_frame);
+    tap_back(); wait_state(0, 30);
+
+    tap_play(); wait_state(2, 30);
+    tap_online();
+    if (!wait_state(5, 30)) { printf("!! online did not open for santa\n"); return 3; }
+    if (!wait_slot(80)) { printf("!! online slot failed for santa\n"); return 3; }
+    run_frames(5);
+
+    /* Кнопка снежинки видна в онлайне: фиолетовый круг 0x5F10A0 над кнопкой
+     * удара (atk2_x=screen_w-140, atk2_y=screen_h-310). Точка ниже центра —
+     * внутри круга, но вне текста кнопки. Пиксель буфера хранится в
+     * 0xAABBGGRR, т.е. кнопка даёт 0xFFA0105F (R=0x5F, G=0x10, B=0xA0). */
+    {
+        int px = (int)(g_w - 140 + 35), py = (int)(g_h - 310 + 35);
+        uint32_t p = g_pixels[py * g_w + px];
+        int pr = (int)(p & 0xff), pg = (int)((p >> 8) & 0xff), pb = (int)((p >> 16) & 0xff);
+        if (pr <= 0x40 || pg >= 0x30 || pb <= 0x70) {
+            printf("!! snowflake button pixel not purple in online: %08x at (%d,%d) rgb=%02x%02x%02x\n", p, px, py, pr, pg, pb); return 3;
+        }
+        printf("=== snowflake button visible online (pixel %08x)\n", p);
+    }
+
+    /* Бросок снежинки тапом по кнопке суператаки. */
+    do_tap((float)(g_w - 140), (float)(g_h - 310));
+    run_frames(2);
+    {
+        double *g = (double *)gift;
+        if (g[GIFT_ACTIVE] != 1) { printf("!! gift not active after super tap online\n"); return 3; }
+        if (super_cd <= 0) { printf("!! super cooldown not set after throw\n"); return 3; }
+        /* Счётчик публикуется в net.me, но фоновый поток чтения может на один
+         * опрос вернуть устаревший снапшот — ждём, пока значение дойдёт. */
+        double published = 0;
+        for (int i = 0; i < 30 && published < g[GIFT_SHOT]; i++) {
+            run_frames(1);
+            published = net_player_snow(net_slot());
+        }
+        if (published < g[GIFT_SHOT] || g[GIFT_SHOT] < 1) {
+            printf("!! snow counter not published: snow=%g shot=%g\n", published, g[GIFT_SHOT]); return 3;
+        }
+        printf("=== snowflake thrown online: shot=%g cd=%g (frame %ld)\n", g[GIFT_SHOT], super_cd, g_frame);
+        /* Долетела до края и взорвалась. */
+        for (int i = 0; i < 90 && g[GIFT_ACTIVE] > 0; i++) run_frames(1);
+        if (g[GIFT_ACTIVE] > 0) { printf("!! gift still flying after range time\n"); return 3; }
+        printf("=== snowflake exploded online (frame %ld)\n", g_frame);
+    }
+
+    /* Чужая снежинка: публикуем событие от соперника (снежинка стартует точно
+     * в позиции игрока) и проверяем урон + заморозку + ледяной круг.
+     * Соперника в слоте 1 мы удалили раньше, поэтому сначала кладём его
+     * обратно на сервер, а потом ждём появления в списке. */
+    {
+        int rslot = 1;
+        double *pl = (double *)player;
+        double hp0 = pl[PLAYER_HP];
+        char url[160], body[640];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/players/%d.json", TEST_PORT, rslot);
+        snprintf(body, sizeof(body),
+            "{\"uid\":\"00000000000000aa\",\"nick\":\"BotRival\",\"x\":0.5,\"y\":0.5,\"angle\":1.2,"
+            "\"hp\":10,\"alive\":1,\"seq\":200,\"px\":0.5,\"py\":0.5,\"pdx\":1,\"pdy\":0,\"punch\":100,"
+            "\"sx\":0.3,\"sy\":0.35,\"sdx\":1,\"sdy\":0,\"snow\":1,\"cls\":0}");
+        test_http_impl("PUT", url, body, NULL, 0, NULL, NULL, NULL, 0);
+        if (!wait_remotes(1, 100)) { printf("!! rival not seen for remote snow test\n"); return 3; }
+        int frozen = 0;
+        for (int i = 0; i < 400 && !frozen; i++) {
+            run_frames(1);
+            if (player_freeze > 0) frozen = 1;
+        }
+        if (!frozen) { printf("!! remote snowflake did not freeze the player\n"); return 3; }
+        if (pl[PLAYER_HP] >= hp0 - 0.01) {
+            printf("!! remote snowflake did not damage the player: hp %g -> %g\n", hp0, pl[PLAYER_HP]); return 3;
+        }
+        run_frames(10);
+        if (pfreeze_a <= 0.01) { printf("!! player freeze ring not fading in: %g\n", pfreeze_a); return 3; }
+        if (arr_get(remote_snow, rslot * SNOW_FIELDS + 5) <= 0) {
+            printf("!! remote snow boom missing or already gone: %g\n", arr_get(remote_snow, rslot * SNOW_FIELDS + 5)); return 3;
+        }
+        printf("=== remote snowflake hit: hp %g -> %g, freeze %g (frame %ld)\n", hp0, pl[PLAYER_HP], player_freeze, g_frame);
+    }
     tap_back(); wait_state(0, 60);
 
     script_active = 1;

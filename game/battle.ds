@@ -51,11 +51,13 @@ function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
-gift.active=0; gift.t=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0
+gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0
+player_freeze=0; player_freeze_slow=1; pfreeze_a=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-310; drop_joy
-arr_clear remotes; arr_clear remote_punches; arr_clear candy_x; arr_clear candy_y
+arr_clear remotes; arr_clear remote_punches; arr_clear candy_x; arr_clear candy_y; arr_clear remote_snow
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
 i=0; loop i<max_players*punch_fields; arr_push remote_punches,0; i=i+1; end
+i=0; loop i<max_players*snow_fields; arr_push remote_snow,0; i=i+1; end
 end
 function init_game
 reset_battle; enemy.hp=enemy.max_hp; spawn_enemy; spawn_all_candies
@@ -99,7 +101,10 @@ return a+pi/2
 end
 function move_player
 // движение джойстиком: игрок разворачивается ровно туда, куда наклонён джойстик
-player.x=player.x+joy.dx*joy_speed*dt; player.y=player.y+joy.dy*joy_speed*dt
+// Пока игрок заморожен снежинкой соперника (онлайн), он идёт медленнее.
+num spd=joy_speed
+if player_freeze>0; spd=spd*player_freeze_slow; end
+player.x=player.x+joy.dx*spd*dt; player.y=player.y+joy.dy*spd*dt
 num jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy); if jm>0.15; player.angle=atan2(joy.dy,joy.dx); end
 if player.x<player.size; player.x=player.size; end; if player.x>screen_w-player.size; player.x=screen_w-player.size; end; if player.y<player.size; player.y=player.size; end; if player.y>screen_h-player.size; player.y=screen_h-player.size; end
 end
@@ -329,8 +334,16 @@ enemy_predict enemy_lead
 enemy_engage desired
 enemy_face_motion
 end
+function tick_freeze
+// Заморозка самого игрока (снежинка соперника в онлайне): таймер и плавная
+// прозрачность ледяного круга вокруг игрока.
+if player_freeze>0; player_freeze=player_freeze-dt; if player_freeze<0; player_freeze=0; end; end
+if player_freeze>0; pfreeze_a=pfreeze_a+dt/freeze_fade_in; else; pfreeze_a=pfreeze_a-dt/freeze_fade_out; end
+if pfreeze_a<0; pfreeze_a=0; end; if pfreeze_a>1; pfreeze_a=1; end
+end
 function update_game
 tick_revive
+tick_freeze
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
@@ -459,14 +472,19 @@ net_push_self player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive,p
 end
 function update_online
 tick_revive
+tick_freeze
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
 follow_punch
+if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
+if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
+update_gift
+if finished!=0; return; end
 if net_status()==NET_PLAYING
 if online_ready==0; place_online; end
-read_remotes; smooth_remotes; update_remote_punches
+read_remotes; smooth_remotes; update_remote_punches; update_remote_snow
 check_online_finish; push_self
 end
 update_event; chat_update
@@ -480,41 +498,54 @@ end
 function fire_super
 if player_class!=2||super_cd>0; return; end
 gift.x=player.x; gift.y=player.y; gift.dx=cos(player.angle); gift.dy=sin(player.angle); gift.active=1; gift.t=0
+gift.shot=gift.shot+1
 super_cd=super_cd_time
-ds_log "gift thrown!"
+// В онлайне бросок публикуется в сеть как событие со счётчиком (как удар):
+// каждый клиент сам летит снежинкой и применяет урон/заморозку у себя.
+if game_state==5; net_publish_snow gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot; end
+ds_log "snowflake thrown!"
 end
 function update_gift
 if gift.active==0; return; end
 gift.t=gift.t+dt
 gift.x=gift.x+gift.dx*super_speed*dt; gift.y=gift.y+gift.dy*super_speed*dt
-num hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
-num touched=hd<enemy.size*0.65+24
+num touched=0
+if game_state==5
+// В онлайне снежинка летит до дальнего края; попавшие под взрыв игроки
+// сами применяют урон и заморозку (см. update_remote_snow).
 if gift.t>super_range/super_speed; touched=1; end
+else
+num hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
+if hd<enemy.size*0.65+24; touched=1; end
+if gift.t>super_range/super_speed; touched=1; end
+end
 if touched==0; return; end
 gift.active=0; boom_x=gift.x; boom_y=gift.y; boom_t=boom_time
-if dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
+if game_state!=5&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
 freeze_enemy super_freeze,super_freeze_slow
-enemy.hp=enemy.hp-super_damage; ds_log "gift boom! enemy hp %g",enemy.hp
+enemy.hp=enemy.hp-super_damage; ds_log "snowflake boom! enemy hp %g",enemy.hp
 if enemy.hp<=0; finish_game 1; end
 end
 end
 function draw_gift
 if gift.active==0; return; end
-roundrect gift.x-13,gift.y-13,26,26,5,0xE53935
-line gift.x-13,gift.y,gift.x+13,gift.y,4,0xFFD54A
-line gift.x,gift.y-13,gift.x,gift.y+13,4,0xFFD54A
+num hw=16, rot=gift.t*3
+tex gift.x-hw,gift.y-hw,SNOWFLAKE_TEX,rot,0.5
 end
-function draw_boom
-if boom_t<=0; return; end
-num p=1-boom_t/boom_time, r=super_radius*p
+function draw_boom_at num x, num y, num bt
+if bt<=0; return; end
+num p=1-bt/boom_time, r=super_radius*p
 // Плавное появление в начале и плавное исчезновение в конце жизни взрыва.
-num fade_in=clamp(p/boom_fade_in,0,1), fade_out=clamp(boom_t/(boom_time*boom_fade_out),0,1)
+num fade_in=clamp(p/boom_fade_in,0,1), fade_out=clamp(bt/(boom_time*boom_fade_out),0,1)
 num a=floor(fade_in*fade_out*255)
 if a<=0; return; end
 num c0=(((unsigned)(int)a)<<24)|0x00B3E5FC, c1=(((unsigned)(int)a)<<24)|0x00E1F5FE
-ring boom_x,boom_y,r,9,c0
-ring boom_x,boom_y,r*0.6,6,c1
-circle boom_x,boom_y,super_radius*0.3,c0
+ring x,y,r,9,c0
+ring x,y,r*0.6,6,c1
+circle x,y,super_radius*0.3,c0
+end
+function draw_boom
+draw_boom_at boom_x,boom_y,boom_t
 end
 function draw_candies
 num hw=25*candy_scale, i=0
@@ -525,18 +556,97 @@ end
 end
 function draw_freeze
 if freeze_a<=0; return; end
-num a=floor(freeze_a*255)
-if a<=0; return; end
+// Заливка заметно прозрачнее, чем раньше: враг подсвечивается синим,
+// а не становится полностью голубым. Окантовка остаётся поярче.
+num fa=freeze_a*255
+num af=floor(fa*0.3)
+if af<=0; return; end
 num half=enemy.size+6
-// Круглая ледяная сфера: полупрозрачная заливка + яркая окантовка по кругу.
-num fill=(((unsigned)(int)a)<<24)|0x001E88E5
-num rim=(((unsigned)(int)a)<<24)|0x004FC3F7
+num fill=(((unsigned)(int)af)<<24)|0x001E88E5
+num ar=floor(fa*0.7)
+num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
 circle enemy.x,enemy.y,half,fill
 ring enemy.x,enemy.y,half,5,rim
+end
+function draw_player_freeze
+// Ледяной круг вокруг своего игрока, пока он заморожен снежинкой соперника.
+if pfreeze_a<=0; return; end
+num af=floor(pfreeze_a*255*0.3)
+if af<=0; return; end
+num half=player.size+6
+num fill=(((unsigned)(int)af)<<24)|0x001E88E5
+num ar=floor(pfreeze_a*255*0.7)
+num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+circle player.x,player.y,half,fill
+ring player.x,player.y,half,5,rim
+end
+function update_remote_snow
+// Чужие снежинки в онлайне. Событие — постоянное со счётчиком (как удар):
+// увидели новый номер броска — летим снежинкой от точки броска до взрыва.
+// Если снежинка задевает нас — применяем урон и заморозку у себя.
+if net_slot()<0; return; end
+num s=0
+loop s<max_players
+num b=s*snow_fields
+if s==net_slot()||net_player_online(s)!=1
+arr_set remote_snow,b+1,0; arr_set remote_snow,b+5,0
+else
+num cnt=net_player_snow(s)
+num prev=arr_get(remote_snow,b)
+if cnt!=prev&&cnt>0
+arr_set remote_snow,b,cnt
+arr_set remote_snow,b+1,1
+arr_set remote_snow,b+2,0
+arr_set remote_snow,b+3,net_player_snow_x(s)*screen_w
+arr_set remote_snow,b+4,net_player_snow_y(s)*screen_h
+end
+if arr_get(remote_snow,b+1)==1
+num t=arr_get(remote_snow,b+2)+dt
+num x=arr_get(remote_snow,b+3)+net_player_snow_dx(s)*super_speed*dt
+num y=arr_get(remote_snow,b+4)+net_player_snow_dy(s)*super_speed*dt
+arr_set remote_snow,b+2,t; arr_set remote_snow,b+3,x; arr_set remote_snow,b+4,y
+num hit=0
+if dist(x,y,player.x,player.y)<player.size*0.65+24; hit=1; end
+if t>super_range/super_speed; hit=1; end
+if hit==1
+arr_set remote_snow,b+1,0
+arr_set remote_snow,b+5,boom_time
+arr_set remote_snow,b+6,x; arr_set remote_snow,b+7,y
+if dist(x,y,player.x,player.y)<=super_radius
+take_damage super_damage
+if player_freeze<super_freeze; player_freeze=super_freeze; player_freeze_slow=super_freeze_slow; end
+ds_log "remote snowflake hit! hp %g",player.hp
+end
+end
+end
+if arr_get(remote_snow,b+5)>0
+num bt=arr_get(remote_snow,b+5)-dt
+if bt<0; bt=0; end
+arr_set remote_snow,b+5,bt
+end
+end
+s=s+1
+end
+end
+function draw_remote_snow
+num s=0
+loop s<max_players
+num b=s*snow_fields
+if arr_get(remote_snow,b+1)==1
+num x=arr_get(remote_snow,b+3), y=arr_get(remote_snow,b+4), t=arr_get(remote_snow,b+2)
+num hw=16
+tex x-hw,y-hw,SNOWFLAKE_TEX,t*3,0.5
+end
+if arr_get(remote_snow,b+5)>0
+draw_boom_at arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),arr_get(remote_snow,b+5)
+end
+s=s+1
+end
 end
 function finish_game num result
 finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
 gift.active=0; boom_t=0
+num i=0; loop i<max_players*snow_fields; arr_set remote_snow,i,0; i=i+1; end
 if result==1&&cups_awarded==0
 cups_awarded=1; cups=cups+cup_win; candies=candies+candy_win; save_progress; ds_log "win +%g cups +%g candies",cup_win,candy_win
 end
@@ -573,10 +683,11 @@ function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
 circle atk_x,atk_y,70,0xE94560; ring atk_x,atk_y,70,4,0x000000
 text_in_box tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55
-if player_class==2&&game_state==1
-// Суператака «Подарок»: большая фиолетовая кнопка (размер как у кнопки удара).
-// На перезарядке вместо названия показываем только секунды до конца кулдауна,
-// крупнее, чтобы число читалось на ходу.
+if player_class==2&&(game_state==1||game_state==5)
+// Суператака «Снежинка»: большая фиолетовая кнопка (размер как у кнопки удара).
+// Работает и в соло-бою, и в онлайне. На перезарядке вместо названия
+// показываем только секунды до конца кулдауна, крупнее, чтобы число
+// читалось на ходу.
 circle atk2_x,atk2_y,70,0x5F10A0; ring atk2_x,atk2_y,70,4,0x000000
 str sl=tr_super(); num sls=0.55
 if super_cd>0; sl=floor(super_cd+0.999)+""; sls=0.95; end
@@ -714,6 +825,7 @@ if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-
 end
 i=i+1
 end
+draw_gift; draw_boom; draw_remote_snow; draw_player_freeze
 draw_snow
 num w=screen_w/3
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
@@ -735,7 +847,7 @@ if action==3; aim_id=-1; super_id=-1; drop_joy; return; end
 if game_state==5&&touch_chat(x,y,action)==1; return; end
 if back_hit(x,y)==1&&action!=2; start_transition 0; return; end
 if chat_open==1; return; end
-if player_class==2&&game_state==1
+if player_class==2&&(game_state==1||game_state==5)
 if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=96; super_id=id; return; end
 if action==1&&id==super_id; super_id=-1; fire_super; return; end
 end

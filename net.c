@@ -68,6 +68,7 @@ static void ds_thread_detach(DSThread t) { if (t) pthread_detach(t); }
 typedef struct {
     double x,y,a,hp,alive;
     double punch_x,punch_y,punch_dx,punch_dy,punch;
+    double snow_x,snow_y,snow_dx,snow_dy,snow;
     double cls;
     int online;
     char nick[24];
@@ -945,9 +946,10 @@ static int push_state(void) {
     if(slot<0) return 0;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"cls\":%.0f}",
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"cls\":%.0f}",
         net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
-        safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch),safe(a.cls));
+        safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch),
+        safe(a.snow_x),safe(a.snow_y),safe(a.snow_dx),safe(a.snow_dy),safe(a.snow),safe(a.cls));
     int c = http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d (room write denied? check Firebase rules)", c);
     return c == 200;
@@ -993,7 +995,7 @@ static int claim_slot(void) {
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
-            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"cls\":%.0f}",net.uid,enick,safe(net.me.cls));
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"cls\":%.0f}",net.uid,enick,safe(net.me.cls));
         }
         code=http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
@@ -1025,6 +1027,11 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/pdx",bp); ps[slot].punch_dx=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/pdy",bp); ps[slot].punch_dy=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/punch",bp); ps[slot].punch=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/sx",bp); ps[slot].snow_x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/sy",bp); ps[slot].snow_y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/sdx",bp); ps[slot].snow_dx=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/sdy",bp); ps[slot].snow_dy=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/snow",bp); ps[slot].snow=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/cls",bp); ps[slot].cls=num(resp,p,0);
         ps[slot].online=1; count++;
     }
@@ -1235,6 +1242,13 @@ void net_publish_punch(double x, double y, double dx, double dy, double punch) {
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
     unlock();
 }
+void net_publish_snow(double x, double y, double dx, double dy, double snow) {
+    lock();
+    net.me.snow_x=x; net.me.snow_y=y;
+    net.me.snow_dx=dx; net.me.snow_dy=dy; net.me.snow=snow;
+    if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
+    unlock();
+}
 void net_chat_send(const char *text){
     if(!net.started || !text || !*text) return;
     if(!net.run) return;
@@ -1326,5 +1340,10 @@ READER(net_player_punch_y, net.players[i].punch_y)
 READER(net_player_punch_dx, net.players[i].punch_dx)
 READER(net_player_punch_dy, net.players[i].punch_dy)
 READER(net_player_punch, net.players[i].punch)
+READER(net_player_snow_x, net.players[i].snow_x)
+READER(net_player_snow_y, net.players[i].snow_y)
+READER(net_player_snow_dx, net.players[i].snow_dx)
+READER(net_player_snow_dy, net.players[i].snow_dy)
+READER(net_player_snow, net.players[i].snow)
 READER(net_player_class, net.players[i].cls)
 #undef READER

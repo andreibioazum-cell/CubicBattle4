@@ -38,10 +38,12 @@ double net_leaderboard_count(void);
 const char *net_leaderboard_nick(double idx);
 double net_leaderboard_cups(double idx);
 
-/* Состояние игроков. Удар — постоянное событие со счётчиком punch:
- * если счётчик изменился, удар нельзя потерять между двумя опросами сети. */
+/* Состояние игроков. Удар и снежинка — постоянные события со счётчиками
+ * punch/snow: если счётчик изменился, событие нельзя потерять между двумя
+ * опросами сети. */
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
+void net_publish_snow(double x, double y, double dx, double dy, double snow);
 void net_set_class(double cls);
 double net_status(void);
 double net_slot(void);
@@ -59,6 +61,11 @@ double net_player_punch_y(double slot);
 double net_player_punch_dx(double slot);
 double net_player_punch_dy(double slot);
 double net_player_punch(double slot);
+double net_player_snow_x(double slot);
+double net_player_snow_y(double slot);
+double net_player_snow_dx(double slot);
+double net_player_snow_dy(double slot);
+double net_player_snow(double slot);
 double net_player_class(double slot);
 
 /* Прогресс игрока: кубки, леденцы, выбранный класс и купленные классы. */
