@@ -467,7 +467,7 @@ if online_ready==0; place_online; end
 read_remotes; smooth_remotes; update_remote_punches
 check_online_finish; push_self
 end
-update_disco; chat_update
+update_event; chat_update
 end
 function fire_punch
 if punch_cd>0; return; end
@@ -598,16 +598,82 @@ num a=55+90*(0.5+0.5*sin(disco_t*16))
 return ((((unsigned)(int)a)<<24)|(((unsigned)(int)r)<<16)|(((unsigned)(int)g)<<8)|((unsigned)(int)b))
 end
 function draw_disco
-if event_mode==0||disco_safe==1; return; end
+if event_mode!=1||disco_safe==1; return; end
 num col=disco_color(disco_t*18)
 rect 0,0,screen_w,screen_h,col
 num ct=disco_t*12
 num r=110+40*sin(ct)
 ring screen_w/2,screen_h/2,r,7,0xC0FFFFFF
 end
-function update_disco
+function update_event
+// Ивенты обновляются только в онлайне. В оффлайне (соло-бой) event_mode
+// не читается и ничего не рисуется — узел /event на соло не влияет.
 event_mode=net_event()
+event_t=event_t+dt
+if event_t>100000; event_t=0; end
 if event_mode==1&&disco_safe==0; disco_t=disco_t+dt; else; disco_t=0; end
+end
+function hash01 num i
+// Псевдослучайное число 0..1 по номеру снежинки: одинаковое каждый кадр,
+// поэтому снег падает ровно, а не дёргается.
+num v=sin(i*127.1+11.7)*43758.5453
+return v-floor(v)
+end
+function frac01 num v
+// Дробная часть — ей закольцовываем падение и снос по экрану.
+return v-floor(v)
+end
+function draw_flake num cx, num cy, num r, num rot, num alpha
+// Настоящая снежинка: шестилучевая симметрия (три диаметра через 60°),
+// на каждом луче пара боковых веточек под тем же углом 60° и маленькое
+// ядро в центре. Один угол rot медленно вращает снежинку в полёте.
+num a=alpha
+if a<0; a=0; end
+if a>255; a=255; end
+num c=((((unsigned)(int)a)<<24)|0x00EAF6FF)
+if r<4.2
+// Дальние снежинки мельче кристалла — рисуем крупинкой.
+circle cx,cy,r*0.85,c
+return
+end
+num step=pi/3, th=1+r*0.13
+num i=0
+loop i<3
+num a1=rot+i*step, dx=cos(a1)*r, dy=sin(a1)*r
+line cx-dx,cy-dy,cx+dx,cy+dy,th,c
+i=i+1
+end
+i=0
+loop i<6
+num aa=rot+i*step, ux=cos(aa), uy=sin(aa)
+num bx=cx+ux*r*0.54, by=cy+uy*r*0.54, bl=r*0.36
+line bx,by,bx+cos(aa+step)*bl,by+sin(aa+step)*bl,th*0.8,c
+line bx,by,bx+cos(aa-step)*bl,by+sin(aa-step)*bl,th*0.8,c
+num tx=cx+ux*r*0.82, ty=cy+uy*r*0.82, tl=r*0.2
+line tx,ty,tx+cos(aa+step)*tl,ty+sin(aa+step)*tl,th*0.7,c
+line tx,ty,tx+cos(aa-step)*tl,ty+sin(aa-step)*tl,th*0.7,c
+i=i+1
+end
+circle cx,cy,r*0.2,c
+end
+function draw_snow
+// Снегопад (event_mode=2) рисуется только в онлайне — оффлайн без ивентов.
+if event_mode!=2; return; end
+num span_y=screen_h+140, span_x=screen_w+120
+num i=0
+loop i<event_flakes
+num h1=hash01(i), h2=hash01(i+91), h3=hash01(i+37), h4=hash01(i+153)
+// depth — «слой» снежинки: ближние крупнее, быстрее, ярче и заметнее качаются.
+num depth=0.3+0.7*h3
+num r=3+11*depth
+num yy=h2*span_y+event_t*(46+92*depth)
+yy=frac01(yy/span_y)*span_y-70
+num sway=(14+26*h4)*sin(event_t*(0.55+0.9*h1)+h1*2*pi)
+num xx=h1*span_x+sway+event_t*22*depth
+xx=frac01(xx/span_x)*span_x-60
+draw_flake xx,yy,r,h4*2*pi+event_t*(0.3+0.55*h1),85+165*depth
+i=i+1
+end
 end
 function draw_online
 draw_grass
@@ -632,6 +698,7 @@ if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-
 end
 i=i+1
 end
+draw_snow
 num w=screen_w/3
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
 draw_controls; draw_chat

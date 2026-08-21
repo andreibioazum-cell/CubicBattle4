@@ -26,7 +26,7 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
-extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count;
+extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern void *player, *enemy, *punch;
@@ -463,6 +463,84 @@ int main(void) {
                attacks, ncd, enemy_cooldown_min, enemy_cooldown_max);
     }
     tap_back(); wait_state(0, 40);
+
+    /* --- 11. Ивенты: в оффлайне ивентов нет, в онлайне снегопад работает --- */
+    {
+        /* Включаем снегопад на «сервере»: корневой узел /event = 2. */
+        if (test_http_impl("PUT", "http://127.0.0.1:18765/event.json", "2",
+                           NULL, 0, NULL, NULL, NULL, 0) != 200) {
+            printf("!! could not enable snow event on the fake server\n");
+            return 3;
+        }
+        /* Онлайн: фоновый поток должен прочитать /event и включить снегопад. */
+        tap_play(); wait_state(2, 30);
+        tap_online(); wait_state(5, 60);
+        {
+            int got = 0;
+            for (int i = 0; i < 120 && !got; i++) {
+                run_frames(2);
+                { struct timespec ts = { 0, 50 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+                if (net_event() == 2 && event_mode == 2) got = 1;
+            }
+            if (!got) {
+                printf("!! snow event not applied online: net_event=%g event_mode=%g\n",
+                       net_event(), event_mode);
+                return 3;
+            }
+        }
+        printf("=== snow event active online (frame %ld)\n", g_frame);
+        tap_back(); wait_state(0, 60);
+        if (event_mode != 0) {
+            printf("!! leaving online did not clear the event: event_mode=%g\n", event_mode);
+            return 3;
+        }
+        /* Оффлайн (соло): включаем другой ивент на сервере — соло не должен
+         * его замечать, event_mode обязан остаться нулём. */
+        if (test_http_impl("PUT", "http://127.0.0.1:18765/event.json", "1",
+                           NULL, 0, NULL, NULL, NULL, 0) != 200) {
+            printf("!! could not enable disco event on the fake server\n");
+            return 3;
+        }
+        tap_play(); wait_state(2, 30);
+        tap_solo(); wait_state(1, 30);
+        run_frames(120);
+        if (event_mode != 0) {
+            printf("!! offline solo battle applied an event: event_mode=%g\n", event_mode);
+            return 3;
+        }
+        printf("=== offline solo ignores events (event_mode=%g, frame %ld)\n", event_mode, g_frame);
+        tap_back(); wait_state(0, 40);
+
+        /* Контроль: серверный ивент по-прежнему доходит до онлайна. */
+        tap_play(); wait_state(2, 30);
+        tap_online(); wait_state(5, 60);
+        {
+            int got = 0;
+            for (int i = 0; i < 120 && !got; i++) {
+                run_frames(2);
+                { struct timespec ts = { 0, 50 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+                if (net_event() == 1 && event_mode == 1) got = 1;
+            }
+            if (!got) {
+                printf("!! disco event not applied online after solo: net_event=%g event_mode=%g\n",
+                       net_event(), event_mode);
+                return 3;
+            }
+        }
+        printf("=== disco event active online after solo (frame %ld)\n", g_frame);
+        tap_back(); wait_state(0, 60);
+        if (event_mode != 0) {
+            printf("!! leaving online did not clear the event: event_mode=%g\n", event_mode);
+            return 3;
+        }
+        /* Возвращаем «сервер» в состояние без ивента для остальных шагов. */
+        if (test_http_impl("PUT", "http://127.0.0.1:18765/event.json", "0",
+                           NULL, 0, NULL, NULL, NULL, 0) != 200) {
+            printf("!! could not disable event on the fake server\n");
+            return 3;
+        }
+        printf("=== events: online-only, offline clean (frame %ld)\n", g_frame);
+    }
 
     /* --- 12. Классы и сохранение в облако --- */
     tap_classes();
