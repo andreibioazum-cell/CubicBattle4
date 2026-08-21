@@ -1,7 +1,7 @@
 import re, sys
 TYPES={'num':'double','str':'const char*','col':'uint32_t','arr':'DSArray*'}
 BUILTINS=frozenset({
-    'rect','roundrect','circle','ring','line','tex','text','text_scaled','text_ink_width','text_ink_height','text_ink_top','png_load',
+    'rect','roundrect','circle','ring','line','tex','tex_tint','text','text_scaled','text_ink_width','text_ink_height','text_ink_top','png_load',
     'sqrt','sin','cos','atan2','floor','rand',
     'net_connect','net_disconnect','net_publish','net_publish_punch','net_set_class','net_status','net_slot',
     'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive','net_player_nick',
