@@ -9,7 +9,7 @@
     "users": {
       ".read": true,
       "$nick": {
-        ".write": true
+        ".write": "!data.exists() || newData.child('pass').val() == data.child('pass').val()"
       }
     },
     "rooms": {

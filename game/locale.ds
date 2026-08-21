@@ -57,15 +57,15 @@ if language==1; return "Ник"; else if language==2; return "ニック"; end; r
 function tr_pass
 if language==1; return "Пароль"; else if language==2; return "パスワード"; end; return "Password";end
 function tr_nick_ph
-if language==1; return "Ник: 3-16 (буквы, цифры, _)"; else if language==2; return "ニック: 3-16モジ"; end; return "Nick: 3-16 (letters, digits, _)";end
+if language==1; return "Ник: 1-16 (буквы, цифры, _)"; else if language==2; return "ニック: 1-16モジ"; end; return "Nick: 1-16 (letters, digits, _)";end
 function tr_pass_ph
-if language==1; return "Пароль: от 3 символов"; else if language==2; return "パスワード: 3文字以上"; end; return "Password: 3+ chars";end
+if language==1; return "Пароль: от 1 символа"; else if language==2; return "パスワード: 1文字以上"; end; return "Password: 1+ chars";end
 function tr_bad_nick
-if language==1; return "Ник: 3-16 символов, только буквы, цифры и _"; else if language==2; return "ニック: 3-16モジ、エイスウジト_ノミ"; end; return "Nick: 3-16 chars, letters, digits and _ only";end
+if language==1; return "Ник: от 1 до 16 символов, только буквы, цифры и _"; else if language==2; return "ニック: 1-16モジ、エイスウジト_ノミ"; end; return "Nick: 1-16 chars, letters, digits and _ only";end
 function tr_wrong_pass
 if language==1; return "Неверный пароль для этого ника"; else if language==2; return "パスワードが正しくありません"; end; return "Wrong password for this nick";end
 function tr_bad_pass
-if language==1; return "Пароль: от 3 до 32 символов"; else if language==2; return "パスワード: 3-32文字"; end; return "Password: 3-32 characters";end
+if language==1; return "Пароль: от 1 до 32 символов"; else if language==2; return "パスワード: 1-32文字"; end; return "Password: 1-32 characters";end
 function tr_login_btn
 if language==1; return "Войти / Зарегистрироваться"; else if language==2; return "ログイン / 登録"; end; return "Log In / Register";end
 function tr_your_nick
@@ -73,7 +73,7 @@ if language==1; return "Ваш ник: "; else if language==2; return "ニック
 function tr_leaderboard
 if language==1; return "Лидерборд"; else if language==2; return "リーダーボード"; end; return "Leaderboard";end
 function tr_leaderboard_title
-if language==1; return "Лидерборд (Кубки)"; else if language==2; return "リーダーボード (カップ)"; end; return "Leaderboard (Cups)";end
+if language==1; return "Лидерборд (кубки)"; else if language==2; return "リーダーボード (カップ)"; end; return "Leaderboard (cups)";end
 function tr_loading
 if language==1; return "Загрузка..."; else if language==2; return "読み込み中..."; end; return "Loading...";end
 function tr_no_data
@@ -119,6 +119,14 @@ function tr_level
 if language==1; return "Уровень"; else if language==2; return "レベル"; end; return "Level";end
 function tr_level_absorb
 if language==1; return "Поглощение урона"; else if language==2; return "ダメージ吸収"; end; return "Damage absorb";end
+function tr_level_unlock
+if language==1; return "Открыть за"; else if language==2; return "アンロック"; end; return "Unlock for";end
+function tr_cups_unit
+if language==1; return "кубков"; else if language==2; return "カップ"; end; return "cups";end
+function tr_level_locked
+if language==1; return "Сначала откройте предыдущий"; else if language==2; return "まえのレベルがひつよう"; end; return "Unlock the previous level first";end
+function tr_level_need_cups
+if language==1; return "Не хватает кубков для уровня"; else if language==2; return "カップが足りません"; end; return "Not enough cups for this level";end
 function tr_levels_soon
 if language==1; return "Скоро!"; else if language==2; return "近日公開!"; end; return "Coming soon!";end
 function tr_cups

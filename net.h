@@ -67,7 +67,10 @@ double net_load_candies(void);
 double net_load_class(void);
 double net_load_azum(void);
 double net_load_santa(void);
-void net_save_progress(double cups, double candies, double cls, double azum, double santa);
+double net_load_level(void);
+double net_load_levels_unlocked(void);
+void net_save_progress(double cups, double candies, double cls, double azum, double santa,
+                       double level, double levels_unlocked);
 
 /* Чат читается реже боевого состояния, поэтому не тормозит движение. */
 void net_chat_send(const char *text);

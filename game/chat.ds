@@ -38,7 +38,7 @@ end
 function chat_update
 // Ввод обрабатываем в update, а не в draw: иначе Enter и текст зависят от кадра.
 if game_state!=5||chat_open==0; return; end
-chat_sync_input
+if keyboard_visible()==1; chat_sync_input; end
 if keyboard_enter_pressed()==1; chat_send; end
 if net_chat_count()>chat_visible_limit(); net_chat_trim chat_visible_limit(); end
 end
@@ -92,11 +92,12 @@ end
 if chat_hit(x,y,chat_close_x(),back_y,btn_w,btn_h)==1; chat_open=0; keyboard_hide; return 1; end
 num lx=16, lw=screen_w-32, iy=chat_input_y(), ih=52
 if chat_hit(x,y,lx,iy,lw-122,ih)==1
-// Повторный тап по уже открытому полю не перезапускает IME — иначе
-// composing сбрасывается и только что набранное пропадает с экрана.
+// Клавиатура открывается только явным тапом по полю.
 if keyboard_visible()==0; keyboard_show; end
 return 1
 end
-if chat_hit(x,y,lx+lw-112,iy,112,ih)==1; chat_send; return 1; end
+if chat_hit(x,y,lx+lw-112,iy,112,ih)==1; chat_send; keyboard_hide; return 1; end
+// Тап в любую другую точку закрывает клавиатуру и не возвращает фокус полю.
+keyboard_hide
 return 1
 end

@@ -120,6 +120,18 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setFocusableInTouchMode(true);
         chatEditor.setClickable(false);
         chatEditor.setLongClickable(false);
+        /* Пока редактор видим, он лежит поверх маленькой полосы native-surface.
+         * Тап по этой полосе тоже считается тапом вне игрового поля и закрывает
+         * IME, а не возвращает ей фокус. */
+        chatEditor.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View view, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    hideGameKeyboard();
+                }
+                return true;
+            }
+        });
         // VISIBLE_PASSWORD отключает composing у Gboard: каждая латинская буква
         // сразу коммитится в поле. Без этого IME держит «a» как composing, а
         // restartInput/setText с нативной стороны его съедает — клавиатура
@@ -308,7 +320,9 @@ public final class GameActivity extends NativeActivity {
                         WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 chatEditor.clearFocus();
                 chatEditor.setVisibility(View.INVISIBLE);
-                clearEditorText();
+                /* Текст хранится в native-буфере: закрытие IME не должно
+                 * стирать введённый ник/пароль/сообщение. Игра очищает его
+                 * сама после отправки или выхода из экрана. */
                 keyboardHiddenNative();
             }
         });
@@ -330,11 +344,6 @@ public final class GameActivity extends NativeActivity {
                     getSystemService(Context.INPUT_METHOD_SERVICE);
             if (input != null) input.restartInput(chatEditor);
         }
-    }
-
-    /** Полная очистка поля, чтобы закрытая клавиатура не хранила старый текст. */
-    private void clearEditorText() {
-        replaceEditorText("");
     }
 
     @Override
