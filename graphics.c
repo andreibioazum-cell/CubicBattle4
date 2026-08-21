@@ -33,7 +33,7 @@ struct Texture {
     uint32_t *pixels;
 };
 typedef enum {
-    DS_CMD_RECT, DS_CMD_ROUND, DS_CMD_CIRCLE, DS_CMD_RING, DS_CMD_LINE, DS_CMD_TEX, DS_CMD_TEXT
+    DS_CMD_RECT, DS_CMD_ROUND, DS_CMD_CIRCLE, DS_CMD_RING, DS_CMD_LINE, DS_CMD_TEX, DS_CMD_TEXT, DS_CMD_TEX_TINT
 } DSCommand;
 typedef struct {
     DSCommand t;
@@ -45,6 +45,7 @@ typedef struct {
         struct { float x1, y1, x2, y2, th; uint32_t c; } ln;
         struct { float x, y, a, sc; Texture *tx; } tx;
         struct { char *s; float x, y, sc; uint32_t c; } tt;
+        struct { float x, y, a, sc; Texture *tx; uint32_t c; } tx2;
     } v;
 } DSCmd;
 static uint32_t pack_c(uint32_t c) {
@@ -445,6 +446,61 @@ static void draw_tx(Buffer *b, const Texture *t, float x, float y, float a, floa
     if (fabsf(a) < 0.0005f) { draw_tx_unrot(b, t, x, y, sc); return; }
     draw_tx_rot(b, t, x, y, a, sc);
 }
+/* Тонированная текстура: рисуется силуэт по альфа-каналу текстуры, залитый
+ * цветом tint (0xAARRGGBB). Нужно для теней — текстура становится полностью
+ * чёрной, сохраняя форму персонажа. */
+static void draw_tx_unrot_tint(Buffer *b, const Texture *t, float x, float y, float sc, uint32_t tint) {
+    if (!b || !t || !t->pixels || !isfinite(x+y+sc) || sc <= 0) return;
+    float w = t->w*sc, h = t->h*sc;
+    if (x >= b->width || y >= b->height || x+w <= 0 || y+h <= 0) return;
+    int l = cl_floor(floorf(x), b->width), t0 = cl_floor(floorf(y), b->height);
+    int r = cl_ceil(ceilf(x+w), b->width),  bo = cl_ceil(ceilf(y+h), b->height);
+    uint32_t tr = tint & 0xff, tg = (tint >> 8) & 0xff, tb = (tint >> 16) & 0xff, ta = (tint >> 24) & 0xff;
+    for (int sy = t0; sy < bo; sy++) {
+        int src_y = (int)(((float)sy + 0.5f - y) / sc);
+        if (src_y < 0) src_y = 0; if (src_y >= t->h) src_y = t->h - 1;
+        for (int sx = l; sx < r; sx++) {
+            int src_x = (int)(((float)sx + 0.5f - x) / sc);
+            if (src_x < 0) src_x = 0; if (src_x >= t->w) src_x = t->w - 1;
+            uint32_t p = t->pixels[src_y*t->w + src_x];
+            uint32_t sa = (p >> 24) & 0xff;
+            if (!sa) continue;
+            uint32_t a = (sa * ta) / 255;
+            if (!a) continue;
+            uint32_t s = tr | (tg << 8) | (tb << 16) | (a << 24);
+            b->pixels[sy*b->stride + sx] = blend(b->pixels[sy*b->stride + sx], s);
+        }
+    }
+}
+static void draw_tx_rot_tint(Buffer *b, const Texture *t, float x, float y, float ang, float sc, uint32_t tint) {
+    float hw = t->w*0.5f*sc, hh = t->h*0.5f*sc;
+    float cx = x+hw, cy = y+hh, ca = cosf(ang), sa = sinf(ang);
+    float dx = fabsf(hw*ca) + fabsf(hh*sa), dy = fabsf(hw*sa) + fabsf(hh*ca);
+    int l = cl_floor(floorf(cx-dx), b->width), t0 = cl_floor(floorf(cy-dy), b->height);
+    int r = cl_ceil(ceilf(cx+dx), b->width),   bo = cl_ceil(ceilf(cy+dy), b->height);
+    uint32_t tr = tint & 0xff, tg = (tint >> 8) & 0xff, tb = (tint >> 16) & 0xff, ta = (tint >> 24) & 0xff;
+    for (int sy = t0; sy < bo; sy++) {
+        float py = (float)sy + 0.5f - cy;
+        for (int sx = l; sx < r; sx++) {
+            float px = (float)sx + 0.5f - cx;
+            int tx = (int)floorf((px*ca + py*sa)/sc + t->w*0.5f);
+            int ty = (int)floorf((-px*sa + py*ca)/sc + t->h*0.5f);
+            if (tx < 0 || tx >= t->w || ty < 0 || ty >= t->h) continue;
+            uint32_t p = t->pixels[ty*t->w + tx];
+            uint32_t sa = (p >> 24) & 0xff;
+            if (!sa) continue;
+            uint32_t a = (sa * ta) / 255;
+            if (!a) continue;
+            uint32_t s = tr | (tg << 8) | (tb << 16) | (a << 24);
+            b->pixels[sy*b->stride + sx] = blend(b->pixels[sy*b->stride + sx], s);
+        }
+    }
+}
+static void draw_tx_tint(Buffer *b, const Texture *t, float x, float y, float a, float sc, uint32_t tint) {
+    if (!b || !t || !t->pixels || !isfinite(x+y+a+sc) || sc <= 0) return;
+    if (fabsf(a) < 0.0005f) { draw_tx_unrot_tint(b, t, x, y, sc, tint); return; }
+    draw_tx_rot_tint(b, t, x, y, a, sc, tint);
+}
 static DSCmd *push(DSCommand t) {
     if (!frame_open) return NULL;
     if (cmd_n == cmd_cap) {
@@ -468,6 +524,7 @@ static void flush(void) {
             case DS_CMD_RING:   render_ring(cur_buf, c->v.rg.x, c->v.rg.y, c->v.rg.r, c->v.rg.th, c->v.rg.c); break;
             case DS_CMD_LINE:   render_line(cur_buf, c->v.ln.x1, c->v.ln.y1, c->v.ln.x2, c->v.ln.y2, c->v.ln.th, c->v.ln.c); break;
             case DS_CMD_TEX:    draw_tx(cur_buf, c->v.tx.tx, c->v.tx.x, c->v.tx.y, c->v.tx.a, c->v.tx.sc); break;
+            case DS_CMD_TEX_TINT: draw_tx_tint(cur_buf, c->v.tx2.tx, c->v.tx2.x, c->v.tx2.y, c->v.tx2.a, c->v.tx2.sc, c->v.tx2.c); break;
             case DS_CMD_TEXT:
                 render_text_now(cur_buf, c->v.tt.s, c->v.tt.x, c->v.tt.y, c->v.tt.c, c->v.tt.sc);
                 free(c->v.tt.s); c->v.tt.s = NULL;
@@ -528,6 +585,12 @@ void tex(float x, float y, const char *name, float a, float s) {
     Texture *t = load_png(name); if (!t) return;
     DSCmd *p = push(DS_CMD_TEX); if (!p) return;
     p->v.tx.x=x; p->v.tx.y=y; p->v.tx.a=a; p->v.tx.sc=s; p->v.tx.tx=t;
+}
+void tex_tint(float x, float y, const char *name, float a, float s, uint32_t c) {
+    if (!frame_open) return;
+    Texture *t = load_png(name); if (!t) return;
+    DSCmd *p = push(DS_CMD_TEX_TINT); if (!p) return;
+    p->v.tx2.x=x; p->v.tx2.y=y; p->v.tx2.a=a; p->v.tx2.sc=s; p->v.tx2.tx=t; p->v.tx2.c=pack_c(c);
 }
 void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
     if (!frame_open || !s || !ensure_font()) return;

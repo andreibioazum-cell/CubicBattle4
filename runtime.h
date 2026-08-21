@@ -91,6 +91,7 @@ void ds_set_asset_manager(AAssetManager *assets);
 void ds_release_assets(void);
 int png_load(const char *name);
 void tex(float x, float y, const char *name, float angle, float scale);
+void tex_tint(float x, float y, const char *name, float angle, float scale, uint32_t color);
 void text(const char *string, float x, float y, uint32_t color);
 void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
 int text_ink_width(const char *string);
