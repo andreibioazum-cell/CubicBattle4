@@ -86,9 +86,9 @@ static int wait_state(double want, int max_iters) {
 }
 
 static int goto_solo(void) {
-    do_tap((float)(g_w / 2), (float)(g_h / 2));         /* lobby: Играть */
+    do_tap((float)(g_w / 2), (float)(g_h / 2 - 88));    /* lobby: Играть */
     if (!wait_state(2, 200)) return 0;
-    do_tap((float)(g_w / 2), (float)(g_h / 2));         /* modes: Соло */
+    do_tap((float)(g_w / 2), (float)(g_h / 2 - 8));     /* modes: Соло */
     if (!wait_state(1, 200)) return 0;
     return 1;
 }

@@ -225,15 +225,15 @@ static void fill_field(void (*tap)(void), const char *text) {
     run_frames(5);
 }
 
-/* Лобби: Play (center y 360-40+32=352) */
-static void tap_play(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 8)); }
-/* Моды: Solo (y 360-40+32=352), Online (360+40+32=432) */
+/* Лобби: общий столбец начинается с screen_h/2-120. */
+static void tap_play(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 88)); }
+/* Моды: «Назад» стоит на месте Play, Solo и Online идут следующими рядами. */
 static void tap_solo(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 8)); }
 static void tap_online(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 72)); }
 static void tap_back(void) { do_tap((float)(g_w - 280) / 2 + 140, 32 + 32); }
 static void tap_account(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 152)); }
-/* Лобби: «Классы» третья кнопка (my+160). Карточки обычного и Азума. */
-static void tap_classes(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 112)); }
+/* Лобби: «Классы» третья кнопка (my+160). */
+static void tap_classes(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 72)); }
 /* Экран классов: три карточки 260x300 с зазором 26, ряд на y=112..412.
  * Центры карточек по x: Обычный 354, Азум 640, Дед Мороз 926 (y≈262). */
 static void tap_class_ordinary(void) { do_tap(354.0f, 262.0f); }

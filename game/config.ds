@@ -2,7 +2,7 @@
 // Игрок и одиночный бот одного размера; физический размер совпадает с видимым спрайтом.
 // Бот равен игроку по цифрам: урон enemy_damage=punch_damage, хитбокс удара
 // enemy_punch_reach/width = punch_reach/width, HP 10 как у игрока. Бьёт он
-// чуть быстрее игрока (замах 0.07 + удар 0.16) и с рандомной перезарядкой
+// атакует с читаемым замахом 0.14 с и ударом 0.16 с, с рандомной перезарядкой
 // enemy_cooldown_min..max, чтобы ритм боя не был предсказуемым. Сила бота — не в
 // цифрах, а в поведении: он держит дистанцию, отходит после размена и
 // уклоняется от удара игрока (dodge), как живой соперник.
@@ -17,7 +17,7 @@ num remote_fields=11, punch_fields=6, remote_smooth=14, remote_snap=220
 // дальность удара игрока и стрейфит, вместо того чтобы стоять под ударами).
 // enemy_cooldown_min/max — случайная перезарядка удара бота: каждый раз новое
 // значение в диапазоне, но не быстрее enemy_cooldown_min (0.1 с).
-num enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.07, enemy_lock_time=0.04, enemy_punch_time=0.16, enemy_recovery=0.05, enemy_cooldown_min=0.09, enemy_cooldown_max=0.26, enemy_damage=1, enemy_first_delay=0.45, enemy_dodge_time=0.2, enemy_dodge_cooldown=0.6, enemy_reaction=0.06, enemy_think_min=0.04, enemy_think_max=0.12
+num enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.14, enemy_lock_time=0.05, enemy_punch_time=0.16, enemy_recovery=0.05, enemy_cooldown_min=0.09, enemy_cooldown_max=0.26, enemy_damage=1, enemy_first_delay=0.45, enemy_dodge_time=0.2, enemy_dodge_cooldown=0.6, enemy_reaction=0.06, enemy_think_min=0.04, enemy_think_max=0.12
 // Новый «мозг» бота: enemy_lead — на сколько секунд вперёд он упреждает удар
 // (замах + половина активного окна), enemy_hit_margin — запас по дальности,
 // чтобы удар гарантированно доставал, enemy_close_gain — резкость подхода к
@@ -27,9 +27,11 @@ num enemy_min_distance=70, enemy_punch_reach=104, enemy_punch_width=104, enemy_w
 num enemy_lead=0.15, enemy_hit_margin=12, enemy_close_gain=4.5, enemy_flank_time=0.9, enemy_still_speed=25, enemy_punish_react=0.05
 // Плавность бота: enemy_move_smooth — насколько быстро скорость обхода
 // подтягивается к новой цели (убирает рывки при смене стороны обхода),
-// enemy_face_speed — скорость разворота спрайта к направлению движения.
-// Оба — доля в секунду для lerp.
-num enemy_move_smooth=18, enemy_face_speed=14
+// enemy_face_speed — скорость разворота спрайта к направлению движения,
+// enemy_face_max_speed ограничивает даже самый резкий кадр свободного поворота,
+// enemy_attack_turn_speed — максимальная скорость поворота видимого хитбокса
+// во время замаха. Она не даёт атаке мгновенно «прилипнуть» к игроку.
+num enemy_move_smooth=18, enemy_face_speed=14, enemy_face_max_speed=42, enemy_attack_turn_speed=8
 // Экран ника: вход в онлайн спрашивает только ник, без пароля и регистрации.
 // login_field — 1, когда поле ника в фокусе (открывается сразу), login_status: 0=идл, 5=неверный ник,
 // login_after — куда перейти после ника (0=лобби, 5=онлайн).
