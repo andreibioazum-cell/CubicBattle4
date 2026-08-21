@@ -51,17 +51,34 @@ if language==1; return "Отправить"; else if language==2; return "送信
 function tr_account
 if language==1; return "Аккаунт"; else if language==2; return "アカウント"; end; return "Account";end
 function tr_login_title
-if language==1; return "Введите ник"; else if language==2; return "ニックネームを入力"; end; return "Enter your nick";end
+if language==1; return "Вход и регистрация"; else if language==2; return "ログイン / 登録"; end; return "Login / Register";end
 function tr_nick
 if language==1; return "Ник"; else if language==2; return "ニック"; end; return "Nick";end
+function tr_pass
+if language==1; return "Пароль"; else if language==2; return "パスワード"; end; return "Password";end
 function tr_nick_ph
 if language==1; return "Ник: 3-16 (буквы, цифры, _)"; else if language==2; return "ニック: 3-16モジ"; end; return "Nick: 3-16 (letters, digits, _)";end
+function tr_pass_ph
+if language==1; return "Пароль: от 3 символов"; else if language==2; return "パスワード: 3文字以上"; end; return "Password: 3+ chars";end
 function tr_bad_nick
 if language==1; return "Ник: 3-16 символов, только буквы, цифры и _"; else if language==2; return "ニック: 3-16モジ、エイスウジト_ノミ"; end; return "Nick: 3-16 chars, letters, digits and _ only";end
+function tr_wrong_pass
+if language==1; return "Неверный пароль для этого ника"; else if language==2; return "パスワードが正しくありません"; end; return "Wrong password for this nick";end
+function tr_bad_pass
+if language==1; return "Пароль: от 3 до 32 символов"; else if language==2; return "パスワード: 3-32文字"; end; return "Password: 3-32 characters";end
+function tr_login_btn
+if language==1; return "Войти / Зарегистрироваться"; else if language==2; return "ログイン / 登録"; end; return "Log In / Register";end
 function tr_your_nick
 if language==1; return "Ваш ник: "; else if language==2; return "ニック: "; end; return "Your nick: ";end
+function tr_leaderboard
+if language==1; return "Лидерборд"; else if language==2; return "リーダーボード"; end; return "Leaderboard";end
+function tr_leaderboard_title
+if language==1; return "Лидерборд (Кубки)"; else if language==2; return "リーダーボード (カップ)"; end; return "Leaderboard (Cups)";end
+function tr_loading
+if language==1; return "Загрузка..."; else if language==2; return "読み込み中..."; end; return "Loading...";end
+function tr_no_data
+if language==1; return "Нет данных"; else if language==2; return "データなし"; end; return "No data";end
 function tr_disco_epilepsy
-// Локализованный японский шрифт не поддерживается и превращался в «???».
 return "Epilepsy safe"
 end
 function tr_mode_on
@@ -107,8 +124,6 @@ if language==1; return "Скоро!"; else if language==2; return "近日公開!
 function tr_cups
 if language==1; return "Кубки"; else if language==2; return "カップ"; end; return "Cups";end
 function tr_buy_for num cost, str currency
-// Строка собирается через переменную: так компилятор точно знает, что
-// возвращается строка (return с конкатенацией тип не выводил).
 str out=""
 if language==1; out="Купить · "+cost+" "+currency
 else if language==2; out="買う · "+cost+" "+currency

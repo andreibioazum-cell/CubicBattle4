@@ -9,7 +9,8 @@ BUILTINS=frozenset({
     'net_player_class',
     'net_event',
     'net_chat_send','net_chat_trim','net_chat_count','net_chat_text','net_chat_uid',
-    'net_autologin','net_set_nick','net_login_status','net_login_nick',
+    'net_autologin','net_set_nick','net_login_status','net_login_nick','net_auth','net_logout',
+    'net_leaderboard_fetch','net_leaderboard_status','net_leaderboard_count','net_leaderboard_nick','net_leaderboard_cups',
     'net_load_cups','net_load_candies','net_load_class','net_load_azum','net_load_santa','net_save_progress',
     'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_enter_pressed','keyboard_type','keyboard_visible',
     'str_len','str_eq',
@@ -18,7 +19,7 @@ BUILTINS=frozenset({
     'clamp','lerp','dist'
 })
 ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy'}
-STR_BUILTINS=frozenset({'console_line','keyboard_get_text','keyboard_get_raw','net_chat_text','net_chat_uid','net_login_nick','net_player_nick'})
+STR_BUILTINS=frozenset({'console_line','keyboard_get_text','keyboard_get_raw','net_chat_text','net_chat_uid','net_login_nick','net_player_nick','net_leaderboard_nick'})
 _NAME=r'[A-Za-z_]\w*'
 _FUNC_RE=re.compile(r'^function\s+('+_NAME+r')(?:\s+(.*))?$')
 _NUM_RE=re.compile(r'^(?:[-+]?\d+(?:\.\d+)?|0[xX][0-9a-fA-F]+)$')
