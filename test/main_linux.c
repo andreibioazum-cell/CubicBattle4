@@ -27,8 +27,9 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
-extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, box_msg_t;
+extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, box_msg_t, candy_count;
 extern const char *box_msg;
+extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
 extern DSArray *remotes, *remote_punches;
@@ -697,7 +698,7 @@ int main(void) {
     printf("=== shop: box + Santa buy tested (frame %ld)\n", g_frame);
     /* Выйти с экрана классов обратно в лобби, откуда уже начинаем бой. */
     tap_back();
-    if (!wait_state(0, 30)) { printf("!! did not return to lobby after buying Santa\\n"); return 3; }
+    if (!wait_state(0, 30)) { printf("!! did not return to lobby after buying Santa\n"); return 3; }
 
     tap_play(); wait_state(2, 30);
     tap_solo(); wait_state(1, 30);
@@ -711,22 +712,46 @@ int main(void) {
         /* Посох: обычный удар бьёт на 2 (вместо 1) и морозит на 1 секунду. */
         do_tap((float)(g_w - 140), (float)(g_h - 150));
         run_frames(14);
-        if (e[3] > 8.5 || e[3] < 7.5) { printf("!! staff dealt wrong damage: enemy hp=%g (expected 8)\\n", e[3]); return 3; }
-        if (e[23] <= 0.3) { printf("!! staff did not freeze: freeze=%g\\n", e[23]); return 3; }
-        if (e[24] < 0.3 || e[24] > 0.4) { printf("!! staff freeze factor wrong: %g\\n", e[24]); return 3; }
-        printf("=== staff: enemy hp=%g freeze=%g slow=%g\\n", e[3], e[23], e[24]);
+        if (e[3] > 8.5 || e[3] < 7.5) { printf("!! staff dealt wrong damage: enemy hp=%g (expected 8)\n", e[3]); return 3; }
+        if (e[23] <= 0.3) { printf("!! staff did not freeze: freeze=%g\n", e[23]); return 3; }
+        if (e[24] < 0.3 || e[24] > 0.4) { printf("!! staff freeze factor wrong: %g\n", e[24]); return 3; }
+        printf("=== staff: enemy hp=%g freeze=%g slow=%g\n", e[3], e[23], e[24]);
         /* Подарок: вторая кнопка кидает бомбу, взрыв бьёт на 3 и морозит на 3с. */
         e[3] = 10; e[23] = 0; e[0] = pl[0] + 80; e[1] = pl[1];
         do_tap((float)(g_w - 140), (float)(g_h - 300));
         run_frames(30);
-        if (e[3] > 7.5 || e[3] < 6.5) { printf("!! super dealt wrong damage: enemy hp=%g (expected 7)\\n", e[3]); return 3; }
-        if (e[23] <= 2.0) { printf("!! super freeze too short: freeze=%g\\n", e[23]); return 3; }
-        if (e[24] < 0.05 || e[24] > 0.2) { printf("!! super freeze factor wrong: %g\\n", e[24]); return 3; }
-        printf("=== super (gift): enemy hp=%g freeze=%g slow=%g\\n", e[3], e[23], e[24]);
+        if (e[3] > 7.5 || e[3] < 6.5) { printf("!! super dealt wrong damage: enemy hp=%g (expected 7)\n", e[3]); return 3; }
+        if (e[23] <= 2.0) { printf("!! super freeze too short: freeze=%g\n", e[23]); return 3; }
+        if (e[24] < 0.05 || e[24] > 0.2) { printf("!! super freeze factor wrong: %g\n", e[24]); return 3; }
+        printf("=== super (gift): enemy hp=%g freeze=%g slow=%g\n", e[3], e[23], e[24]);
+
+        /* Леденцы-пикапы: на карте candy_count штук, подбор даёт +1 и переспавнивает
+         * леденец в новой случайной точке (в пределах экрана). */
+        {
+            double before = candies;
+            if (!candy_x || !candy_y || candy_count < 1) { printf("!! candy arrays missing: count=%g\n", candy_count); return 3; }
+            if ((int)arr_len(candy_x) != (int)candy_count || (int)arr_len(candy_y) != (int)candy_count) {
+                printf("!! candy count mismatch: len=%g/%g want=%g\n", arr_len(candy_x), arr_len(candy_y), candy_count);
+                return 3;
+            }
+            /* Кладём леденец №0 прямо на игрока, чтобы гарантированно подобрать. */
+            arr_set(candy_x, 0, pl[0]);
+            arr_set(candy_y, 0, pl[1]);
+            run_frames(4);
+            if (candies != before + 1) { printf("!! candy pickup failed: candies=%g (before %g)\n", candies, before); return 3; }
+            {
+                double dx = arr_get(candy_x, 0) - pl[0], dy = arr_get(candy_y, 0) - pl[1];
+                if (dx*dx + dy*dy < 40*40) { printf("!! candy did not respawn away: %g,%g\n", arr_get(candy_x,0), arr_get(candy_y,0)); return 3; }
+                /* Новое место должно оставаться в пределах экрана (с запасом). */
+                double nx = arr_get(candy_x, 0), ny = arr_get(candy_y, 0);
+                if (nx < 40 || nx > g_w - 40 || ny < 40 || ny > g_h - 40) { printf("!! candy respawned off-screen: %g,%g\n", nx, ny); return 3; }
+            }
+            printf("=== candy pickup: candies=%g, respawned at %g,%g\n", candies, arr_get(candy_x,0), arr_get(candy_y,0));
+        }
     }
     /* Выход из боя (кнопкой «Назад») возвращает в лобби. */
     tap_back();
-    if (!wait_state(0, 40)) { printf("!! did not return to lobby from Santa solo\\n"); return 3; }
+    if (!wait_state(0, 40)) { printf("!! did not return to lobby from Santa solo\n"); return 3; }
     /* Возвращаем Обычный класс, чтобы дальше тест шёл как раньше. */
     tap_classes(); wait_state(8, 30);
     tap_class_ordinary();

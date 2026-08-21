@@ -4,10 +4,12 @@
 
 function class_idle_tex num cls
 if cls==1; return AZUM_TEX; end
+if cls==2; return SANTA_TEX; end
 return ORDINARY_TEX
 end
 function class_punch_tex num cls
 if cls==1; return AZUM_PUNCH_TEX; end
+if cls==2; return SANTA_PUNCH_TEX; end
 return PUNCH_TEX
 end
 function player_idle_tex
@@ -54,12 +56,12 @@ player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_h
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
 gift.active=0; gift.t=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-300; drop_joy
-arr_clear remotes; arr_clear remote_punches
+arr_clear remotes; arr_clear remote_punches; arr_clear candy_x; arr_clear candy_y
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
 i=0; loop i<max_players*punch_fields; arr_push remote_punches,0; i=i+1; end
 end
 function init_game
-reset_battle; enemy.hp=enemy.max_hp; spawn_enemy
+reset_battle; enemy.hp=enemy.max_hp; spawn_enemy; spawn_all_candies
 end
 function init_online
 reset_battle; chat_open=0; keyboard_hide; online_ready=0; net_set_class player_class; net_connect FIREBASE,ROOM
@@ -76,6 +78,27 @@ if dist(enemy.x,enemy.y,player.x,player.y)>280; i=50; else; i=i+1; end
 end
 enemy.state=0; enemy.state_time=0; enemy.cooldown=enemy_first_delay; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0
 if rand()%2==0; enemy.strafe=-1; else; enemy.strafe=1; end
+end
+function candy_rand_pos num i
+// Случайная точка леденца на экране: отступ candy_margin от краёв (координата
+// никогда не уходит за экран) и несколько попыток не упасть прямо на игрока
+// или бота. arr_set сам доращивает массив до нужного индекса.
+num m=candy_margin, k=0
+num cx=m+rand()%(int)(screen_w-2*m), cy=m+rand()%(int)(screen_h-2*m)
+loop k<24
+if dist(cx,cy,player.x,player.y)<80||dist(cx,cy,enemy.x,enemy.y)<80
+cx=m+rand()%(int)(screen_w-2*m); cy=m+rand()%(int)(screen_h-2*m); k=k+1
+else; k=24; end
+end
+arr_set candy_x,i,cx; arr_set candy_y,i,cy
+end
+function spawn_all_candies
+// В начале боя раскладываем candy_count леденцов по карте.
+num i=0
+loop i<candy_count
+candy_rand_pos i
+i=i+1
+end
 end
 function sprite_a num a
 // спрайт нарисован «лицом вверх», поэтому к игровому углу добавляем pi/2
@@ -366,6 +389,15 @@ tick_revive
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
+// Леденцы на карте: подошёл — забрал (+candy_give), на этом месте появился новый.
+num ci=0
+loop ci<candy_count
+if dist(arr_get(candy_x,ci),arr_get(candy_y,ci),player.x,player.y)<player.size*0.65+18
+candies=candies+candy_give; save_progress; ds_log "candy picked -> %g",candies
+candy_rand_pos ci
+end
+ci=ci+1
+end
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
 follow_punch
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
@@ -541,6 +573,14 @@ ring boom_x,boom_y,r,9,0xB3E5FC
 ring boom_x,boom_y,r*0.6,6,0xE1F5FE
 circle boom_x,boom_y,super_radius*0.3,0x55B3E5FC
 end
+function draw_candies
+// Леденцы-пикапы на карте: спрайт candy.png по центру точки спавна.
+num hw=25*candy_scale, i=0
+loop i<candy_count
+tex arr_get(candy_x,i)-hw,arr_get(candy_y,i)-hw,CANDY_TEX,0,candy_scale
+i=i+1
+end
+end
 function finish_game num result
 finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
 gift.active=0; boom_t=0
@@ -554,35 +594,8 @@ function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num 
 num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
 if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
 end
-function draw_santa num cx, num cy, num ang, num punching, num sc
-// Процедурный Дед Мороз (вид сверху, «лицом» в направлении ang). Спрайта нет,
-// поэтому рисуется из кругов и линий. f — смещение вперёд, r — вбок; все
-// размеры умножаются на sc. Во время удара (punching) посох вытягивается.
-num fx=cos(ang), fy=sin(ang), rx=0-fy, ry=fx
-num stick=17; if punching==1; stick=25; end
-// Ледяной посох справа от тела, смотрит вперёд.
-line cx+(0-4)*fx*sc+11*rx*sc,cy+(0-4)*fy*sc+11*ry*sc,cx+stick*fx*sc+11*rx*sc,cy+stick*fy*sc+11*ry*sc,5*sc,0x4FC3F7
-circle cx+stick*fx*sc+11*rx*sc,cy+stick*fy*sc+11*ry*sc,5.5*sc,0xB3E5FC
-// Красная шуба с белой меховой оторочкой (тело чуть сзади).
-ring cx+(0-4)*fx*sc,cy+(0-4)*fy*sc,22*sc,4*sc,0xFFFFFF
-circle cx+(0-4)*fx*sc,cy+(0-4)*fy*sc,20*sc,0xE53935
-// Белая борода-лицо по центру.
-circle cx,cy,12*sc,0xFFFFFF
-// Глаза и нос.
-circle cx+(3*fx-4*rx)*sc,cy+(3*fy-4*ry)*sc,2*sc,0x1B1B1B
-circle cx+(3*fx+4*rx)*sc,cy+(3*fy+4*ry)*sc,2*sc,0x1B1B1B
-circle cx+5*fx*sc,cy+5*fy*sc,1.8*sc,0xFF9800
-// Шапка: красный колпак, белый обод и помпон.
-circle cx+10*fx*sc,cy+10*fy*sc,8.5*sc,0xD32F2F
-line cx+(7*fx-8*rx)*sc,cy+(7*fy-8*ry)*sc,cx+(7*fx+8*rx)*sc,cy+(7*fy+8*ry)*sc,5*sc,0xFFFFFF
-circle cx+15*fx*sc,cy+15*fy*sc,4*sc,0xFFFFFF
-end
 function draw_player_model num x, num y, num ang, num punching
-// Единая отрисовка игрока: классы 0/1 — спрайты, Дед Мороз — процедурно.
-if player_class==2
-draw_santa x,y,ang,punching,cube_scale*player_scale
-return
-end
+// Единая отрисовка игрока: у всех классов свой спрайт (idle и punch).
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str t=player_idle_tex()
 if punching==1; t=player_punch_tex(); end
@@ -590,10 +603,6 @@ tex x-hw,y-hw,t,sprite_a(ang),ps
 end
 function draw_remote_model num x, num y, num ang, num cls, num punching
 // То же для сетевых соперников (по классу cls из их слота).
-if cls==2
-draw_santa x,y,ang,punching,cube_scale*player_scale
-return
-end
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str t=class_idle_tex(cls)
 if punching==1; t=class_punch_tex(cls); end
@@ -634,6 +643,7 @@ function draw_game
 // показывает, куда попадёт удар (замах и активное окно), можно увернуться.
 draw_grass
 draw_field
+draw_candies
 draw_gift; draw_boom
 if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
 num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale

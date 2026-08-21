@@ -30,13 +30,8 @@ if player_class==cls; sel=1; end
 if cls!=0&&owned==0; locked=1; sel=0; end
 if sel==1; roundrect x-5,y-5,w+10,h+10,26,0xFF5A5A78; end
 roundrect x,y,w,h,22,0xFF2A2A40
-if cls==2
-// Дед Мороз рисуется процедурно (спрайта нет) — маленькая копия, лицом вверх.
-draw_santa x+w/2,y+88,0-pi/2,0,2.2
-else
 num ts=2.2, spr=50*ts
 tex x+(w-spr)/2,y+28,texname,0,ts
-end
 num tw=text_ink_width(title)
 text title,x+(w-tw)/2,y+150,0xFFFFFF
 num dw=text_ink_width(desc)*0.5
@@ -55,7 +50,7 @@ num total=cw*3+gap*2, x0=(screen_w-total)/2
 num x1=x0, x2=x0+cw+gap, x3=x0+2*(cw+gap), y=back_y+btn_h+16
 draw_class_card x1,y,cw,ch,0,1,0,tr_class_ordinary(),tr_class_ordinary_desc(),ORDINARY_TEX
 draw_class_card x2,y,cw,ch,1,azum_owned,azum_cost,tr_class_azum(),tr_class_azum_desc(),AZUM_TEX
-draw_class_card x3,y,cw,ch,2,santa_owned,santa_candy_cost,tr_class_santa(),tr_class_santa_desc(),""
+draw_class_card x3,y,cw,ch,2,santa_owned,santa_candy_cost,tr_class_santa(),tr_class_santa_desc(),SANTA_TEX
 // Ящик: широкая золотая кнопка под карточками, покупается за кубки.
 num by=y+ch+gap
 str box_label=tr_box()+" · "+box_cost+" "+tr_cups()

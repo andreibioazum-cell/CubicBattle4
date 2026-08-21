@@ -38,7 +38,7 @@ num login_field=0, login_status=0, login_after=0
 // поля ввода, login_lab — отступ подписи «Ник» над полем (больше = выше),
 // login_lab_ox — сдвиг этой подписи вправо.
 num login_ox=10, login_oy=-26, login_fh=54, login_lab=40, login_lab_ox=16
-str GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png", AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main", login_nick=""
+str GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png", AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png", SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main", login_nick=""
 // Диско-ивент из Firebase: event_mode=1 — «диско» включено (всё мигает),
 // disco_safe=1 — безопасный для эпилептиков режим (мигание выключено),
 // disco_t — таймер для плавной смены цветов.
@@ -68,3 +68,7 @@ num super_cd_time=6.0, super_speed=420, super_range=260, super_radius=130, boom_
 num santa_candy_cost=100
 num box_cost=30, box_candy_min=10, box_candy_max=20, box_cups_min=20, box_cups_max=40
 num box_azum_chance=20, box_santa_chance=5, box_dup_candy=30, box_dup_santa_candy=50
+// Леденцы-пикапы на карте (соло): candy_count штук разбросаны по случайным
+// точкам экрана (отступ candy_margin от краёв), за каждый подбор +candy_give.
+// Собранный леденец исчезает, и на его месте появляется новый в случайном месте.
+num candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
