@@ -128,10 +128,12 @@ static void lg_unlock(void) { ds_mutex_unlock(lg.lock); }
 
 /* Кубки и класс живут рядом с ником: тот же каталог, отдельный файл, чтобы
  * смена ника не обнуляла прогресс. pending_cls нужен, потому что net_connect
- * обнуляет net.me уже после выбора класса в меню. */
+ * обнуляет net.me уже после выбора класса в меню. Классы: 0 Обычный,
+ * 1 Азум, 2 Дед Мороз; флаги azum/santa — куплены ли платные классы,
+ * candies — вторая валюта (леденцы). */
 typedef struct {
     DSMutex lock;
-    int loaded, cups, cls, azum;
+    int loaded, cups, candies, cls, azum, santa;
 } Progress;
 static Progress pg = { .lock = DS_MUTEX_INIT };
 static int pending_cls = 0;
@@ -143,42 +145,55 @@ static void data_file_path(char *path, size_t cap, const char *name) {
     else snprintf(path, cap, "%s", name);
     lg_unlock();
 }
-static void progress_write(int cups, int cls, int azum) {
+static void progress_write(int cups, int candies, int cls, int azum, int santa) {
     char path[320]; FILE *f;
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "w");
-    if (f) { fprintf(f, "%d %d %d\n", cups, cls, azum); fclose(f); }
+    if (f) { fprintf(f, "%d %d %d %d %d\n", cups, cls, azum, santa, candies); fclose(f); }
 }
 static void progress_read(void) {
-    char path[320]; FILE *f; int cups=0, cls=0, azum=0;
+    char path[320]; FILE *f; int cups=0, candies=0, cls=0, azum=0, santa=0;
     pg_lock();
     if (pg.loaded) { pg_unlock(); return; }
     pg_unlock();
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "r");
     if (f) {
-        if (fscanf(f, "%d %d %d", &cups, &cls, &azum) < 1) { cups=0; cls=0; azum=0; }
+        /* Новый формат: cups cls azum santa candies. Старые файлы короче:
+         * 4 числа (cups cls azum santa) -> candies остаётся 0;
+         * 3 числа (cups cls azum) -> santa и candies остаются 0. */
+        int n = fscanf(f, "%d %d %d %d %d", &cups, &cls, &azum, &santa, &candies);
+        if (n < 3) { cups=0; candies=0; cls=0; azum=0; santa=0; }
         fclose(f);
     }
     if (cups < 0) cups = 0;
-    if (cls != 1) cls = 0;
+    if (candies < 0) candies = 0;
+    if (cls != 1 && cls != 2) cls = 0;
     azum = azum ? 1 : 0;
+    santa = santa ? 1 : 0;
     if (cls == 1 && !azum) cls = 0;
-    pg_lock(); pg.cups = cups; pg.cls = cls; pg.azum = azum; pg.loaded = 1; pg_unlock();
+    if (cls == 2 && !santa) cls = 0;
+    pg_lock(); pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.loaded = 1; pg_unlock();
 }
 double net_load_cups(void) { double v; progress_read(); pg_lock(); v = (double)pg.cups; pg_unlock(); return v; }
+double net_load_candies(void) { double v; progress_read(); pg_lock(); v = (double)pg.candies; pg_unlock(); return v; }
 double net_load_class(void) { double v; progress_read(); pg_lock(); v = (double)pg.cls; pg_unlock(); return v; }
 double net_load_azum(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum; pg_unlock(); return v; }
-void net_save_progress(double cups, double cls, double azum) {
-    int c = (int)cups, k = ((int)cls == 1) ? 1 : 0, a = azum ? 1 : 0;
+double net_load_santa(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa; pg_unlock(); return v; }
+void net_save_progress(double cups, double candies, double cls, double azum, double santa) {
+    int c = (int)cups, cd = (int)candies, k = (int)cls, a = azum ? 1 : 0, sn = santa ? 1 : 0;
     if (c < 0) c = 0;
+    if (cd < 0) cd = 0;
+    if (k != 1 && k != 2) k = 0;
     if (k == 1 && !a) k = 0;
-    pg_lock(); pg.cups = c; pg.cls = k; pg.azum = a; pg.loaded = 1; pg_unlock();
+    if (k == 2 && !sn) k = 0;
+    pg_lock(); pg.cups = c; pg.candies = cd; pg.cls = k; pg.azum = a; pg.santa = sn; pg.loaded = 1; pg_unlock();
     pending_cls = k;
-    progress_write(c, k, a);
+    progress_write(c, cd, k, a, sn);
 }
 void net_set_class(double cls) {
-    int k = ((int)cls == 1) ? 1 : 0;
+    int k = (int)cls;
+    if (k != 1 && k != 2) k = 0;
     pending_cls = k;
     lock(); net.me.cls = (double)k;
     if (net.slot >= 0) net.players[net.slot].cls = (double)k;

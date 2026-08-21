@@ -48,11 +48,13 @@ double net_player_punch_dy(double slot);
 double net_player_punch(double slot);
 double net_player_class(double slot);
 
-/* Локальный прогресс: кубки, выбранный класс и купленный Азум. */
+/* Локальный прогресс: кубки, леденцы, выбранный класс и купленные классы. */
 double net_load_cups(void);
+double net_load_candies(void);
 double net_load_class(void);
 double net_load_azum(void);
-void net_save_progress(double cups, double cls, double azum);
+double net_load_santa(void);
+void net_save_progress(double cups, double candies, double cls, double azum, double santa);
 
 /* Чат читается реже боевого состояния, поэтому не тормозит движение. */
 void net_chat_send(const char *text);

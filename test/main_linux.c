@@ -27,7 +27,9 @@
 
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
-extern double player_class, azum_revived, finished, cups, azum_owned, cups_awarded, player_level;
+extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, box_msg_t, candy_count;
+extern const char *box_msg;
+extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *chat_input;
 extern void *player, *enemy, *punch;
 extern DSArray *remotes, *remote_punches;
@@ -37,6 +39,8 @@ extern double enemy_cooldown_min, enemy_cooldown_max;
 #define ENEMY_ANGLE 5
 #define ENEMY_STATE 6
 #define ENEMY_COOLDOWN 8
+#define ENEMY_FREEZE 23
+#define ENEMY_FREEZE_SLOW 24
 
 static uint32_t *g_pixels = NULL;
 static int g_w = 1280, g_h = 720;
@@ -230,9 +234,14 @@ static void tap_back(void) { do_tap((float)(g_w - 280) / 2 + 140, 32 + 32); }
 static void tap_account(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 152)); }
 /* Лобби: «Классы» третья кнопка (my+160). Карточки обычного и Азума. */
 static void tap_classes(void) { do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 + 112)); }
-static void tap_class_ordinary(void) { do_tap(470.0f, 260.0f); }
-static void tap_class_azum(void) { do_tap(810.0f, 260.0f); }
-static void tap_levels_btn(void) { do_tap(810.0f, 484.0f); }
+/* Экран классов: три карточки 260x300 с зазором 26, ряд на y=112..412.
+ * Центры карточек по x: Обычный 354, Азум 640, Дед Мороз 926 (y≈262). */
+static void tap_class_ordinary(void) { do_tap(354.0f, 262.0f); }
+static void tap_class_azum(void) { do_tap(640.0f, 262.0f); }
+static void tap_class_santa(void) { do_tap(926.0f, 262.0f); }
+static void tap_levels_btn(void) { do_tap(926.0f, 470.0f); }
+/* Ящик в магазине: широкая кнопка под карточками (x 224..770, y 438..502). */
+static void tap_box(void) { do_tap(497.0f, 470.0f); }
 static void tap_level_row(int n) {
     float y = 32.0f + 64.0f + 52.0f + (float)(n - 1) * 88.0f + 39.0f;
     do_tap((float)(g_w / 2), y);
@@ -582,12 +591,13 @@ int main(void) {
         return 3;
     }
     {
+        /* Формат прогресса: cups cls azum santa candies (5 чисел). */
         FILE *f = fopen("progress.dat", "r");
-        int pc=0, cl=0, az=0;
+        int pc=0, cl=0, az=0, sn=0, cd=0;
         if (!f) { printf("!! progress.dat was not written after buying Azum\n"); return 3; }
-        if (fscanf(f, "%d %d %d", &pc, &cl, &az) != 3) { fclose(f); printf("!! progress.dat is unreadable\n"); return 3; }
+        if (fscanf(f, "%d %d %d %d %d", &pc, &cl, &az, &sn, &cd) != 5) { fclose(f); printf("!! progress.dat is unreadable\n"); return 3; }
         fclose(f);
-        if (pc != 0 || cl != 1 || az != 1) { printf("!! progress.dat has %d %d %d, expected 0 1 1\n", pc, cl, az); return 3; }
+        if (pc != 0 || cl != 1 || az != 1 || sn != 0) { printf("!! progress.dat has %d %d %d %d %d, expected 0 1 1 0 0\n", pc, cl, az, sn, cd); return 3; }
     }
     tap_class_ordinary();
     run_frames(5);
@@ -631,6 +641,121 @@ int main(void) {
     if (player_level != 1) { printf("!! level 1 was not selected, level=%g\n", player_level); return 3; }
     printf("=== levels: absorb 10%% at level 1, selectable (frame %ld)\n", g_frame);
     tap_back(); wait_state(8, 30);
+    tap_back(); wait_state(0, 30);
+
+    /* --- 9c. Дед Мороз: покупка за 100 ЛЕДЕНЦОВ, посох (+2 урона, заморозка 1с),
+     * суператака-подарок (+3 урона, заморозка 3с), и ящик за 30 кубков. --- */
+    tap_classes(); wait_state(8, 30);
+    /* Без леденцов Дед Мороз должен остаться закрытым. */
+    candies = 0;
+    tap_class_santa();
+    run_frames(5);
+    if (player_class != 0 || santa_owned != 0) {
+        printf("!! Santa must stay locked without candies, class=%g owned=%g\n", player_class, santa_owned);
+        return 3;
+    }
+    candies = 100;
+    tap_class_santa();
+    run_frames(5);
+    if (player_class != 2 || santa_owned != 1 || candies != 0) {
+        printf("!! Santa buy failed: class=%g owned=%g candies=%g\n", player_class, santa_owned, candies);
+        return 3;
+    }
+    {
+        FILE *f = fopen("progress.dat", "r");
+        int pc=0, cl=0, az=0, sn=0, cd=0;
+        if (!f) { printf("!! progress.dat was not written after buying Santa\n"); return 3; }
+        if (fscanf(f, "%d %d %d %d %d", &pc, &cl, &az, &sn, &cd) != 5) { fclose(f); printf("!! progress.dat is unreadable\n"); return 3; }
+        fclose(f);
+        if (pc != 0 || cl != 2 || az != 1 || sn != 1 || cd != 0) { printf("!! progress.dat has %d %d %d %d %d, expected 0 2 1 1 0\n", pc, cl, az, sn, cd); return 3; }
+    }
+    printf("=== shop: Santa bought for candies and selected (frame %ld)\n", g_frame);
+
+    /* Ящик: покупается за 30 кубков и всегда что-то выбивает (леденцы/кубки/класс).
+     * Азум уже куплен, поэтому его дроп превращается в леденцы; проверяем, что
+     * кубки списались и награда появилась, а результат показан сообщением. */
+    cups = 30; candies = 0;
+    tap_box();
+    run_frames(6);
+    if (!box_msg || !box_msg[0]) { printf("!! box result message missing\n"); return 3; }
+    if (cups > 40) { printf("!! box refunded too many cups: cups=%g\n", cups); return 3; }
+    if (!(candies > 0 || cups >= 20)) { printf("!! box gave nothing: cups=%g candies=%g\n", cups, candies); return 3; }
+    printf("=== box opened (cost 30): '%s' -> cups=%g candies=%g\n", box_msg, cups, candies);
+    /* Ещё несколько ящиков: каждая награда обязана дать сообщение и не увести
+     * валюты в минус — это покрывает ветки «леденцы» и «класс уже куплен». */
+    {
+        int opens = 0;
+        for (int i = 0; i < 8; i++) {
+            cups = 30;
+            tap_box();
+            run_frames(3);
+            if (!box_msg || !box_msg[0]) { printf("!! box %d gave no message\n", i); return 3; }
+            if (cups < 0 || candies < 0) { printf("!! box %d drove currency negative: cups=%g candies=%g\n", i, cups, candies); return 3; }
+            opens++;
+        }
+        printf("=== box opened %d more times without errors (last: '%s')\n", opens, box_msg);
+    }
+    printf("=== shop: box + Santa buy tested (frame %ld)\n", g_frame);
+    /* Выйти с экрана классов обратно в лобби, откуда уже начинаем бой. */
+    tap_back();
+    if (!wait_state(0, 30)) { printf("!! did not return to lobby after buying Santa\n"); return 3; }
+
+    tap_play(); wait_state(2, 30);
+    tap_solo(); wait_state(1, 30);
+    run_frames(20);
+    {
+        double *e = (double *)enemy, *pl = (double *)player;
+        /* Ставим врага прямо перед игроком и обездвиживаем его AI, чтобы
+         * попадание посоха и подарка было детерминированным. */
+        pl[0] = g_w / 2; pl[1] = g_h / 2; pl[3] = 0; pl[4] = 10;
+        e[0] = pl[0] + 60; e[1] = pl[1]; e[5] = 3.14159265; e[6] = 0; e[8] = 99; e[11] = 99; e[23] = 0;
+        /* Посох: обычный удар бьёт на 2 (вместо 1) и морозит на 1 секунду. */
+        do_tap((float)(g_w - 140), (float)(g_h - 150));
+        run_frames(14);
+        if (e[3] > 8.5 || e[3] < 7.5) { printf("!! staff dealt wrong damage: enemy hp=%g (expected 8)\n", e[3]); return 3; }
+        if (e[23] <= 0.3) { printf("!! staff did not freeze: freeze=%g\n", e[23]); return 3; }
+        if (e[24] < 0.3 || e[24] > 0.4) { printf("!! staff freeze factor wrong: %g\n", e[24]); return 3; }
+        printf("=== staff: enemy hp=%g freeze=%g slow=%g\n", e[3], e[23], e[24]);
+        /* Подарок: вторая кнопка кидает бомбу, взрыв бьёт на 3 и морозит на 3с. */
+        e[3] = 10; e[23] = 0; e[0] = pl[0] + 80; e[1] = pl[1];
+        do_tap((float)(g_w - 140), (float)(g_h - 300));
+        run_frames(30);
+        if (e[3] > 7.5 || e[3] < 6.5) { printf("!! super dealt wrong damage: enemy hp=%g (expected 7)\n", e[3]); return 3; }
+        if (e[23] <= 2.0) { printf("!! super freeze too short: freeze=%g\n", e[23]); return 3; }
+        if (e[24] < 0.05 || e[24] > 0.2) { printf("!! super freeze factor wrong: %g\n", e[24]); return 3; }
+        printf("=== super (gift): enemy hp=%g freeze=%g slow=%g\n", e[3], e[23], e[24]);
+
+        /* Леденцы-пикапы: на карте candy_count штук, подбор даёт +1 и переспавнивает
+         * леденец в новой случайной точке (в пределах экрана). */
+        {
+            double before = candies;
+            if (!candy_x || !candy_y || candy_count < 1) { printf("!! candy arrays missing: count=%g\n", candy_count); return 3; }
+            if ((int)arr_len(candy_x) != (int)candy_count || (int)arr_len(candy_y) != (int)candy_count) {
+                printf("!! candy count mismatch: len=%g/%g want=%g\n", arr_len(candy_x), arr_len(candy_y), candy_count);
+                return 3;
+            }
+            /* Кладём леденец №0 прямо на игрока, чтобы гарантированно подобрать. */
+            arr_set(candy_x, 0, pl[0]);
+            arr_set(candy_y, 0, pl[1]);
+            run_frames(4);
+            if (candies != before + 1) { printf("!! candy pickup failed: candies=%g (before %g)\n", candies, before); return 3; }
+            {
+                double dx = arr_get(candy_x, 0) - pl[0], dy = arr_get(candy_y, 0) - pl[1];
+                if (dx*dx + dy*dy < 40*40) { printf("!! candy did not respawn away: %g,%g\n", arr_get(candy_x,0), arr_get(candy_y,0)); return 3; }
+                /* Новое место должно оставаться в пределах экрана (с запасом). */
+                double nx = arr_get(candy_x, 0), ny = arr_get(candy_y, 0);
+                if (nx < 40 || nx > g_w - 40 || ny < 40 || ny > g_h - 40) { printf("!! candy respawned off-screen: %g,%g\n", nx, ny); return 3; }
+            }
+            printf("=== candy pickup: candies=%g, respawned at %g,%g\n", candies, arr_get(candy_x,0), arr_get(candy_y,0));
+        }
+    }
+    /* Выход из боя (кнопкой «Назад») возвращает в лобби. */
+    tap_back();
+    if (!wait_state(0, 40)) { printf("!! did not return to lobby from Santa solo\n"); return 3; }
+    /* Возвращаем Обычный класс, чтобы дальше тест шёл как раньше. */
+    tap_classes(); wait_state(8, 30);
+    tap_class_ordinary();
+    run_frames(3);
     tap_back(); wait_state(0, 30);
 
     /* --- 10. Повторный вход в онлайн: ник уже сохранён, экран ника не нужен --- */

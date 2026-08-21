@@ -68,8 +68,14 @@ function tr_mode_on
 if language==1; return "вкл"; else if language==2; return "オン"; end; return "on";end
 function tr_mode_off
 if language==1; return "выкл"; else if language==2; return "オフ"; end; return "off";end
-function tr_classes
-if language==1; return "Классы"; else if language==2; return "クラス"; end; return "Classes";end
+function tr_shop
+if language==1; return "Магазин"; else if language==2; return "ショップ"; end; return "Shop";end
+function tr_box
+if language==1; return "Ящик"; else if language==2; return "ボックス"; end; return "Box";end
+function tr_candies
+if language==1; return "Леденцы"; else if language==2; return "キャンディ"; end; return "Candies";end
+function tr_got
+if language==1; return "Выпало:"; else if language==2; return "ゲット:"; end; return "You got:";end
 function tr_class_ordinary
 if language==1; return "Обычный"; else if language==2; return "ノーマル"; end; return "Ordinary";end
 function tr_class_azum
@@ -78,6 +84,12 @@ function tr_class_ordinary_desc
 if language==1; return "Стандартный боец"; else if language==2; return "ふつうのせんし"; end; return "Standard fighter";end
 function tr_class_azum_desc
 if language==1; return "Возрождение 1 раз за игру"; else if language==2; return "1試合に1回復活"; end; return "Revive once per match";end
+function tr_class_santa
+if language==1; return "Дед Мороз"; else if language==2; return "サンタ"; end; return "Santa";end
+function tr_class_santa_desc
+if language==1; return "Посох бьёт сильнее и морозит"; else if language==2; return "杖は強く氷らせる"; end; return "Staff hits harder and freezes";end
+function tr_super
+if language==1; return "Подарок"; else if language==2; return "プレゼント"; end; return "Gift";end
 function tr_class_selected
 if language==1; return "Выбран"; else if language==2; return "せんたくちゅう"; end; return "Selected";end
 function tr_class_pick
@@ -94,9 +106,16 @@ function tr_levels_soon
 if language==1; return "Скоро!"; else if language==2; return "近日公開!"; end; return "Coming soon!";end
 function tr_cups
 if language==1; return "Кубки"; else if language==2; return "カップ"; end; return "Cups";end
-function tr_class_buy
-if language==1; return "Купить · 50"; else if language==2; return "買う · 50"; end; return "Buy · 50";end
+function tr_buy_for num cost, str currency
+// Строка собирается через переменную: так компилятор точно знает, что
+// возвращается строка (return с конкатенацией тип не выводил).
+str out=""
+if language==1; out="Купить · "+cost+" "+currency
+else if language==2; out="買う · "+cost+" "+currency
+else; out="Buy · "+cost+" "+currency; end
+return out
+end
 function tr_class_need_cups
-if language==1; return "Нужно 50 кубков"; else if language==2; return "50カップ必要"; end; return "Need 50 cups";end
+if language==1; return "Не хватает кубков"; else if language==2; return "カップが足りない"; end; return "Not enough cups";end
 function tr_cups_reward
 if language==1; return "+5 кубков"; else if language==2; return "+5カップ"; end; return "+5 cups";end
