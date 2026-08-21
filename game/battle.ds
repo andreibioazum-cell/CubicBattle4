@@ -173,7 +173,8 @@ if sp<10; return; end
 num ta=atan2(enemy.mvy,enemy.mvx), da=ta-enemy.angle
 if da>pi; da=da-2*pi; end
 if da<0-pi; da=da+2*pi; end
-enemy.angle=enemy.angle+da*clamp(dt*enemy_face_speed,0,1)
+num turn=da*clamp(dt*enemy_face_speed,0,1), maxturn=enemy_face_max_speed*dt
+enemy.angle=enemy.angle+clamp(turn,0-maxturn,maxturn)
 end
 function enemy_track_player
 // «Зрение» бота: он сам измеряет скорость игрока по смещению позиции, а не
@@ -196,10 +197,16 @@ function enemy_predict num lead
 aim_tx=clamp(player.x+enemy.pvx*lead,player.size,screen_w-player.size)
 aim_ty=clamp(player.y+enemy.pvy*lead,player.size,screen_h-player.size)
 end
-function enemy_face_prediction
-// Бот целится в точку, где игрок будет в момент касания удара.
+function enemy_turn_prediction
+// Во время видимого замаха бот поворачивает удар к прогнозу постепенно.
+// Раньше angle присваивался напрямую при появлении хитбокса, поэтому полоса
+// мгновенно «магнитилась» к игроку и уклониться было невозможно.
 enemy_predict enemy_lead
-enemy.angle=atan2(aim_ty-enemy.y,aim_tx-enemy.x)
+num ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x), da=ta-enemy.angle
+if da>pi; da=da-2*pi; end
+if da<0-pi; da=da+2*pi; end
+num step=enemy_attack_turn_speed*dt
+enemy.angle=enemy.angle+clamp(da,0-step,step)
 end
 function player_in_enemy_punch
 num pdx=cos(enemy.angle), pdy=sin(enemy.angle), rx=player.x-enemy.x, ry=player.y-enemy.y
@@ -252,7 +259,8 @@ if r<enemy_cooldown_min; r=enemy_cooldown_min; end
 return r
 end
 function start_enemy_attack
-enemy.state=1; enemy.state_time=enemy_windup; enemy.hit=0; enemy_face_prediction
+// Начинаем замах с текущего угла бота: хитбокс не телепортируется к игроку.
+enemy.state=1; enemy.state_time=enemy_windup; enemy.hit=0
 end
 function enemy_engage num desired
 // Единый «шаг» бота: он держит выбранную дистанцию до игрока и одновременно
@@ -297,7 +305,7 @@ num pr=player.size*0.65, reach=enemy_punch_reach+pr
 // Замах: бот ещё ведёт цель, затем фиксирует направление — уклон честно работает.
 if enemy.state==1
 enemy.state_time=enemy.state_time-dt
-if enemy.state_time>enemy_lock_time; enemy_face_prediction; end
+if enemy.state_time>enemy_lock_time; enemy_turn_prediction; end
 // Доводка: в замахе бот доступает до цели, если игрок начал уходить.
 enemy_predict enemy_lead
 num adx=aim_tx-enemy.x, ady=aim_ty-enemy.y, ad=sqrt(adx*adx+ady*ady); if ad<1; ad=1; end
