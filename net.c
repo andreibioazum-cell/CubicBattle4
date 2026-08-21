@@ -609,16 +609,12 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         snprintf(body, sizeof(body),
                  "{\"nick\":\"%s\",\"pass\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"level\":0,\"levels\":0}",
                  enick, epass);
-        /* PUT только если узел всё ещё пуст. Это не даёт гонке двух
-         * регистраций перезаписать уже существующий ник. */
-        int put_code = http_ex("PUT", req_url, body, NULL, 0,
-                               "if-match", "null", NULL, 0);
-        if (put_code == 412) {
-            /* Кто-то успел зарегистрировать ник между GET и PUT. Повторный
-             * вызов увидит готовую запись и выполнит обычный вход, не создавая
-             * дубликат и не затирая её пароль/прогресс. */
-            return net_auth(base, nick, pass);
-        }
+        /* Простой PUT, как в e1dbcd8: узел только что прочитан пустым, так что
+         * запись создаётся. Условный if-match с голым "null" здесь не работает:
+         * Firebase сравнивает значение с ETag "null" (в кавычках), отвечает
+         * 412, а рекурсивный повторный вход из-за этого переполнял стек и
+         * ронял игру прямо во время регистрации. */
+        int put_code = http("PUT", req_url, body, NULL, 0);
         if (put_code != 200) {
             if (net_log_ok()) LOGERR("net_auth: register failed HTTP %d", put_code);
             return (double)NET_ERROR;
@@ -1164,8 +1160,15 @@ static void *reader_thread(void *arg) {
             next_chat=now_ms()+CHAT_TICK;
         }
         if(start>=next_event) {
-            if(pull_event(event_resp,sizeof(event_resp)))
-                lock(); net.event = num(event_resp,"",0)!=0 ? 1 : 0; unlock();
+            /* Корневой узел /event.json: 0 — ивента нет, 1 — «диско»,
+             * 2 — снегопад. Скобки важны: если сеть недоступна, не трогаем
+             * ни значение, ни мьютекс (раньше unlock() вызывался на
+             * незаблокированном мьютексе — неопределённое поведение). */
+            if(pull_event(event_resp,sizeof(event_resp))) {
+                int ev=(int)num(event_resp,"",0);
+                if(ev<0) ev=0;
+                lock(); net.event=ev; unlock();
+            }
             next_event=now_ms()+EVENT_TICK;
         }
         long long spent=now_ms()-start; if(spent<READ_TICK)sleep_ms((int)(READ_TICK-spent));
