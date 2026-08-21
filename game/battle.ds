@@ -581,6 +581,18 @@ tex arr_get(candy_x,i)-hw,arr_get(candy_y,i)-hw,CANDY_TEX,0,candy_scale
 i=i+1
 end
 end
+function draw_freeze
+// Заморозка — «ледышка»: квадрат по размеру врага. Сначала полупрозрачная
+// глубокая синяя заливка (враг просвечивает сквозь неё, как сквозь лёд),
+// затем непрозрачная синяя обводка из четырёх полосок по краям.
+if enemy.freeze<=0; return; end
+num t=4, half=enemy.size+5, s=half*2
+rect enemy.x-half,enemy.y-half,s,s,0x551E88E5
+rect enemy.x-half,enemy.y-half,s,t,0xFF4FC3F7
+rect enemy.x-half,enemy.y+half-t,s,t,0xFF4FC3F7
+rect enemy.x-half,enemy.y-half,t,s,0xFF4FC3F7
+rect enemy.x+half-t,enemy.y-half,t,s,0xFF4FC3F7
+end
 function finish_game num result
 finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
 gift.active=0; boom_t=0
@@ -649,7 +661,7 @@ if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y
 num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
 if enemy.state==1||enemy.state==2; tex enemy.x-ehw,enemy.y-ehw,PUNCH_TEX,sprite_a(enemy.angle),es
 else; tex enemy.x-ehw,enemy.y-ehw,ORDINARY_TEX,sprite_a(enemy.angle),es; end
-if enemy.freeze>0; ring enemy.x,enemy.y,enemy.size+6,4,0x81D4FA; end
+draw_freeze
 num w=screen_w/4
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1
 draw_controls
