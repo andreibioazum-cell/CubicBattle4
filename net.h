@@ -11,19 +11,32 @@
 #define NET_ERROR 4
 #define NET_LOGIN_IDLE 0
 #define NET_LOGIN_OK 2
+#define NET_LOGIN_BAD_NICK 5
+#define NET_LOGIN_WRONG_PASS 6
+#define NET_LOGIN_BAD_PASS 7
 
 #ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm);
 #endif
 
-/* Подключение и локальный ник. Регистрации и паролей нет. */
+/* Подключение и аккаунты (вход / регистрация). */
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_set_data_path(const char *path);
 void net_autologin(const char *url);
+double net_auth(const char *url, const char *nick, const char *pass);
 double net_set_nick(const char *nick);
+void net_logout(void);
 double net_login_status(void);
 const char *net_login_nick(void);
+const char *net_login_pass(void);
+
+/* Лидерборд по кубкам */
+void net_leaderboard_fetch(const char *url);
+double net_leaderboard_status(void);
+double net_leaderboard_count(void);
+const char *net_leaderboard_nick(double idx);
+double net_leaderboard_cups(double idx);
 
 /* Состояние игроков. Удар — постоянное событие со счётчиком punch:
  * если счётчик изменился, удар нельзя потерять между двумя опросами сети. */
@@ -48,7 +61,7 @@ double net_player_punch_dy(double slot);
 double net_player_punch(double slot);
 double net_player_class(double slot);
 
-/* Локальный прогресс: кубки, леденцы, выбранный класс и купленные классы. */
+/* Прогресс игрока: кубки, леденцы, выбранный класс и купленные классы. */
 double net_load_cups(void);
 double net_load_candies(void);
 double net_load_class(void);

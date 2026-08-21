@@ -6,6 +6,12 @@
       ".read": true,
       ".write": true
     },
+    "users": {
+      ".read": true,
+      "$nick": {
+        ".write": true
+      }
+    },
     "rooms": {
       "$room": {
         "players": {
