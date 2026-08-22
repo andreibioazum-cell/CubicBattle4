@@ -22,6 +22,7 @@ function init
 ds_log "init: loading textures"
 png_load YARD; png_load YARIK; png_load YARIK_HOLD
 png_load TRASH; png_load BOTTLE; png_load BIN; png_load SHEET
+png_load FLOOR; png_load FRIDGE; png_load BED; png_load FOOD
 load_progress
 ds_log "init: willpower %g, best day %g",willpower,best_day
 end

@@ -1,24 +1,36 @@
-// game.ds — двор Ярика: уборка мусора, тяга и срыв «с чистого листа».
+// game.ds — день во дворе и ночь в квартире.
+// День: убрать норму мусора в урну, не дав тяге дойти до конца.
+// Ночь: пройти мимо холодильника до кровати. Холодильник тянет к себе тем
+// сильнее, чем выше тяга; еда сбивает тягу, но лишняя порция - срыв.
 
 function sprite_a num a
 // Спрайты нарисованы «лицом вверх», игровой угол 0 смотрит вправо.
 return a+pi/2
 end
+// --- эффекты бесконечной прокачки -------------------------------------
 function bag_cap
-if bag_owned==1; return bag_big; end
-return bag_base
+return bag_base+bag_step*up_bag
 end
 function move_speed
-return walk_speed*(1+shoes_level*shoes_bonus)
+return walk_speed*(1+speed_step*up_speed)
 end
 function hold_cool
-if calm_owned==1; return hold_cd_calm; end
-return hold_cd_time
+num c=hold_cd_time-hold_cd_step*up_hold
+if c<hold_cd_min; c=hold_cd_min; end
+return c
 end
 function hold_gain
-if calm_owned==1; return hold_relief_calm; end
-return hold_relief
+return hold_relief+hold_relief_step*up_hold
 end
+function night_resist
+num r=1-night_resist_step*up_night
+if r<night_resist_min; r=night_resist_min; end
+return r
+end
+function food_limit
+return food_base+food_step*up_food
+end
+// --- размер и населённость дня ----------------------------------------
 function day_goal num d
 return goal_base+d
 end
@@ -39,6 +51,10 @@ if dist(x,y,joy.x,joy.y)<170; return 1; end
 if dist(x,y,act_x,act_y)<170; return 1; end
 if y<150; return 1; end
 return 0
+end
+function place_controls
+joy.x=130; joy.y=screen_h-150; joy.r=70; act_x=screen_w-140; act_y=screen_h-150
+act_id=-1; drop_joy
 end
 function place_bin
 num k=0
@@ -85,17 +101,82 @@ function drop_joy
 joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
 end
 function start_day num d
-day=d; goal=day_goal(d); cleaned=0; craving=0; hold_cd=0; over=0; last_reward=0
+phase=0; day=d; goal=day_goal(d); cleaned=0; craving=0; hold_cd=0; over=0; last_reward=0
+eaten=0; pull_off=0
 yarik.x=screen_w/2; yarik.y=screen_h/2; yarik.angle=0; yarik.bag=0; yarik.hold=0
-joy.x=130; joy.y=screen_h-150; joy.r=70; act_x=screen_w-140; act_y=screen_h-150
+place_controls
 place_bin; spawn_trash; spawn_bottles
-act_id=-1; drop_joy
 ds_log "day %g starts: goal %g",day,goal
 end
-function init_game
-// Каждый заход в игру — новая жизнь с первого дня. Остаётся только сила воли.
-start_day 1
+// --- ночь --------------------------------------------------------------
+function spawn_food
+// Еда лежит по дороге от двери к кровати - соблазн срезать тягу.
+arr_clear food_x; arr_clear food_y; arr_clear food_on
+num n=food_limit()+food_extra, i=0
+loop i<n
+num fx=rnd_x(), fy=rnd_y(), k=0
+loop k<30
+if dist(fx,fy,fridge_x,fridge_y)<150||dist(fx,fy,bed_x,bed_y)<150||dist(fx,fy,yarik.x,yarik.y)<120||in_ui_zone(fx,fy)==1
+fx=rnd_x(); fy=rnd_y(); k=k+1
+else; k=30; end
 end
+arr_push food_x,fx; arr_push food_y,fy; arr_push food_on,1
+i=i+1
+end
+end
+function start_night
+// Тяга не обнуляется полностью: вечер тяжелее, чем утро.
+phase=1; over=0; last_reward=0; eaten=0; pull_off=0; hold_cd=0; night_t=0
+craving=craving*night_carry
+yarik.bag=0; yarik.hold=0; yarik.angle=0
+place_controls
+fridge_x=170; fridge_y=screen_h/2-60
+bed_x=screen_w-170; bed_y=screen_h/2-40
+yarik.x=screen_w/2-60; yarik.y=screen_h-260
+spawn_food
+ds_log "night %g starts: craving %g, food limit %g",day,craving,food_limit()
+end
+function night_craving_rate
+num r=night_craving_base+night_craving_step*(day-1)
+if dist(yarik.x,yarik.y,fridge_x,fridge_y)<fridge_near; r=r+fridge_near_rate; end
+return r
+end
+function apply_fridge_pull
+// Холодильник тянет к себе тем сильнее, чем выше тяга. «Держись» ненадолго
+// отпускает, а привычка «Стойкость» ослабляет притяжение навсегда.
+if pull_off>0; pull_off=pull_off-dt; if pull_off<0; pull_off=0; end; return; end
+num dx=fridge_x-yarik.x, dy=fridge_y-yarik.y, d=sqrt(dx*dx+dy*dy)
+if d<1; d=1; end
+num force=fridge_pull*(0.4+0.6*craving/max_craving)*night_resist()
+yarik.x=yarik.x+dx/d*force*dt
+yarik.y=yarik.y+dy/d*force*dt
+end
+function eat_food
+num i=0
+loop i<arr_len(food_on)
+if arr_get(food_on,i)==1&&dist(arr_get(food_x,i),arr_get(food_y,i),yarik.x,yarik.y)<pickup_r
+arr_set food_on,i,0
+if eaten>=food_limit()
+eaten=eaten+1; finish_run 4; return
+end
+eaten=eaten+1
+craving=craving-food_relief
+if craving<0; craving=0; end
+ds_log "ate %g/%g, craving %g",eaten,food_limit(),craving
+end
+i=i+1
+end
+end
+function update_night
+if dist(yarik.x,yarik.y,fridge_x,fridge_y)<fridge_r; finish_run 5; return; end
+eat_food
+if over!=0; return; end
+if dist(yarik.x,yarik.y,bed_x,bed_y)<bed_r; finish_night; return; end
+apply_fridge_pull
+craving=craving+night_craving_rate()*dt
+if craving>=max_craving; craving=max_craving; finish_run 1; end
+end
+// --- общие правила забега ---------------------------------------------
 function move_yarik
 num spd=move_speed()
 yarik.x=yarik.x+joy.dx*spd*dt; yarik.y=yarik.y+joy.dy*spd*dt
@@ -107,12 +188,14 @@ if yarik.y<player_size; yarik.y=player_size; end
 if yarik.y>screen_h-player_size; yarik.y=screen_h-player_size; end
 end
 function do_hold
-// «Держись»: Ярик выдыхает, сбивает тягу и отталкивает бутылки вокруг.
+// «Держись»: Ярик выдыхает, сбивает тягу, отталкивает бутылки, а ночью на
+// hold_pull_off секунд вырывается из хватки холодильника.
 if hold_cd>0; return; end
 if over!=0; return; end
 hold_cd=hold_cool(); yarik.hold=hold_anim
 craving=craving-hold_gain()
 if craving<0; craving=0; end
+if phase==1; pull_off=hold_pull_off; end
 num i=0
 loop i<arr_len(bot_x)
 num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
@@ -162,16 +245,21 @@ end
 i=i+1
 end
 end
+function finish_run num code
+// Любой срыв: забег обрывается, но сила воли и рекорд остаются.
+over=code; drop_joy; act_id=-1; save_progress
+ds_log "run over (%g) on day %g",code,day
+end
 function finish_day
 over=2; last_reward=day_reward*day; willpower=willpower+last_reward
 if day>best_day; best_day=day; end
 save_progress; drop_joy; act_id=-1
 ds_log "day %g done, +%g willpower",day,last_reward
 end
-function relapse
-// Срыв. День обнуляется, но сила воли и рекорд остаются.
-over=1; drop_joy; act_id=-1; save_progress
-ds_log "relapse on day %g",day
+function finish_night
+over=3; last_reward=night_reward*day; willpower=willpower+last_reward
+save_progress; drop_joy; act_id=-1
+ds_log "night %g survived, +%g willpower",day,last_reward
 end
 function drop_at_bin
 if yarik.bag<=0; return; end
@@ -183,21 +271,36 @@ if craving<0; craving=0; end
 save_progress
 if cleaned>=goal; finish_day; end
 end
-function update_game
-if over!=0; return; end
-if yarik.hold>0; yarik.hold=yarik.hold-dt; if yarik.hold<0; yarik.hold=0; end; end
-if hold_cd>0; hold_cd=hold_cd-dt; if hold_cd<0; hold_cd=0; end; end
+function update_day
 move_yarik; pickup_trash; drop_at_bin
 if over!=0; return; end
 update_bottles
 craving=craving+craving_rate()*dt
-if craving>=max_craving; craving=max_craving; relapse; end
+if craving>=max_craving; craving=max_craving; finish_run 1; end
 end
-function draw_yard
+function init_game
+// Каждый заход в игру - новая жизнь с первого дня. Остаётся только сила воли.
+start_day 1
+end
+function update_game
+if over!=0; return; end
+if yarik.hold>0; yarik.hold=yarik.hold-dt; if yarik.hold<0; yarik.hold=0; end; end
+if hold_cd>0; hold_cd=hold_cd-dt; if hold_cd<0; hold_cd=0; end; end
+night_t=night_t+dt
+if phase==1
+move_yarik
+if over!=0; return; end
+update_night
+else
+update_day
+end
+end
+// --- отрисовка ---------------------------------------------------------
+function draw_tiles str t
 num y=0
 loop y<screen_h
 num x=0
-loop x<screen_w; tex x,y,YARD,0,1; x=x+256; end
+loop x<screen_w; tex x,y,t,0,1; x=x+256; end
 y=y+256
 end
 end
@@ -227,6 +330,31 @@ tex bx-half*0.8,by-half*0.8,BOTTLE,a,0.8
 i=i+1
 end
 end
+function draw_food
+num half=item_px/2, i=0
+loop i<arr_len(food_on)
+if arr_get(food_on,i)==1
+tex arr_get(food_x,i)-half*0.8,arr_get(food_y,i)-half*0.8,FOOD,0,0.8
+end
+i=i+1
+end
+end
+function draw_fridge
+num half=big_px/2
+// Свет из приоткрытой двери пульсирует - холодильник «зовёт».
+num glow=0.5+0.5*sin(night_t*2.2)
+num a=floor(40+50*glow)
+circle fridge_x,fridge_y,150,(((unsigned)(int)a)<<24)|0x00FFC107
+ring fridge_x,fridge_y,fridge_r,4,0xAAFFC107
+tex_tint fridge_x-half-shadow_off,fridge_y-half+shadow_off,FRIDGE,0,1,(((unsigned)(int)shadow_alpha)<<24)
+tex fridge_x-half,fridge_y-half,FRIDGE,0,1
+end
+function draw_bed
+num half=big_px/2
+ring bed_x,bed_y,bed_r,4,0x8880D8FF
+tex_tint bed_x-half-shadow_off,bed_y-half+shadow_off,BED,0,1,(((unsigned)(int)shadow_alpha)<<24)
+tex bed_x-half,bed_y-half,BED,0,1
+end
 function draw_yarik
 num half=yarik_px/2
 str t=YARIK
@@ -242,21 +370,34 @@ return 0x43A047
 end
 function draw_hud
 str d_s=tr_day()+" "+day
+if phase==1; d_s=tr_night()+" "+day; end
 text_scaled d_s,24,18,0xFFFFFF,0.8
 text_scaled tr_craving(),24,64,0xE0E0E8,0.5
 bar 24,92,330,26,craving,max_craving,craving_color()
+str w_s=tr_will()+": "+willpower
+if phase==1
+str e_s=tr_eaten()+": "+eaten+"/"+food_limit()
+col e_c=0xFFE082
+if eaten>=food_limit(); e_c=0xFF8A80; end
+text_scaled e_s,screen_w-text_ink_width(e_s)*0.6-24,20,e_c,0.6
+str h_s=tr_bed_hint()
+text_scaled h_s,screen_w-text_ink_width(h_s)*0.6-24,54,0x9FC6FF,0.6
+else
 str g_s=tr_goal()+": "+cleaned+"/"+goal
 str b_s=tr_bag()+": "+yarik.bag+"/"+bag_cap()
-str w_s=tr_will()+": "+willpower
 text_scaled g_s,screen_w-text_ink_width(g_s)*0.6-24,20,0xB9F6CA,0.6
 text_scaled b_s,screen_w-text_ink_width(b_s)*0.6-24,54,0xE0E0E8,0.6
+end
 text_scaled w_s,screen_w-text_ink_width(w_s)*0.6-24,88,0xFFD54A,0.6
 end
 function draw_controls
-ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
+// Ночью на тёмном полу чёрный джойстик не виден - подсвечиваем его белым.
+col jc=0x000000
+if phase==1; jc=0xDDFFFFFF; end
+ring joy.x,joy.y,joy.r,4,jc; circle joy.x+joy.ox,joy.y+joy.oy,34,jc
 col ac=0x1565C0
 if hold_cd>0; ac=0xFF3A3A46; end
-circle act_x,act_y,70,ac; ring act_x,act_y,70,4,0x000000
+circle act_x,act_y,70,ac; ring act_x,act_y,70,4,jc
 str al=tr_hold(); num asz=0.55
 if hold_cd>0; al=floor(hold_cd+0.999)+""; asz=0.95; end
 text_in_box al,act_x-70,act_y-70,140,140,0xFFFFFF,asz
@@ -268,28 +409,46 @@ rect 0,0,screen_w,screen_h,0xAA000000
 roundrect screen_w/2-260,y,520,h,26,0xFF23252F
 return y
 end
-function draw_over
-if over==2
+function draw_win_panel str title, str note
 num y=draw_panel(230)
-ctext tr_day_done(),y+40,0xFFFFFF
-ctext_scaled tr_day()+" "+day,y+86,0xB9F6CA,0.7
+ctext title,y+40,0xFFFFFF
+ctext_scaled note,y+86,0xB9F6CA,0.7
 ctext_scaled tr_reward()+last_reward,y+130,0xFFD54A,0.7
 ctext_scaled tr_tap_next(),y+180,0xC0C4D4,0.6
-else if over==1
-num ry=draw_panel(300)
-tex screen_w/2-32,ry+24,SHEET,0,1
-ctext tr_relapse(),ry+108,0xFF8A80
-ctext_scaled tr_days_lived()+(day-1),ry+156,0xE0E0E8,0.65
-ctext_scaled tr_clean_sheet(),ry+196,0xFFFFFF,0.7
-ctext_scaled tr_relapse_note(),ry+234,0xC0C4D4,0.6
-ctext_scaled tr_tap_back(),ry+268,0xC0C4D4,0.55
 end
+function draw_fail_panel str title, str note
+num y=draw_panel(300)
+tex screen_w/2-32,y+24,SHEET,0,1
+ctext title,y+108,0xFF8A80
+ctext_scaled note,y+150,0xE0E0E8,0.6
+ctext_scaled tr_days_lived()+(day-1),y+188,0xE0E0E8,0.6
+ctext_scaled tr_clean_sheet(),y+226,0xFFFFFF,0.7
+ctext_scaled tr_tap_back(),y+266,0xC0C4D4,0.55
+end
+function draw_over
+if over==2; draw_win_panel tr_day_done(),tr_night_ahead()
+else if over==3; draw_win_panel tr_night_done(),tr_day()+" "+(day+1)
+else if over==1; draw_fail_panel tr_relapse(),tr_relapse_note()
+else if over==4; draw_fail_panel tr_relapse_food(),tr_relapse_food_note()
+else if over==5; draw_fail_panel tr_relapse_fridge(),tr_relapse_fridge_note(); end
+end
+function draw_night_dark
+// Ночь: комната приглушена, светятся только холодильник и кровать.
+rect 0,0,screen_w,screen_h,0x77000C22
 end
 function draw_game
-draw_yard
+if phase==1
+draw_tiles FLOOR
+draw_night_dark
+draw_fridge
+draw_bed
+draw_food
+else
+draw_tiles YARD
 draw_bin
 draw_trash
 draw_bottles
+end
 draw_yarik
 draw_hud
 draw_controls
@@ -310,7 +469,9 @@ end
 function touch_game num x, num y, num action, num id
 if over!=0
 if action==0
-if over==2; start_day day+1; else; start_transition 0; end
+if over==2; start_night
+else if over==3; start_day day+1
+else; start_transition 0; end
 end
 return
 end

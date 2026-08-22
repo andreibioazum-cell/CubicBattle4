@@ -159,16 +159,16 @@ static void progress_read(void) {
         }
         fclose(f);
     }
+    /* Игра хранит здесь семь обычных счётчиков (сила воли, рекорд и пять
+     * бесконечных ступеней прокачки), поэтому единственное ограничение —
+     * неотрицательность. Никаких «уровней не выше пяти» больше нет. */
     if (cups < 0) cups = 0;
     if (candies < 0) candies = 0;
-    if (cls != 1 && cls != 2) cls = 0;
-    azum = azum ? 1 : 0;
-    santa = santa ? 1 : 0;
-    if (cls == 1 && !azum) cls = 0;
-    if (cls == 2 && !santa) cls = 0;
+    if (cls < 0) cls = 0;
+    if (azum < 0) azum = 0;
+    if (santa < 0) santa = 0;
+    if (level < 0) level = 0;
     if (levels_unlocked < 0) levels_unlocked = 0;
-    if (levels_unlocked > 5) levels_unlocked = 5;
-    if (level < 0 || level > levels_unlocked) level = 0;
     pg_lock();
     pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
     pg.level = level; pg.levels_unlocked = levels_unlocked; pg.loaded = 1;
@@ -210,16 +210,16 @@ static void http_patch_async(const char *url, const char *body) {
 
 void net_save_progress(double cups, double candies, double cls, double azum, double santa,
                        double level, double levels_unlocked) {
-    int c = (int)cups, cd = (int)candies, k = (int)cls, a = azum ? 1 : 0, sn = santa ? 1 : 0;
+    /* Семь свободных счётчиков прогресса, только неотрицательных. */
+    int c = (int)cups, cd = (int)candies, k = (int)cls, a = (int)azum, sn = (int)santa;
     int lv = (int)level, lu = (int)levels_unlocked;
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
-    if (k != 1 && k != 2) k = 0;
-    if (k == 1 && !a) k = 0;
-    if (k == 2 && !sn) k = 0;
+    if (k < 0) k = 0;
+    if (a < 0) a = 0;
+    if (sn < 0) sn = 0;
+    if (lv < 0) lv = 0;
     if (lu < 0) lu = 0;
-    if (lu > 5) lu = 5;
-    if (lv < 0 || lv > lu) lv = 0;
     pg_lock();
     pg.cups = c; pg.candies = cd; pg.cls = k; pg.azum = a; pg.santa = sn;
     pg.level = lv; pg.levels_unlocked = lu; pg.loaded = 1;

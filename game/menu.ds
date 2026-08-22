@@ -1,36 +1,56 @@
 // menu.ds — лобби, привычки, «как играть» и настройки.
 
 function save_progress
-// Прогресс лежит в progress.dat. Движок хранит семь чисел, у нас они значат:
-// сила воли, рекорд дней, (не используется), большой мешок, дыхание,
-// ступень кроссовок (дважды: текущая и максимальная — они всегда равны).
-net_save_progress willpower,best_day,0,bag_owned,calm_owned,shoes_level,shoes_level
+// Прогресс лежит в progress.dat: движок хранит семь чисел, у нас это сила
+// воли, рекорд дней и пять бесконечных ступеней прокачки.
+net_save_progress willpower,best_day,up_speed,up_bag,up_hold,up_night,up_food
 end
 function load_progress
 willpower=net_load_cups(); best_day=net_load_candies()
-bag_owned=net_load_azum(); calm_owned=net_load_santa(); shoes_level=net_load_levels_unlocked()
+up_speed=net_load_class(); up_bag=net_load_azum(); up_hold=net_load_santa()
+up_night=net_load_level(); up_food=net_load_levels_unlocked()
 if willpower<0; willpower=0; end
 if best_day<0; best_day=0; end
-if shoes_level<0; shoes_level=0; end
-if shoes_level>shoes_max; shoes_level=shoes_max; end
+if up_speed<0; up_speed=0; end
+if up_bag<0; up_bag=0; end
+if up_hold<0; up_hold=0; end
+if up_night<0; up_night=0; end
+if up_food<0; up_food=0; end
 end
-function shoes_cost
-return shoes_base_cost+shoes_level*shoes_step
+function up_cost num base, num lvl
+// Каждая следующая ступень дороже предыдущей в cost_growth раз. Потолка нет:
+// качать можно сколько угодно, просто всё дороже.
+num c=base, i=0
+loop i<lvl
+c=floor(c*cost_growth)
+i=i+1
 end
-function buy_shoes
-if shoes_level>=shoes_max; return; end
-if willpower<shoes_cost(); shop_msg=2.5; return; end
-willpower=willpower-shoes_cost(); shoes_level=shoes_level+1; shop_msg=0; save_progress
+return c
+end
+function buy_speed
+num cost=up_cost(cost_speed,up_speed)
+if willpower<cost; shop_msg=2.5; return; end
+willpower=willpower-cost; up_speed=up_speed+1; shop_msg=0; save_progress
 end
 function buy_bag
-if bag_owned==1; return; end
-if willpower<bag_cost; shop_msg=2.5; return; end
-willpower=willpower-bag_cost; bag_owned=1; shop_msg=0; save_progress
+num cost=up_cost(cost_bag,up_bag)
+if willpower<cost; shop_msg=2.5; return; end
+willpower=willpower-cost; up_bag=up_bag+1; shop_msg=0; save_progress
 end
-function buy_calm
-if calm_owned==1; return; end
-if willpower<calm_cost; shop_msg=2.5; return; end
-willpower=willpower-calm_cost; calm_owned=1; shop_msg=0; save_progress
+function buy_hold
+num cost=up_cost(cost_hold,up_hold)
+if willpower<cost; shop_msg=2.5; return; end
+willpower=willpower-cost; up_hold=up_hold+1; shop_msg=0; save_progress
+end
+function buy_night
+num cost=up_cost(cost_night,up_night)
+if willpower<cost; shop_msg=2.5; return; end
+willpower=willpower-cost; up_night=up_night+1; shop_msg=0; save_progress
+end
+function buy_food
+num cost=up_cost(cost_food,up_food)
+if willpower<cost; shop_msg=2.5; return; end
+willpower=willpower-cost; up_food=up_food+1; shop_msg=0; save_progress
 end
 function draw_purse num y
 str w_s=tr_will()+": "+willpower, r_s=tr_record()+": "+best_day
@@ -60,79 +80,76 @@ if menu_hit(x,y,1)==1; start_transition 2; return; end
 if menu_hit(x,y,2)==1; start_transition 3; return; end
 if menu_hit(x,y,3)==1; start_transition 4; end
 end
+// Пять карточек привычек в ряд.
 function card_w
-return 300
+return 232
 end
 function card_h
-return 296
+return 300
+end
+function card_gap
+return 18
 end
 function card_x num i
-num total=card_w()*3+2*26
-return (screen_w-total)/2+i*(card_w()+26)
+num total=card_w()*5+card_gap()*4
+return (screen_w-total)/2+i*(card_w()+card_gap())
 end
 function card_y
-return back_y+btn_h+46
+return back_y+btn_h+40
 end
-function draw_card num i, str title, str desc, str state, num owned, col accent, str icon, num icon_scale
+function draw_card num i, str title, str desc, num lvl, num cost, col accent, str icon, num icon_scale
 num x=card_x(i), y=card_y(), w=card_w(), h=card_h()
-roundrect x,y,w,h,22,0xFF23252F
+roundrect x,y,w,h,20,0xFF23252F
 roundrect x,y,w,8,4,accent
-circle x+w/2,y+86,48,accent
-num half=48*icon_scale
-tex x+w/2-half,y+86-half,icon,0,icon_scale
-text_in_box title,x,y+140,w,40,0xFFFFFF,0.85
-text_in_box desc,x,y+184,w,32,0xC0C4D4,0.55
-if owned==1; button_grey state,x+26,y+h-70,w-52,50,0.6
-else; button_scaled state,x+26,y+h-70,w-52,50,0.6; end
-end
-function shoes_state
-str s=tr_buy_for(shoes_cost())
-if shoes_level>=shoes_max; s=tr_maxed(); end
-return s
-end
-function shoes_title
-str s=tr_shoes()+" "+shoes_level+"/"+shoes_max
-return s
+circle x+w/2,y+80,44,accent
+num half=44*icon_scale
+tex x+w/2-half,y+80-half,icon,0,icon_scale
+text_in_box title,x,y+130,w,34,0xFFFFFF,0.75
+str lv_s=tr_step()+lvl
+text_in_box lv_s,x,y+166,w,28,0xB9F6CA,0.55
+text_in_box desc,x,y+198,w,44,0xC0C4D4,0.45
+button_scaled tr_buy_for(cost),x+20,y+h-66,w-40,48,0.55
 end
 function draw_habits
 draw_bg
-num done=0
-if shoes_level>=shoes_max; done=1; end
-draw_card 0,shoes_title(),tr_shoes_desc(),shoes_state(),done,0xFF4CAF50,YARIK,0.85
-str bag_state=tr_buy_for(bag_cost)
-if bag_owned==1; bag_state=tr_owned(); end
-draw_card 1,tr_bigbag(),tr_bigbag_desc(),bag_state,bag_owned,0xFF42A5F5,TRASH,1.1
-str calm_state=tr_buy_for(calm_cost)
-if calm_owned==1; calm_state=tr_owned(); end
-draw_card 2,tr_calm(),tr_calm_desc(),calm_state,calm_owned,0xFFAB47BC,SHEET,1.1
-draw_purse card_y()+card_h()+26
-if shop_msg>0; shop_msg=shop_msg-dt; ctext_scaled tr_need_will(),card_y()+card_h()+64,0xFF8A80,0.6; end
+draw_card 0,tr_shoes(),tr_shoes_desc(),up_speed,up_cost(cost_speed,up_speed),0xFF4CAF50,YARIK,0.85
+draw_card 1,tr_bigbag(),tr_bigbag_desc(),up_bag,up_cost(cost_bag,up_bag),0xFF42A5F5,TRASH,1.0
+draw_card 2,tr_calm(),tr_calm_desc(),up_hold,up_cost(cost_hold,up_hold),0xFFAB47BC,SHEET,1.0
+draw_card 3,tr_night_up(),tr_night_up_desc(),up_night,up_cost(cost_night,up_night),0xFF5C6BC0,FRIDGE,0.8
+draw_card 4,tr_appetite(),tr_appetite_desc(),up_food,up_cost(cost_food,up_food),0xFFFF7043,FOOD,1.0
+ctext_scaled tr_endless(),card_y()+card_h()+26,0x8890A8,0.5
+draw_purse card_y()+card_h()+58
+if shop_msg>0; shop_msg=shop_msg-dt; ctext_scaled tr_need_will(),card_y()+card_h()+94,0xFF8A80,0.6; end
 draw_back
 end
 function card_btn_hit num i, num x, num y
-num cx=card_x(i)+26, cy=card_y()+card_h()-70
-if x>=cx&&x<=cx+card_w()-52&&y>=cy&&y<=cy+50; return 1; end
+num cx=card_x(i)+20, cy=card_y()+card_h()-66
+if x>=cx&&x<=cx+card_w()-40&&y>=cy&&y<=cy+48; return 1; end
 return 0
 end
 function touch_habits num x, num y, num action
 if action!=0; return; end
 if back_hit(x,y)==1; start_transition 0; return; end
-if card_btn_hit(0,x,y)==1; buy_shoes; return; end
+if card_btn_hit(0,x,y)==1; buy_speed; return; end
 if card_btn_hit(1,x,y)==1; buy_bag; return; end
-if card_btn_hit(2,x,y)==1; buy_calm; end
+if card_btn_hit(2,x,y)==1; buy_hold; return; end
+if card_btn_hit(3,x,y)==1; buy_night; return; end
+if card_btn_hit(4,x,y)==1; buy_food; end
 end
 function draw_howto
 draw_bg
-num y=back_y+btn_h+50
+num y=back_y+btn_h+34
 ctext tr_howto(),y,0xFFFFFF
-y=y+62
-ctext_scaled tr_h1(),y,0xE6E6F0,0.62; y=y+46
-ctext_scaled tr_h2(),y,0xE6E6F0,0.62; y=y+46
-ctext_scaled tr_h3(),y,0xE6E6F0,0.62; y=y+46
-ctext_scaled tr_h4(),y,0xE6E6F0,0.62; y=y+46
-ctext_scaled tr_h5(),y,0xE6E6F0,0.62; y=y+46
-ctext_scaled tr_h6(),y,0xFFB3A7,0.62; y=y+46
-ctext_scaled tr_h7(),y,0xFFD54A,0.62
+y=y+56
+ctext_scaled tr_h1(),y,0xE6E6F0,0.6; y=y+42
+ctext_scaled tr_h2(),y,0xE6E6F0,0.6; y=y+42
+ctext_scaled tr_h3(),y,0xE6E6F0,0.6; y=y+42
+ctext_scaled tr_h4(),y,0xE6E6F0,0.6; y=y+42
+ctext_scaled tr_h5(),y,0xE6E6F0,0.6; y=y+42
+ctext_scaled tr_h6(),y,0x9FC6FF,0.6; y=y+42
+ctext_scaled tr_h7(),y,0x9FC6FF,0.6; y=y+42
+ctext_scaled tr_h8(),y,0xFFB3A7,0.6; y=y+42
+ctext_scaled tr_h9(),y,0xFFD54A,0.6
 draw_back
 end
 function draw_settings

@@ -1,8 +1,10 @@
 // config.ds — все константы игры «Ярик Сафонов: С чистого листа».
-// Игра про сброс прогресса: Ярик убирает двор, борется с тягой, а при срыве
-// всё начинается заново — с чистого листа. Остаётся только сила воли.
+// Игра про сброс прогресса: днём Ярик убирает двор, ночью идёт мимо холодильника
+// к кровати. Сорвался — всё с первого дня, с чистого листа. Остаётся только
+// сила воли, а на неё качается что угодно и сколько угодно.
 
-// Экраны: 0 — лобби, 1 — двор (игра), 2 — привычки, 3 — как играть, 4 — настройки.
+// Экраны: 0 — лобби, 1 — игра (день или ночь), 2 — привычки, 3 — как играть,
+// 4 — настройки.
 num game_state=0, language=1, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
 num btn_w=300, btn_h=64, back_y=32, pi=3.1415926535
 
@@ -10,34 +12,50 @@ num btn_w=300, btn_h=64, back_y=32, pi=3.1415926535
 // прибавляется pi/2 (см. sprite_a в game.ds).
 str YARD="yard.png", YARIK="yarik.png", YARIK_HOLD="yarik_hold.png"
 str TRASH="trash.png", BOTTLE="bottle.png", BIN="bin.png", SHEET="sheet.png"
+str FLOOR="floor.png", FRIDGE="fridge.png", BED="bed.png", FOOD="food.png"
 
 // Размеры спрайтов в пикселях (нужны, чтобы рисовать от центра).
-num yarik_px=96, item_px=64, bin_px=96
+num yarik_px=96, item_px=64, bin_px=96, big_px=128
 num player_size=34, pickup_r=44, bin_r=62, shadow_off=8, shadow_alpha=0x55
 
-// Ходьба. Каждая ступень «Кроссовок» добавляет shoes_bonus к скорости.
-num walk_speed=200, shoes_bonus=0.09
+// Ходьба. Каждая ступень «Кроссовок» добавляет speed_step к скорости.
+num walk_speed=200, speed_step=0.06
 
 // Тяга (0..max_craving). Растёт сама и быстрее с каждым днём; бутылка рядом
 // тянет сильнее, попадание бутылки — резкий скачок.
 num max_craving=100, craving_base=2.0, craving_step=1.1
 num craving_near=150, craving_near_rate=3.2, bottle_hit=14
-num bottle_speed=54, bottle_speed_step=7, bottle_jitter=1.6
+num bottle_speed=54, bottle_speed_step=7
 
-// Кнопка «Держись»: сбрасывает часть тяги и отталкивает бутылки.
-num hold_relief=30, hold_relief_calm=46, hold_cd_time=6.0, hold_cd_calm=3.5
-num hold_anim=0.4, hold_push=320, hold_push_r=210
+// Кнопка «Держись»: сбивает часть тяги, отталкивает бутылки, а ночью ещё и
+// ненадолго отпускает тяга к холодильнику.
+num hold_relief=30, hold_relief_step=6, hold_cd_time=6.0, hold_cd_step=0.25, hold_cd_min=1.5
+num hold_anim=0.4, hold_push=320, hold_push_r=210, hold_pull_off=1.2
 
 // Мешок: сколько мусора Ярик носит за раз, пока не дойдёт до урны.
-num bag_base=4, bag_big=8, deposit_relief=3
+num bag_base=4, bag_step=2, deposit_relief=3
 
 // День: сколько мусора надо донести до урны и сколько бутылок во дворе.
 num goal_base=4, trash_extra=2, bottles_base=1, bottles_max=6
 num spawn_margin=70, day_reward=5, trash_reward=1
 
-// Привычки (покупаются за силу воли). Кроссовки — 5 ступеней, дорожают.
-num shoes_max=5, shoes_base_cost=20, shoes_step=10, bag_cost=60, calm_cost=80
+// Ночь. Ярик стоит у двери, кровать в другом конце комнаты, а холодильник
+// тянет к себе тем сильнее, чем выше тяга. Дошёл до кровати — ночь пережита,
+// дотронулся до холодильника — открыл, выпил, срыв.
+num night_craving_base=1.6, night_craving_step=0.9
+num fridge_pull=170, fridge_near=320, fridge_near_rate=2.4
+num fridge_r=76, bed_r=74, night_carry=0.5, night_reward=4
+// Еда. Ночной жор сбивает тягу, но съесть можно только food_limit порций:
+// следующая — срыв от обжорства. Порций на полу всегда на две больше лимита.
+num food_base=6, food_step=1, food_relief=14, food_extra=2
+// Насколько «резист» ночи снижает притяжение холодильника (ступень привычки).
+num night_resist_step=0.08, night_resist_min=0.25
 
-// Прогресс. Сила воли и рекорд дней остаются даже после срыва — в этом вся суть:
-// прогресс дня обнуляется, а сам Ярик становится чуть сильнее.
-num willpower=0, best_day=0, shoes_level=0, bag_owned=0, calm_owned=0
+// Привычки. Прокачка бесконечная: каждая следующая ступень дороже предыдущей
+// в cost_growth раз, потолка у ступеней нет.
+num cost_speed=20, cost_bag=40, cost_hold=45, cost_night=50, cost_food=60
+num cost_growth=1.45
+
+// Прогресс. Сила воли, рекорд дней и пять бесконечных ступеней прокачки
+// остаются даже после срыва — в этом вся суть: обнуляется забег, а не Ярик.
+num willpower=0, best_day=0, up_speed=0, up_bag=0, up_hold=0, up_night=0, up_food=0

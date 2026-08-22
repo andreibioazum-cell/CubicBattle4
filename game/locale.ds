@@ -1,4 +1,6 @@
 // locale.ds — тексты игры. language: 1 — русский (по умолчанию), 0 — English.
+// В шрифте нет длинного тире и кавычек-ёлочек, поэтому в строках только
+// обычный дефис и прямые кавычки.
 function tr_title
 if language==1; return "Ярик Сафонов"; end
 return "Yarik Safonov";end
@@ -29,6 +31,9 @@ return "Best";end
 function tr_day
 if language==1; return "День"; end
 return "Day";end
+function tr_night
+if language==1; return "Ночь"; end
+return "Night";end
 function tr_craving
 if language==1; return "Тяга"; end
 return "Craving";end
@@ -38,15 +43,33 @@ return "Bag";end
 function tr_goal
 if language==1; return "Убрано"; end
 return "Cleaned";end
+function tr_eaten
+if language==1; return "Съедено"; end
+return "Eaten";end
 function tr_hold
 if language==1; return "Держись"; end
 return "Hold on";end
+function tr_bed_hint
+if language==1; return "Дойди до кровати"; end
+return "Get to the bed";end
 function tr_relapse
 if language==1; return "Срыв"; end
 return "Relapse";end
 function tr_relapse_note
 if language==1; return "Завтра начнёшь заново"; end
 return "Tomorrow you start over";end
+function tr_relapse_fridge
+if language==1; return "Открыл холодильник"; end
+return "He opened the fridge";end
+function tr_relapse_fridge_note
+if language==1; return "Одна бутылка - и день насмарку"; end
+return "One bottle and the day is gone";end
+function tr_relapse_food
+if language==1; return "Переел"; end
+return "Ate too much";end
+function tr_relapse_food_note
+if language==1; return "Ночной жор тоже срыв"; end
+return "Night bingeing is a relapse too";end
 function tr_clean_sheet
 if language==1; return "С чистого листа"; end
 return "With a clean slate";end
@@ -56,6 +79,12 @@ return "Sober days lived: ";end
 function tr_day_done
 if language==1; return "День прожит трезво"; end
 return "A sober day";end
+function tr_night_done
+if language==1; return "Ночь пережита"; end
+return "The night is over";end
+function tr_night_ahead
+if language==1; return "Впереди ночь"; end
+return "The night is ahead";end
 function tr_reward
 if language==1; return "Сила воли: +"; end
 return "Willpower: +";end
@@ -72,8 +101,8 @@ function tr_shoes_desc
 if language==1; return "Ярик ходит быстрее"; end
 return "Yarik walks faster";end
 function tr_bigbag
-if language==1; return "Большой мешок"; end
-return "Big bag";end
+if language==1; return "Мешок"; end
+return "Bag";end
 function tr_bigbag_desc
 if language==1; return "Больше мусора за раз"; end
 return "Carry more litter";end
@@ -83,6 +112,18 @@ return "Breathing";end
 function tr_calm_desc
 if language==1; return "Держись: сильнее и чаще"; end
 return "Hold on: stronger, sooner";end
+function tr_night_up
+if language==1; return "Стойкость"; end
+return "Grit";end
+function tr_night_up_desc
+if language==1; return "Холодильник тянет слабее"; end
+return "The fridge pulls weaker";end
+function tr_appetite
+if language==1; return "Ужин"; end
+return "Supper";end
+function tr_appetite_desc
+if language==1; return "Ночью можно съесть больше"; end
+return "Eat one more at night";end
 function tr_step
 if language==1; return "Ступень "; end
 return "Tier ";end
@@ -91,15 +132,12 @@ function tr_buy_for num cost
 str s="Buy: "+cost
 if language==1; s="Купить: "+cost; end
 return s;end
-function tr_owned
-if language==1; return "Куплено"; end
-return "Owned";end
-function tr_maxed
-if language==1; return "Максимум"; end
-return "Maxed";end
 function tr_need_will
 if language==1; return "Не хватает силы воли"; end
 return "Not enough willpower";end
+function tr_endless
+if language==1; return "Качать можно бесконечно"; end
+return "Upgrades never cap out";end
 function tr_lang
 if language==1; return "Язык"; end
 return "Language";end
@@ -107,8 +145,8 @@ function tr_h1
 if language==1; return "Ярик пил и мусорил во дворе. Он решил завязать."; end
 return "Yarik used to drink and litter. He decided to quit.";end
 function tr_h2
-if language==1; return "Джойстик слева - ходить. Наступай на мусор, чтобы взять."; end
-return "Left stick moves. Step on litter to pick it up.";end
+if language==1; return "Днём: джойстик слева - ходить, наступай на мусор."; end
+return "Day: the left stick moves, step on litter to pick it up.";end
 function tr_h3
 if language==1; return "Донеси мусор до урны - двор чище, а на душе легче."; end
 return "Carry the litter to the bin: cleaner yard, lighter heart.";end
@@ -116,11 +154,17 @@ function tr_h4
 if language==1; return "Красная полоса - тяга. Бутылки во дворе её разгоняют."; end
 return "The red bar is craving. Bottles in the yard raise it.";end
 function tr_h5
-if language==1; return "Кнопка \"Держись\" сбивает тягу и отгоняет бутылки."; end
-return "The Hold on button cuts craving and pushes bottles away.";end
+if language==1; return "Кнопка Держись сбивает тягу и отгоняет соблазны."; end
+return "The Hold on button cuts craving and pushes temptation away.";end
 function tr_h6
+if language==1; return "Ночью холодильник тянет к себе: дойди до кровати."; end
+return "At night the fridge drags you in: reach the bed.";end
+function tr_h7
+if language==1; return "Еда сбивает тягу, но лишняя порция - тоже срыв."; end
+return "Food cuts craving, but one portion too many is a relapse.";end
+function tr_h8
 if language==1; return "Тяга дошла до конца - срыв, и всё с первого дня."; end
 return "Craving maxed out means a relapse: back to day one.";end
-function tr_h7
-if language==1; return "Сила воли остаётся навсегда - на неё берут привычки."; end
-return "Willpower stays forever: spend it on habits.";end
+function tr_h9
+if language==1; return "Сила воли остаётся навсегда и качается бесконечно."; end
+return "Willpower stays forever and upgrades never stop.";end
