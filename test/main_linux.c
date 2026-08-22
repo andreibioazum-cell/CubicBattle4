@@ -27,7 +27,7 @@
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
-extern double super_cd, player_freeze, pfreeze_a;
+extern double super_cd, player_freeze, pfreeze_a, poison_a;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern void *player, *enemy, *punch, *gift;
@@ -40,8 +40,15 @@ extern double enemy_cooldown_min, enemy_cooldown_max;
 #define ENEMY_COOLDOWN 8
 #define ENEMY_FREEZE 23
 #define ENEMY_FREEZE_SLOW 24
+#define ENEMY_POISON 25
 /* Поля Player: x,y,size,angle,hp,max_hp. Поля Gift: x,y,dx,dy,active,t,shot. */
 #define PLAYER_HP 4
+#define PLAYER_ANGLE 3
+#define PLAYER_X 0
+#define PLAYER_Y 1
+#define ENEMY_HP 3
+#define ENEMY_X 0
+#define ENEMY_Y 1
 #define GIFT_ACTIVE 4
 #define GIFT_SHOT 6
 /* Поля remote_snow на каждого игрока: счётчик, active, t, x, y, boom_t, bx, by. */
@@ -672,17 +679,94 @@ int main(void) {
             if (player_freeze > 0) frozen = 1;
         }
         if (!frozen) { printf("!! remote snowflake did not freeze the player\n"); return 3; }
-        if (pl[PLAYER_HP] >= hp0 - 0.01) {
-            printf("!! remote snowflake did not damage the player: hp %g -> %g\n", hp0, pl[PLAYER_HP]); return 3;
+        /* Снежинка больше не наносит урона вообще (только заморозка):
+         * HP после взрыва должен остаться прежним. */
+        if (pl[PLAYER_HP] < hp0 - 0.01) {
+            printf("!! remote snowflake must not damage the player: hp %g -> %g\n", hp0, pl[PLAYER_HP]); return 3;
         }
         run_frames(10);
         if (pfreeze_a <= 0.01) { printf("!! player freeze ring not fading in: %g\n", pfreeze_a); return 3; }
         if (arr_get(remote_snow, rslot * SNOW_FIELDS + 5) <= 0) {
             printf("!! remote snow boom missing or already gone: %g\n", arr_get(remote_snow, rslot * SNOW_FIELDS + 5)); return 3;
         }
-        printf("=== remote snowflake hit: hp %g -> %g, freeze %g (frame %ld)\n", hp0, pl[PLAYER_HP], player_freeze, g_frame);
+        printf("=== remote snowflake froze the player without damage: hp %g -> %g, freeze %g (frame %ld)\n", hp0, pl[PLAYER_HP], player_freeze, g_frame);
     }
     tap_back(); wait_state(0, 60);
+
+    /* --- 15. Дед Мороз: посох отравляет, снежинка только морозит --- */
+    /* Класс уже «Дед Мороз» (куплен на шаге 13). В соло проверяем новый баланс:
+     * удар посохом почти не бьёт (0.25), но травит врага — HP утекает сам;
+     * снежинка не наносит ни урона, ни яда, только замораживает, и её
+     * кулдаун ровно 3 секунды. */
+    tap_play(); wait_state(2, 30);
+    tap_solo();
+    if (!wait_state(1, 30)) { printf("!! santa solo did not start, state=%g\n", game_state); return 3; }
+    run_frames(5);
+    {
+        double *e = (double *)enemy;
+        double *pl = (double *)player;
+        double hp_after_hit = 0;
+
+        /* Ставим врага ровно перед игроком (смотрим вправо) и бьём посохом. */
+        pl[PLAYER_X] = g_w / 2.0; pl[PLAYER_Y] = g_h / 2.0; pl[PLAYER_ANGLE] = 0;
+        e[ENEMY_X] = pl[PLAYER_X] + 70; e[ENEMY_Y] = pl[PLAYER_Y]; e[ENEMY_POISON] = 0;
+        int hit = 0;
+        for (int i = 0; i < 90 && !hit; i++) {
+            pl[PLAYER_HP] = 10;                 /* бот может бить в ответ */
+            pl[PLAYER_ANGLE] = 0;
+            e[ENEMY_X] = pl[PLAYER_X] + 70; e[ENEMY_Y] = pl[PLAYER_Y];
+            if (i == 5) do_tap((float)(g_w - 140), (float)(g_h - 150));
+            run_frames(1);
+            if (e[ENEMY_HP] < 9.9) hit = 1;
+        }
+        if (!hit) { printf("!! santa staff never hit the pinned enemy\n"); return 3; }
+        hp_after_hit = e[ENEMY_HP];
+        if (hp_after_hit > 9.8 || hp_after_hit < 9.6) {
+            printf("!! santa staff damage must be tiny (0.25), got 10->%g\n", hp_after_hit); return 3;
+        }
+        if (e[ENEMY_POISON] < 3.5) { printf("!! staff did not poison the enemy: %g\n", e[ENEMY_POISON]); return 3; }
+        printf("=== santa staff hit for %g and poisoned the enemy (poison %g)\n", 10.0 - hp_after_hit, e[ENEMY_POISON]);
+
+        /* Яд тикает: полсекунды без новых ударов — минус ещё ~0.25 HP. */
+        for (int i = 0; i < 30; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+        if (e[ENEMY_HP] > 9.7 || e[ENEMY_HP] < 9.2) {
+            printf("!! poison is not draining hp: %g after 0.5s\n", e[ENEMY_HP]); return 3;
+        }
+        if (poison_a <= 0.01) { printf("!! enemy poison ring not visible: %g\n", poison_a); return 3; }
+        printf("=== poison drains hp on its own: %g -> %g, ring %g\n", hp_after_hit, e[ENEMY_HP], poison_a);
+
+        /* Яд кончается: таймер до нуля, HP замирает. */
+        for (int i = 0; i < 320 && e[ENEMY_POISON] > 0; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+        if (e[ENEMY_POISON] != 0) { printf("!! poison never expired: %g\n", e[ENEMY_POISON]); return 3; }
+        double hp_stop = e[ENEMY_HP];
+        for (int i = 0; i < 30; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+        if (e[ENEMY_HP] < hp_stop - 0.01) { printf("!! hp still draining after poison ended\n"); return 3; }
+
+        /* Снежинка: кулдаун 3 с, заморозка есть, урона нет. */
+        e[ENEMY_POISON] = 0;
+        double hp_before_boom = e[ENEMY_HP];
+        do_tap((float)(g_w - 140), (float)(g_h - 310));
+        run_frames(2);
+        {
+            double *g = (double *)gift;
+            if (g[GIFT_ACTIVE] != 1) { printf("!! santa snowflake did not launch in solo\n"); return 3; }
+            if (super_cd < 2.9 || super_cd > 3.05) { printf("!! snowflake cooldown should be ~3s, got %g\n", super_cd); return 3; }
+            int boom = 0;
+            for (int i = 0; i < 90 && !boom; i++) {
+                pl[PLAYER_HP] = 10; pl[PLAYER_ANGLE] = 0;
+                e[ENEMY_X] = pl[PLAYER_X] + 70; e[ENEMY_Y] = pl[PLAYER_Y];   /* держим врага на пути */
+                run_frames(1);
+                if (g[GIFT_ACTIVE] == 0) boom = 1;
+            }
+            if (!boom) { printf("!! solo snowflake never exploded\n"); return 3; }
+            if (e[ENEMY_FREEZE] <= 0) { printf("!! solo snowflake did not freeze the enemy\n"); return 3; }
+            if (e[ENEMY_HP] < hp_before_boom - 0.01) {
+                printf("!! solo snowflake must not damage: %g -> %g\n", hp_before_boom, e[ENEMY_HP]); return 3;
+            }
+        }
+        printf("=== santa snowflake: 3s cd, froze the enemy, no damage (hp %g)\n", e[ENEMY_HP]);
+        tap_back(); wait_state(0, 60);
+    }
 
     script_active = 1;
     ds_call_protected(protected_reset, NULL, "reset");

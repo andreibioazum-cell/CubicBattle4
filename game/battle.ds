@@ -18,7 +18,8 @@ function player_punch_tex
 return class_punch_tex(player_class)
 end
 function class_punch_damage num cls
-// Урон обычного удара: у Деда Мороза посох бьёт сильнее (santa_damage).
+// Урон обычного удара: у Деда Мороза посох бьёт совсем чуть-чуть (santa_damage),
+// но каждый удар отравляет врага — тот теряет HP ещё несколько секунд.
 if cls==2; return santa_damage; end
 return punch_damage
 end
@@ -49,10 +50,11 @@ if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; e
 end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
 gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0
 player_freeze=0; player_freeze_slow=1; pfreeze_a=0
+player_poison=0; ppoison_a=0; poison_a=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-310; drop_joy
 arr_clear remotes; arr_clear remote_punches; arr_clear candy_x; arr_clear candy_y; arr_clear remote_snow
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
@@ -245,6 +247,20 @@ if freeze_a<0; freeze_a=0; end; if freeze_a>1; freeze_a=1; end
 if enemy.cooldown>0; enemy.cooldown=enemy.cooldown-dt*enemy_freeze_factor(); if enemy.cooldown<0; enemy.cooldown=0; end; end
 if enemy.dodge_cd>0; enemy.dodge_cd=enemy.dodge_cd-dt; if enemy.dodge_cd<0; enemy.dodge_cd=0; end; end
 if enemy.flank>0; enemy.flank=enemy.flank-dt; end
+// Яд от посоха Деда Мороза: тикает santa_poison_dps HP в секунду, пока
+// таймер не кончится. От яда враг может и умереть — тогда победа.
+if enemy.poison>0
+enemy.poison=enemy.poison-dt; if enemy.poison<0; enemy.poison=0; end
+enemy.hp=enemy.hp-santa_poison_dps*dt
+if enemy.hp<=0
+enemy.hp=0; enemy.poison=0
+ds_log "poison killed the enemy"
+finish_game 1
+return
+end
+end
+if enemy.poison>0; poison_a=poison_a+dt/freeze_fade_in; else; poison_a=poison_a-dt/freeze_fade_out; end
+if poison_a<0; poison_a=0; end; if poison_a>1; poison_a=1; end
 num dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
 if d<1; d=1; end
 num pr=player.size*0.65, reach=enemy_punch_reach+pr
@@ -341,9 +357,20 @@ if player_freeze>0; player_freeze=player_freeze-dt; if player_freeze<0; player_f
 if player_freeze>0; pfreeze_a=pfreeze_a+dt/freeze_fade_in; else; pfreeze_a=pfreeze_a-dt/freeze_fade_out; end
 if pfreeze_a<0; pfreeze_a=0; end; if pfreeze_a>1; pfreeze_a=1; end
 end
+function tick_player_poison
+// Яд у самого игрока (посох чужого Деда Мороза в онлайне): HP утекает
+// santa_poison_dps в секунду, вокруг игрока плавно светится зелёный круг.
+if player_poison>0
+player_poison=player_poison-dt; if player_poison<0; player_poison=0; end
+take_damage santa_poison_dps*dt
+end
+if player_poison>0; ppoison_a=ppoison_a+dt/freeze_fade_in; else; ppoison_a=ppoison_a-dt/freeze_fade_out; end
+if ppoison_a<0; ppoison_a=0; end; if ppoison_a>1; ppoison_a=1; end
+end
 function update_game
 tick_revive
 tick_freeze
+tick_player_poison
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
@@ -362,7 +389,9 @@ if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
 if punch_left>0&&punch.active==1&&punch.hit==0
 if enemy_in_punch()==1
 punch.hit=1
-if player_class==2; freeze_enemy santa_freeze,santa_freeze_slow; end
+// Посох Деда Мороза не морозит и почти не бьёт — он отравляет: каждый
+// удар обновляет таймер яда, и враг продолжает терять HP после размена.
+if player_class==2; enemy.poison=santa_poison_time; end
 enemy.hp=enemy.hp-class_punch_damage(player_class); ds_log "hit! enemy hp %g",enemy.hp
 if enemy.hp<=0; finish_game 1; return; end
 end
@@ -423,6 +452,8 @@ clear_remote_punch s
 else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
 num rcls=arr_get(remotes,s*remote_fields+10)
 take_damage class_punch_damage(rcls); ds_log "remote hit! hp %g",player.hp
+// Посох чужого Деда Мороза отравляет нас так же, как бот в соло.
+if rcls==2; player_poison=santa_poison_time; end
 clear_remote_punch s
 if player.hp<=0; player.hp=0; if try_revive()==0; finish_game 2; return; end; end
 else if t>punch_time
@@ -473,6 +504,7 @@ end
 function update_online
 tick_revive
 tick_freeze
+tick_player_poison
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
@@ -521,10 +553,11 @@ if gift.t>super_range/super_speed; touched=1; end
 end
 if touched==0; return; end
 gift.active=0; boom_x=gift.x; boom_y=gift.y; boom_t=boom_time
+// Снежинка не наносит ни урона, ни яда — только замораживает: враг еле
+// ходит super_freeze секунд. Урон Дед Мороз делает посохом с ядом.
 if game_state!=5&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
 freeze_enemy super_freeze,super_freeze_slow
-enemy.hp=enemy.hp-super_damage; ds_log "snowflake boom! enemy hp %g",enemy.hp
-if enemy.hp<=0; finish_game 1; end
+ds_log "snowflake boom! enemy frozen"
 end
 end
 function draw_gift
@@ -568,6 +601,19 @@ num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
 circle enemy.x,enemy.y,half,fill
 ring enemy.x,enemy.y,half,5,rim
 end
+function draw_poison
+// Зелёный круг отравления вокруг врага — как ледяной, но ядовитого цвета.
+if poison_a<=0; return; end
+num fa=poison_a*255
+num af=floor(fa*0.3)
+if af<=0; return; end
+num half=enemy.size+6
+num fill=(((unsigned)(int)af)<<24)|0x002E7D32
+num ar=floor(fa*0.7)
+num rim=(((unsigned)(int)ar)<<24)|0x0066BB6A
+circle enemy.x,enemy.y,half,fill
+ring enemy.x,enemy.y,half,5,rim
+end
 function draw_player_freeze
 // Ледяной круг вокруг своего игрока, пока он заморожен снежинкой соперника.
 if pfreeze_a<=0; return; end
@@ -577,6 +623,18 @@ num half=player.size+6
 num fill=(((unsigned)(int)af)<<24)|0x001E88E5
 num ar=floor(pfreeze_a*255*0.7)
 num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+circle player.x,player.y,half,fill
+ring player.x,player.y,half,5,rim
+end
+function draw_player_poison
+// Зелёный круг отравления вокруг своего игрока (посох чужого Деда Мороза).
+if ppoison_a<=0; return; end
+num af=floor(ppoison_a*255*0.3)
+if af<=0; return; end
+num half=player.size+6
+num fill=(((unsigned)(int)af)<<24)|0x002E7D32
+num ar=floor(ppoison_a*255*0.7)
+num rim=(((unsigned)(int)ar)<<24)|0x0066BB6A
 circle player.x,player.y,half,fill
 ring player.x,player.y,half,5,rim
 end
@@ -612,10 +670,10 @@ if hit==1
 arr_set remote_snow,b+1,0
 arr_set remote_snow,b+5,boom_time
 arr_set remote_snow,b+6,x; arr_set remote_snow,b+7,y
+// Чужая снежинка урона не наносит и яда не даёт — только замораживает.
 if dist(x,y,player.x,player.y)<=super_radius
-take_damage super_damage
 if player_freeze<super_freeze; player_freeze=super_freeze; player_freeze_slow=super_freeze_slow; end
-ds_log "remote snowflake hit! hp %g",player.hp
+ds_log "remote snowflake froze the player"
 end
 end
 end
@@ -712,6 +770,7 @@ if enemy.state==1||enemy.state==2; etex=PUNCH_TEX; end
 tex_tint enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,etex,sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24)
 tex enemy.x-ehw,enemy.y-ehw,etex,sprite_a(enemy.angle),es
 draw_freeze
+draw_poison
 num w=screen_w/4
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1
 draw_controls
@@ -825,7 +884,7 @@ if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-
 end
 i=i+1
 end
-draw_gift; draw_boom; draw_remote_snow; draw_player_freeze
+draw_gift; draw_boom; draw_remote_snow; draw_player_freeze; draw_player_poison
 draw_snow
 num w=screen_w/3
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0

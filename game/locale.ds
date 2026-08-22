@@ -104,7 +104,7 @@ if language==1; return "Возрождение 1 раз за игру"; else if 
 function tr_class_santa
 if language==1; return "Дед Мороз"; else if language==2; return "サンタ"; end; return "Santa";end
 function tr_class_santa_desc
-if language==1; return "Посох бьёт сильнее и морозит"; else if language==2; return "杖は強く氷らせる"; end; return "Staff hits harder and freezes";end
+if language==1; return "Посох отравляет, снежинка морозит"; else if language==2; return "杖は毒、雪は氷結"; end; return "Staff poisons, flake freezes";end
 function tr_super
 if language==1; return "Снежинка"; else if language==2; return "雪の結晶"; end; return "Snowflake";end
 function tr_class_selected
