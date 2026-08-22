@@ -23,20 +23,22 @@ if(ANDROID)
     target_include_directories(ds_game PRIVATE . game ${ANDROID_NDK}/sources/android/native_app_glue)
     target_link_libraries(ds_game PRIVATE android log m)
 elseif(WIN32 OR MINGW)
-    # Картинки и шрифт зашиваются прямо в Game.exe как RCDATA-ресурсы
-    # (embed_assets.py -> embedded_assets.rc), поэтому рядом с exe в
-    # релизном пакете никаких файлов assets/ больше не лежит.
+    # Картинки, шрифт и звуки зашиваются прямо в Game.exe как RCDATA-ресурсы
+    # (embed_assets.py -> embedded_assets.rc; файлы из game/sounds получают
+    # имя "sounds/<файл>"), поэтому рядом с exe в релизном пакете никаких
+    # файлов assets/ и sounds/ больше не лежит.
     set(EMBED_RC "${CMAKE_CURRENT_BINARY_DIR}/embedded_assets.rc")
     file(GLOB_RECURSE ASSET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/assets/*")
+    file(GLOB_RECURSE SOUND_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/sounds/*")
     add_custom_command(
         OUTPUT "${EMBED_RC}"
-        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "${EMBED_RC}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" ${ASSET_FILES}
-        COMMENT "Embedding game assets into Game.exe resources"
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "${CMAKE_CURRENT_SOURCE_DIR}/game/sounds" "${EMBED_RC}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" ${ASSET_FILES} ${SOUND_FILES}
+        COMMENT "Embedding game assets and sounds into Game.exe resources"
     )
     add_executable(Game WIN32 "${GAME_C}" runtime.c main_win32.c "${EMBED_RC}")
     target_include_directories(Game PRIVATE . game)
-    target_link_libraries(Game PRIVATE gdi32 wininet user32 kernel32 shell32)
+    target_link_libraries(Game PRIVATE gdi32 winmm wininet user32 kernel32 shell32)
     if(NOT MSVC)
         target_link_libraries(Game PRIVATE m)
     endif()
@@ -45,4 +47,5 @@ else()
     target_include_directories(Game PRIVATE . game)
     target_link_libraries(Game PRIVATE m pthread)
     add_custom_command(TARGET Game POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "$<TARGET_FILE_DIR:Game>/assets")
+    add_custom_command(TARGET Game POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/game/sounds" "$<TARGET_FILE_DIR:Game>/sounds")
 endif()

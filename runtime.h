@@ -92,6 +92,20 @@ void ds_release_assets(void);
 int png_load(const char *name);
 void tex(float x, float y, const char *name, float angle, float scale);
 void tex_tint(float x, float y, const char *name, float angle, float scale, uint32_t color);
+/* Звуки: WAV-файлы из game/sounds (см. sound.c). snd_load возвращает 1/0,
+ * snd_playing — 1/0; snd_volume задаёт громкость конкретного звука (0..1). */
+int snd_load(const char *name);
+int snd_play(const char *name);
+int snd_loop(const char *name);
+void snd_stop(const char *name);
+int snd_playing(const char *name);
+void snd_volume(const char *name, double volume);
+void snd_stop_all(void);
+int ds_sound_init(AAssetManager *assets);
+void ds_sound_shutdown(void);
+void ds_sound_pause(void);
+void ds_sound_resume(void);
+void ds_sound_set_java_vm(void *vm);
 void text(const char *string, float x, float y, uint32_t color);
 void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
 int text_ink_width(const char *string);

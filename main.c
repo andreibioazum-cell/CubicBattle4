@@ -68,6 +68,9 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
             ds_set_activity(app->activity);
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
+            /* Звуки лежат в тех же assets (sounds/...), играют через OpenSL ES. */
+            ds_sound_init(script_assets);
+            ds_sound_resume();
             init_done = 1; script_active = 0; restart_failures = 0;
             ds_clear_script_restart(); (void)start_script(0); break;
         case APP_CMD_WINDOW_RESIZED:
@@ -85,9 +88,9 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             }
             break;
         case APP_CMD_TERM_WINDOW:
-            init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); break;
-        case APP_CMD_GAINED_FOCUS: break;
-        case APP_CMD_LOST_FOCUS: break;
+            init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); ds_sound_shutdown(); break;
+        case APP_CMD_GAINED_FOCUS: ds_sound_resume(); break;
+        case APP_CMD_LOST_FOCUS: ds_sound_pause(); break;
         default: break;
     }
 }
@@ -140,6 +143,7 @@ void android_main(struct android_app *app) {
     Buffer frame = {0}; if (!app) return;
     app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
     net_set_java_vm(app->activity->vm);
+    ds_sound_set_java_vm((void *)app->activity->vm);
     net_set_data_path(app->activity->internalDataPath);
     ds_set_activity(app->activity);
     ds_log("DimScript Android 10 arm64/arm32 only + system keyboard (JNI)");
@@ -148,7 +152,7 @@ void android_main(struct android_app *app) {
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
             if (app->destroyRequested) {
-                init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); return;
+                init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); ds_sound_shutdown(); return;
             }
         }
         if (!app->window || !init_done || app->destroyRequested) continue;
@@ -184,3 +188,4 @@ void android_main(struct android_app *app) {
 }
 #include "graphics.c"
 #include "net.c"
+#include "sound.c"

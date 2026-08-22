@@ -323,6 +323,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
     QueryPerformanceCounter(&g_prev);
     ensure_buffer(1280, 720);
     ds_graphics_init(NULL);
+    /* Звуки зашиты в exe как RCDATA "sounds/..." и играют через waveOut. */
+    ds_sound_init(NULL);
     start_script(0);
     while (g_running) {
         MSG msg;
@@ -341,6 +343,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
         if (ms < 15.0) Sleep((DWORD)(15.0 - ms));
     }
     ds_graphics_shutdown();
+    ds_sound_shutdown();
     free(g_pixels);
     return 0;
 }
@@ -353,3 +356,4 @@ int main(void) {
 #endif
 #include "graphics.c"
 #include "net.c"
+#include "sound.c"

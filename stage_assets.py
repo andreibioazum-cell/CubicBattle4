@@ -43,6 +43,35 @@ def stage_assets(source: Path, destination: Path) -> list[Path]:
     return staged
 
 
+def stage_sounds(source: Path, destination: Path) -> list[Path]:
+    """Copy WAVs from *source* (game/sounds) into *destination* (assets/sounds).
+
+    The game opens sounds by name "sounds/<file>" (sound.c), so the folder is
+    staged next to the regular assets inside the APK. An absent folder is
+    fine: the game just stays silent.
+    """
+    source = source.resolve()
+    destination = destination.resolve()
+    if not source.is_dir():
+        return []
+
+    staged: list[Path] = []
+    for path in sorted(source.rglob("*")):
+        relative_path = path.relative_to(source)
+        target = destination / relative_path
+
+        if path.is_symlink():
+            raise ValueError(f"sound symlinks are not supported: {relative_path}")
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif path.name != ".gitkeep":
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            staged.append(Path("sounds") / relative_path)
+
+    return staged
+
+
 def build_android_activity(source: Path, apk_root: Path) -> Path | None:
     """Compile the optional Java NativeActivity bridge into ``classes.dex``.
 
@@ -115,6 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         destination = Path(args.destination)
         staged = stage_assets(Path(args.source), destination)
+        # Звуки (game/sounds) кладём в APK рядом с ассетами: assets/sounds/.
+        sounds_dir = Path(__file__).resolve().parent / "game" / "sounds"
+        staged += stage_sounds(sounds_dir, destination / "sounds")
         java_source = Path(__file__).resolve().parent / "game" / "java"
         dex = build_android_activity(java_source, destination.parent)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:

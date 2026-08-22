@@ -8,7 +8,11 @@ The same relative name (forward slashes) becomes the resource name, so the
 Windows build is fully self-contained: no loose PNG/TTF files next to
 Game.exe in the release package.
 
-Usage: embed_assets.py <assets-dir> <output.rc>
+An optional sounds directory is embedded too: sound.c looks its WAVs up as
+"sounds/<file>" (the layout of game/sounds), so lobbymusic.wav ends up inside
+the exe as the resource "sounds/lobbymusic.wav".
+
+Usage: embed_assets.py <assets-dir> [sounds-dir|-] <output.rc>
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ def rc_quote_path(p: str) -> str:
     return p.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def generate(source: Path, destination: Path) -> list[str]:
+def generate(source: Path, destination: Path, sounds: Path | None = None) -> list[str]:
     source = source.resolve()
     if not source.is_dir():
         raise ValueError(f"asset directory not found: {source}")
@@ -43,6 +47,18 @@ def generate(source: Path, destination: Path) -> list[str]:
         disk = os.path.normpath(str(path))  # абсолютный, \ на Windows
         lines.append(f'"{rc_quote_path(rel)}" RCDATA "{rc_quote_path(disk)}"')
         names.append(rel)
+    # Звуки: game/sounds/*.wav -> ресурсы "sounds/<файл>" (именно так их ищет
+    # sound.c на Windows). Папки может не быть — тогда просто нет звуков.
+    if sounds is not None:
+        sounds = sounds.resolve()
+        if sounds.is_dir():
+            for path in sorted(sounds.rglob("*")):
+                if not path.is_file() or path.name == ".gitkeep":
+                    continue
+                rel = "sounds/" + path.relative_to(sounds).as_posix()
+                disk = os.path.normpath(str(path))
+                lines.append(f'"{rc_quote_path(rel)}" RCDATA "{rc_quote_path(disk)}"')
+                names.append(rel)
     lines.append("")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("\n".join(lines), encoding="utf-8")
@@ -52,9 +68,14 @@ def generate(source: Path, destination: Path) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     source = Path(args[0]) if len(args) >= 1 else Path("game/assets")
-    destination = Path(args[1]) if len(args) >= 2 else Path("embedded_assets.rc")
+    sounds: Path | None = None
+    destination = Path(args[-1]) if len(args) >= 2 else Path("embedded_assets.rc")
+    if len(args) >= 3:
+        sounds_arg = args[1]
+        if sounds_arg != "-":
+            sounds = Path(sounds_arg)
     try:
-        names = generate(source, destination)
+        names = generate(source, destination, sounds)
     except (OSError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
