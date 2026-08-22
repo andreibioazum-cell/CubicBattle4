@@ -24,6 +24,13 @@
 #include <string.h>
 #include <limits.h>
 
+#ifdef _WIN32
+/* runtime.h включает windows.h с WIN32_LEAN_AND_MEAN, а тот выкидывает
+ * mmsystem.h — без явного include нет ни HWAVEOUT/WAVEHDR/WAVEFORMATEX, ни
+ * функций waveOut* (на MSVC это ошибки компиляции). */
+#include <mmsystem.h>
+#endif
+
 #define SND_RATE 44100
 #define SND_MAX_SOUNDS 16
 #define SND_VOICES 8
