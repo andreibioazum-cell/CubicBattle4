@@ -1,0 +1,322 @@
+// game.ds — двор Ярика: уборка мусора, тяга и срыв «с чистого листа».
+
+function sprite_a num a
+// Спрайты нарисованы «лицом вверх», игровой угол 0 смотрит вправо.
+return a+pi/2
+end
+function bag_cap
+if bag_owned==1; return bag_big; end
+return bag_base
+end
+function move_speed
+return walk_speed*(1+shoes_level*shoes_bonus)
+end
+function hold_cool
+if calm_owned==1; return hold_cd_calm; end
+return hold_cd_time
+end
+function hold_gain
+if calm_owned==1; return hold_relief_calm; end
+return hold_relief
+end
+function day_goal num d
+return goal_base+d
+end
+function day_bottles num d
+num n=bottles_base+floor(d/2)
+if n>bottles_max; n=bottles_max; end
+return n
+end
+function rnd_x
+return spawn_margin+rand()%(int)(screen_w-2*spawn_margin)
+end
+function rnd_y
+return spawn_margin+rand()%(int)(screen_h-2*spawn_margin)
+end
+function in_ui_zone num x, num y
+// Не кладём предметы под джойстик, кнопку «Держись», кнопку «Назад» и HUD.
+if dist(x,y,joy.x,joy.y)<170; return 1; end
+if dist(x,y,act_x,act_y)<170; return 1; end
+if y<150; return 1; end
+return 0
+end
+function place_bin
+num k=0
+bin_x=rnd_x(); bin_y=rnd_y()
+loop k<40
+if dist(bin_x,bin_y,yarik.x,yarik.y)<220||in_ui_zone(bin_x,bin_y)==1
+bin_x=rnd_x(); bin_y=rnd_y(); k=k+1
+else; k=40; end
+end
+end
+function spawn_trash
+arr_clear trash_x; arr_clear trash_y; arr_clear trash_on
+num n=goal+trash_extra, i=0
+loop i<n
+num tx=rnd_x(), ty=rnd_y(), k=0
+loop k<30
+if dist(tx,ty,bin_x,bin_y)<130||dist(tx,ty,yarik.x,yarik.y)<110||in_ui_zone(tx,ty)==1
+tx=rnd_x(); ty=rnd_y(); k=k+1
+else; k=30; end
+end
+arr_push trash_x,tx; arr_push trash_y,ty; arr_push trash_on,1
+i=i+1
+end
+end
+function spawn_bottle_at num i
+// Бутылка приходит во двор из-за края экрана и ползёт к Ярику.
+num side=rand()%4, bx=rnd_x(), by=rnd_y()
+if side==0; bx=-40; by=rnd_y()
+else if side==1; bx=screen_w+40; by=rnd_y()
+else if side==2; bx=rnd_x(); by=-40
+else; bx=rnd_x(); by=screen_h+40; end
+arr_set bot_x,i,bx; arr_set bot_y,i,by; arr_set bot_dx,i,0; arr_set bot_dy,i,0
+end
+function spawn_bottles
+arr_clear bot_x; arr_clear bot_y; arr_clear bot_dx; arr_clear bot_dy
+num n=day_bottles(day), i=0
+loop i<n
+arr_push bot_x,0; arr_push bot_y,0; arr_push bot_dx,0; arr_push bot_dy,0
+spawn_bottle_at i
+i=i+1
+end
+end
+function drop_joy
+joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
+end
+function start_day num d
+day=d; goal=day_goal(d); cleaned=0; craving=0; hold_cd=0; over=0; last_reward=0
+yarik.x=screen_w/2; yarik.y=screen_h/2; yarik.angle=0; yarik.bag=0; yarik.hold=0
+joy.x=130; joy.y=screen_h-150; joy.r=70; act_x=screen_w-140; act_y=screen_h-150
+place_bin; spawn_trash; spawn_bottles
+act_id=-1; drop_joy
+ds_log "day %g starts: goal %g",day,goal
+end
+function init_game
+// Каждый заход в игру — новая жизнь с первого дня. Остаётся только сила воли.
+start_day 1
+end
+function move_yarik
+num spd=move_speed()
+yarik.x=yarik.x+joy.dx*spd*dt; yarik.y=yarik.y+joy.dy*spd*dt
+num jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy)
+if jm>0.15; yarik.angle=atan2(joy.dy,joy.dx); end
+if yarik.x<player_size; yarik.x=player_size; end
+if yarik.x>screen_w-player_size; yarik.x=screen_w-player_size; end
+if yarik.y<player_size; yarik.y=player_size; end
+if yarik.y>screen_h-player_size; yarik.y=screen_h-player_size; end
+end
+function do_hold
+// «Держись»: Ярик выдыхает, сбивает тягу и отталкивает бутылки вокруг.
+if hold_cd>0; return; end
+if over!=0; return; end
+hold_cd=hold_cool(); yarik.hold=hold_anim
+craving=craving-hold_gain()
+if craving<0; craving=0; end
+num i=0
+loop i<arr_len(bot_x)
+num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
+num d=dist(bx,by,yarik.x,yarik.y)
+if d<hold_push_r
+if d<1; d=1; end
+arr_set bot_dx,i,(bx-yarik.x)/d*hold_push
+arr_set bot_dy,i,(by-yarik.y)/d*hold_push
+end
+i=i+1
+end
+ds_log "hold on: craving %g",craving
+end
+function craving_rate
+// Тяга сама растёт с каждым днём, а близкая бутылка разгоняет её сильнее.
+num r=craving_base+craving_step*(day-1), i=0
+loop i<arr_len(bot_x)
+if dist(arr_get(bot_x,i),arr_get(bot_y,i),yarik.x,yarik.y)<craving_near; r=r+craving_near_rate; end
+i=i+1
+end
+return r
+end
+function update_bottles
+num sp=bottle_speed+bottle_speed_step*(day-1), i=0
+loop i<arr_len(bot_x)
+num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
+num px=arr_get(bot_dx,i), py=arr_get(bot_dy,i)
+num dx=yarik.x-bx, dy=yarik.y-by, d=sqrt(dx*dx+dy*dy)
+if d<1; d=1; end
+bx=bx+(dx/d*sp+px)*dt; by=by+(dy/d*sp+py)*dt
+px=px-px*3*dt; py=py-py*3*dt
+arr_set bot_x,i,bx; arr_set bot_y,i,by; arr_set bot_dx,i,px; arr_set bot_dy,i,py
+if d<player_size+18
+craving=craving+bottle_hit
+spawn_bottle_at i
+ds_log "bottle hit: craving %g",craving
+end
+i=i+1
+end
+end
+function pickup_trash
+num i=0
+loop i<arr_len(trash_on)
+if arr_get(trash_on,i)==1&&yarik.bag<bag_cap()&&dist(arr_get(trash_x,i),arr_get(trash_y,i),yarik.x,yarik.y)<pickup_r
+arr_set trash_on,i,0; yarik.bag=yarik.bag+1
+end
+i=i+1
+end
+end
+function finish_day
+over=2; last_reward=day_reward*day; willpower=willpower+last_reward
+if day>best_day; best_day=day; end
+save_progress; drop_joy; act_id=-1
+ds_log "day %g done, +%g willpower",day,last_reward
+end
+function relapse
+// Срыв. День обнуляется, но сила воли и рекорд остаются.
+over=1; drop_joy; act_id=-1; save_progress
+ds_log "relapse on day %g",day
+end
+function drop_at_bin
+if yarik.bag<=0; return; end
+if dist(yarik.x,yarik.y,bin_x,bin_y)>bin_r; return; end
+num n=yarik.bag
+cleaned=cleaned+n; willpower=willpower+n*trash_reward; yarik.bag=0
+craving=craving-deposit_relief*n
+if craving<0; craving=0; end
+save_progress
+if cleaned>=goal; finish_day; end
+end
+function update_game
+if over!=0; return; end
+if yarik.hold>0; yarik.hold=yarik.hold-dt; if yarik.hold<0; yarik.hold=0; end; end
+if hold_cd>0; hold_cd=hold_cd-dt; if hold_cd<0; hold_cd=0; end; end
+move_yarik; pickup_trash; drop_at_bin
+if over!=0; return; end
+update_bottles
+craving=craving+craving_rate()*dt
+if craving>=max_craving; craving=max_craving; relapse; end
+end
+function draw_yard
+num y=0
+loop y<screen_h
+num x=0
+loop x<screen_w; tex x,y,YARD,0,1; x=x+256; end
+y=y+256
+end
+end
+function draw_bin
+num half=bin_px/2
+if yarik.bag>0&&dist(yarik.x,yarik.y,bin_x,bin_y)<=bin_r+80; ring bin_x,bin_y,bin_r,4,0x88FFD54A; end
+tex_tint bin_x-half-shadow_off,bin_y-half+shadow_off,BIN,0,1,(((unsigned)(int)shadow_alpha)<<24)
+tex bin_x-half,bin_y-half,BIN,0,1
+end
+function draw_trash
+num half=item_px/2, i=0
+loop i<arr_len(trash_on)
+if arr_get(trash_on,i)==1
+num tx=arr_get(trash_x,i), ty=arr_get(trash_y,i)
+tex tx-half*0.75,ty-half*0.75,TRASH,0,0.75
+end
+i=i+1
+end
+end
+function draw_bottles
+num half=item_px/2, i=0
+loop i<arr_len(bot_x)
+num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
+num a=atan2(yarik.y-by,yarik.x-bx)
+if dist(bx,by,yarik.x,yarik.y)<craving_near; ring bx,by,44,3,0x55E53935; end
+tex bx-half*0.8,by-half*0.8,BOTTLE,a,0.8
+i=i+1
+end
+end
+function draw_yarik
+num half=yarik_px/2
+str t=YARIK
+if yarik.hold>0; t=YARIK_HOLD; end
+tex_tint yarik.x-half-shadow_off,yarik.y-half+shadow_off,t,sprite_a(yarik.angle),1,(((unsigned)(int)shadow_alpha)<<24)
+tex yarik.x-half,yarik.y-half,t,sprite_a(yarik.angle),1
+if yarik.hold>0; ring yarik.x,yarik.y,58+40*(hold_anim-yarik.hold),4,0x66FFFFFF; end
+end
+function craving_color
+if craving>max_craving*0.75; return 0xE53935; end
+if craving>max_craving*0.45; return 0xFB8C00; end
+return 0x43A047
+end
+function draw_hud
+str d_s=tr_day()+" "+day
+text_scaled d_s,24,18,0xFFFFFF,0.8
+text_scaled tr_craving(),24,64,0xE0E0E8,0.5
+bar 24,92,330,26,craving,max_craving,craving_color()
+str g_s=tr_goal()+": "+cleaned+"/"+goal
+str b_s=tr_bag()+": "+yarik.bag+"/"+bag_cap()
+str w_s=tr_will()+": "+willpower
+text_scaled g_s,screen_w-text_ink_width(g_s)*0.6-24,20,0xB9F6CA,0.6
+text_scaled b_s,screen_w-text_ink_width(b_s)*0.6-24,54,0xE0E0E8,0.6
+text_scaled w_s,screen_w-text_ink_width(w_s)*0.6-24,88,0xFFD54A,0.6
+end
+function draw_controls
+ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
+col ac=0x1565C0
+if hold_cd>0; ac=0xFF3A3A46; end
+circle act_x,act_y,70,ac; ring act_x,act_y,70,4,0x000000
+str al=tr_hold(); num asz=0.55
+if hold_cd>0; al=floor(hold_cd+0.999)+""; asz=0.95; end
+text_in_box al,act_x-70,act_y-70,140,140,0xFFFFFF,asz
+draw_back
+end
+function draw_panel num h
+num y=screen_h/2-h/2
+rect 0,0,screen_w,screen_h,0xAA000000
+roundrect screen_w/2-260,y,520,h,26,0xFF23252F
+return y
+end
+function draw_over
+if over==2
+num y=draw_panel(230)
+ctext tr_day_done(),y+40,0xFFFFFF
+ctext_scaled tr_day()+" "+day,y+86,0xB9F6CA,0.7
+ctext_scaled tr_reward()+last_reward,y+130,0xFFD54A,0.7
+ctext_scaled tr_tap_next(),y+180,0xC0C4D4,0.6
+else if over==1
+num ry=draw_panel(300)
+tex screen_w/2-32,ry+24,SHEET,0,1
+ctext tr_relapse(),ry+108,0xFF8A80
+ctext_scaled tr_days_lived()+(day-1),ry+156,0xE0E0E8,0.65
+ctext_scaled tr_clean_sheet(),ry+196,0xFFFFFF,0.7
+ctext_scaled tr_relapse_note(),ry+234,0xC0C4D4,0.6
+ctext_scaled tr_tap_back(),ry+268,0xC0C4D4,0.55
+end
+end
+function draw_game
+draw_yard
+draw_bin
+draw_trash
+draw_bottles
+draw_yarik
+draw_hud
+draw_controls
+draw_over
+end
+function joy_touch num x, num y, num action, num id
+if action==1; if id==joy_id; drop_joy; end; return; end
+if action==0
+if joy_id!=-1; return; end
+if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end
+joy_id=id
+end
+if id!=joy_id; return; end
+num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy)
+if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r
+else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
+end
+function touch_game num x, num y, num action, num id
+if over!=0
+if action==0
+if over==2; start_day day+1; else; start_transition 0; end
+end
+return
+end
+if action==3; act_id=-1; drop_joy; return; end
+if back_hit(x,y)==1&&action!=2; start_transition 0; return; end
+if action==0&&sqrt((x-act_x)*(x-act_x)+(y-act_y)*(y-act_y))<=96; act_id=id; do_hold; return; end
+if action==1&&id==act_id; act_id=-1; return; end
+joy_touch x,y,action,id
+end

@@ -6,11 +6,9 @@ staging/
 *.apk
 debug.keystore
 
-# Session file created by the game (saved nick)
-auth.dat
+# Save file created by the game (willpower, best day, habits)
 progress.dat
+auth.dat
 # Headless test harness build artifacts
-test/net_test.c
 test/game_test
-test/shot_*.bmp
-test/ai_sim
+test/shots/

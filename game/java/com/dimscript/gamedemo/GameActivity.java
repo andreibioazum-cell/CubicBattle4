@@ -8,7 +8,7 @@
  *
  * Файл намеренно лежит в старом каталоге com/dimscript/gamedemo: путь зашит
  * в шаг сборки .github/workflows/main.yml. Для javac это неважно — класс
- * компилируется по объявленному пакету (classes/com/cb4/GameActivity.class).
+ * компилируется по объявленному пакету (classes/com/yarik/GameActivity.class).
  */
 package com.cb4;
 

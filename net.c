@@ -374,7 +374,7 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     int modes[2] = { INTERNET_OPEN_TYPE_PRECONFIG, INTERNET_OPEN_TYPE_DIRECT };
     int last_code = 0, last_stage = 1;
     for (int mi = 0; mi < 2; mi++) {
-        HINTERNET inet = InternetOpenA("CubicBattle/1.0", (DWORD)modes[mi], NULL, NULL, 0);
+        HINTERNET inet = InternetOpenA("YarikCleanSlate/1.0", (DWORD)modes[mi], NULL, NULL, 0);
         if (!inet) continue;
         HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
         if (!conn) { InternetCloseHandle(inet); continue; }

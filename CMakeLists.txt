@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(CubicBattle C)
+project(YarikCleanSlate C)
 set(CMAKE_C_STANDARD 99)
 
 if(MSVC)

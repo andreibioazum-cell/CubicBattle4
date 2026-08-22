@@ -150,7 +150,7 @@ static void toggle_fullscreen(void) {
 static void confirm_exit(void) {
     wchar_t w_msg[128];
     MultiByteToWideChar(CP_UTF8, 0, "Вы точно хотите выйти?", -1, w_msg, 128);
-    int r = MessageBoxW(g_hwnd, w_msg, L"Cubic Battle", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+    int r = MessageBoxW(g_hwnd, w_msg, L"Ярик Сафонов", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
     if (r == IDYES) {
         g_running = 0;
         DestroyWindow(g_hwnd);
@@ -308,11 +308,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
     wc.hInstance = hInst;
     wc.hIcon = LoadIconA(NULL, IDI_APPLICATION);
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
-    wc.lpszClassName = "CubicBattleWindow";
+    wc.lpszClassName = "YarikWindow";
     if (!RegisterClassA(&wc)) return 1;
     RECT rc = { 0, 0, 1280, 720 };
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
-    g_hwnd = CreateWindowA("CubicBattleWindow", "Cubic Battle",
+    g_hwnd = CreateWindowA("YarikWindow", "Yarik Safonov: Clean Slate",
                            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                            rc.right - rc.left, rc.bottom - rc.top,
                            NULL, NULL, hInst, NULL);

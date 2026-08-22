@@ -1,144 +1,126 @@
+// locale.ds — тексты игры. language: 1 — русский (по умолчанию), 0 — English.
+function tr_title
+if language==1; return "Ярик Сафонов"; end
+return "Yarik Safonov";end
+function tr_subtitle
+if language==1; return "С чистого листа"; end
+return "Clean slate";end
 function tr_play
-if language==1; return "Играть"; else if language==2; return "遊ぶ"; end; return "Play";end
+if language==1; return "Играть"; end
+return "Play";end
+function tr_habits
+if language==1; return "Привычки"; end
+return "Habits";end
+function tr_howto
+if language==1; return "Как играть"; end
+return "How to play";end
 function tr_settings
-if language==1; return "Настройки"; else if language==2; return "設定"; end; return "Settings";end
-function tr_solo
-if language==1; return "Соло"; else if language==2; return "ソロ"; end; return "Solo";end
-function tr_online
-if language==1; return "Онлайн"; else if language==2; return "オンライン"; end; return "Online";end
-function tr_console
-if language==1; return "Консоль"; else if language==2; return "コンソール"; end; return "Console";end
-function tr_up
-if language==1; return "Вверх"; else if language==2; return "上へ"; end; return "Up";end
-function tr_down
-if language==1; return "Вниз"; else if language==2; return "下へ"; end; return "Down";end
-function tr_clear
-if language==1; return "Очистить"; else if language==2; return "消去"; end; return "Clear";end
+if language==1; return "Настройки"; end
+return "Settings";end
 function tr_back
-if language==1; return "Назад"; else if language==2; return "戻る"; end; return "Back";end
-function tr_punch
-if language==1; return "Удар"; else if language==2; return "攻撃"; end; return "Punch";end
-function tr_tap_to_return
-if language==1; return "Нажмите, чтобы выйти"; else if language==2; return "タップして戻る"; end; return "Tap to return";end
-function tr_victory
-if language==1; return "Победа!"; else if language==2; return "勝利!"; end; return "Victory!";end
-function tr_opponent_defeated
-if language==1; return "Соперник побеждён"; else if language==2; return "相手を倒した"; end; return "Opponent defeated";end
-function tr_defeat
-if language==1; return "Поражение"; else if language==2; return "敗北"; end; return "Defeat";end
-function tr_opponent_won
-if language==1; return "Соперник победил"; else if language==2; return "相手の勝利"; end; return "The opponent won";end
-function tr_you_were_defeated
-if language==1; return "Вы повержены"; else if language==2; return "倒されました"; end; return "You were defeated";end
-function tr_no_connection
-if language==1; return "Нет соединения"; else if language==2; return "接続なし"; end; return "No connection";end
-function tr_reconnecting
-if language==1; return "Переподключение..."; else if language==2; return "再接続中..."; end; return "Reconnecting...";end
-function tr_connecting
-if language==1; return "Подключение..."; else if language==2; return "接続中..."; end; return "Connecting...";end
-function tr_chat
-if language==1; return "Чат"; else if language==2; return "チャット"; end; return "Chat";end
-function tr_online_chat
-if language==1; return "Онлайн чат"; else if language==2; return "オンラインチャット"; end; return "Online chat";end
-function tr_no_messages
-if language==1; return "Нет сообщений"; else if language==2; return "メッセージなし"; end; return "No messages";end
-function tr_close
-if language==1; return "Закрыть"; else if language==2; return "閉じる"; end; return "Close";end
-function tr_type_message
-if language==1; return "Введите сообщение..."; else if language==2; return "メッセージを入力..."; end; return "Type a message...";end
-function tr_send
-if language==1; return "Отправить"; else if language==2; return "送信"; end; return "Send";end
-function tr_account
-if language==1; return "Аккаунт"; else if language==2; return "アカウント"; end; return "Account";end
-function tr_login_title
-if language==1; return "Вход и регистрация"; else if language==2; return "ログイン / 登録"; end; return "Login / Register";end
-function tr_nick
-if language==1; return "Ник"; else if language==2; return "ニック"; end; return "Nick";end
-function tr_pass
-if language==1; return "Пароль"; else if language==2; return "パスワード"; end; return "Password";end
-function tr_nick_ph
-if language==1; return "Ник: 1-16 (буквы, цифры, _)"; else if language==2; return "ニック: 1-16モジ"; end; return "Nick: 1-16 (letters, digits, _)";end
-function tr_pass_ph
-if language==1; return "Пароль: от 1 символа"; else if language==2; return "パスワード: 1文字以上"; end; return "Password: 1+ chars";end
-function tr_bad_nick
-if language==1; return "Ник: от 1 до 16 символов, только буквы, цифры и _"; else if language==2; return "ニック: 1-16モジ、エイスウジト_ノミ"; end; return "Nick: 1-16 chars, letters, digits and _ only";end
-function tr_wrong_pass
-if language==1; return "Неверный пароль для этого ника"; else if language==2; return "パスワードが正しくありません"; end; return "Wrong password for this nick";end
-function tr_bad_pass
-if language==1; return "Пароль: от 1 до 32 символов"; else if language==2; return "パスワード: 1-32文字"; end; return "Password: 1-32 characters";end
-function tr_login_btn
-if language==1; return "Войти / Зарегистрироваться"; else if language==2; return "ログイン / 登録"; end; return "Log In / Register";end
-function tr_your_nick
-if language==1; return "Ваш ник: "; else if language==2; return "ニック: "; end; return "Your nick: ";end
-function tr_leaderboard
-if language==1; return "Лидерборд"; else if language==2; return "リーダーボード"; end; return "Leaderboard";end
-function tr_leaderboard_title
-if language==1; return "Лидерборд (кубки)"; else if language==2; return "リーダーボード (カップ)"; end; return "Leaderboard (cups)";end
-function tr_loading
-if language==1; return "Загрузка..."; else if language==2; return "読み込み中..."; end; return "Loading...";end
-function tr_no_data
-if language==1; return "Нет данных"; else if language==2; return "データなし"; end; return "No data";end
-function tr_disco_epilepsy
-return "Epilepsy safe"
-end
-function tr_mode_on
-if language==1; return "вкл"; else if language==2; return "オン"; end; return "on";end
-function tr_mode_off
-if language==1; return "выкл"; else if language==2; return "オフ"; end; return "off";end
-function tr_shop
-if language==1; return "Магазин"; else if language==2; return "ショップ"; end; return "Shop";end
-function tr_box
-if language==1; return "Ящик"; else if language==2; return "ボックス"; end; return "Box";end
-function tr_candies
-if language==1; return "Леденцы"; else if language==2; return "キャンディ"; end; return "Candies";end
-function tr_got
-if language==1; return "Выпало:"; else if language==2; return "ゲット:"; end; return "You got:";end
-function tr_class_ordinary
-if language==1; return "Обычный"; else if language==2; return "ノーマル"; end; return "Ordinary";end
-function tr_class_azum
-if language==1; return "Азум"; else if language==2; return "アズム"; end; return "Azum";end
-function tr_class_ordinary_desc
-if language==1; return "Стандартный боец"; else if language==2; return "ふつうのせんし"; end; return "Standard fighter";end
-function tr_class_azum_desc
-if language==1; return "Возрождение 1 раз за игру"; else if language==2; return "1試合に1回復活"; end; return "Revive once per match";end
-function tr_class_santa
-if language==1; return "Дед Мороз"; else if language==2; return "サンタ"; end; return "Santa";end
-function tr_class_santa_desc
-if language==1; return "Посох бьёт сильнее и морозит"; else if language==2; return "杖は強く氷らせる"; end; return "Staff hits harder and freezes";end
-function tr_super
-if language==1; return "Снежинка"; else if language==2; return "雪の結晶"; end; return "Snowflake";end
-function tr_class_selected
-if language==1; return "Выбран"; else if language==2; return "せんたくちゅう"; end; return "Selected";end
-function tr_class_pick
-if language==1; return "Выбрать"; else if language==2; return "えらぶ"; end; return "Select";end
-function tr_your_class
-if language==1; return "Класс: "; else if language==2; return "クラス: "; end; return "Class: ";end
-function tr_levels
-if language==1; return "Уровни"; else if language==2; return "レベル"; end; return "Levels";end
-function tr_level
-if language==1; return "Уровень"; else if language==2; return "レベル"; end; return "Level";end
-function tr_level_absorb
-if language==1; return "Поглощение урона"; else if language==2; return "ダメージ吸収"; end; return "Damage absorb";end
-function tr_level_unlock
-if language==1; return "Открыть за"; else if language==2; return "アンロック"; end; return "Unlock for";end
-function tr_cups_unit
-if language==1; return "кубков"; else if language==2; return "カップ"; end; return "cups";end
-function tr_level_locked
-if language==1; return "Сначала откройте предыдущий"; else if language==2; return "まえのレベルがひつよう"; end; return "Unlock the previous level first";end
-function tr_level_need_cups
-if language==1; return "Не хватает кубков для уровня"; else if language==2; return "カップが足りません"; end; return "Not enough cups for this level";end
-function tr_levels_soon
-if language==1; return "Скоро!"; else if language==2; return "近日公開!"; end; return "Coming soon!";end
-function tr_cups
-if language==1; return "Кубки"; else if language==2; return "カップ"; end; return "Cups";end
-function tr_buy_for num cost, str currency
-str out=""
-if language==1; out="Купить · "+cost+" "+currency
-else if language==2; out="買う · "+cost+" "+currency
-else; out="Buy · "+cost+" "+currency; end
-return out
-end
-function tr_class_need_cups
-if language==1; return "Не хватает кубков"; else if language==2; return "カップが足りない"; end; return "Not enough cups";end
-function tr_cups_reward
-if language==1; return "+5 кубков"; else if language==2; return "+5カップ"; end; return "+5 cups";end
+if language==1; return "Назад"; end
+return "Back";end
+function tr_will
+if language==1; return "Сила воли"; end
+return "Willpower";end
+function tr_record
+if language==1; return "Рекорд"; end
+return "Best";end
+function tr_day
+if language==1; return "День"; end
+return "Day";end
+function tr_craving
+if language==1; return "Тяга"; end
+return "Craving";end
+function tr_bag
+if language==1; return "Мешок"; end
+return "Bag";end
+function tr_goal
+if language==1; return "Убрано"; end
+return "Cleaned";end
+function tr_hold
+if language==1; return "Держись"; end
+return "Hold on";end
+function tr_relapse
+if language==1; return "Срыв"; end
+return "Relapse";end
+function tr_relapse_note
+if language==1; return "Завтра начнёшь заново"; end
+return "Tomorrow you start over";end
+function tr_clean_sheet
+if language==1; return "С чистого листа"; end
+return "With a clean slate";end
+function tr_days_lived
+if language==1; return "Прожито трезвых дней: "; end
+return "Sober days lived: ";end
+function tr_day_done
+if language==1; return "День прожит трезво"; end
+return "A sober day";end
+function tr_reward
+if language==1; return "Сила воли: +"; end
+return "Willpower: +";end
+function tr_tap_next
+if language==1; return "Нажмите, чтобы жить дальше"; end
+return "Tap to keep going";end
+function tr_tap_back
+if language==1; return "Нажмите, чтобы выйти"; end
+return "Tap to return";end
+function tr_shoes
+if language==1; return "Кроссовки"; end
+return "Sneakers";end
+function tr_shoes_desc
+if language==1; return "Ярик ходит быстрее"; end
+return "Yarik walks faster";end
+function tr_bigbag
+if language==1; return "Большой мешок"; end
+return "Big bag";end
+function tr_bigbag_desc
+if language==1; return "Больше мусора за раз"; end
+return "Carry more litter";end
+function tr_calm
+if language==1; return "Дыхание"; end
+return "Breathing";end
+function tr_calm_desc
+if language==1; return "Держись: сильнее и чаще"; end
+return "Hold on: stronger, sooner";end
+function tr_step
+if language==1; return "Ступень "; end
+return "Tier ";end
+function tr_buy_for num cost
+// Строка собирается в переменной: компилятор выводит тип возврата по ней.
+str s="Buy: "+cost
+if language==1; s="Купить: "+cost; end
+return s;end
+function tr_owned
+if language==1; return "Куплено"; end
+return "Owned";end
+function tr_maxed
+if language==1; return "Максимум"; end
+return "Maxed";end
+function tr_need_will
+if language==1; return "Не хватает силы воли"; end
+return "Not enough willpower";end
+function tr_lang
+if language==1; return "Язык"; end
+return "Language";end
+function tr_h1
+if language==1; return "Ярик пил и мусорил во дворе. Он решил завязать."; end
+return "Yarik used to drink and litter. He decided to quit.";end
+function tr_h2
+if language==1; return "Джойстик слева - ходить. Наступай на мусор, чтобы взять."; end
+return "Left stick moves. Step on litter to pick it up.";end
+function tr_h3
+if language==1; return "Донеси мусор до урны - двор чище, а на душе легче."; end
+return "Carry the litter to the bin: cleaner yard, lighter heart.";end
+function tr_h4
+if language==1; return "Красная полоса - тяга. Бутылки во дворе её разгоняют."; end
+return "The red bar is craving. Bottles in the yard raise it.";end
+function tr_h5
+if language==1; return "Кнопка \"Держись\" сбивает тягу и отгоняет бутылки."; end
+return "The Hold on button cuts craving and pushes bottles away.";end
+function tr_h6
+if language==1; return "Тяга дошла до конца - срыв, и всё с первого дня."; end
+return "Craving maxed out means a relapse: back to day one.";end
+function tr_h7
+if language==1; return "Сила воли остаётся навсегда - на неё берут привычки."; end
+return "Willpower stays forever: spend it on habits.";end
