@@ -27,7 +27,7 @@
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
-extern double super_cd, player_freeze, pfreeze_a, poison_a;
+extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern void *player, *enemy, *punch, *gift;
@@ -37,6 +37,7 @@ extern double enemy_cooldown_min, enemy_cooldown_max;
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
 #define ENEMY_ANGLE 5
 #define ENEMY_STATE 6
+#define ENEMY_STATE_TIME 7
 #define ENEMY_COOLDOWN 8
 #define ENEMY_FREEZE 23
 #define ENEMY_FREEZE_SLOW 24
@@ -174,6 +175,28 @@ static void run_frames(int n) {
         ds_graphics_end_frame();
         g_frame++;
     }
+}
+
+/* Кадр с принудительно спрятанной полосой удара игрока (aim_a=0 ПОСЛЕ update,
+ * ПЕРЕД draw): спрайты и состояние те же, отличается только хитбокс — так
+ * можно пиксельно проверять, под кем лежит полоса. */
+static void run_frame_aim_off(void) {
+    dt = 1.0 / 60.0;
+    if (script_active) {
+        if (!ds_call_protected(protected_update, NULL, "update")) { script_active = 0; return; }
+    }
+    aim_a = 0;
+    Buffer buf = { g_pixels, g_w, g_h, g_w };
+    if (!ds_graphics_begin_frame(&buf)) return;
+    if (script_active) ds_call_protected(protected_draw, &buf, "draw");
+    ds_graphics_end_frame();
+    g_frame++;
+}
+
+static uint32_t *snap_frame(void) {
+    uint32_t *s = (uint32_t *)malloc((size_t)g_w * g_h * 4u);
+    if (s) memcpy(s, g_pixels, (size_t)g_w * g_h * 4u);
+    return s;
 }
 
 static int start_script(void) {
@@ -765,6 +788,94 @@ int main(void) {
             }
         }
         printf("=== santa snowflake: 3s cd, froze the enemy, no damage (hp %g)\n", e[ENEMY_HP]);
+        tap_back(); wait_state(0, 60);
+    }
+
+    /* --- 16. Слои отрисовки: хитбокс выше тени, но под персонажами --- */
+    /* Полоса удара — чёрный полупрозрачный слой, поэтому сравниваем кадры:
+     * (A) с полосой и (B) без неё, при одинаковых спрайтах. Если полоса
+     * лежит ПОД спрайтом, пиксели непрозрачных частей спрайта совпадают;
+     * если НАД спрайтом — затемняются и не совпадают нигде. */
+    tap_play(); wait_state(2, 30);
+    tap_solo();
+    if (!wait_state(1, 30)) { printf("!! layer solo did not start, state=%g\n", game_state); return 3; }
+    run_frames(5);
+    {
+        double *pl = (double *)player;
+        double *e = (double *)enemy;
+        uint32_t *fa = NULL, *fb = NULL;
+
+        /* Леденцы в сторону от зоны замера, чтобы случайный спавн не влиял
+         * на сравнение кадров. */
+        for (int ci = 0; ci < 5; ci++) { arr_set(candy_x, ci, 120 + ci * 40); arr_set(candy_y, ci, 660); }
+
+        /* 16a. Полоса БОТА накрывает спрайт игрока: враг в замахе прямо
+         * перед игроком (полоса идёт влево, сквозь плотную часть спрайта).
+         * Контрольный кадр B: враг убран далеко — те же спрайты игрока,
+         * но без его полосы. */
+        pl[PLAYER_X] = 560; pl[PLAYER_Y] = 360; pl[PLAYER_ANGLE] = 0; pl[PLAYER_HP] = 10;
+        e[ENEMY_X] = 650; e[ENEMY_Y] = 360;
+        e[ENEMY_ANGLE] = atan2(pl[PLAYER_Y] - e[ENEMY_Y], pl[PLAYER_X] - e[ENEMY_X]);
+        e[ENEMY_STATE] = 1; e[ENEMY_STATE_TIME] = 1.0; e[ENEMY_POISON] = 0;
+        pl[PLAYER_HP] = 10;
+        run_frames(1);
+        fa = snap_frame();
+        e[ENEMY_X] = 120; e[ENEMY_Y] = 120; e[ENEMY_STATE] = 1; e[ENEMY_STATE_TIME] = 1.0; e[ENEMY_ANGLE] = 0;
+        pl[PLAYER_HP] = 10;
+        run_frames(1);
+        fb = snap_frame();
+        if (!fa || !fb) { printf("!! layer test OOM\n"); free(fa); free(fb); return 3; }
+        {
+            /* точка только на полосе (вне спрайтов/теней): полоса видна */
+            uint32_t qa = fa[410 * g_w + 590], qb = fb[410 * g_w + 590];
+            if (qa == qb) { printf("!! enemy hitbox bar not visible at control point\n"); free(fa); free(fb); return 3; }
+            /* сетка по перекрытию полоса x плотная часть спрайта игрока */
+            int same = 0, total = 0;
+            for (int y = 335; y <= 365; y += 3) {
+                for (int x = 550; x <= 566; x += 3) {
+                    total++;
+                    if (fa[y * g_w + x] == fb[y * g_w + x]) same++;
+                }
+            }
+            if (same * 10 < total * 3) {
+                printf("!! enemy hitbox draws OVER the player sprite (only %d/%d pixels match)\n", same, total);
+                free(fa); free(fb); return 3;
+            }
+            printf("=== layers: enemy hitbox under player sprite (%d/%d px), bar visible\n", same, total);
+        }
+        free(fa); free(fb);
+
+        /* 16b. Полоса ИГРОКА накрывает спрайт врага: удар вправо сквозь врага.
+         * Кадр A: обычный; кадр B: та же сцена, но aim_a=0 (полоса спрятана
+         * уже после update — спрайты и логика не меняются). */
+        pl[PLAYER_X] = 540; pl[PLAYER_Y] = 360; pl[PLAYER_ANGLE] = 0;
+        e[ENEMY_X] = 600; e[ENEMY_Y] = 360; e[ENEMY_STATE] = 0; e[ENEMY_POISON] = 0;
+        e[ENEMY_ANGLE] = atan2(pl[PLAYER_Y] - e[ENEMY_Y], pl[PLAYER_X] - e[ENEMY_X]);
+        punch_left = 0.2; pl[PLAYER_HP] = 10;
+        run_frames(1);
+        fa = snap_frame();
+        punch_left = 0.2; pl[PLAYER_HP] = 10;
+        e[ENEMY_STATE] = 0;
+        run_frame_aim_off();
+        fb = snap_frame();
+        if (!fa || !fb) { printf("!! layer test OOM\n"); free(fa); free(fb); return 3; }
+        {
+            uint32_t qa = fa[409 * g_w + 640], qb = fb[409 * g_w + 640];
+            if (qa == qb) { printf("!! player hitbox bar not visible at control point\n"); free(fa); free(fb); return 3; }
+            int same = 0, total = 0;
+            for (int y = 322; y <= 398; y += 4) {
+                for (int x = 592; x <= 638; x += 5) {
+                    total++;
+                    if (fa[y * g_w + x] == fb[y * g_w + x]) same++;
+                }
+            }
+            if (same * 10 < total * 3) {
+                printf("!! player hitbox draws OVER the enemy sprite (only %d/%d pixels match)\n", same, total);
+                free(fa); free(fb); return 3;
+            }
+            printf("=== layers: player hitbox under enemy sprite (%d/%d px), bar visible\n", same, total);
+        }
+        free(fa); free(fb);
         tap_back(); wait_state(0, 60);
     }
 

@@ -713,29 +713,67 @@ function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num 
 num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
 if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
 end
-function draw_player_model num x, num y, num ang, num punching
+function draw_player_shadow num x, num y, num ang, num punching
+// Тень игрока: чёрный силуэт той же текстуры, чуть левее и ниже.
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str t=player_idle_tex()
 if punching==1; t=player_punch_tex(); end
-// Тень: чёрный силуэт той же текстуры, чуть левее и ниже, развёрнута как персонаж.
 tex_tint x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24)
+end
+function draw_player_body num x, num y, num ang, num punching
+// Сам спрайт игрока — верхний слой персонажа.
+num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+str t=player_idle_tex()
+if punching==1; t=player_punch_tex(); end
 tex x-hw,y-hw,t,sprite_a(ang),ps
 end
-function draw_remote_model num x, num y, num ang, num cls, num punching
+function draw_remote_shadow num x, num y, num ang, num cls, num punching
+// Тень сетевого соперника.
 num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
 str t=class_idle_tex(cls)
 if punching==1; t=class_punch_tex(cls); end
 tex_tint x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24)
+end
+function draw_remote_body num x, num y, num ang, num cls, num punching
+// Спрайт сетевого соперника.
+num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+str t=class_idle_tex(cls)
+if punching==1; t=class_punch_tex(cls); end
 tex x-hw,y-hw,t,sprite_a(ang),ps
 end
 function draw_grass
 num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end
 end
 function draw_field
+// Только затемнение арены — самый нижний слой после травы. Сам бой рисуется
+// раздельными слоями (тени -> хитбоксы -> персонажи), см. draw_game/draw_online.
 rect 0,0,screen_w,screen_h,0x33000000
+end
+function draw_player_shadow_layer
+if punch_left>0; draw_player_shadow player.x,player.y,player.angle,1
+else; draw_player_shadow player.x,player.y,player.angle,0; end
+end
+function draw_player_hitbox_layer
 if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
-if punch_left>0; draw_player_model player.x,player.y,player.angle,1
-else; draw_player_model player.x,player.y,player.angle,0; end
+end
+function draw_player_body_layer
+if punch_left>0; draw_player_body player.x,player.y,player.angle,1
+else; draw_player_body player.x,player.y,player.angle,0; end
+end
+function enemy_battle_tex
+if enemy.state==1||enemy.state==2; return PUNCH_TEX; end
+return ORDINARY_TEX
+end
+function draw_enemy_shadow
+num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
+tex_tint enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,enemy_battle_tex(),sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24)
+end
+function draw_enemy_hitbox
+if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
+end
+function draw_enemy_body
+num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
+tex enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es
 end
 function draw_controls
 ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
@@ -761,14 +799,17 @@ end
 function draw_game
 draw_grass
 draw_field
+// Нормальные слои боя: сначала ВСЕ тени, потом предметы на земле, затем
+// хитбоксы ударов, снаряды — и только после сами персонажи. Так чёрная
+// полоса удара лежит выше тени, но никогда не закрывает ни игрока, ни врага.
+draw_player_shadow_layer
+draw_enemy_shadow
 draw_candies
+draw_player_hitbox_layer
+draw_enemy_hitbox
 draw_gift; draw_boom
-if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
-num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
-str etex=ORDINARY_TEX
-if enemy.state==1||enemy.state==2; etex=PUNCH_TEX; end
-tex_tint enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,etex,sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24)
-tex enemy.x-ehw,enemy.y-ehw,etex,sprite_a(enemy.angle),es
+draw_player_body_layer
+draw_enemy_body
 draw_freeze
 draw_poison
 num w=screen_w/4
@@ -865,26 +906,49 @@ function draw_online
 draw_grass
 draw_disco
 draw_field
+// Те же нормальные слои, что и в соло: ВСЕ тени -> хитбоксы ударов ->
+// снаряды -> сами персонажи. Хитбокс (свой и чужой) выше тени, но ниже
+// любого спрайта — и игрока, и соперников.
+draw_player_shadow_layer
+num i=0, b=0, rb=0, rx=0, ry=0, ra=0, rcls=0, punching=0
+loop i<max_players
+b=i*remote_fields; rb=i*punch_fields
+if arr_get(remotes,b+5)==1
+rx=arr_get(remotes,b+1); ry=arr_get(remotes,b+2); ra=arr_get(remotes,b+3); rcls=arr_get(remotes,b+10)
+punching=0
+if arr_get(remote_punches,rb)==1; punching=1; ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3)); end
+draw_remote_shadow rx,ry,ra,rcls,punching
+end
+i=i+1
+end
+draw_player_hitbox_layer
+i=0
+loop i<max_players
+b=i*remote_fields; rb=i*punch_fields
+if arr_get(remotes,b+5)==1&&arr_get(remote_punches,rb)==1
+draw_punch_box arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1
+end
+i=i+1
+end
+draw_gift; draw_boom; draw_remote_snow
+draw_player_body_layer
 num hw=25*cube_scale*player_scale
 str myn=net_player_nick(net_slot())
 if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end
-num i=0
+i=0
 loop i<max_players
-num b=i*remote_fields
+b=i*remote_fields; rb=i*punch_fields
 if arr_get(remotes,b+5)==1
-num rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3), slot=i, rb=slot*punch_fields
-str rn=net_player_nick(slot)
-num rcls=arr_get(remotes,b+10)
-if arr_get(remote_punches,rb)==1
-num px=arr_get(remote_punches,rb+1), py=arr_get(remote_punches,rb+2), pdx=arr_get(remote_punches,rb+3), pdy=arr_get(remote_punches,rb+4)
-draw_punch_box px,py,pdx,pdy,punch_reach,punch_width,1
-draw_remote_model rx,ry,atan2(pdy,pdx),rcls,1
-else; draw_remote_model rx,ry,ra,rcls,0; end
+rx=arr_get(remotes,b+1); ry=arr_get(remotes,b+2); ra=arr_get(remotes,b+3); rcls=arr_get(remotes,b+10)
+punching=0
+if arr_get(remote_punches,rb)==1; punching=1; ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3)); end
+draw_remote_body rx,ry,ra,rcls,punching
+str rn=net_player_nick(i)
 if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5; end
 end
 i=i+1
 end
-draw_gift; draw_boom; draw_remote_snow; draw_player_freeze; draw_player_poison
+draw_player_freeze; draw_player_poison
 draw_snow
 num w=screen_w/3
 hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
