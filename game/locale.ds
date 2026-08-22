@@ -168,3 +168,102 @@ return "Craving maxed out means a relapse: back to day one.";end
 function tr_h9
 if language==1; return "Сила воли остаётся навсегда и качается бесконечно."; end
 return "Willpower stays forever and upgrades never stop.";end
+
+// --- реплики и шутки --------------------------------------------------
+// Собутыльники зовут выпить. Номер реплики выбирается случайно.
+function buddy_line num i
+str s="Yarik, one beer?"
+if language==1
+if i==0; s="Ярик, по пивку?"
+else if i==1; s="Ну одну, чисто символически!"
+else if i==2; s="Ты чё, не мужик?"
+else if i==3; s="Айда за гаражи!"
+else; s="Я угощаю, брат!"; end
+else
+if i==0; s="Yarik, one beer?"
+else if i==1; s="Just one, symbolic!"
+else if i==2; s="Come on, be a man!"
+else if i==3; s="Let's go behind the garages!"
+else; s="It is on me, bro!"; end
+end
+return s;end
+// Что кричит Ярик, когда жмёт «Держись».
+function refuse_line num i
+str s="Not today!"
+if language==1
+if i==0; s="Не сегодня!"
+else if i==1; s="Я завязал!"
+else if i==2; s="Мне и так хорошо"
+else; s="Пас, мужики!"; end
+else
+if i==0; s="Not today!"
+else if i==1; s="I quit!"
+else if i==2; s="I feel fine already"
+else; s="Pass, guys!"; end
+end
+return s;end
+// Похвала за донесённый до урны мусор.
+function praise_line num i
+str s="Nice!"
+if language==1
+if i==0; s="Красава!"
+else if i==1; s="Двор чище!"
+else if i==2; s="Так держать!"
+else if i==3; s="Мама бы гордилась"
+else; s="Чистота!"; end
+else
+if i==0; s="Nice one!"
+else if i==1; s="Cleaner yard!"
+else if i==2; s="Keep it up!"
+else if i==3; s="Mom would be proud"
+else; s="Spotless!"; end
+end
+return s;end
+// Холодильник ночью подаёт голос.
+function fridge_line num i
+str s="Yariiik..."
+if language==1
+if i==0; s="Ярииик..."
+else if i==1; s="Тут холодненькое"
+else if i==2; s="Одна не считается"
+else; s="Я даже не заперт"; end
+else
+if i==0; s="Yariiik..."
+else if i==1; s="Something cold in here"
+else if i==2; s="One does not count"
+else; s="I am not even locked"; end
+end
+return s;end
+function tr_meow
+if language==1; return "Мур!"; end
+return "Purr!";end
+function tr_combo
+if language==1; return "Комбо x"; end
+return "Combo x";end
+function tr_drinks
+if language==1; return "Взято"; end
+return "Taken";end
+function tr_alcotest
+if language==1; return "Проверка на алкоголь"; end
+return "Alcohol test";end
+function tr_taken_today
+if language==1; return "Взял у собутыльников: "; end
+return "Taken from buddies: ";end
+function tr_verdict_clean
+if language==1; return "Чисто. Ни капли!"; end
+return "Clean. Not a drop!";end
+function tr_verdict_smell
+if language==1; return "Есть запашок, но живём"; end
+return "Smells a bit, but fine";end
+function tr_verdict_fail
+if language==1; return "Тест провален"; end
+return "Test failed";end
+function tr_verdict_fail_note
+if language==1; return "Столько взял - значит, пил"; end
+return "That many means he drank";end
+function tr_sober_bonus
+if language==1; return "Трезвый день: +"; end
+return "Sober day bonus: +";end
+function tr_oops
+if language==1; return "Ну по чуть-чуть..."; end
+return "Well, just a sip...";end

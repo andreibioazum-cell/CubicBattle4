@@ -11,8 +11,10 @@ num btn_w=300, btn_h=64, back_y=32, pi=3.1415926535
 // Текстуры. Спрайты нарисованы «лицом вверх», поэтому к игровому углу
 // прибавляется pi/2 (см. sprite_a в game.ds).
 str YARD="yard.png", YARIK="yarik.png", YARIK_HOLD="yarik_hold.png"
+str YARIK_W1="yarik_w1.png", YARIK_W2="yarik_w2.png", BUDDY_W="buddy_w.png"
 str TRASH="trash.png", BOTTLE="bottle.png", BIN="bin.png", SHEET="sheet.png"
 str FLOOR="floor.png", FRIDGE="fridge.png", BED="bed.png", FOOD="food.png"
+str BUDDY="buddy.png", CAT="cat.png"
 
 // Размеры спрайтов в пикселях (нужны, чтобы рисовать от центра).
 num yarik_px=96, item_px=64, bin_px=96, big_px=128
@@ -20,12 +22,34 @@ num player_size=34, pickup_r=44, bin_r=62, shadow_off=8, shadow_alpha=0x55
 
 // Ходьба. Каждая ступень «Кроссовок» добавляет speed_step к скорости.
 num walk_speed=200, speed_step=0.06
+// Анимация шага: кадры сменяются step_rate раз в секунду, плюс лёгкое
+// покачивание спрайта (step_wobble радиан) и «пружинка» по размеру.
+num step_rate=7, step_wobble=0.07, step_bounce=0.04
 
 // Тяга (0..max_craving). Растёт сама и быстрее с каждым днём; бутылка рядом
 // тянет сильнее, попадание бутылки — резкий скачок.
 num max_craving=100, craving_base=2.0, craving_step=1.1
-num craving_near=150, craving_near_rate=3.2, bottle_hit=14
-num bottle_speed=54, bottle_speed_step=7
+num craving_near=170, craving_near_rate=3.2
+
+// Собутыльники - бывшие друзья Ярика. Ходят за ним по двору, зовут «по пивку»
+// и суют бутылку. Догнал - тяга скачет, а сам он на пару секунд отваливает.
+// «Держись» разгоняет всех вокруг: они обижаются и убегают.
+num buddy_speed=58, buddy_speed_step=6, buddy_hit=14
+num buddy_flee_time=3.0, buddy_flee_speed=260, buddy_wobble=1.4
+num buddy_say_r=320, buddy_say_time=3.5
+// Наступил на собутыльника - взял у него бутылку. Вечером будет проверка на
+// алкоголь: до drink_limit бутылок ещё прощается (но без премии), а на
+// drink_limit тест провален и весь забег обнуляется. Совсем трезвый день
+// даёт премию sober_bonus.
+num drink_limit=3, sober_bonus=5
+
+// Дворовый кот: бродит сам по себе, погладил - на душе теплее.
+num cat_speed=74, cat_relief=6, cat_cd=6.0, cat_turn=2.0
+
+// Всплывающие надписи («Красава!», «Не сегодня!», «+3») и комбо за быструю уборку.
+num pop_time=1.4, pop_rise=54, combo_time=2.5, combo_min=3, combo_bonus=3
+// Конфетти на экранах удачи.
+num confetti_n=30
 
 // Кнопка «Держись»: сбивает часть тяги, отталкивает бутылки, а ночью ещё и
 // ненадолго отпускает тяга к холодильнику.
@@ -35,8 +59,8 @@ num hold_anim=0.4, hold_push=320, hold_push_r=210, hold_pull_off=1.2
 // Мешок: сколько мусора Ярик носит за раз, пока не дойдёт до урны.
 num bag_base=4, bag_step=2, deposit_relief=3
 
-// День: сколько мусора надо донести до урны и сколько бутылок во дворе.
-num goal_base=4, trash_extra=2, bottles_base=1, bottles_max=6
+// День: сколько мусора надо донести до урны и сколько собутыльников во дворе.
+num goal_base=4, trash_extra=2, buddies_base=1, buddies_max=6
 num spawn_margin=70, day_reward=5, trash_reward=1
 
 // Ночь. Ярик стоит у двери, кровать в другом конце комнаты, а холодильник

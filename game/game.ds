@@ -1,7 +1,8 @@
 // game.ds — день во дворе и ночь в квартире.
-// День: убрать норму мусора в урну, не дав тяге дойти до конца.
+// День: убрать норму мусора в урну, не набрав бутылок у собутыльников.
+//       Вечером - проверка на алкоголь: сколько взял, столько и спросят.
 // Ночь: пройти мимо холодильника до кровати. Холодильник тянет к себе тем
-// сильнее, чем выше тяга; еда сбивает тягу, но лишняя порция - срыв.
+//       сильнее, чем выше тяга; еда сбивает тягу, но лишняя порция - срыв.
 
 function sprite_a num a
 // Спрайты нарисованы «лицом вверх», игровой угол 0 смотрит вправо.
@@ -34,9 +35,9 @@ end
 function day_goal num d
 return goal_base+d
 end
-function day_bottles num d
-num n=bottles_base+floor(d/2)
-if n>bottles_max; n=bottles_max; end
+function day_buddies num d
+num n=buddies_base+floor(d/2)
+if n>buddies_max; n=buddies_max; end
 return n
 end
 function rnd_x
@@ -56,6 +57,80 @@ function place_controls
 joy.x=130; joy.y=screen_h-150; joy.r=70; act_x=screen_w-140; act_y=screen_h-150
 act_id=-1; drop_joy
 end
+// --- всплывающие надписи ----------------------------------------------
+// kind: 0 - похвала, 1 - отказ («Не сегодня!»), 2 - комбо, 3 - кот,
+// 4 - взял бутылку, 5 - плюс к силе воли.
+function pop_text num kind, num id
+str s=""
+if kind==0; s=praise_line(id)
+else if kind==1; s=refuse_line(id)
+else if kind==2; s=tr_combo()+id
+else if kind==3; s=tr_meow()
+else if kind==4; s=tr_oops()
+else; s="+"+id; end
+return s
+end
+function pop_color num kind
+if kind==1; return 0x80D8FF; end
+if kind==2; return 0xFFD54A; end
+if kind==3; return 0xFFAB91; end
+if kind==4; return 0xFF8A80; end
+if kind==5; return 0xFFD54A; end
+return 0xB9F6CA
+end
+function add_pop num x, num y, num kind, num id
+// Свободных слотов ищем среди погасших надписей, чтобы массив не рос вечно.
+num i=0
+loop i<arr_len(pop_t)
+if arr_get(pop_t,i)<=0
+arr_set pop_x,i,x; arr_set pop_y,i,y; arr_set pop_t,i,pop_time
+arr_set pop_kind,i,kind; arr_set pop_id,i,id
+return
+end
+i=i+1
+end
+arr_push pop_x,x; arr_push pop_y,y; arr_push pop_t,pop_time
+arr_push pop_kind,kind; arr_push pop_id,id
+end
+function clear_pops
+arr_clear pop_x; arr_clear pop_y; arr_clear pop_t; arr_clear pop_kind; arr_clear pop_id
+end
+function update_pops
+num i=0
+loop i<arr_len(pop_t)
+num t=arr_get(pop_t,i)
+if t>0
+t=t-dt
+if t<0; t=0; end
+arr_set pop_t,i,t
+end
+i=i+1
+end
+end
+function draw_pops
+num i=0
+loop i<arr_len(pop_t)
+num t=arr_get(pop_t,i)
+if t>0
+num k=t/pop_time
+num a=floor(255*clamp(k*1.6,0,1))
+str s=pop_text(arr_get(pop_kind,i),arr_get(pop_id,i))
+num sc=0.6, w=text_ink_width(s)*sc
+num px=arr_get(pop_x,i)-w/2, py=arr_get(pop_y,i)-pop_rise*(1-k)
+col c=(((unsigned)(int)a)<<24)|((unsigned)(int)pop_color(arr_get(pop_kind,i)))
+text_scaled s,px,py,c,sc
+end
+i=i+1
+end
+end
+function bubble str s, num x, num y
+// Облачко реплики над головой.
+num sc=0.5, w=text_ink_width(s)*sc+26, h=34
+roundrect x-w/2,y-h,w,h,12,0xEEFFFFFF
+circle x,y+2,6,0xEEFFFFFF
+text_in_box s,x-w/2,y-h,w,h,0x1A1A2E,sc
+end
+// --- двор --------------------------------------------------------------
 function place_bin
 num k=0
 bin_x=rnd_x(); bin_y=rnd_y()
@@ -79,34 +154,41 @@ arr_push trash_x,tx; arr_push trash_y,ty; arr_push trash_on,1
 i=i+1
 end
 end
-function spawn_bottle_at num i
-// Бутылка приходит во двор из-за края экрана и ползёт к Ярику.
+function spawn_buddy_at num i
+// Собутыльник приходит во двор из-за края экрана.
 num side=rand()%4, bx=rnd_x(), by=rnd_y()
-if side==0; bx=-40; by=rnd_y()
-else if side==1; bx=screen_w+40; by=rnd_y()
-else if side==2; bx=rnd_x(); by=-40
-else; bx=rnd_x(); by=screen_h+40; end
-arr_set bot_x,i,bx; arr_set bot_y,i,by; arr_set bot_dx,i,0; arr_set bot_dy,i,0
+if side==0; bx=-60; by=rnd_y()
+else if side==1; bx=screen_w+60; by=rnd_y()
+else if side==2; bx=rnd_x(); by=-60
+else; bx=rnd_x(); by=screen_h+60; end
+arr_set bud_x,i,bx; arr_set bud_y,i,by; arr_set bud_step,i,0
+arr_set bud_flee,i,0; arr_set bud_say,i,rand()%5; arr_set bud_say_t,i,buddy_say_time
 end
-function spawn_bottles
-arr_clear bot_x; arr_clear bot_y; arr_clear bot_dx; arr_clear bot_dy
-num n=day_bottles(day), i=0
+function spawn_buddies
+arr_clear bud_x; arr_clear bud_y; arr_clear bud_step; arr_clear bud_flee
+arr_clear bud_say; arr_clear bud_say_t
+num n=day_buddies(day), i=0
 loop i<n
-arr_push bot_x,0; arr_push bot_y,0; arr_push bot_dx,0; arr_push bot_dy,0
-spawn_bottle_at i
+arr_push bud_x,0; arr_push bud_y,0; arr_push bud_step,0
+arr_push bud_flee,0; arr_push bud_say,0; arr_push bud_say_t,0
+spawn_buddy_at i
 i=i+1
 end
+end
+function place_cat
+cat_x=rnd_x(); cat_y=rnd_y(); cat_dx=1; cat_dy=0; cat_turn_t=0; cat_cool=0; cat_step=0
 end
 function drop_joy
 joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
 end
 function start_day num d
-phase=0; day=d; goal=day_goal(d); cleaned=0; craving=0; hold_cd=0; over=0; last_reward=0
-eaten=0; pull_off=0
+phase=0; day=d; goal=day_goal(d); cleaned=0; craving=0; hold_cd=0; over=0; over_t=0
+last_reward=0; eaten=0; pull_off=0; drinks=0; combo=0; combo_t=0
 yarik.x=screen_w/2; yarik.y=screen_h/2; yarik.angle=0; yarik.bag=0; yarik.hold=0
-place_controls
-place_bin; spawn_trash; spawn_bottles
-ds_log "day %g starts: goal %g",day,goal
+yarik.step=0; yarik.moving=0
+place_controls; clear_pops
+place_bin; spawn_trash; spawn_buddies; place_cat
+ds_log "day %g starts: goal %g, buddies %g",day,goal,day_buddies(day)
 end
 // --- ночь --------------------------------------------------------------
 function spawn_food
@@ -126,13 +208,14 @@ end
 end
 function start_night
 // Тяга не обнуляется полностью: вечер тяжелее, чем утро.
-phase=1; over=0; last_reward=0; eaten=0; pull_off=0; hold_cd=0; night_t=0
+phase=1; over=0; over_t=0; last_reward=0; eaten=0; pull_off=0; hold_cd=0; night_t=0
 craving=craving*night_carry
-yarik.bag=0; yarik.hold=0; yarik.angle=0
-place_controls
+yarik.bag=0; yarik.hold=0; yarik.angle=0; yarik.step=0; yarik.moving=0
+place_controls; clear_pops
 fridge_x=170; fridge_y=screen_h/2-60
 bed_x=screen_w-170; bed_y=screen_h/2-40
 yarik.x=screen_w/2-60; yarik.y=screen_h-260
+fridge_say=rand()%4; fridge_say_t=buddy_say_time
 spawn_food
 ds_log "night %g starts: craving %g, food limit %g",day,craving,food_limit()
 end
@@ -162,10 +245,15 @@ end
 eaten=eaten+1
 craving=craving-food_relief
 if craving<0; craving=0; end
+add_pop yarik.x,yarik.y-60,0,rand()%5
 ds_log "ate %g/%g, craving %g",eaten,food_limit(),craving
 end
 i=i+1
 end
+end
+function update_fridge_talk
+fridge_say_t=fridge_say_t-dt
+if fridge_say_t<=0; fridge_say=rand()%4; fridge_say_t=buddy_say_time; end
 end
 function update_night
 if dist(yarik.x,yarik.y,fridge_x,fridge_y)<fridge_r; finish_run 5; return; end
@@ -173,67 +261,107 @@ eat_food
 if over!=0; return; end
 if dist(yarik.x,yarik.y,bed_x,bed_y)<bed_r; finish_night; return; end
 apply_fridge_pull
+update_fridge_talk
 craving=craving+night_craving_rate()*dt
 if craving>=max_craving; craving=max_craving; finish_run 1; end
 end
 // --- общие правила забега ---------------------------------------------
 function move_yarik
 num spd=move_speed()
-yarik.x=yarik.x+joy.dx*spd*dt; yarik.y=yarik.y+joy.dy*spd*dt
 num jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy)
-if jm>0.15; yarik.angle=atan2(joy.dy,joy.dx); end
+yarik.x=yarik.x+joy.dx*spd*dt; yarik.y=yarik.y+joy.dy*spd*dt
+if jm>0.15; yarik.angle=atan2(joy.dy,joy.dx); yarik.moving=1; yarik.step=yarik.step+dt*step_rate*jm
+else; yarik.moving=0; end
 if yarik.x<player_size; yarik.x=player_size; end
 if yarik.x>screen_w-player_size; yarik.x=screen_w-player_size; end
 if yarik.y<player_size; yarik.y=player_size; end
 if yarik.y>screen_h-player_size; yarik.y=screen_h-player_size; end
 end
 function do_hold
-// «Держись»: Ярик выдыхает, сбивает тягу, отталкивает бутылки, а ночью на
-// hold_pull_off секунд вырывается из хватки холодильника.
+// «Держись»: Ярик выдыхает, сбивает тягу, разгоняет собутыльников, а ночью
+// на hold_pull_off секунд вырывается из хватки холодильника.
 if hold_cd>0; return; end
 if over!=0; return; end
 hold_cd=hold_cool(); yarik.hold=hold_anim
 craving=craving-hold_gain()
 if craving<0; craving=0; end
+add_pop yarik.x,yarik.y-70,1,rand()%4
 if phase==1; pull_off=hold_pull_off; end
 num i=0
-loop i<arr_len(bot_x)
-num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
-num d=dist(bx,by,yarik.x,yarik.y)
-if d<hold_push_r
-if d<1; d=1; end
-arr_set bot_dx,i,(bx-yarik.x)/d*hold_push
-arr_set bot_dy,i,(by-yarik.y)/d*hold_push
+loop i<arr_len(bud_x)
+if dist(arr_get(bud_x,i),arr_get(bud_y,i),yarik.x,yarik.y)<hold_push_r
+arr_set bud_flee,i,buddy_flee_time+1
 end
 i=i+1
 end
 ds_log "hold on: craving %g",craving
 end
 function craving_rate
-// Тяга сама растёт с каждым днём, а близкая бутылка разгоняет её сильнее.
+// Тяга сама растёт с каждым днём, а собутыльник рядом разгоняет её сильнее.
 num r=craving_base+craving_step*(day-1), i=0
-loop i<arr_len(bot_x)
-if dist(arr_get(bot_x,i),arr_get(bot_y,i),yarik.x,yarik.y)<craving_near; r=r+craving_near_rate; end
+loop i<arr_len(bud_x)
+if dist(arr_get(bud_x,i),arr_get(bud_y,i),yarik.x,yarik.y)<craving_near; r=r+craving_near_rate; end
 i=i+1
 end
 return r
 end
-function update_bottles
-num sp=bottle_speed+bottle_speed_step*(day-1), i=0
-loop i<arr_len(bot_x)
-num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
-num px=arr_get(bot_dx,i), py=arr_get(bot_dy,i)
+function update_buddies
+num sp=buddy_speed+buddy_speed_step*(day-1), i=0
+loop i<arr_len(bud_x)
+num bx=arr_get(bud_x,i), by=arr_get(bud_y,i), fl=arr_get(bud_flee,i)
 num dx=yarik.x-bx, dy=yarik.y-by, d=sqrt(dx*dx+dy*dy)
 if d<1; d=1; end
-bx=bx+(dx/d*sp+px)*dt; by=by+(dy/d*sp+py)*dt
-px=px-px*3*dt; py=py-py*3*dt
-arr_set bot_x,i,bx; arr_set bot_y,i,by; arr_set bot_dx,i,px; arr_set bot_dy,i,py
-if d<player_size+18
-craving=craving+bottle_hit
-spawn_bottle_at i
-ds_log "bottle hit: craving %g",craving
+num vx=dx/d, vy=dy/d, spd=sp
+if fl>0
+// Обиделся и убегает.
+vx=-vx; vy=-vy; spd=buddy_flee_speed
+fl=fl-dt
+if fl<0; fl=0; end
+arr_set bud_flee,i,fl
+end
+// Идут они не по линейке, а вразвалочку.
+num wob=sin(night_t*3+i*1.7)*buddy_wobble*0.35
+bx=bx+(vx-vy*wob)*spd*dt; by=by+(vy+vx*wob)*spd*dt
+if bx<-90; bx=-90; end
+if bx>screen_w+90; bx=screen_w+90; end
+if by<-90; by=-90; end
+if by>screen_h+90; by=screen_h+90; end
+arr_set bud_x,i,bx; arr_set bud_y,i,by
+arr_set bud_step,i,arr_get(bud_step,i)+dt*step_rate*0.8
+num st=arr_get(bud_say_t,i)-dt
+if st<=0; st=buddy_say_time; arr_set bud_say,i,rand()%5; end
+arr_set bud_say_t,i,st
+// Наступил на собутыльника - взял у него бутылку. Вечером спросят.
+if d<player_size+26&&fl<=0
+drinks=drinks+1
+craving=craving+buddy_hit
+arr_set bud_flee,i,buddy_flee_time
+add_pop yarik.x,yarik.y-70,4,0
+ds_log "took a bottle from a buddy: drinks %g, craving %g",drinks,craving
 end
 i=i+1
+end
+end
+function update_cat
+// Кот гуляет сам по себе и меняет направление, когда ему вздумается.
+cat_turn_t=cat_turn_t-dt
+if cat_turn_t<=0
+cat_turn_t=cat_turn+rand()%2
+num a=(rand()%628)/100
+cat_dx=cos(a); cat_dy=sin(a)
+end
+cat_x=cat_x+cat_dx*cat_speed*dt; cat_y=cat_y+cat_dy*cat_speed*dt
+cat_step=cat_step+dt*step_rate
+if cat_x<40; cat_x=40; cat_dx=-cat_dx; end
+if cat_x>screen_w-40; cat_x=screen_w-40; cat_dx=-cat_dx; end
+if cat_y<40; cat_y=40; cat_dy=-cat_dy; end
+if cat_y>screen_h-40; cat_y=screen_h-40; cat_dy=-cat_dy; end
+if cat_cool>0; cat_cool=cat_cool-dt; if cat_cool<0; cat_cool=0; end; end
+if cat_cool<=0&&dist(cat_x,cat_y,yarik.x,yarik.y)<player_size+22
+cat_cool=cat_cd
+craving=craving-cat_relief
+if craving<0; craving=0; end
+add_pop cat_x,cat_y-46,3,0
 end
 end
 function pickup_trash
@@ -241,23 +369,35 @@ num i=0
 loop i<arr_len(trash_on)
 if arr_get(trash_on,i)==1&&yarik.bag<bag_cap()&&dist(arr_get(trash_x,i),arr_get(trash_y,i),yarik.x,yarik.y)<pickup_r
 arr_set trash_on,i,0; yarik.bag=yarik.bag+1
+if combo_t>0; combo=combo+1; else; combo=1; end
+combo_t=combo_time
+if combo>=combo_min; add_pop yarik.x,yarik.y-70,2,combo; end
+if combo==5
+willpower=willpower+combo_bonus; save_progress
+add_pop yarik.x,yarik.y-104,5,combo_bonus
+end
 end
 i=i+1
 end
 end
 function finish_run num code
 // Любой срыв: забег обрывается, но сила воли и рекорд остаются.
-over=code; drop_joy; act_id=-1; save_progress
+over=code; over_t=0; drop_joy; act_id=-1; save_progress
 ds_log "run over (%g) on day %g",code,day
 end
 function finish_day
-over=2; last_reward=day_reward*day; willpower=willpower+last_reward
+// Вечерняя проверка на алкоголь: сколько бутылок взял у собутыльников.
+if drinks>=drink_limit; finish_run 6; return; end
+over=2; over_t=0
+last_reward=day_reward*day
+if drinks==0; last_reward=last_reward+sober_bonus; end
+willpower=willpower+last_reward
 if day>best_day; best_day=day; end
 save_progress; drop_joy; act_id=-1
-ds_log "day %g done, +%g willpower",day,last_reward
+ds_log "day %g done, drinks %g, +%g willpower",day,drinks,last_reward
 end
 function finish_night
-over=3; last_reward=night_reward*day; willpower=willpower+last_reward
+over=3; over_t=0; last_reward=night_reward*day; willpower=willpower+last_reward
 save_progress; drop_joy; act_id=-1
 ds_log "night %g survived, +%g willpower",day,last_reward
 end
@@ -268,13 +408,19 @@ num n=yarik.bag
 cleaned=cleaned+n; willpower=willpower+n*trash_reward; yarik.bag=0
 craving=craving-deposit_relief*n
 if craving<0; craving=0; end
+add_pop bin_x,bin_y-70,0,rand()%5
+add_pop bin_x,bin_y-104,5,n*trash_reward
 save_progress
 if cleaned>=goal; finish_day; end
 end
 function update_day
 move_yarik; pickup_trash; drop_at_bin
 if over!=0; return; end
-update_bottles
+update_buddies; update_cat
+if combo_t>0
+combo_t=combo_t-dt
+if combo_t<=0; combo_t=0; combo=0; end
+end
 craving=craving+craving_rate()*dt
 if craving>=max_craving; craving=max_craving; finish_run 1; end
 end
@@ -283,10 +429,11 @@ function init_game
 start_day 1
 end
 function update_game
-if over!=0; return; end
+night_t=night_t+dt
+update_pops
+if over!=0; over_t=over_t+dt; return; end
 if yarik.hold>0; yarik.hold=yarik.hold-dt; if yarik.hold<0; yarik.hold=0; end; end
 if hold_cd>0; hold_cd=hold_cd-dt; if hold_cd<0; hold_cd=0; end; end
-night_t=night_t+dt
 if phase==1
 move_yarik
 if over!=0; return; end
@@ -304,6 +451,28 @@ loop x<screen_w; tex x,y,t,0,1; x=x+256; end
 y=y+256
 end
 end
+function walk_frame num step
+// Цикл шага: кадр левой ноги, стойка, кадр правой ноги, стойка.
+num f=(int)floor(step)%4
+if f==0; return 1; end
+if f==2; return 2; end
+return 0
+end
+function draw_walker num x, num y, num ang, num step, num moving, num px, str idle_t, str w1_t, str w2_t
+// Один спрайт на все случаи: пока идёт - меняем кадры, покачиваем и слегка
+// «пружиним» размер, чтобы шаг читался даже на статичной картинке.
+str t=idle_t
+num wob=0, sc=1
+if moving==1
+num f=walk_frame(step)
+if f==1; t=w1_t; else if f==2; t=w2_t; end
+wob=sin(step*pi)*step_wobble
+sc=1+step_bounce*sin(step*pi*2)
+end
+num half=px*sc/2
+tex_tint x-half-shadow_off,y-half+shadow_off,t,sprite_a(ang)+wob,sc,(((unsigned)(int)shadow_alpha)<<24)
+tex x-half,y-half,t,sprite_a(ang)+wob,sc
+end
 function draw_bin
 num half=bin_px/2
 if yarik.bag>0&&dist(yarik.x,yarik.y,bin_x,bin_y)<=bin_r+80; ring bin_x,bin_y,bin_r,4,0x88FFD54A; end
@@ -320,15 +489,21 @@ end
 i=i+1
 end
 end
-function draw_bottles
-num half=item_px/2, i=0
-loop i<arr_len(bot_x)
-num bx=arr_get(bot_x,i), by=arr_get(bot_y,i)
-num a=atan2(yarik.y-by,yarik.x-bx)
-if dist(bx,by,yarik.x,yarik.y)<craving_near; ring bx,by,44,3,0x55E53935; end
-tex bx-half*0.8,by-half*0.8,BOTTLE,a,0.8
+function draw_buddies
+num i=0
+loop i<arr_len(bud_x)
+num bx=arr_get(bud_x,i), by=arr_get(bud_y,i), fl=arr_get(bud_flee,i)
+num ang=atan2(yarik.y-by,yarik.x-bx)
+if fl>0; ang=ang+pi; end
+if dist(bx,by,yarik.x,yarik.y)<craving_near; ring bx,by,52,3,0x55E53935; end
+draw_walker bx,by,ang,arr_get(bud_step,i),1,yarik_px,BUDDY,BUDDY_W,BUDDY
+if fl<=0&&dist(bx,by,yarik.x,yarik.y)<buddy_say_r; bubble buddy_line(arr_get(bud_say,i)),bx,by-58; end
 i=i+1
 end
+end
+function draw_cat
+num half=item_px/2
+draw_walker cat_x,cat_y,atan2(cat_dy,cat_dx),cat_step,1,item_px,CAT,CAT,CAT
 end
 function draw_food
 num half=item_px/2, i=0
@@ -348,6 +523,7 @@ circle fridge_x,fridge_y,150,(((unsigned)(int)a)<<24)|0x00FFC107
 ring fridge_x,fridge_y,fridge_r,4,0xAAFFC107
 tex_tint fridge_x-half-shadow_off,fridge_y-half+shadow_off,FRIDGE,0,1,(((unsigned)(int)shadow_alpha)<<24)
 tex fridge_x-half,fridge_y-half,FRIDGE,0,1
+bubble fridge_line(fridge_say),fridge_x,fridge_y-72
 end
 function draw_bed
 num half=big_px/2
@@ -356,12 +532,14 @@ tex_tint bed_x-half-shadow_off,bed_y-half+shadow_off,BED,0,1,(((unsigned)(int)sh
 tex bed_x-half,bed_y-half,BED,0,1
 end
 function draw_yarik
+if yarik.hold>0
 num half=yarik_px/2
-str t=YARIK
-if yarik.hold>0; t=YARIK_HOLD; end
-tex_tint yarik.x-half-shadow_off,yarik.y-half+shadow_off,t,sprite_a(yarik.angle),1,(((unsigned)(int)shadow_alpha)<<24)
-tex yarik.x-half,yarik.y-half,t,sprite_a(yarik.angle),1
-if yarik.hold>0; ring yarik.x,yarik.y,58+40*(hold_anim-yarik.hold),4,0x66FFFFFF; end
+tex_tint yarik.x-half-shadow_off,yarik.y-half+shadow_off,YARIK_HOLD,sprite_a(yarik.angle),1,(((unsigned)(int)shadow_alpha)<<24)
+tex yarik.x-half,yarik.y-half,YARIK_HOLD,sprite_a(yarik.angle),1
+ring yarik.x,yarik.y,58+40*(hold_anim-yarik.hold),4,0x66FFFFFF
+else
+draw_walker yarik.x,yarik.y,yarik.angle,yarik.step,yarik.moving,yarik_px,YARIK,YARIK_W1,YARIK_W2
+end
 end
 function craving_color
 if craving>max_craving*0.75; return 0xE53935; end
@@ -385,10 +563,16 @@ text_scaled h_s,screen_w-text_ink_width(h_s)*0.6-24,54,0x9FC6FF,0.6
 else
 str g_s=tr_goal()+": "+cleaned+"/"+goal
 str b_s=tr_bag()+": "+yarik.bag+"/"+bag_cap()
+str a_s=tr_drinks()+": "+drinks+"/"+drink_limit
+col a_c=0xB0BEC5
+if drinks>0; a_c=0xFFAB91; end
+if drinks>=drink_limit-1; a_c=0xFF8A80; end
 text_scaled g_s,screen_w-text_ink_width(g_s)*0.6-24,20,0xB9F6CA,0.6
 text_scaled b_s,screen_w-text_ink_width(b_s)*0.6-24,54,0xE0E0E8,0.6
+text_scaled a_s,screen_w-text_ink_width(a_s)*0.6-24,88,a_c,0.6
+text_scaled w_s,screen_w-text_ink_width(w_s)*0.6-24,122,0xFFD54A,0.6
 end
-text_scaled w_s,screen_w-text_ink_width(w_s)*0.6-24,88,0xFFD54A,0.6
+if phase==1; text_scaled w_s,screen_w-text_ink_width(w_s)*0.6-24,88,0xFFD54A,0.6; end
 end
 function draw_controls
 // Ночью на тёмном полу чёрный джойстик не виден - подсвечиваем его белым.
@@ -403,13 +587,48 @@ if hold_cd>0; al=floor(hold_cd+0.999)+""; asz=0.95; end
 text_in_box al,act_x-70,act_y-70,140,140,0xFFFFFF,asz
 draw_back
 end
+function confetti_color num i
+num k=(int)i%5
+if k==0; return 0xFFE53935; end
+if k==1; return 0xFFFFD54A; end
+if k==2; return 0xFF43A047; end
+if k==3; return 0xFF42A5F5; end
+return 0xFFAB47BC
+end
+function draw_confetti
+num i=0
+loop i<confetti_n
+num sp=90+40*((int)i%4)
+num x=((int)(i*79))%(int)screen_w
+num y=((int)(over_t*sp+i*53))%((int)screen_h+80)-40
+num w=10+4*((int)i%3)
+rect x,y,w,w*0.6,confetti_color(i)
+i=i+1
+end
+end
 function draw_panel num h
 num y=screen_h/2-h/2
 rect 0,0,screen_w,screen_h,0xAA000000
 roundrect screen_w/2-260,y,520,h,26,0xFF23252F
 return y
 end
+function draw_alco_panel
+// Вечерняя проверка на алкоголь: сколько бутылок взял за день.
+draw_confetti
+num y=draw_panel(266)
+ctext tr_alcotest(),y+38,0xFFFFFF
+ctext_scaled tr_taken_today()+drinks,y+84,0xE0E0E8,0.65
+if drinks==0
+ctext_scaled tr_verdict_clean(),y+122,0xB9F6CA,0.7
+ctext_scaled tr_sober_bonus()+sober_bonus,y+162,0xFFD54A,0.6
+else
+ctext_scaled tr_verdict_smell(),y+122,0xFFE082,0.7
+end
+ctext_scaled tr_reward()+last_reward,y+196,0xFFD54A,0.7
+ctext_scaled tr_tap_next(),y+236,0xC0C4D4,0.6
+end
 function draw_win_panel str title, str note
+draw_confetti
 num y=draw_panel(230)
 ctext title,y+40,0xFFFFFF
 ctext_scaled note,y+86,0xB9F6CA,0.7
@@ -426,11 +645,12 @@ ctext_scaled tr_clean_sheet(),y+226,0xFFFFFF,0.7
 ctext_scaled tr_tap_back(),y+266,0xC0C4D4,0.55
 end
 function draw_over
-if over==2; draw_win_panel tr_day_done(),tr_night_ahead()
+if over==2; draw_alco_panel
 else if over==3; draw_win_panel tr_night_done(),tr_day()+" "+(day+1)
 else if over==1; draw_fail_panel tr_relapse(),tr_relapse_note()
 else if over==4; draw_fail_panel tr_relapse_food(),tr_relapse_food_note()
-else if over==5; draw_fail_panel tr_relapse_fridge(),tr_relapse_fridge_note(); end
+else if over==5; draw_fail_panel tr_relapse_fridge(),tr_relapse_fridge_note()
+else if over==6; draw_fail_panel tr_verdict_fail(),tr_verdict_fail_note(); end
 end
 function draw_night_dark
 // Ночь: комната приглушена, светятся только холодильник и кровать.
@@ -447,9 +667,11 @@ else
 draw_tiles YARD
 draw_bin
 draw_trash
-draw_bottles
+draw_cat
+draw_buddies
 end
 draw_yarik
+draw_pops
 draw_hud
 draw_controls
 draw_over

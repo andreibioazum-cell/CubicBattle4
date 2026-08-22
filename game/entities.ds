@@ -1,25 +1,38 @@
 // entities.ds — объекты и состояние текущего забега.
 object Yarik
-// bag — сколько мусора Ярик несёт прямо сейчас, hold — таймер позы «Держись».
-num x=0, y=0, angle=0, bag=0, hold=0
+// bag — сколько мусора Ярик несёт прямо сейчас, hold — таймер позы «Держись»,
+// step — фаза анимации ходьбы, moving — шёл ли он в этом кадре.
+num x=0, y=0, angle=0, bag=0, hold=0, step=0, moving=0
 end
 Yarik yarik=new Yarik()
 
 // Мусор во дворе: на каждый предмет пара координат и флаг «ещё лежит».
 arr trash_x=arr_new(), trash_y=arr_new(), trash_on=arr_new()
-// Бутылки-соблазны во дворе: координаты и остаточный толчок от «Держись».
-arr bot_x=arr_new(), bot_y=arr_new(), bot_dx=arr_new(), bot_dy=arr_new()
+// Собутыльники: координаты, фаза шага, таймер бегства, номер реплики и
+// таймер её смены.
+arr bud_x=arr_new(), bud_y=arr_new(), bud_step=arr_new()
+arr bud_flee=arr_new(), bud_say=arr_new(), bud_say_t=arr_new()
 // Ночная еда на полу.
 arr food_x=arr_new(), food_y=arr_new(), food_on=arr_new()
+// Всплывающие надписи: позиция, остаток жизни, вид и номер фразы.
+arr pop_x=arr_new(), pop_y=arr_new(), pop_t=arr_new(), pop_kind=arr_new(), pop_id=arr_new()
 
 // Урна — куда Ярик относит мусор днём.
 num bin_x=0, bin_y=0
+// Дворовый кот: бродит сам по себе, гладится за счёт столкновения.
+num cat_x=0, cat_y=0, cat_dx=1, cat_dy=0, cat_turn_t=0, cat_cool=0, cat_step=0
 // Холодильник и кровать — ночные полюса комнаты.
 num fridge_x=0, fridge_y=0, bed_x=0, bed_y=0
+// Реплика холодильника ночью и таймер её смены.
+num fridge_say=0, fridge_say_t=0
 // phase: 0 — день во дворе, 1 — ночь в квартире.
-num phase=0, night_t=0, eaten=0, pull_off=0
+num phase=0, night_t=0, over_t=0, eaten=0, pull_off=0
 // День забега, сколько мусора донесено, сколько надо донести.
 num day=1, cleaned=0, goal=4
+// Комбо за быструю уборку: счётчик и окно, пока оно не сгорело.
+num combo=0, combo_t=0
+// Сколько бутылок Ярик взял у собутыльников за этот день - вечером спросят.
+num drinks=0
 // Тяга 0..max_craving и перезарядка кнопки «Держись».
 num craving=0, hold_cd=0
 // over: 0 — играем, 1 — срыв по тяге, 2 — день закрыт, 3 — ночь пережита,

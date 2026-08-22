@@ -20,9 +20,11 @@
 extern double game_state, t_dir, day, cleaned, goal, craving, over, last_reward;
 extern double willpower, best_day, up_speed, up_bag, up_hold, up_night, up_food;
 extern double hold_cd, bin_x, bin_y, max_craving, btn_w, btn_h, back_y;
-extern double phase, eaten, fridge_x, fridge_y, bed_x, bed_y;
-extern DSArray *trash_x, *trash_y, *trash_on, *bot_x, *bot_y, *bot_dx, *bot_dy;
+extern double phase, eaten, fridge_x, fridge_y, bed_x, bed_y, drinks, drink_limit, combo;
+extern DSArray *trash_x, *trash_y, *trash_on;
+extern DSArray *bud_x, *bud_y, *bud_step, *bud_flee, *bud_say, *bud_say_t;
 extern DSArray *food_x, *food_y, *food_on;
+extern DSArray *pop_x, *pop_y, *pop_t, *pop_kind, *pop_id;
 extern void *yarik; /* object Yarik: x, y, angle, bag, hold */
 #define Y_X 0
 #define Y_Y 1
@@ -198,16 +200,34 @@ int main(void) {
     if (day != 1 || cleaned != 0 || over != 0 || phase != 0) {
         printf("!! bad day start: day %g cleaned %g phase %g\n", day, cleaned, phase); return 3;
     }
-    printf("=== day 1 started: goal %g, trash on map %g\n", goal, arr_len(trash_on));
+    printf("=== day 1 started: goal %g, trash on map %g, buddies %g\n",
+           goal, arr_len(trash_on), arr_len(bud_x));
     run_frames(20);
     shot("03_yard");
 
+    /* --- 2a. Наступил на собутыльника - взял у него бутылку --- */
+    {
+        double taken0 = drinks;
+        int got = 0;
+        for (int i = 0; i < 1200 && !got; i++) {
+            steer_to(arr_get(bud_x, 0), arr_get(bud_y, 0));
+            if (!run_frames(1)) return 3;
+            if (drinks > taken0) got = 1;
+        }
+        release_joy();
+        if (!got) { printf("!! stepping on a buddy did not take a bottle\n"); return 3; }
+        printf("=== took a bottle from a buddy: drinks %g\n", drinks);
+        shot("03b_buddy");
+    }
+
     if (!clean_the_day()) { printf("!! day was not finished, over=%g craving=%g\n", over, craving); return 3; }
-    printf("=== day 1 done: cleaned %g/%g, reward %g, willpower %g, best %g\n",
-           cleaned, goal, last_reward, willpower, best_day);
+    printf("=== day 1 done: cleaned %g/%g, drinks %g, reward %g, willpower %g, best %g\n",
+           cleaned, goal, drinks, last_reward, willpower, best_day);
     if (best_day != 1 || willpower <= 0) { printf("!! day rewards missing\n"); return 3; }
+    if (drinks < 1) { printf("!! drinks counter reset before the alcohol test\n"); return 3; }
+    if (last_reward != 5) { printf("!! drunk day must not get the sober bonus: %g\n", last_reward); return 3; }
     run_frames(2);
-    shot("04_day_done");
+    shot("04_alcotest");
 
     /* --- 3. Ночь: холодильник тянет, еда лечит, кровать спасает --- */
     tap_center();
@@ -305,6 +325,19 @@ int main(void) {
     tap_center();
     if (!wait_state(0, 120)) { printf("!! overeat tap did not return to lobby\n"); return 3; }
 
+    /* --- 8a. Слишком много взял за день - проверка на алкоголь провалена --- */
+    tap_menu_row(0);
+    if (!wait_state(1, 60)) { printf("!! yard did not open for the alcohol test run\n"); return 3; }
+    drinks = drink_limit; /* как будто выпросил три бутылки за день */
+    if (!clean_the_day()) {
+        if (over != 6) { printf("!! failed alcohol test expected, got over=%g\n", over); return 3; }
+    }
+    if (over != 6) { printf("!! alcohol test not failed (over=%g drinks=%g)\n", over, drinks); return 3; }
+    printf("=== alcohol test failed with %g bottles -> relapse\n", drinks);
+    shot("10b_alcotest_failed");
+    tap_center();
+    if (!wait_state(0, 120)) { printf("!! failed-test tap did not return to lobby\n"); return 3; }
+
     /* --- 9. Привычки: пять бесконечных веток --- */
     tap_menu_row(1);
     if (!wait_state(2, 60)) { printf("!! habits screen did not open\n"); return 3; }
@@ -332,8 +365,10 @@ int main(void) {
     double saved_will = willpower, saved_best = best_day;
     ds_call_protected(protected_reset, NULL, "reset");
     arr_free(trash_x); arr_free(trash_y); arr_free(trash_on);
-    arr_free(bot_x); arr_free(bot_y); arr_free(bot_dx); arr_free(bot_dy);
+    arr_free(bud_x); arr_free(bud_y); arr_free(bud_step);
+    arr_free(bud_flee); arr_free(bud_say); arr_free(bud_say_t);
     arr_free(food_x); arr_free(food_y); arr_free(food_on);
+    arr_free(pop_x); arr_free(pop_y); arr_free(pop_t); arr_free(pop_kind); arr_free(pop_id);
     script_active = 0;
     ds_clear_runtime_error(); ds_string_pool_reset();
     if (!ds_call_protected(protected_init, NULL, "init")) { printf("!! restart failed\n"); return 3; }
@@ -351,8 +386,10 @@ int main(void) {
     /* reset() заново создаёт пустые массивы - освобождаем их, чтобы ASAN
      * заканчивал прогон без «утечек» и любой ненулевой код выхода был бедой. */
     arr_free(trash_x); arr_free(trash_y); arr_free(trash_on);
-    arr_free(bot_x); arr_free(bot_y); arr_free(bot_dx); arr_free(bot_dy);
+    arr_free(bud_x); arr_free(bud_y); arr_free(bud_step);
+    arr_free(bud_flee); arr_free(bud_say); arr_free(bud_say_t);
     arr_free(food_x); arr_free(food_y); arr_free(food_on);
+    arr_free(pop_x); arr_free(pop_y); arr_free(pop_t); arr_free(pop_kind); arr_free(pop_id);
     ds_string_pool_reset();
     ds_release_assets();
     free(g_pixels);
