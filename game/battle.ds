@@ -29,11 +29,11 @@ return class_punch_damage_for(cls,player_level)
 end
 function santa_poison_time_for num lv
 num t=santa_poison_time
-if lv>=1; t=t+santa_poison_time_bonus; end
 return t
 end
 function santa_poison_damage_for num lv
 num d=santa_poison_dps
+if lv>=1; d=d+santa_poison_damage_bonus; end
 if lv>=2; d=d+santa_poison_damage_bonus; end
 return d
 end

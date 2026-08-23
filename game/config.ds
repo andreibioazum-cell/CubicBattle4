@@ -69,7 +69,7 @@ num ordinary_level=0, ordinary_levels_unlocked=0, azum_level=0, azum_levels_unlo
 num azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
 // У обычного бойца и Деда Мороза свои, не совпадающие с Азумом пути.
 num ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
-num santa_poison_time_bonus=1.0, santa_poison_damage_bonus=0.10, santa_freeze_time_bonus=0.50
+num santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze_time_bonus=0.50
 // Дед Мороз (класс 2). По цифрам он почти как обычный класс: те же HP,
 // та же скорость, тот же хитбокс и ритм удара. Отличий два:
 // 1) Посох наносит крошечный урон santa_damage и ОТРАВЛЯЕТ врага: первый
@@ -84,7 +84,7 @@ num santa_poison_time_bonus=1.0, santa_poison_damage_bonus=0.10, santa_freeze_ti
 // Первый тик яда происходит примерно через секунду после удара, затем
 // повторяется раз в секунду. Старое имя santa_poison_dps оставлено для
 // совместимости, но означает урон одного тика, а не урон каждого кадра.
-num santa_damage=0.25, santa_poison_time=4.0, santa_poison_tick_interval=1.0, santa_poison_dps=0.5
+num santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
 num super_freeze=3.0, super_freeze_slow=0.12
 num super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
 // Плавное появление/исчезновение эффектов: freeze_fade_in/out — за сколько секунд
