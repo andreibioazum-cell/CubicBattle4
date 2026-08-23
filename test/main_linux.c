@@ -21,7 +21,7 @@ extern double game_state, t_dir, day, cleaned, goal, craving, over, last_reward;
 extern double willpower, best_day, up_speed, up_bag, up_hold, up_night, up_food;
 extern double hold_cd, bin_x, bin_y, max_craving, btn_w, btn_h, back_y;
 extern double phase, eaten, fridge_x, fridge_y, bed_x, bed_y, drinks, drink_limit, combo;
-extern double splash_on;
+extern double splash_on, splash_t, splash_time;
 extern double mouse_x, mouse_y, mouse_in;
 extern DSArray *trash_x, *trash_y, *trash_on;
 extern DSArray *bud_x, *bud_y, *bud_step, *bud_flee, *bud_say, *bud_say_t;
@@ -185,13 +185,14 @@ int main(void) {
     }
     script_active = 1;
     if (!run_frames(5)) return 2;
-    /* --- 0. Дисклеймер показывается первым и уходит по тапу --- */
+    /* --- 0. Дисклеймер: висит пять секунд и гаснет сам --- */
     if (splash_on != 1) { printf("!! disclaimer is not shown on start\n"); return 3; }
     shot("00_disclaimer");
-    tap_center();
-    if (!run_frames(5)) return 3;
-    if (splash_on != 0) { printf("!! disclaimer did not close on tap\n"); return 3; }
-    printf("=== disclaimer shown and closed\n");
+    if (!run_frames(60)) return 3;               /* ~1 секунда */
+    if (splash_on != 1) { printf("!! disclaimer vanished too early (t=%g)\n", splash_t); return 3; }
+    if (!run_frames((int)(splash_time * 60) + 10)) return 3;
+    if (splash_on != 0) { printf("!! disclaimer did not close after %g s\n", splash_time); return 3; }
+    printf("=== disclaimer held %g s and closed by itself\n", splash_time);
 
     printf("=== init ok: lobby state %g, willpower %g\n", game_state, willpower);
     shot("01_lobby");

@@ -290,8 +290,8 @@ if language==1; return "Как играть"; end
 return "How to play";end
 // --- дисклеймер на старте ----------------------------------------------
 function tr_disc_title
-if language==1; return "Пара слов перед игрой"; end
-return "A word before you play";end
+if language==1; return "ДИСКЛЕЙМЕР"; end
+return "DISCLAIMER";end
 function tr_disc1
 if language==1; return "Эта игра не призывает курить и пить энергетики."; end
 return "This game does not encourage smoking or energy drinks.";end
@@ -302,5 +302,5 @@ function tr_disc3
 if language==1; return "Ярик бросает. У вас тоже получится - хоть с сотой попытки."; end
 return "Yarik is quitting. So can you - even on the hundredth try.";end
 function tr_disc_tap
-if language==1; return "Нажмите, чтобы начать"; end
-return "Tap to start";end
+if language==1; return "Пропадёт само через 5 секунд"; end
+return "Disappears in 5 seconds";end

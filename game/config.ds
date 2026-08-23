@@ -5,7 +5,7 @@
 
 // Экраны: 0 — лобби, 1 — игра (день или ночь), 2 — привычки, 3 — как играть,
 // 4 — настройки.
-num splash_on=1, game_state=0, language=1, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
+num splash_on=1, splash_t=0, splash_time=5, game_state=0, language=1, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
 num btn_w=300, btn_h=64, back_y=32, pi=3.1415926535
 
 // Звук: щелчок по кнопке и зациклённая фоновая мелодия. Файлы лежат в

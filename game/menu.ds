@@ -70,17 +70,17 @@ ly=ly+38
 end
 line 112,0,112,screen_h,2,0x2B1F2E
 end
+// Дисклеймер на старте: чёрный экран, крупная красная надпись сверху.
+// Держится splash_time секунд и уходит сам (или по нажатию).
 function draw_disclaimer
-draw_bg
-num y=screen_h/2-186
-tex screen_w/2-32,y,SHEET,0,1
-y=y+96
-ctext tr_disc_title(),y,0xFFFFFF
-y=y+68
-ctext_scaled tr_disc1(),y,0xE6E6F0,0.6; y=y+44
-ctext_scaled tr_disc2(),y,0xE6E6F0,0.6; y=y+44
-ctext_scaled tr_disc3(),y,0x9FE0A0,0.6; y=y+70
-ctext_scaled tr_disc_tap(),y,0x8890A8,0.55
+rect 0,0,screen_w,screen_h,0x000000
+num y=80
+ctext_scaled tr_disc_title(),y,0xFF3B30,1.7
+y=screen_h/2-70
+ctext_scaled tr_disc1(),y,0xF0F0F4,0.7; y=y+56
+ctext_scaled tr_disc2(),y,0xF0F0F4,0.7; y=y+56
+ctext_scaled tr_disc3(),y,0x9FE0A0,0.7; y=y+84
+ctext_scaled tr_disc_tap(),y,0x6E7386,0.5
 end
 function draw_lobby
 draw_bg

@@ -30,6 +30,12 @@ music_play MUSIC_LOOP,music_volume
 ds_log "init: willpower %g, best day %g",willpower,best_day
 end
 function update
+if splash_on==1
+// Дисклеймер держится splash_time секунд и гаснет сам.
+splash_t=splash_t+dt
+if splash_t>=splash_time; splash_on=0; end
+return
+end
 update_transition
 if game_state==1; update_game; end
 end
