@@ -84,10 +84,12 @@ double net_load_azum_level(void);
 double net_load_azum_levels_unlocked(void);
 double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
+/* Праймы — третья валюта (за победы). */
+double net_load_primes(void);
 /* Старый семиаргументный вызов сохраняется для совместимости. */
 void net_save_progress(double cups, double candies, double cls, double azum, double santa,
                        double level, double levels_unlocked);
-void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
+void net_save_progress_all(double cups, double candies, double primes, double cls, double azum, double santa,
                            double level, double levels_unlocked,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
