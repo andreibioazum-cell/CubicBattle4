@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>ZeroHabit: С чистого листа</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="icon" href="favicon.png">
+<link rel="icon" href="favicon.ico">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #0d0f16; overflow: hidden;
+    font-family: system-ui, "Segoe UI", Roboto, sans-serif; color: #c9cbd8;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #canvas { width: 100%; height: 100%; display: block; background: #14161f; image-rendering: auto; }
+  #loading {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; background: #0d0f16;
+    transition: opacity .3s ease;
+  }
+  #loading h1 { margin: 0; font-size: 34px; color: #fff; letter-spacing: .5px; }
+  #loading p { margin: 0; font-size: 15px; color: #8890a8; }
+  #bar { width: 240px; height: 6px; border-radius: 3px; background: #23262f; overflow: hidden; }
+  #bar div { height: 100%; width: 12%; background: #2e7d32; transition: width .2s ease; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="canvas" tabindex="0"></canvas></div>
+<div id="loading">
+  <h1>ZeroHabit</h1>
+  <p>С чистого листа</p>
+  <div id="bar"><div id="barfill"></div></div>
+</div>
+<script>
+  var canvas = document.getElementById('canvas');
+  var Module = {
+    canvas: canvas,
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+    setStatus: function (text) {
+      var m = text && text.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+      var fill = document.getElementById('barfill');
+      if (m && fill) fill.style.width = Math.max(8, (parseFloat(m[1]) / parseFloat(m[2])) * 100) + '%';
+      if (!text) {
+        var l = document.getElementById('loading');
+        if (l) { l.style.opacity = '0'; setTimeout(function () { l.remove(); }, 320); }
+        canvas.focus();
+      }
+    }
+  };
+  // Клик по канвасу — фокус, чтобы работали WASD и стрелки.
+  canvas.addEventListener('pointerdown', function () { canvas.focus(); });
+  // Скролл/зум пальцами по игре не нужен.
+  document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

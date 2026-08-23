@@ -12,3 +12,5 @@ auth.dat
 # Headless test harness build artifacts
 test/game_test
 test/shots/
+# Web build output (emcc)
+web/dist/

@@ -301,18 +301,23 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
     (void)hPrev;
     (void)cmdLine;
     SetProcessDPIAware();
-    WNDCLASSA wc;
+    WNDCLASSEXA wc;
     memset(&wc, 0, sizeof(wc));
+    wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInst;
-    wc.hIcon = LoadIconA(NULL, IDI_APPLICATION);
+    /* Иконка из ресурса с id 1 — её кладёт CMake, когда в корне есть
+     * icon.ico. Нет ресурса — берём стандартную иконку Windows. */
+    wc.hIcon = LoadIconA(hInst, MAKEINTRESOURCEA(1));
+    if (!wc.hIcon) wc.hIcon = LoadIconA(NULL, IDI_APPLICATION);
+    wc.hIconSm = wc.hIcon;
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
-    wc.lpszClassName = "YarikWindow";
-    if (!RegisterClassA(&wc)) return 1;
+    wc.lpszClassName = "ZeroHabitWindow";
+    if (!RegisterClassExA(&wc)) return 1;
     RECT rc = { 0, 0, 1280, 720 };
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
-    g_hwnd = CreateWindowA("YarikWindow", "ZeroHabit: Clean Slate",
+    g_hwnd = CreateWindowA("ZeroHabitWindow", "ZeroHabit: Clean Slate",
                            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                            rc.right - rc.left, rc.bottom - rc.top,
                            NULL, NULL, hInst, NULL);

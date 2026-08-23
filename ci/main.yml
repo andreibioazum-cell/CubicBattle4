@@ -1,0 +1,187 @@
+name: Build ZeroHabit (Android APK, Windows .exe, Web HTML)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK (Android 10-14 arm64+arm32)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # Пакет com.ZeroHabit зашит прямо в исходники: манифест, GameActivity.java
+    # и JNI-имена Java_com_ZeroHabit_GameActivity_* в runtime.c. Никаких
+    # sed-замен на лету: если три места разъедутся, нативные методы редактора
+    # не найдутся, UnsatisfiedLinkError уйдёт в catch — и поля ввода молча
+    # перестанут принимать текст. Этот шаг сторожит совпадение.
+    - name: Check package name consistency
+      run: |
+        set -e
+        grep -q 'package="com.ZeroHabit"' game/AndroidManifest.xml
+        grep -q 'android:name="com.ZeroHabit.GameActivity"' game/AndroidManifest.xml
+        grep -q '^package com.ZeroHabit;' game/java/com/dimscript/gamedemo/GameActivity.java
+        grep -q 'Java_com_ZeroHabit_GameActivity_nativeReplaceText' runtime.c
+        grep -q 'Java_com_ZeroHabit_GameActivity_nativeSubmitText' runtime.c
+        grep -q 'Java_com_ZeroHabit_GameActivity_nativeKeyboardHidden' runtime.c
+        ! grep -rn 'dimscript\.gamedemo\|Java_com_dimscript\|com\.cb4\|Java_com_cb4' \
+          game/AndroidManifest.xml game/java runtime.c
+
+    - uses: android-actions/setup-android@v3
+    - uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25c
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Generate game.c
+      run: |
+        python3 gen.py
+
+    - name: Stage assets
+      run: |
+        python3 stage_assets.py game/assets staging/assets
+
+    # Иконка приложения. Кладёшь icon.png в корень репозитория — он и станет
+    # иконкой на телефоне (манифест ссылается на @mipmap/ic_launcher).
+    # Если icon.png нет, берём спрайт героя, чтобы сборка не падала.
+    - name: App icon from icon.png
+      run: |
+        set -e
+        SRC=icon.png
+        if [ ! -f "$SRC" ]; then
+          echo "icon.png в корне не найден — иконкой станет game/assets/yarik.png"
+          SRC=game/assets/yarik.png
+        else
+          echo "иконка приложения: icon.png"
+        fi
+        mkdir -p res/mipmap-mdpi res/mipmap-hdpi res/mipmap-xhdpi res/mipmap-xxhdpi res/mipmap-xxxhdpi
+        convert "$SRC" -resize 48x48   res/mipmap-mdpi/ic_launcher.png
+        convert "$SRC" -resize 72x72   res/mipmap-hdpi/ic_launcher.png
+        convert "$SRC" -resize 96x96   res/mipmap-xhdpi/ic_launcher.png
+        convert "$SRC" -resize 144x144 res/mipmap-xxhdpi/ic_launcher.png
+        convert "$SRC" -resize 192x192 res/mipmap-xxxhdpi/ic_launcher.png
+
+    - name: Build NDK (arm64-v8a + armeabi-v7a, min API 29 Android 10)
+      run: |
+        NDK_ROOT=$ANDROID_NDK_ROOT
+        TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        GLUE="$NDK_ROOT/sources/android/native_app_glue"
+
+        mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/assets
+
+        # arm64-v8a — min API 29 (Android 10)
+        "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
+          game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
+          -I. -I$GLUE -landroid -llog -lm \
+          -o staging/lib/arm64-v8a/libds_game.so
+
+        # arm32 armeabi-v7a — min API 29
+        "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
+          game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
+          -I. -I$GLUE -landroid -llog -lm \
+          -o staging/lib/armeabi-v7a/libds_game.so
+
+    # Подпись — временный debug.keystore, как в исходной сборке (без секретов).
+    # ВНИМАНИЕ: каждый билд создаёт новый ключ, поэтому Android ID будет разным
+    # на каждом релизе. Для стабильной подписи используй постоянный keystore.
+    - name: Package APK (Android 10 to 14, target API 34)
+      run: |
+        SDK_ROOT=$ANDROID_HOME
+        BT="$SDK_ROOT/build-tools/34.0.0"
+
+        "$BT/aapt" package -f -M game/AndroidManifest.xml -S res \
+          -I "$SDK_ROOT/platforms/android-34/android.jar" \
+          -F unsigned.apk ./staging/
+
+        "$BT/zipalign" -v 4 unsigned.apk aligned.apk
+        keytool -genkey -v -keystore debug.keystore -storepass android \
+          -alias debug -keypass android -keyalg RSA -keysize 2048 \
+          -validity 10000 -dname "CN=Debug" 2>/dev/null || true
+        "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
+          --out ZeroHabit.apk aligned.apk
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ZeroHabit-APK-Android10-14-arm64-arm32
+        path: ZeroHabit.apk
+
+  build-pc-cmake:
+    name: Build Windows PC (.exe) with CMake
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    # Иконка ПК-версии — icon.ico в корне репозитория. Если он есть, CMake сам
+    # вшивает его в Game.exe ресурсом с id 1 (см. CMakeLists.txt).
+    - name: Check icon.ico
+      shell: bash
+      run: |
+        if [ -f icon.ico ]; then echo "иконка exe: icon.ico"; else echo "icon.ico нет — exe со стандартной иконкой"; fi
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build Game.exe
+      run: cmake --build build --config Release
+
+    # Картинки и шрифт уже внутри Game.exe (RCDATA-ресурсы) — в пакете
+    # только сам exe, без папки assets/.
+    - name: Prepare Release ZIP
+      shell: pwsh
+      run: |
+        Copy-Item build/Release/Game.exe ZeroHabit.exe
+        Compress-Archive -Path ZeroHabit.exe -DestinationPath ZeroHabit-Windows-PC.zip
+
+    - name: Upload Full Game Windows Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: ZeroHabit-Windows-PC-Full-Package
+        path: ZeroHabit-Windows-PC.zip
+
+  build-web:
+    name: Build Web (HTML5 + WebAssembly)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Setup Emscripten
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 3.1.61
+
+    # Браузерная сборка: main_web.c рисует кадр в <canvas>, ввод — мышь, тач
+    # и WASD. Прогресс лежит в IndexedDB (IDBFS). Иконку вкладки берёт из
+    # icon.png в корне репозитория.
+    - name: Build web build
+      run: |
+        chmod +x build_web.sh
+        ./build_web.sh
+
+    - name: Prepare Web ZIP
+      run: |
+        cd web/dist && zip -r ../../ZeroHabit-Web.zip . && cd ../..
+        ls -la ZeroHabit-Web.zip
+
+    - name: Upload Web Build (itch.io ready)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ZeroHabit-Web-HTML5
+        path: ZeroHabit-Web.zip

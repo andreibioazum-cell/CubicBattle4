@@ -1,6 +1,6 @@
 /*
- * ВАЖНО: пакет — com.cb4, он же в AndroidManifest.xml и в именах JNI-функций
- * runtime.c (Java_com_cb4_GameActivity_*). Все три места обязаны совпадать:
+ * ВАЖНО: пакет — com.ZeroHabit, он же в AndroidManifest.xml и в именах JNI-функций
+ * runtime.c (Java_com_ZeroHabit_GameActivity_*). Все три места обязаны совпадать:
  * если хотя бы одно расходится, System.loadLibrary отработает, но нативные
  * методы редактора (nativeReplaceText/nativeSubmitText/nativeKeyboardHidden)
  * не найдутся, nativeReady станет false — клавиатура откроется, а текст в
@@ -10,7 +10,7 @@
  * в шаг сборки .github/workflows/main.yml. Для javac это неважно — класс
  * компилируется по объявленному пакету (classes/com/yarik/GameActivity.class).
  */
-package com.cb4;
+package com.ZeroHabit;
 
 import android.app.NativeActivity;
 import android.content.Context;

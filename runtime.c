@@ -532,7 +532,7 @@ void keyboard_commit_utf8(const char *utf8) { keyboard_type(utf8); }
 /* Callbacks from GameActivity's EditText. UTF-16 is converted to valid UTF-8,
  * including surrogate pairs, instead of relying on JNI modified UTF-8. */
 JNIEXPORT void JNICALL
-Java_com_cb4_GameActivity_nativeReplaceText(JNIEnv *env, jobject self, jstring value) {
+Java_com_ZeroHabit_GameActivity_nativeReplaceText(JNIEnv *env, jobject self, jstring value) {
     (void)self;
     pthread_mutex_lock(&kb_mutex);
     kb_text[0]='\0'; kb_len=0;
@@ -554,13 +554,13 @@ Java_com_cb4_GameActivity_nativeReplaceText(JNIEnv *env, jobject self, jstring v
 }
 
 JNIEXPORT void JNICALL
-Java_com_cb4_GameActivity_nativeSubmitText(JNIEnv *env, jobject self) {
+Java_com_ZeroHabit_GameActivity_nativeSubmitText(JNIEnv *env, jobject self) {
     (void)env; (void)self;
     pthread_mutex_lock(&kb_mutex); kb_enter=1; pthread_mutex_unlock(&kb_mutex);
 }
 
 JNIEXPORT void JNICALL
-Java_com_cb4_GameActivity_nativeKeyboardHidden(JNIEnv *env, jobject self) {
+Java_com_ZeroHabit_GameActivity_nativeKeyboardHidden(JNIEnv *env, jobject self) {
     (void)env; (void)self;
     pthread_mutex_lock(&kb_mutex); kb_show=0; pthread_mutex_unlock(&kb_mutex);
 }

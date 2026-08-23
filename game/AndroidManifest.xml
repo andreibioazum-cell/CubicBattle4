@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.cb4">
+    package="com.ZeroHabit">
 
     <!-- Android 10 (API 29) до Android 14 (API 34), arm64 и arm32 -->
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
@@ -11,11 +11,12 @@
 
     <application
         android:label="ZeroHabit"
+        android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
         android:extractNativeLibs="true">
 
         <activity
-            android:name="com.cb4.GameActivity"
+            android:name="com.ZeroHabit.GameActivity"
             android:configChanges="orientation|keyboard|keyboardHidden|screenSize"
             android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustResize"
