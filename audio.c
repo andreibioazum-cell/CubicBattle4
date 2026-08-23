@@ -18,6 +18,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Фоновая мелодия включается движком сразу после старта звука и крутится
+ * по кругу всё время работы игры — скрипту для этого делать ничего не надо. */
+#define DS_MUSIC_DEFAULT "music/music.wav"
+#define DS_MUSIC_DEFAULT_VOLUME 0.4
+
 #define DS_AUDIO_RATE 44100
 #define DS_AUDIO_CLIPS 8
 #define DS_AUDIO_VOICES 8
@@ -40,7 +45,10 @@ EM_JS(void, ds_web_audio_play, (const char *name, double volume, int loop), {
     }
     var url = Module.dsAudioUrls[file];
     if (loop) {
+        // Тот же трек уже крутится — не начинаем его заново.
+        if (Module.dsMusic && Module.dsMusicFile === file && !Module.dsMusic.paused) return;
         if (Module.dsMusic) { Module.dsMusic.pause(); }
+        Module.dsMusicFile = file;
         var m = new Audio(url);
         m.loop = true;
         m.volume = Math.max(0, Math.min(1, volume));
@@ -62,7 +70,10 @@ EM_JS(void, ds_web_audio_stop, (void), {
     if (Module.dsMusic) { Module.dsMusic.pause(); Module.dsMusic = null; }
 });
 
-int ds_audio_init(void) { return 1; }
+int ds_audio_init(void) {
+    music_play(DS_MUSIC_DEFAULT, DS_MUSIC_DEFAULT_VOLUME);
+    return 1;
+}
 void ds_audio_shutdown(void) { ds_web_audio_stop(); }
 void sound_play(const char *name, double volume) {
     if (name) ds_web_audio_play(name, volume, 0);
@@ -192,6 +203,13 @@ static void mix_frames(int16_t *out, int frames) {
 static void voice_start(const char *name, double volume, int loop) {
     DSClip *clip = clip_get(name);
     if (!clip) return;
+    /* Музыка не начинается заново, если этот же трек уже играет по кругу:
+     * скрипт может позвать music_play после перезапуска, и обрывать мелодию
+     * посреди такта не за чем. */
+    if (loop && g_music_voice >= 0) {
+        DSVoice *cur = &g_voices[g_music_voice];
+        if (cur->active && cur->clip == clip) { cur->volume = (float)volume; return; }
+    }
     int slot = -1;
     if (loop && g_music_voice >= 0) slot = g_music_voice;
     if (slot < 0) {
@@ -207,7 +225,10 @@ static void voice_start(const char *name, double volume, int loop) {
     v->volume = (float)(volume <= 0.0 ? 0.0 : (volume > 1.0 ? 1.0 : volume));
     v->loop = loop;
     v->active = 1;
-    if (loop) g_music_voice = slot;
+    if (loop) {
+        g_music_voice = slot;
+        ds_log("audio: music '%s' looping at %.2f", name, volume);
+    }
 }
 
 void sound_play(const char *name, double volume) { voice_start(name, volume, 0); }
@@ -275,6 +296,7 @@ int ds_audio_init(void) {
     g_audio_ready = 1;
     InterlockedExchange(&g_wo_run, 1);
     g_wo_thread = CreateThread(NULL, 0, wo_thread, NULL, 0, NULL);
+    music_play(DS_MUSIC_DEFAULT, DS_MUSIC_DEFAULT_VOLUME);
     return 1;
 }
 
@@ -330,6 +352,7 @@ int ds_audio_init(void) {
     }
     g_audio_ready = 1;
     AAudioStream_requestStart(g_stream);
+    music_play(DS_MUSIC_DEFAULT, DS_MUSIC_DEFAULT_VOLUME);
     return 1;
 }
 
