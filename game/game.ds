@@ -270,7 +270,7 @@ function move_yarik
 num spd=move_speed()
 num jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy)
 yarik.x=yarik.x+joy.dx*spd*dt; yarik.y=yarik.y+joy.dy*spd*dt
-if jm>0.15; yarik.angle=atan2(joy.dy,joy.dx); yarik.moving=1; yarik.step=yarik.step+dt*step_rate*jm
+if jm>0.15; yarik.angle=atan2(joy.dy,joy.dx); yarik.moving=1; yarik.step=yarik.step+spd*dt*jm/step_len
 else; yarik.moving=0; end
 if yarik.x<player_size; yarik.x=player_size; end
 if yarik.x>screen_w-player_size; yarik.x=screen_w-player_size; end
@@ -327,7 +327,7 @@ if bx>screen_w+90; bx=screen_w+90; end
 if by<-90; by=-90; end
 if by>screen_h+90; by=screen_h+90; end
 arr_set bud_x,i,bx; arr_set bud_y,i,by
-arr_set bud_step,i,arr_get(bud_step,i)+dt*step_rate*0.8
+arr_set bud_step,i,arr_get(bud_step,i)+spd*dt/step_len
 num st=arr_get(bud_say_t,i)-dt
 if st<=0; st=buddy_say_time; arr_set bud_say,i,rand()%5; end
 arr_set bud_say_t,i,st
@@ -351,7 +351,7 @@ num a=(rand()%628)/100
 cat_dx=cos(a); cat_dy=sin(a)
 end
 cat_x=cat_x+cat_dx*cat_speed*dt; cat_y=cat_y+cat_dy*cat_speed*dt
-cat_step=cat_step+dt*step_rate
+cat_step=cat_step+cat_speed*dt/step_len
 if cat_x<40; cat_x=40; cat_dx=-cat_dx; end
 if cat_x>screen_w-40; cat_x=screen_w-40; cat_dx=-cat_dx; end
 if cat_y<40; cat_y=40; cat_dy=-cat_dy; end
@@ -459,19 +459,24 @@ if f==2; return 2; end
 return 0
 end
 function draw_walker num x, num y, num ang, num step, num moving, num px, str idle_t, str w1_t, str w2_t
-// Один спрайт на все случаи: пока идёт - меняем кадры, покачиваем и слегка
-// «пружиним» размер, чтобы шаг читался даже на статичной картинке.
+// Один спрайт на все случаи: пока идёт - меняем кадры, качаем корпус,
+// «пружиним» размер и сносим тело вбок, как при переносе веса с ноги на
+// ногу. Фаза считается по пройденному пути, поэтому ноги не скользят.
 str t=idle_t
-num wob=0, sc=1
+num wob=0, sc=1, sx=x, sy=y
 if moving==1
 num f=walk_frame(step)
 if f==1; t=w1_t; else if f==2; t=w2_t; end
-wob=sin(step*pi)*step_wobble
-sc=1+step_bounce*sin(step*pi*2)
+num ph=step*pi
+wob=sin(ph)*step_wobble
+sc=1+step_bounce*sin(ph*2)
+// Снос перпендикулярно направлению движения.
+num off=sin(ph)*step_sway
+sx=x-sin(ang)*off; sy=y+cos(ang)*off
 end
 num half=px*sc/2
-tex_tint x-half-shadow_off,y-half+shadow_off,t,sprite_a(ang)+wob,sc,(((unsigned)(int)shadow_alpha)<<24)
-tex x-half,y-half,t,sprite_a(ang)+wob,sc
+tex_tint sx-half-shadow_off,sy-half+shadow_off,t,sprite_a(ang)+wob,sc,(((unsigned)(int)shadow_alpha)<<24)
+tex sx-half,sy-half,t,sprite_a(ang)+wob,sc
 end
 function draw_bin
 num half=bin_px/2
