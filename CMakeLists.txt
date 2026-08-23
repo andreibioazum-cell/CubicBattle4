@@ -21,7 +21,7 @@ add_custom_command(
 if(ANDROID)
     add_library(ds_game SHARED "${GAME_C}" runtime.c main.c ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
     target_include_directories(ds_game PRIVATE . game ${ANDROID_NDK}/sources/android/native_app_glue)
-    target_link_libraries(ds_game PRIVATE android log m)
+    target_link_libraries(ds_game PRIVATE android log aaudio m)
 elseif(WIN32 OR MINGW)
     # Картинки и шрифт зашиваются прямо в Game.exe как RCDATA-ресурсы
     # (embed_assets.py -> embedded_assets.rc), поэтому рядом с exe в
@@ -49,7 +49,7 @@ elseif(WIN32 OR MINGW)
     endif()
     add_executable(Game WIN32 "${GAME_C}" runtime.c main_win32.c "${EMBED_RC}" ${APP_ICON_RC})
     target_include_directories(Game PRIVATE . game)
-    target_link_libraries(Game PRIVATE gdi32 wininet user32 kernel32 shell32)
+    target_link_libraries(Game PRIVATE gdi32 wininet user32 kernel32 shell32 winmm)
     if(NOT MSVC)
         target_link_libraries(Game PRIVATE m)
     endif()

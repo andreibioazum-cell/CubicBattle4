@@ -35,6 +35,9 @@ typedef struct {
 } Buffer;
 extern int screen_w, screen_h;
 extern double dt;
+/* Позиция курсора мыши для эффекта наведения: mouse_in равен 1, пока курсор
+ * над окном (на телефоне остаётся 0 — там наведения нет). */
+extern double mouse_x, mouse_y, mouse_in;
 typedef struct { float x, y, dx, dy, ox, oy, r; } Joy;
 extern Joy joy;
 void ds_log(const char *format, ...);
@@ -90,6 +93,13 @@ void line(float x1, float y1, float x2, float y2, float thickness, uint32_t colo
 void ds_set_asset_manager(AAssetManager *assets);
 void ds_release_assets(void);
 int png_load(const char *name);
+int ds_asset_read(const char *name, uint8_t **out, size_t *size);
+/* Звук: короткие эффекты и зациклённая музыка из game/assets/music. */
+int ds_audio_init(void);
+void ds_audio_shutdown(void);
+void sound_play(const char *name, double volume);
+void music_play(const char *name, double volume);
+void music_stop(void);
 void tex(float x, float y, const char *name, float angle, float scale);
 void tex_tint(float x, float y, const char *name, float angle, float scale, uint32_t color);
 void text(const char *string, float x, float y, uint32_t color);

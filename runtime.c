@@ -75,6 +75,7 @@ Joy joy = {0};
 int screen_w = 0;
 int screen_h = 0;
 double dt = 0.0;
+double mouse_x = -1000.0, mouse_y = -1000.0, mouse_in = 0.0;
 static jmp_buf ds_error_jump;
 static int ds_error_handler_active = 0;
 static int ds_has_error = 0;

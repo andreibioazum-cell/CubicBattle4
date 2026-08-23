@@ -85,13 +85,13 @@ jobs:
         # arm64-v8a — min API 29 (Android 10)
         "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
-          -I. -I$GLUE -landroid -llog -lm \
+          -I. -I$GLUE -landroid -llog -laaudio -lm \
           -o staging/lib/arm64-v8a/libds_game.so
 
         # arm32 armeabi-v7a — min API 29
         "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
-          -I. -I$GLUE -landroid -llog -lm \
+          -I. -I$GLUE -landroid -llog -laaudio -lm \
           -o staging/lib/armeabi-v7a/libds_game.so
 
     # Подпись — временный debug.keystore, как в исходной сборке (без секретов).

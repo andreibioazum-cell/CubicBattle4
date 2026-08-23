@@ -296,6 +296,11 @@ static int open_asset(const char *n, uint8_t **out, size_t *sz) {
     *out = buf; *sz = (size_t)len; return 1;
 }
 #endif
+/* Публичная обёртка над загрузчиком ассетов: тем же путём, что картинки,
+ * читает WAV-файлы звукового движка (audio.c). */
+int ds_asset_read(const char *name, uint8_t **out, size_t *size) {
+    return open_asset(name, out, size);
+}
 static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }

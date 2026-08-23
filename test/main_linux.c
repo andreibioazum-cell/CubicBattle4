@@ -22,6 +22,7 @@ extern double willpower, best_day, up_speed, up_bag, up_hold, up_night, up_food;
 extern double hold_cd, bin_x, bin_y, max_craving, btn_w, btn_h, back_y;
 extern double phase, eaten, fridge_x, fridge_y, bed_x, bed_y, drinks, drink_limit, combo;
 extern double splash_on;
+extern double mouse_x, mouse_y, mouse_in;
 extern DSArray *trash_x, *trash_y, *trash_on;
 extern DSArray *bud_x, *bud_y, *bud_step, *bud_flee, *bud_say, *bud_say_t;
 extern DSArray *food_x, *food_y, *food_on;
@@ -194,6 +195,22 @@ int main(void) {
 
     printf("=== init ok: lobby state %g, willpower %g\n", game_state, willpower);
     shot("01_lobby");
+
+    /* --- 0a. Наведение мыши на кнопку «Играть»: кнопка темнеет --- */
+    {
+        double bx = (g_w - btn_w) / 2.0, by = g_h / 2.0 - 140.0;
+        uint32_t before = g_pixels[(int)(by + btn_h / 2) * g_w + (int)(bx + btn_w / 2)];
+        mouse_in = 1; mouse_x = bx + btn_w / 2; mouse_y = by + btn_h / 2;
+        if (!run_frames(2)) return 3;
+        uint32_t after = g_pixels[(int)(by + btn_h / 2) * g_w + (int)(bx + btn_w / 2)];
+        shot("01b_lobby_hover");
+        int lum_b = (int)((before & 0xFF) + ((before >> 8) & 0xFF) + ((before >> 16) & 0xFF));
+        int lum_a = (int)((after & 0xFF) + ((after >> 8) & 0xFF) + ((after >> 16) & 0xFF));
+        if (lum_a >= lum_b) { printf("!! hover did not darken the button (%d -> %d)\n", lum_b, lum_a); return 3; }
+        printf("=== hover darkens the button: %d -> %d\n", lum_b, lum_a);
+        mouse_in = 0; mouse_x = -1000; mouse_y = -1000;
+        if (!run_frames(2)) return 3;
+    }
     if (game_state != 0) { printf("!! expected lobby\n"); return 3; }
 
     /* --- 1. «Как играть» открывается и закрывается --- */

@@ -68,6 +68,7 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             ANativeWindow_setBuffersGeometry(app->window, 0, 0, WINDOW_FORMAT_RGBA_8888);
             ds_set_activity(app->activity);
             if (!ds_graphics_init(script_assets)) { init_done = 0; return; }
+            ds_audio_init();
             init_done = 1; script_active = 0; restart_failures = 0;
             ds_clear_script_restart(); (void)start_script(0); break;
         case APP_CMD_WINDOW_RESIZED:
@@ -85,7 +86,7 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             }
             break;
         case APP_CMD_TERM_WINDOW:
-            init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); break;
+            init_done = 0; script_active = 0; keyboard_hide(); ds_audio_shutdown(); ds_graphics_shutdown(); break;
         case APP_CMD_GAINED_FOCUS: break;
         case APP_CMD_LOST_FOCUS: break;
         default: break;
@@ -148,7 +149,7 @@ void android_main(struct android_app *app) {
         while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
             if (app->destroyRequested) {
-                init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); return;
+                init_done = 0; script_active = 0; keyboard_hide(); ds_audio_shutdown(); ds_graphics_shutdown(); return;
             }
         }
         if (!app->window || !init_done || app->destroyRequested) continue;
@@ -183,4 +184,5 @@ void android_main(struct android_app *app) {
     }
 }
 #include "graphics.c"
+#include "audio.c"
 #include "net.c"

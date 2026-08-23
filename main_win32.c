@@ -206,9 +206,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         ReleaseCapture();
         touch((float)(short)LOWORD(lParam), (float)(short)HIWORD(lParam), 1, MOUSE_ID);
         return 0;
-    case WM_MOUSEMOVE:
-        if (g_mouse_down)
-            touch((float)(short)LOWORD(lParam), (float)(short)HIWORD(lParam), 2, MOUSE_ID);
+    case WM_MOUSEMOVE: {
+        /* Позиция курсора нужна кнопкам для эффекта наведения. */
+        float mx = (float)(short)LOWORD(lParam), my = (float)(short)HIWORD(lParam);
+        mouse_x = mx; mouse_y = my; mouse_in = 1.0;
+        if (g_mouse_down) touch(mx, my, 2, MOUSE_ID);
+        return 0;
+    }
+    case WM_KILLFOCUS:
+        mouse_in = 0.0;
         return 0;
     case WM_CLOSE:
         confirm_exit();
@@ -328,6 +334,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
     QueryPerformanceCounter(&g_prev);
     ensure_buffer(1280, 720);
     ds_graphics_init(NULL);
+    ds_audio_init();
     start_script(0);
     while (g_running) {
         MSG msg;
@@ -345,6 +352,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
         double ms = (double)(t1.QuadPart - t0.QuadPart) / (double)g_freq.QuadPart * 1000.0;
         if (ms < 15.0) Sleep((DWORD)(15.0 - ms));
     }
+    ds_audio_shutdown();
     ds_graphics_shutdown();
     free(g_pixels);
     return 0;
@@ -357,4 +365,5 @@ int main(void) {
 }
 #endif
 #include "graphics.c"
+#include "audio.c"
 #include "net.c"

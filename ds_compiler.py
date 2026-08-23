@@ -17,9 +17,10 @@ BUILTINS=frozenset({
     'str_len','str_eq',
     'ds_log','console_count','console_line','console_type','console_clear',
     'arr_new','arr_push','arr_get','arr_set','arr_len','arr_clear',
-    'clamp','lerp','dist'
+    'clamp','lerp','dist',
+    'sound_play','music_play','music_stop'
 })
-ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy'}
+ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy','mouse_x':'num','mouse_y':'num','mouse_in':'num'}
 STR_BUILTINS=frozenset({'console_line','keyboard_get_text','keyboard_get_raw','net_chat_text','net_chat_uid','net_login_nick','net_player_nick','net_leaderboard_nick'})
 _NAME=r'[A-Za-z_]\w*'
 _FUNC_RE=re.compile(r'^function\s+('+_NAME+r')(?:\s+(.*))?$')

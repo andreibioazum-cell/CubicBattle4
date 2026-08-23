@@ -691,6 +691,7 @@ end
 function touch_game num x, num y, num action, num id
 if over!=0
 if action==0
+click_sound
 if over==2; start_night
 else if over==3; start_day day+1
 else; start_transition 0; end
@@ -698,7 +699,7 @@ end
 return
 end
 if action==3; act_id=-1; drop_joy; return; end
-if back_hit(x,y)==1&&action!=2; start_transition 0; return; end
+if back_hit(x,y)==1&&action!=2; click_sound; start_transition 0; return; end
 if action==0&&sqrt((x-act_x)*(x-act_x)+(y-act_y)*(y-act_y))<=96; act_id=id; do_hold; return; end
 if action==1&&id==act_id; act_id=-1; return; end
 joy_touch x,y,action,id

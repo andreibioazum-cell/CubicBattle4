@@ -114,6 +114,7 @@ static EM_BOOL on_mouse(int type, const EmscriptenMouseEvent *e, void *u) {
     (void)u;
     float x, y;
     event_xy(e->targetX, e->targetY, &x, &y);
+    mouse_x = x; mouse_y = y; mouse_in = 1.0;
     if (type == EMSCRIPTEN_EVENT_MOUSEDOWN) { g_mouse_down = 1; touch(x, y, 0, MOUSE_ID); }
     else if (type == EMSCRIPTEN_EVENT_MOUSEUP) { g_mouse_down = 0; touch(x, y, 1, MOUSE_ID); }
     else if (type == EMSCRIPTEN_EVENT_MOUSEMOVE && g_mouse_down) { touch(x, y, 2, MOUSE_ID); }
@@ -123,6 +124,7 @@ static EM_BOOL on_mouse(int type, const EmscriptenMouseEvent *e, void *u) {
 static EM_BOOL on_touch(int type, const EmscriptenTouchEvent *e, void *u) {
     (void)u;
     int action = 2;
+    mouse_in = 0.0; /* пальцем наводиться нельзя — эффект наведения выключаем */
     if (type == EMSCRIPTEN_EVENT_TOUCHSTART) action = 0;
     else if (type == EMSCRIPTEN_EVENT_TOUCHEND) action = 1;
     else if (type == EMSCRIPTEN_EVENT_TOUCHCANCEL) action = 3;
@@ -221,6 +223,7 @@ static void boot(void) {
     emscripten_cancel_main_loop();
     net_set_data_path("/persist");
     ds_graphics_init(NULL);
+    ds_audio_init();
     ensure_buffer(ds_css_width(), ds_css_height());
     start_script(0);
     emscripten_set_main_loop(frame, 0, 0);
@@ -242,6 +245,7 @@ int main(void) {
 }
 
 #include "graphics.c"
+#include "audio.c"
 #include "net.c"
 #else
 #include <stdio.h>
