@@ -76,12 +76,14 @@ str FIREBASE="https://project-name-default-rtdb.europe-west1.firebasedatabase.ap
 ```text
 event/   0, 1 или 2 — ивент в корне базы: 1 = «диско», 2 = «снегопад»
 users/
-  <ник>/ nick, pass, cups, candies, cls, azum, santa, level, levels
+  <ник>/ nick, pass, cups, candies, cls, azum, santa, level, levels,
+  ordinary_level, ordinary_levels, azum_level, azum_levels,
+  santa_level, santa_levels
 rooms/
   main/
     players/
       0/ uid, nick, x, y, angle, hp, alive, seq,
-         px, py, pdx, pdy, punch, sx, sy, sdx, sdy, snow, cls
+         px, py, pdx, pdy, punch, sx, sy, sdx, sdy, snow, cls, level
       1/ ...
     chat/
       <ключ>/ uid, nick, text
@@ -94,9 +96,12 @@ rooms/
 - `sx`, `sy`, `sdx`, `sdy` — точка и направление последней снежинки (суператака
   Деда Мороза);
 - `snow` — растущий номер броска снежинки;
-- `level` — выбранный уровень, `levels` — максимальный открытый уровень.
-  Новый аккаунт начинает с уровня 0; первый уровень покупается за 30 кубков,
-  каждый следующий — на 10 кубков дороже.
+- `level` — выбранный уровень активного класса, `levels` — его максимальный
+  открытый уровень. Для новых клиентов отдельно хранятся `ordinary_level`,
+  `azum_level` и `santa_level` с соответствующими полями `*_levels`.
+  У каждого класса доступны только уровни 1–3: первый уровень покупается за
+  30 кубков, затем 40 и 50. Старые аккаунты с общими `level`/`levels`
+  автоматически переносятся в выбранный класс.
 
 Правило для `users/$nick` разрешает создание только пустого узла. Существующую
 запись можно менять только с тем же паролем, поэтому сохранение прогресса не

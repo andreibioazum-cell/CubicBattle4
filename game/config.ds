@@ -8,6 +8,8 @@ num game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration
 // Онлайн: в remotes по 11 чисел, в remote_punches по 6. Координаты соперника
 // плавно догоняют сетевую цель; большой скачок считается телепортом.
 // Поля remotes: present, x, y, angle, hp, alive, punch, netx, nety, netangle, class.
+// Уровень активного класса передаётся отдельно через сетевой снимок и не меняет
+// старый формат массива remotes.
 num remote_fields=11, punch_fields=6, snow_fields=8, remote_smooth=14, remote_snap=220
 // Поведение бота: enemy_dodge_time/cooldown — окно и перезарядка
 // уклонения от удара игрока;
@@ -38,9 +40,10 @@ num login_ox=0, login_oy=-20, login_fh=50, login_lab=28, login_lab_ox=12
 str GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png", AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png", SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main", login_nick="", login_pass=""
 // Звуки: файлы лежат в game/sounds (lobbymusic.wav и другие). snd_load
 // возвращает 0, если файла нет, — игра спокойно живёт и без музыки.
-// music_ok запоминает, удалось ли поднять музыку лобби.
+// music_ok запоминает, удалось ли поднять музыку лобби. music_level — текущая
+// громкость в долях от 0.7: в бой музыка уходит плавно, а не обрывается.
 str LOBBY_MUSIC="lobbymusic.wav"
-num music_ok=0
+num music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1.0
 // Ивенты из Firebase (корневой узел /event): event_mode=0 — ивента нет,
 // 1 — «диско» (всё мигает), 2 — снегопад над ареной. Ивенты действуют только
 // в онлайне; в оффлайне (соло-бой) они не обновляются и не рисуются.
@@ -54,21 +57,34 @@ num event_mode=0, disco_safe=0, disco_t=0, event_t=0, event_flakes=44
 num player_class=0, azum_revived=0, revive_prot=0
 // Валюты: кубки — за победы, леденцы — вторая валюта (за победы).
 num cups=0, candies=0, azum_owned=0, santa_owned=0, cup_win=5, candy_win=3, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
-// Уровни: первый уровень стоит 30 кубков, каждый следующий на 10 дороже.
-// Нулевой уровень доступен сразу и не поглощает урон; остальные покупаются по очереди.
-num player_level=0, levels_unlocked=0, max_level=5, level_base_cost=30, level_cost_step=10, level_msg_t=0
+// Уровни: у каждого класса свой путь из трёх уровней. Первый уровень стоит
+// 30 кубков, каждый следующий на 10 дороже. Уровни 4 и 5 удалены полностью.
+// player_level/levels_unlocked — совместимый алиас для выбранного класса;
+// отдельные поля позволяют сохранить прогресс Азумa, Деда Мороза и обычного
+// бойца независимо друг от друга.
+num player_level=0, levels_unlocked=0, max_level=3, level_base_cost=30, level_cost_step=10, level_msg_t=0
+num ordinary_level=0, ordinary_levels_unlocked=0, azum_level=0, azum_levels_unlocked=0, santa_level=0, santa_levels_unlocked=0
+// Бонусы уровней Азумa: защита работает только после возрождения, скорость
+// постоянная, а лечение срабатывает после успешного попадания.
+num azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
+// У обычного бойца и Деда Мороза свои, не совпадающие с Азумом пути.
+num ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
+num santa_poison_time_bonus=1.0, santa_poison_damage_bonus=0.10, santa_freeze_time_bonus=0.50
 // Дед Мороз (класс 2). По цифрам он почти как обычный класс: те же HP,
 // та же скорость, тот же хитбокс и ритм удара. Отличий два:
-// 1) Посох наносит крошечный урон santa_damage и ОТРАВЛЯЕТ врага: яд длится
-//    santa_poison_time секунд и снимает santa_poison_dps HP в секунду, так
-//    что враг постепенно теряет здоровье даже после размена.
+// 1) Посох наносит крошечный урон santa_damage и ОТРАВЛЯЕТ врага: первый
+//    отдельный тик происходит через santa_poison_tick_interval секунд, затем
+//    ещё несколько тиков до конца действия яда.
 // 2) Суператака «Снежинка» урона не наносит совсем (и яда тоже): она только
 //    замораживает врага (еле ходит super_freeze_slow) на super_freeze секунд.
 //    Кулдаун броска — super_cd_time.
 // Работает против бота в соло и против игроков в онлайне: бросок публикуется
 // в сеть как событие со счётчиком (как удар), каждый поражённый применяет
 // заморозку у себя.
-num santa_damage=0.25, santa_poison_time=4.0, santa_poison_dps=0.5
+// Первый тик яда происходит примерно через секунду после удара, затем
+// повторяется раз в секунду. Старое имя santa_poison_dps оставлено для
+// совместимости, но означает урон одного тика, а не урон каждого кадра.
+num santa_damage=0.25, santa_poison_time=4.0, santa_poison_tick_interval=1.0, santa_poison_dps=0.5
 num super_freeze=3.0, super_freeze_slow=0.12
 num super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
 // Плавное появление/исчезновение эффектов: freeze_fade_in/out — за сколько секунд

@@ -27,6 +27,7 @@
 /* globals generated into game.c (non-static) — read them for debugging */
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
+extern double ordinary_level, azum_level, santa_level, max_level;
 extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
@@ -613,6 +614,16 @@ int main(void) {
         return 3;
     }
     printf("=== classes tab: Azum bought and selected (frame %ld)\n", g_frame);
+    /* Уровни находятся прямо под каждой карточкой и у веток свой прогресс. */
+    if (max_level != 3) { printf("!! levels 4 and 5 were not removed: max=%g\n", max_level); return 3; }
+    cups = 30; do_tap(640.0f, 283.0f); run_frames(5);
+    cups = 40; do_tap(640.0f, 305.0f); run_frames(5);
+    cups = 50; do_tap(640.0f, 327.0f); run_frames(5);
+    if (azum_level != 3 || player_level != 3 || levels_unlocked != 3 || cups != 0) {
+        printf("!! Azum class level path failed: level=%g selected=%g unlocked=%g cups=%g\n",
+               azum_level, player_level, levels_unlocked, cups); return 3;
+    }
+    printf("=== Azum levels 1-3 bought under its card (frame %ld)\n", g_frame);
     tap_back(); wait_state(0, 30);
 
     /* --- 12. Повторный вход в онлайн с сохранённым аккаунтом --- */
@@ -633,7 +644,12 @@ int main(void) {
     if (player_class != 2 || santa_owned != 1) {
         printf("!! Santa buy failed: class=%g owned=%g\n", player_class, santa_owned); return 3;
     }
-    printf("=== santa bought with candies (frame %ld)\n", g_frame);
+    cups = 30; do_tap(926.0f, 283.0f); run_frames(5);
+    if (santa_level != 1 || azum_level != 3 || player_level != 1 || cups != 0) {
+        printf("!! class level branches are not independent: santa=%g azum=%g selected=%g cups=%g\n",
+               santa_level, azum_level, player_level, cups); return 3;
+    }
+    printf("=== Santa level 1 bought independently (frame %ld)\n", g_frame);
     tap_back(); wait_state(0, 30);
 
     tap_play(); wait_state(2, 30);
@@ -750,13 +766,18 @@ int main(void) {
         if (e[ENEMY_POISON] < 3.5) { printf("!! staff did not poison the enemy: %g\n", e[ENEMY_POISON]); return 3; }
         printf("=== santa staff hit for %g and poisoned the enemy (poison %g)\n", 10.0 - hp_after_hit, e[ENEMY_POISON]);
 
-        /* Яд тикает: полсекунды без новых ударов — минус ещё ~0.25 HP. */
+        /* Яд теперь дискретный: первые полсекунды HP не меняется, затем
+         * примерно через секунду приходит отдельный тик на 0.5 HP. */
         for (int i = 0; i < 30; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
-        if (e[ENEMY_HP] > 9.7 || e[ENEMY_HP] < 9.2) {
-            printf("!! poison is not draining hp: %g after 0.5s\n", e[ENEMY_HP]); return 3;
+        if (e[ENEMY_HP] < 9.74 || e[ENEMY_HP] > 9.76) {
+            printf("!! poison must wait before its first tick: %g after 0.5s\n", e[ENEMY_HP]); return 3;
+        }
+        for (int i = 0; i < 35; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+        if (e[ENEMY_HP] > 9.3 || e[ENEMY_HP] < 9.2) {
+            printf("!! poison did not deal one discrete tick: %g after ~1s\n", e[ENEMY_HP]); return 3;
         }
         if (poison_a <= 0.01) { printf("!! enemy poison ring not visible: %g\n", poison_a); return 3; }
-        printf("=== poison drains hp on its own: %g -> %g, ring %g\n", hp_after_hit, e[ENEMY_HP], poison_a);
+        printf("=== poison ticks after a delay: %g -> %g, ring %g\n", hp_after_hit, e[ENEMY_HP], poison_a);
 
         /* Яд кончается: таймер до нуля, HP замирает. */
         for (int i = 0; i < 320 && e[ENEMY_POISON] > 0; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
