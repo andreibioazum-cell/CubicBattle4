@@ -48,6 +48,14 @@ num cost=level_cost(n)
 if cups<cost; level_msg_t=2.5; return; end
 cups=cups-cost; levels_unlocked=n; player_level=n; level_msg_t=0; save_progress
 end
+
+function try_auto_upgrade_levels
+// Пытаемся автоматически открыть следующий уровень, если хватает кубков
+num n=levels_unlocked+1
+if n<1||n>max_level; return; end
+num cost=level_cost(n)
+if cups>=cost; cups=cups-cost; levels_unlocked=n; player_level=n; save_progress; level_msg_t=0; end
+end
 function pick_class_level num cls, num n
 if n<1||n>max_level; return; end
 if class_owned(cls)==0; class_msg_t=2.5; return; end
@@ -117,8 +125,12 @@ tex x+(w-spr)/2,y+12,texname,0,ts
 num tw=text_ink_width(title)
 text title,x+(w-tw)/2,y+92,0xFFFFFF
 num dw=text_ink_width(desc)*0.5
-text_scaled desc,x+(w-dw)/2,y+120,0xC8C8E0,0.5
-draw_class_level_rows x,y,w,cls
+text_scaled desc,x+(w-dw)/2,y+128,0xC8C8E0,0.5
+// Показываем текущий уровень под описанием
+num lv=class_level_for(cls)
+str lv_text=tr_level()+" "+lv
+num lw=text_ink_width(lv_text)*0.5
+text_scaled lv_text,x+(w-lw)/2,y+156,0xDDE5FF,0.45
 str cur=tr_cups()
 if cls==2; cur=tr_candies(); end
 if sel==1; button_scaled tr_class_selected(),x+24,y+h-52,w-48,48,0.55
@@ -161,18 +173,9 @@ num cw=260, ch=300, gap=26
 num total=cw*3+gap*2, x0=(screen_w-total)/2
 num x1=x0, x2=x0+cw+gap, x3=x0+2*(cw+gap), cy=back_y+btn_h+16
 if y>=cy&&y<=cy+ch
-if x>=x1&&x<=x1+cw
-if y>=cy+160&&y<cy+232; pick_class_level 0,floor((y-cy-160)/22)+1; else; pick_class 0; end
-return
-end
-if x>=x2&&x<=x2+cw
-if y>=cy+160&&y<cy+232; pick_class_level 1,floor((y-cy-160)/22)+1; else; pick_class 1; end
-return
-end
-if x>=x3&&x<=x3+cw
-if y>=cy+160&&y<cy+232; pick_class_level 2,floor((y-cy-160)/22)+1; else; pick_class 2; end
-return
-end
+if x>=x1&&x<=x1+cw; pick_class 0; return; end
+if x>=x2&&x<=x2+cw; pick_class 1; return; end
+if x>=x3&&x<=x3+cw; pick_class 2; return; end
 end
 num by=cy+ch+gap
 if y>=by-8&&y<=by+btn_h+8
@@ -184,6 +187,8 @@ rect 0,0,screen_w,screen_h,0x1a1a2e
 str title=tr_levels_for_class()+" · "+class_name()
 ctext title,back_y+btn_h+8,0xFFFFFF
 num n=1, row_h=78, y=back_y+btn_h+52, w=520, x=(screen_w-w)/2
+// Пытаемся автоматически открыть следующий уровень
+try_auto_upgrade_levels
 loop n<=max_level
 num unlocked=0, next=0
 if n<=levels_unlocked; unlocked=1; end
@@ -192,16 +197,18 @@ num sel=0; if player_level==n&&unlocked==1; sel=1; end
 if sel==1; roundrect x-4,y-4,w+8,row_h+8,24,0xFF5A5A78; end
 roundrect x,y,w,row_h,20,0xFF2A2A40
 str desc=tr_class_level_effect(player_class,n)
-if unlocked==0
-if next==1; desc=desc+" · "+tr_level_unlock()+" "+level_cost(n)+" "+tr_cups_unit(); end
-end
 str level_title=tr_level()+" "+n
 num tw=text_ink_width(level_title)*0.7
 text_scaled level_title,x+(w-tw)/2,y+12,0xFFFFFF,0.7
 num dw=text_ink_width(desc)*0.5
 col desc_c=0xC8C8E0
-if unlocked==0; desc_c=0x8888AA; end
+if unlocked==1; desc_c=0x7ED321; end
 text_scaled desc,x+(w-dw)/2,y+42,desc_c,0.5
+// Показываем статус уровня
+str status=""
+if unlocked==1; status="✓ Открыт"; else if next==1; status="Открыть: "+level_cost(n)+" "+tr_cups_unit(); else; status="🔒 Закрыт"; end
+num sw=text_ink_width(status)*0.5
+text_scaled status,x+(w-sw)/2,y+58,0xFFD54A,0.45
 n=n+1; y=y+row_h+10
 end
 if level_msg_t>0; level_msg_t=level_msg_t-dt; ctext tr_level_need_cups(),back_y+btn_h+52+max_level*(row_h+10)+8,0xFF8A80; end
@@ -214,8 +221,8 @@ if back_hit(x,y)==1; start_transition 8; return; end
 num n=1, row_h=78, ry=back_y+btn_h+52, w=520, rx=(screen_w-w)/2
 loop n<=max_level
 if x>=rx&&x<=rx+w&&y>=ry&&y<=ry+row_h
-if n<=levels_unlocked; player_level=n; save_progress
-else if n==levels_unlocked+1; unlock_next_level n; end
+// Автоматически открываем следующий уровень по клику
+if n==levels_unlocked+1; unlock_next_level n; end
 return
 end
 n=n+1; ry=ry+row_h+10
