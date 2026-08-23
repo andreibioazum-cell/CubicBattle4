@@ -60,7 +60,27 @@ text_scaled w_s,x,y,0xFFD54A,0.55
 text_scaled r_s,x+ww+gap,y,0xB0F0B0,0.55
 end
 function draw_bg
+// Фон меню - тёмный лист в линейку: тема игры про тетрадку, где Ярик
+// отмечает прожитые дни.
 rect 0,0,screen_w,screen_h,0x14161F
+num ly=38
+loop ly<screen_h
+line 0,ly,screen_w,ly,1,0x191D2A
+ly=ly+38
+end
+line 112,0,112,screen_h,2,0x2B1F2E
+end
+function draw_disclaimer
+draw_bg
+num y=screen_h/2-186
+tex screen_w/2-32,y,SHEET,0,1
+y=y+96
+ctext tr_disc_title(),y,0xFFFFFF
+y=y+68
+ctext_scaled tr_disc1(),y,0xE6E6F0,0.6; y=y+44
+ctext_scaled tr_disc2(),y,0xE6E6F0,0.6; y=y+44
+ctext_scaled tr_disc3(),y,0x9FE0A0,0.6; y=y+70
+ctext_scaled tr_disc_tap(),y,0x8890A8,0.55
 end
 function draw_lobby
 draw_bg
@@ -138,18 +158,25 @@ if card_btn_hit(4,x,y)==1; buy_food; end
 end
 function draw_howto
 draw_bg
-num y=back_y+btn_h+34
-ctext tr_howto(),y,0xFFFFFF
-y=y+56
-ctext_scaled tr_h1(),y,0xE6E6F0,0.6; y=y+42
-ctext_scaled tr_h2(),y,0xE6E6F0,0.6; y=y+42
-ctext_scaled tr_h3(),y,0xE6E6F0,0.6; y=y+42
-ctext_scaled tr_h4(),y,0xE6E6F0,0.6; y=y+42
-ctext_scaled tr_h5(),y,0xE6E6F0,0.6; y=y+42
-ctext_scaled tr_h6(),y,0x9FC6FF,0.6; y=y+42
-ctext_scaled tr_h7(),y,0x9FC6FF,0.6; y=y+42
-ctext_scaled tr_h8(),y,0xFFB3A7,0.6; y=y+42
-ctext_scaled tr_h9(),y,0xFFD54A,0.6
+num y=back_y+btn_h+30
+ctext tr_story(),y,0xFFFFFF
+y=y+46
+ctext_scaled tr_s1(),y,0xC9CBD8,0.52; y=y+34
+ctext_scaled tr_s2(),y,0xC9CBD8,0.52; y=y+34
+ctext_scaled tr_s3(),y,0xC9CBD8,0.52; y=y+34
+ctext_scaled tr_s4(),y,0xC9CBD8,0.52; y=y+34
+ctext_scaled tr_s5(),y,0x8890A8,0.52; y=y+52
+ctext tr_rules(),y,0xFFFFFF
+y=y+46
+ctext_scaled tr_h2(),y,0xE6E6F0,0.55; y=y+36
+ctext_scaled tr_h3(),y,0xE6E6F0,0.55; y=y+36
+ctext_scaled tr_h4(),y,0xE6E6F0,0.55; y=y+36
+ctext_scaled tr_h1(),y,0xFFB3A7,0.55; y=y+36
+ctext_scaled tr_h5(),y,0xE6E6F0,0.55; y=y+36
+ctext_scaled tr_h6(),y,0x9FC6FF,0.55; y=y+36
+ctext_scaled tr_h7(),y,0x9FC6FF,0.55; y=y+36
+ctext_scaled tr_h8(),y,0xFFB3A7,0.55; y=y+36
+ctext_scaled tr_h9(),y,0xFFD54A,0.55
 draw_back
 end
 function draw_settings

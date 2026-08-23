@@ -62,8 +62,8 @@ function tr_relapse_fridge
 if language==1; return "Открыл холодильник"; end
 return "He opened the fridge";end
 function tr_relapse_fridge_note
-if language==1; return "Одна бутылка - и день насмарку"; end
-return "One bottle and the day is gone";end
+if language==1; return "Ночной жор - тоже слабость"; end
+return "Night bingeing is weakness too";end
 function tr_relapse_food
 if language==1; return "Переел"; end
 return "Ate too much";end
@@ -74,11 +74,11 @@ function tr_clean_sheet
 if language==1; return "С чистого листа"; end
 return "With a clean slate";end
 function tr_days_lived
-if language==1; return "Прожито трезвых дней: "; end
-return "Sober days lived: ";end
+if language==1; return "Дней без сигарет: "; end
+return "Smoke-free days: ";end
 function tr_day_done
-if language==1; return "День прожит трезво"; end
-return "A sober day";end
+if language==1; return "День без сигарет"; end
+return "A smoke-free day";end
 function tr_night_done
 if language==1; return "Ночь пережита"; end
 return "The night is over";end
@@ -142,8 +142,8 @@ function tr_lang
 if language==1; return "Язык"; end
 return "Language";end
 function tr_h1
-if language==1; return "Ярик пил и мусорил во дворе. Он решил завязать."; end
-return "Yarik used to drink and litter. He decided to quit.";end
+if language==1; return "Стрельнул сигарету - вечером не пройдёшь проверку."; end
+return "Bum a cigarette and you fail the evening test.";end
 function tr_h2
 if language==1; return "Днём: джойстик слева - ходить, наступай на мусор."; end
 return "Day: the left stick moves, step on litter to pick it up.";end
@@ -151,8 +151,8 @@ function tr_h3
 if language==1; return "Донеси мусор до урны - двор чище, а на душе легче."; end
 return "Carry the litter to the bin: cleaner yard, lighter heart.";end
 function tr_h4
-if language==1; return "Красная полоса - тяга. Бутылки во дворе её разгоняют."; end
-return "The red bar is craving. Bottles in the yard raise it.";end
+if language==1; return "Красная полоса - тяга. Курящие приятели её разгоняют."; end
+return "The red bar is craving. The smoking guys raise it.";end
 function tr_h5
 if language==1; return "Кнопка Держись сбивает тягу и отгоняет соблазны."; end
 return "The Hold on button cuts craving and pushes temptation away.";end
@@ -170,20 +170,20 @@ if language==1; return "Сила воли остаётся навсегда и �
 return "Willpower stays forever and upgrades never stop.";end
 
 // --- реплики и шутки --------------------------------------------------
-// Собутыльники зовут выпить. Номер реплики выбирается случайно.
+// Курящие приятели зовут Ярика в курилку. Реплика выбирается случайно.
 function buddy_line num i
-str s="Yarik, one beer?"
+str s="Yarik, want one?"
 if language==1
-if i==0; s="Ярик, по пивку?"
-else if i==1; s="Ну одну, чисто символически!"
+if i==0; s="Ярик, будешь?"
+else if i==1; s="Одну затяжку, чё ты!"
 else if i==2; s="Ты чё, не мужик?"
-else if i==3; s="Айда за гаражи!"
+else if i==3; s="Айда покурим за гаражи!"
 else; s="Я угощаю, брат!"; end
 else
-if i==0; s="Yarik, one beer?"
-else if i==1; s="Just one, symbolic!"
+if i==0; s="Yarik, want one?"
+else if i==1; s="One drag, come on!"
 else if i==2; s="Come on, be a man!"
-else if i==3; s="Let's go behind the garages!"
+else if i==3; s="Let us smoke behind the garages!"
 else; s="It is on me, bro!"; end
 end
 return s;end
@@ -241,29 +241,67 @@ function tr_combo
 if language==1; return "Комбо x"; end
 return "Combo x";end
 function tr_drinks
-if language==1; return "Взято"; end
-return "Taken";end
+if language==1; return "Стрельнул"; end
+return "Bummed";end
 function tr_alcotest
-if language==1; return "Проверка на алкоголь"; end
-return "Alcohol test";end
+if language==1; return "Проверка на никотин"; end
+return "Nicotine test";end
 function tr_taken_today
-if language==1; return "Взял у собутыльников: "; end
-return "Taken from buddies: ";end
+if language==1; return "Стрельнул сигарет: "; end
+return "Cigarettes bummed: ";end
 function tr_verdict_clean
-if language==1; return "Чисто. Ни капли!"; end
-return "Clean. Not a drop!";end
+if language==1; return "Чисто. Ни одной!"; end
+return "Clean. Not a single one!";end
 function tr_verdict_smell
-if language==1; return "Есть запашок, но живём"; end
-return "Smells a bit, but fine";end
+if language==1; return "Пахнет табаком, но живём"; end
+return "Smells of smoke, but fine";end
 function tr_verdict_fail
 if language==1; return "Тест провален"; end
 return "Test failed";end
 function tr_verdict_fail_note
-if language==1; return "Столько взял - значит, пил"; end
-return "That many means he drank";end
+if language==1; return "Столько стрельнул - значит, курил"; end
+return "That many means he smoked";end
 function tr_sober_bonus
-if language==1; return "Трезвый день: +"; end
-return "Sober day bonus: +";end
+if language==1; return "День без сигарет: +"; end
+return "Smoke-free bonus: +";end
 function tr_oops
-if language==1; return "Ну по чуть-чуть..."; end
-return "Well, just a sip...";end
+if language==1; return "Ну одну затяжку..."; end
+return "Well, one drag...";end
+// --- сюжет на экране «как играть» -------------------------------------
+function tr_story
+if language==1; return "Сюжет"; end
+return "Story";end
+function tr_s1
+if language==1; return "Ярик Сафонов курил семь лет. В понедельник он сказал: всё."; end
+return "Yarik Safonov smoked for seven years. On Monday he said: enough.";end
+function tr_s2
+if language==1; return "Двор, где он курил с мужиками, зарос мусором и окурками."; end
+return "The yard where he smoked with the guys is full of litter now.";end
+function tr_s3
+if language==1; return "Каждый прожитый день он записывает в тетрадь. Сорвался -"; end
+return "He writes every day he survives into a notebook. One relapse -";end
+function tr_s4
+if language==1; return "лист вырывается, и всё считается с чистого листа."; end
+return "the page is torn out, and it all counts from a clean slate.";end
+function tr_s5
+if language==1; return "Игра не про сигареты, а про то, как начинать заново."; end
+return "This game is not about smoking. It is about starting over.";end
+function tr_rules
+if language==1; return "Как играть"; end
+return "How to play";end
+// --- дисклеймер на старте ----------------------------------------------
+function tr_disc_title
+if language==1; return "Пара слов перед игрой"; end
+return "A word before you play";end
+function tr_disc1
+if language==1; return "Эта игра не призывает курить и пить энергетики."; end
+return "This game does not encourage smoking or energy drinks.";end
+function tr_disc2
+if language==1; return "Лучше попейте воды и не тратьте здоровье на эту гадость."; end
+return "Better drink some water and skip that junk.";end
+function tr_disc3
+if language==1; return "Ярик бросает. У вас тоже получится - хоть с сотой попытки."; end
+return "Yarik is quitting. So can you - even on the hundredth try.";end
+function tr_disc_tap
+if language==1; return "Нажмите, чтобы начать"; end
+return "Tap to start";end

@@ -21,6 +21,7 @@ extern double game_state, t_dir, day, cleaned, goal, craving, over, last_reward;
 extern double willpower, best_day, up_speed, up_bag, up_hold, up_night, up_food;
 extern double hold_cd, bin_x, bin_y, max_craving, btn_w, btn_h, back_y;
 extern double phase, eaten, fridge_x, fridge_y, bed_x, bed_y, drinks, drink_limit, combo;
+extern double splash_on;
 extern DSArray *trash_x, *trash_y, *trash_on;
 extern DSArray *bud_x, *bud_y, *bud_step, *bud_flee, *bud_say, *bud_say_t;
 extern DSArray *food_x, *food_y, *food_on;
@@ -183,6 +184,14 @@ int main(void) {
     }
     script_active = 1;
     if (!run_frames(5)) return 2;
+    /* --- 0. Дисклеймер показывается первым и уходит по тапу --- */
+    if (splash_on != 1) { printf("!! disclaimer is not shown on start\n"); return 3; }
+    shot("00_disclaimer");
+    tap_center();
+    if (!run_frames(5)) return 3;
+    if (splash_on != 0) { printf("!! disclaimer did not close on tap\n"); return 3; }
+    printf("=== disclaimer shown and closed\n");
+
     printf("=== init ok: lobby state %g, willpower %g\n", game_state, willpower);
     shot("01_lobby");
     if (game_state != 0) { printf("!! expected lobby\n"); return 3; }
@@ -205,7 +214,7 @@ int main(void) {
     run_frames(20);
     shot("03_yard");
 
-    /* --- 2a. Наступил на собутыльника - взял у него бутылку --- */
+    /* --- 2a. Наступил на курящего приятеля - стрельнул сигарету --- */
     {
         double taken0 = drinks;
         int got = 0;
@@ -215,8 +224,8 @@ int main(void) {
             if (drinks > taken0) got = 1;
         }
         release_joy();
-        if (!got) { printf("!! stepping on a buddy did not take a bottle\n"); return 3; }
-        printf("=== took a bottle from a buddy: drinks %g\n", drinks);
+        if (!got) { printf("!! stepping on a buddy did not bum a cigarette\n"); return 3; }
+        printf("=== bummed a cigarette from a buddy: smokes %g\n", drinks);
         shot("03b_buddy");
     }
 
@@ -224,10 +233,10 @@ int main(void) {
     printf("=== day 1 done: cleaned %g/%g, drinks %g, reward %g, willpower %g, best %g\n",
            cleaned, goal, drinks, last_reward, willpower, best_day);
     if (best_day != 1 || willpower <= 0) { printf("!! day rewards missing\n"); return 3; }
-    if (drinks < 1) { printf("!! drinks counter reset before the alcohol test\n"); return 3; }
-    if (last_reward != 5) { printf("!! drunk day must not get the sober bonus: %g\n", last_reward); return 3; }
+    if (drinks < 1) { printf("!! smokes counter reset before the nicotine test\n"); return 3; }
+    if (last_reward != 5) { printf("!! smoky day must not get the clean bonus: %g\n", last_reward); return 3; }
     run_frames(2);
-    shot("04_alcotest");
+    shot("04_nicotine_test");
 
     /* --- 3. Ночь: холодильник тянет, еда лечит, кровать спасает --- */
     tap_center();
@@ -325,16 +334,16 @@ int main(void) {
     tap_center();
     if (!wait_state(0, 120)) { printf("!! overeat tap did not return to lobby\n"); return 3; }
 
-    /* --- 8a. Слишком много взял за день - проверка на алкоголь провалена --- */
+    /* --- 8a. Слишком много стрельнул за день - проверка на никотин провалена --- */
     tap_menu_row(0);
-    if (!wait_state(1, 60)) { printf("!! yard did not open for the alcohol test run\n"); return 3; }
-    drinks = drink_limit; /* как будто выпросил три бутылки за день */
+    if (!wait_state(1, 60)) { printf("!! yard did not open for the nicotine test run\n"); return 3; }
+    drinks = drink_limit; /* как будто стрельнул три сигареты за день */
     if (!clean_the_day()) {
-        if (over != 6) { printf("!! failed alcohol test expected, got over=%g\n", over); return 3; }
+        if (over != 6) { printf("!! failed nicotine test expected, got over=%g\n", over); return 3; }
     }
-    if (over != 6) { printf("!! alcohol test not failed (over=%g drinks=%g)\n", over, drinks); return 3; }
-    printf("=== alcohol test failed with %g bottles -> relapse\n", drinks);
-    shot("10b_alcotest_failed");
+    if (over != 6) { printf("!! nicotine test not failed (over=%g drinks=%g)\n", over, drinks); return 3; }
+    printf("=== nicotine test failed with %g cigarettes -> relapse\n", drinks);
+    shot("10b_test_failed");
     tap_center();
     if (!wait_state(0, 120)) { printf("!! failed-test tap did not return to lobby\n"); return 3; }
 

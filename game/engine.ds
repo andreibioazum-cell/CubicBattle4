@@ -21,7 +21,7 @@ end
 function init
 ds_log "init: loading textures"
 png_load YARD; png_load YARIK; png_load YARIK_HOLD
-png_load TRASH; png_load BOTTLE; png_load BIN; png_load SHEET
+png_load TRASH; png_load BIN; png_load SHEET
 png_load FLOOR; png_load FRIDGE; png_load BED; png_load FOOD
 png_load YARIK_W1; png_load YARIK_W2; png_load BUDDY; png_load BUDDY_W; png_load CAT
 load_progress
@@ -32,6 +32,7 @@ update_transition
 if game_state==1; update_game; end
 end
 function draw
+if splash_on==1; draw_disclaimer; return; end
 if game_state==1; draw_game
 else if game_state==2; draw_habits
 else if game_state==3; draw_howto
@@ -40,6 +41,10 @@ else; draw_lobby; end
 if t_fade>0; rect 0,0,screen_w,screen_h,(1+floor(t_fade*254))*0x1000000; end
 end
 function touch num x, num y, num action, num id
+if splash_on==1
+if action==0; splash_on=0; end
+return
+end
 if t_dir!=0; return; end
 if game_state==0; touch_lobby x,y,action
 else if game_state==1; touch_game x,y,action,id
