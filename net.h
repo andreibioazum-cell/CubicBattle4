@@ -67,8 +67,10 @@ double net_player_snow_dx(double slot);
 double net_player_snow_dy(double slot);
 double net_player_snow(double slot);
 double net_player_class(double slot);
+double net_player_level(double slot); /* уровень активного класса соперника */
+void net_set_level(double level); /* уровень активного класса своего игрока */
 
-/* Прогресс игрока: кубки, леденцы, выбранный класс и купленные классы. */
+/* Прогресс игрока: валюты, купленные классы и отдельные уровни каждого класса. */
 double net_load_cups(void);
 double net_load_candies(void);
 double net_load_class(void);
@@ -76,8 +78,20 @@ double net_load_azum(void);
 double net_load_santa(void);
 double net_load_level(void);
 double net_load_levels_unlocked(void);
+double net_load_ordinary_level(void);
+double net_load_ordinary_levels_unlocked(void);
+double net_load_azum_level(void);
+double net_load_azum_levels_unlocked(void);
+double net_load_santa_level(void);
+double net_load_santa_levels_unlocked(void);
+/* Старый семиаргументный вызов сохраняется для совместимости. */
 void net_save_progress(double cups, double candies, double cls, double azum, double santa,
                        double level, double levels_unlocked);
+void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
+                           double level, double levels_unlocked,
+                           double ordinary_level, double ordinary_levels_unlocked,
+                           double azum_level, double azum_levels_unlocked,
+                           double santa_level, double santa_levels_unlocked);
 
 /* Чат читается реже боевого состояния, поэтому не тормозит движение. */
 void net_chat_send(const char *text);
