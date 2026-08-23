@@ -99,10 +99,10 @@ num lv=class_level_for(cls), un=class_levels_unlocked_for(cls), n=1
 str head=tr_levels_for_class()+": "+lv+"/"+max_level
 text_scaled head,x+10,y+146,0xA8B7D8,0.30
 loop n<=max_level
-str line=""+n+". "+tr_class_level_effect(cls,n)
+str line=""+n+"."+tr_class_level_effect(cls,n)
 col level_c=0x8888AA
-if n<=un; level_c=0xDDE5FF
-else if n==un+1; line=line+" · "+level_cost(n)+" "+tr_cups_unit(); level_c=0xFFD54A; end
+if n<=un; level_c=0xFFFFFF
+else if n==un+1; line=line+" · "+level_cost(n)+" "+tr_cups_unit(); level_c=0xFFFFFF; end
 text_scaled line,x+8,y+166+(n-1)*20,level_c,0.27
 n=n+1
 end
@@ -126,9 +126,9 @@ num lw=text_ink_width(lv_text)*0.5
 text_scaled lv_text,x+(w-lw)/2,y+156,0xDDE5FF,0.45
 str cur=tr_cups()
 if cls==2; cur=tr_candies(); end
-if sel==1; button_scaled tr_class_selected(),x+24,y+h-52,w-48,48,0.55
-else if locked==1; button_scaled tr_buy_for(cost,cur),x+24,y+h-52,w-48,48,0.55
-else; button_scaled tr_class_pick(),x+24,y+h-52,w-48,48,0.55; end
+if sel==1; button_scaled tr_class_selected(),x+24,y+h-72,w-48,48,0.55
+else if locked==1; button_scaled tr_buy_for(cost,cur),x+24,y+h-72,w-48,48,0.55
+else; button_scaled tr_class_pick(),x+24,y+h-72,w-48,48,0.55; end
 end
 function draw_classes
 rect 0,0,screen_w,screen_h,0x1a1a2e
@@ -193,13 +193,13 @@ num tw=text_ink_width(level_title)*0.7
 text_scaled level_title,x+(w-tw)/2,y+12,0xFFFFFF,0.7
 num dw=text_ink_width(desc)*0.5
 col desc_c=0xC8C8E0
-if unlocked==1; desc_c=0x7ED321; end
+if unlocked==1; desc_c=0xFFFFFF; end
 text_scaled desc,x+(w-dw)/2,y+42,desc_c,0.5
 // Показываем статус уровня
 str status=""
 if unlocked==1; status="✓ Открыт"; else if next==1; status="Открыть: "+level_cost(n)+" "+tr_cups_unit(); else; status="Закрыт"; end
 num sw=text_ink_width(status)*0.5
-text_scaled status,x+(w-sw)/2,y+58,0xFFD54A,0.45
+text_scaled status,x+(w-sw)/2,y+58,0xFFFFFF,0.45
 n=n+1; y=y+row_h+10
 end
 if level_msg_t>0; level_msg_t=level_msg_t-dt; ctext tr_level_need_cups(),back_y+btn_h+52+max_level*(row_h+10)+8,0xFF8A80; end
