@@ -102,3 +102,8 @@ num santa_candy_cost=100
 // точкам экрана (отступ candy_margin от краёв), за каждый подбор +candy_give.
 // Собранный леденец исчезает, и на его месте появляется новый в случайном месте.
 num candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
+// Частицы пыли от ходьбы: пул до dust_max штук, dust_fields полей на каждую.
+// dust_life_max — время жизни (с), dust_spawn_cd — интервал спавна (с),
+// dust_r_max — максимальный радиус, dust_spd — скорость разлёта частицы.
+num dust_max=28, dust_fields=5, dust_life_max=0.38, dust_spawn_cd=0.055, dust_r_max=7, dust_spd=34
+num dust_cd=0

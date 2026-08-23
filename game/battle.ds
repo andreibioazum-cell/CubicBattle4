@@ -88,6 +88,9 @@ arr_clear remotes; arr_clear remote_punches; arr_clear candy_x; arr_clear candy_
 num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
 i=0; loop i<max_players*punch_fields; arr_push remote_punches,0; i=i+1; end
 i=0; loop i<max_players*snow_fields; arr_push remote_snow,0; i=i+1; end
+// Сброс пула пыли: заполняем нулями (life=0 — слот свободен).
+arr_clear dust; dust_cd=0
+i=0; loop i<dust_max*dust_fields; arr_push dust,0; i=i+1; end
 end
 function init_game
 reset_battle; enemy.hp=enemy.max_hp; spawn_enemy; spawn_all_candies
@@ -139,6 +142,7 @@ if player_freeze>0; spd=spd*player_freeze_slow; end
 player.x=player.x+joy.dx*spd*dt; player.y=player.y+joy.dy*spd*dt
 num jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy); if jm>0.15; player.angle=atan2(joy.dy,joy.dx); end
 if player.x<player.size; player.x=player.size; end; if player.x>screen_w-player.size; player.x=screen_w-player.size; end; if player.y<player.size; player.y=player.size; end; if player.y>screen_h-player.size; player.y=screen_h-player.size; end
+tick_dust joy.dx,joy.dy,jm
 end
 function in_punch_box num px, num py, num pdx, num pdy, num tx, num ty
 // хитбокс удара повёрнут вместе с игроком: вперёд по (pdx,pdy) не дальше
@@ -459,6 +463,7 @@ heal_after_attack
 if enemy.hp<=0; finish_game 1; return; end
 end
 end
+update_dust
 update_gift
 if finished!=0; return; end
 update_enemy
@@ -580,6 +585,7 @@ if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; e
 follow_punch
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
+update_dust
 update_gift
 if finished!=0; return; end
 if net_status()==NET_PLAYING
@@ -649,6 +655,74 @@ end
 function draw_boom
 draw_boom_at boom_x,boom_y,boom_t
 end
+// ── Пыль от ходьбы игрока ──────────────────────────────────────────────────
+function dust_spawn num px, num py, num jdx, num jdy
+// Ищем свободный слот (life==0).
+num i=0, base=0, found=0
+loop i<dust_max
+base=i*dust_fields
+if arr_get(dust,base+4)<=0; found=1; i=dust_max; end
+i=i+1
+end
+if found==0; return; end
+// Скорость: перпендикулярно движению + небольшой разброс назад.
+num angle=(rand()%628)/100.0
+num vx=cos(angle)*dust_spd*0.55-jdx*dust_spd*0.45
+num vy=sin(angle)*dust_spd*0.55-jdy*dust_spd*0.45
+arr_set dust,base,px
+arr_set dust,base+1,py
+arr_set dust,base+2,vx
+arr_set dust,base+3,vy
+arr_set dust,base+4,dust_life_max
+end
+function update_dust
+num i=0, base=0
+loop i<dust_max
+base=i*dust_fields
+num lf=arr_get(dust,base+4)
+if lf>0
+arr_set dust,base,  arr_get(dust,base)  +arr_get(dust,base+2)*dt
+arr_set dust,base+1,arr_get(dust,base+1)+arr_get(dust,base+3)*dt
+// Трение: замедляем скорость.
+arr_set dust,base+2,arr_get(dust,base+2)*0.82
+arr_set dust,base+3,arr_get(dust,base+3)*0.82
+arr_set dust,base+4,lf-dt
+end
+i=i+1
+end
+end
+function draw_dust
+num i=0, base=0
+loop i<dust_max
+base=i*dust_fields
+num lf=arr_get(dust,base+4)
+if lf>0
+num t=lf/dust_life_max
+// Радиус растёт в начале и сжимается к концу.
+num r=dust_r_max*t*(2-t)
+// Прозрачность: максимум в середине жизни, гаснет к концу.
+num a=floor(t*t*148)
+if a<1; a=1; end
+if a>148; a=148; end
+num grey=floor(140+70*t)
+// Цвет: ARGB серый (0xAA888888 стиль), но через сдвиги как в других местах.
+num c=((((unsigned)(int)a)<<24)|(((unsigned)(int)grey)<<16)|(((unsigned)(int)grey)<<8)|((unsigned)(int)grey))
+circle arr_get(dust,base),arr_get(dust,base+1),r,c
+end
+i=i+1
+end
+end
+// ── Тик спавна пыли (вызывается из move_player) ────────────────────────────
+function tick_dust num jdx, num jdy, num jmag
+if finished!=0; return; end
+if jmag<0.18; return; end
+if dust_cd>0; dust_cd=dust_cd-dt; return; end
+dust_cd=dust_spawn_cd
+// Спавним 1-2 частицы сразу для пышности.
+dust_spawn player.x,player.y,jdx,jdy
+if rand()%2==0; dust_spawn player.x,player.y,jdx,jdy; end
+end
+// ──────────────────────────────────────────────────────────────────────────────
 function draw_candies
 num hw=25*candy_scale, i=0
 loop i<candy_count
@@ -870,6 +944,7 @@ end
 function draw_game
 draw_grass
 draw_field
+draw_dust
 // Нормальные слои боя: сначала ВСЕ тени, потом предметы на земле, затем
 // хитбоксы ударов, снаряды — и только после сами персонажи. Так чёрная
 // полоса удара лежит выше тени, но никогда не закрывает ни игрока, ни врага.
@@ -977,6 +1052,7 @@ function draw_online
 draw_grass
 draw_disco
 draw_field
+draw_dust
 // Те же нормальные слои, что и в соло: ВСЕ тени -> хитбоксы ударов ->
 // снаряды -> сами персонажи. Хитбокс (свой и чужой) выше тени, но ниже
 // любого спрайта — и игрока, и соперников.

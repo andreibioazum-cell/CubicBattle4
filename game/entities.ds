@@ -59,3 +59,6 @@ arr remotes=arr_new(), remote_punches=arr_new()
 arr remote_snow=arr_new()
 // Леденцы-пикапы на карте: по паре координат (x,y) на каждый из candy_count.
 arr candy_x=arr_new(), candy_y=arr_new()
+// Пыль от ходьбы игрока: пул на dust_max частиц, по dust_fields чисел каждая.
+// Поля: x, y, vx, vy, life (оставшееся время жизни в секундах).
+arr dust=arr_new()
