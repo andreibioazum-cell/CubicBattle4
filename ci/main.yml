@@ -49,23 +49,30 @@ jobs:
 
     # Иконка приложения. Кладёшь icon.png в корень репозитория — он и станет
     # иконкой на телефоне (манифест ссылается на @mipmap/ic_launcher).
-    # Если icon.png нет, берём спрайт героя, чтобы сборка не падала.
+    # Масштабируем Pillow, а не ImageMagick: на ubuntu-latest команды convert
+    # больше нет (ImageMagick 7 ставится отдельно и зовётся magick).
     - name: App icon from icon.png
       run: |
-        set -e
-        SRC=icon.png
-        if [ ! -f "$SRC" ]; then
-          echo "icon.png в корне не найден — иконкой станет game/assets/yarik.png"
-          SRC=game/assets/yarik.png
-        else
-          echo "иконка приложения: icon.png"
-        fi
-        mkdir -p res/mipmap-mdpi res/mipmap-hdpi res/mipmap-xhdpi res/mipmap-xxhdpi res/mipmap-xxxhdpi
-        convert "$SRC" -resize 48x48   res/mipmap-mdpi/ic_launcher.png
-        convert "$SRC" -resize 72x72   res/mipmap-hdpi/ic_launcher.png
-        convert "$SRC" -resize 96x96   res/mipmap-xhdpi/ic_launcher.png
-        convert "$SRC" -resize 144x144 res/mipmap-xxhdpi/ic_launcher.png
-        convert "$SRC" -resize 192x192 res/mipmap-xxxhdpi/ic_launcher.png
+        python3 -m pip install --quiet --upgrade pillow
+        python3 - <<'PY'
+        from pathlib import Path
+        from PIL import Image
+
+        src = Path("icon.png")
+        if not src.is_file():
+            src = Path("game/assets/yarik.png")
+            print("icon.png в корне не найден — иконкой станет", src)
+        else:
+            print("иконка приложения: icon.png")
+
+        icon = Image.open(src).convert("RGBA")
+        for folder, size in (("mdpi", 48), ("hdpi", 72), ("xhdpi", 96),
+                             ("xxhdpi", 144), ("xxxhdpi", 192)):
+            out = Path("res") / f"mipmap-{folder}"
+            out.mkdir(parents=True, exist_ok=True)
+            icon.resize((size, size), Image.LANCZOS).save(out / "ic_launcher.png")
+            print("  ", out / "ic_launcher.png", f"{size}x{size}")
+        PY
 
     - name: Build NDK (arm64-v8a + armeabi-v7a, min API 29 Android 10)
       run: |
