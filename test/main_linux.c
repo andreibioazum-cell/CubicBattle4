@@ -28,12 +28,13 @@
 extern double game_state, chat_open, login_field, login_status, t_dir;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
 extern double ordinary_level, azum_level, santa_level, max_level;
-extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a;
+extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a, super_windup, primes;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern void *player, *enemy, *punch, *gift;
 extern DSArray *remotes, *remote_punches, *remote_snow;
 extern double enemy_cooldown_min, enemy_cooldown_max;
+extern double santa_poison_time, santa_poison_tick_interval, santa_poison_dps, santa_poison_damage_bonus, santa_super_damage;
 /* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
 #define ENEMY_ANGLE 5
@@ -53,6 +54,7 @@ extern double enemy_cooldown_min, enemy_cooldown_max;
 #define ENEMY_Y 1
 #define GIFT_ACTIVE 4
 #define GIFT_SHOT 6
+#define PUNCH_ACTIVE 4
 /* Поля remote_snow на каждого игрока: счётчик, active, t, x, y, boom_t, bx, by. */
 #define SNOW_FIELDS 8
 
@@ -404,6 +406,14 @@ int main(void) {
     if (!wait_remotes(0, 300)) { printf("!! player who left was not removed, remotes=%d\n", remote_count()); return 3; }
     printf("=== player who left removed from the list (frame %ld)\n", g_frame);
 
+    /* Победа в онлайне (последний замеченный соперник вышел) начисляет все
+     * три валюты: 5 кубков, 3 леденца и 1 прайм. */
+    if (finished != 1) { printf("!! online win not counted: finished=%g\n", finished); return 3; }
+    if (cups < 5 || candies < 3 || primes < 1) {
+        printf("!! win rewards missing: cups=%g candies=%g primes=%g\n", cups, candies, primes); return 3;
+    }
+    printf("=== online win rewarded: +5 cups +3 candies +1 prime (primes=%g)\n", primes);
+
     /* Выйти из онлайна */
     tap_back();
     if (!wait_state(0, 60)) { printf("!! did not return to lobby from online\n"); return 3; }
@@ -455,10 +465,26 @@ int main(void) {
 
     /* --- 9. Лидерборд по кубкам --- */
     tap_play(); wait_state(2, 30);
-    tap_leaderboard();
+    tap_leaderboard(); 
     if (!wait_state(10, 30)) { printf("!! leaderboard screen did not open, state=%g\n", game_state); return 3; }
     run_frames(30);
     printf("=== leaderboard opened, count=%g status=%g (frame %ld)\n", net_leaderboard_count(), net_leaderboard_status(), g_frame);
+    /* В каждой строке справа видны кубки игрока: золотой значок-кубок
+     * (0xFFFFD54A в ARGB -> буфер 0xAABBGGRR) и число рядом. Сканируем правую
+     * часть первой строки: значок «#1» золотым шрифтом там не мешает. */
+    {
+        int lx0 = (int)(g_w - 560) / 2 + 560 - 150, lx1 = (int)(g_w - 560) / 2 + 560 - 4;
+        int ly0 = 32 + 64 + 78, ly1 = ly0 + 46, gold = 0;
+        for (int yy = ly0; yy < ly1 && !gold; yy++)
+            for (int xx = lx0; xx < lx1; xx++) {
+                uint32_t p = g_pixels[yy * g_w + xx];
+                int r = (int)(p & 0xff), g = (int)((p >> 8) & 0xff), b = (int)((p >> 16) & 0xff);
+                if (r >= 230 && g >= 195 && g <= 230 && b <= 110) { gold = 1; break; }
+            }
+        if (!gold) { printf("!! leaderboard row has no gold trophy/cups marker\n"); return 3; }
+        if (net_leaderboard_cups(0) < 0) { printf("!! leaderboard cups not readable\n"); return 3; }
+        printf("=== leaderboard shows cups per player (top cups=%g)\n", net_leaderboard_cups(0));
+    }
     tap_back();
     if (!wait_state(2, 30)) { printf("!! did not return to modes from leaderboard\n"); return 3; }
     printf("=== returned from leaderboard (frame %ld)\n", g_frame);
@@ -672,13 +698,23 @@ int main(void) {
         printf("=== snowflake button visible online (pixel %08x)\n", p);
     }
 
-    /* Бросок снежинки тапом по кнопке суператаки. */
+    /* Бросок снежинки тапом по кнопке суператаки. Сначала проигрывается
+     * «пустая» анимация удара (замах без урона и без хитбокса), и только
+     * после неё летит сама снежинка. */
     do_tap((float)(g_w - 140), (float)(g_h - 310));
     run_frames(2);
     {
         double *g = (double *)gift;
+        double *pu = (double *)punch;
+        if (super_windup <= 0 || punch_left <= 0) { printf("!! fake punch windup not playing after super tap\n"); return 3; }
+        if (pu[PUNCH_ACTIVE] != 0) { printf("!! windup punch must not become a real hit\n"); return 3; }
+        if (aim_a > 0.5) { printf("!! windup must not draw the hitbox: aim_a=%g\n", aim_a); return 3; }
+        if (super_cd <= 0) { printf("!! super cooldown not set after tap\n"); return 3; }
+        printf("=== snowflake windup: fake punch, no hitbox (frame %ld)\n", g_frame);
+        /* Анимация длится punch_time (0.2 с = 12 кадров) — ждём броска. */
+        for (int i = 0; i < 20 && g[GIFT_ACTIVE] == 0; i++) run_frames(1);
+        if (super_windup != 0) { printf("!! snowflake windup did not finish: %g\n", super_windup); return 3; }
         if (g[GIFT_ACTIVE] != 1) { printf("!! gift not active after super tap online\n"); return 3; }
-        if (super_cd <= 0) { printf("!! super cooldown not set after throw\n"); return 3; }
         /* Счётчик публикуется в net.me, но фоновый поток чтения может на один
          * опрос вернуть устаревший снапшот — ждём, пока значение дойдёт. */
         double published = 0;
@@ -763,21 +799,28 @@ int main(void) {
         if (hp_after_hit > 9.8 || hp_after_hit < 9.6) {
             printf("!! santa staff damage must be tiny (0.25), got 10->%g\n", hp_after_hit); return 3;
         }
-        if (e[ENEMY_POISON] < 3.5) { printf("!! staff did not poison the enemy: %g\n", e[ENEMY_POISON]); return 3; }
+        /* Текущий баланс: яд длится santa_poison_time секунд (уровни меняют
+         * силу тика и заморозку, а не длительность). */
+        if (e[ENEMY_POISON] < santa_poison_time * 0.9) { printf("!! staff did not poison the enemy: %g\n", e[ENEMY_POISON]); return 3; }
         printf("=== santa staff hit for %g and poisoned the enemy (poison %g)\n", 10.0 - hp_after_hit, e[ENEMY_POISON]);
 
-        /* Яд теперь дискретный: первые полсекунды HP не меняется, затем
-         * примерно через секунду приходит отдельный тик на 0.5 HP. */
-        for (int i = 0; i < 30; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
-        if (e[ENEMY_HP] < 9.74 || e[ENEMY_HP] > 9.76) {
-            printf("!! poison must wait before its first tick: %g after 0.5s\n", e[ENEMY_HP]); return 3;
+        /* Яд дискретный: между тиками HP не меняется, тик приходит раз в
+         * santa_poison_tick_interval и бьёт на santa_poison_dps (+бонус уровня). */
+        {
+            double tick = santa_poison_dps + (player_level >= 1 ? santa_poison_damage_bonus : 0);
+            if (player_level >= 2) tick += santa_poison_damage_bonus;
+            for (int i = 0; i < 30; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+            if (e[ENEMY_HP] < hp_after_hit - 0.01) {
+                printf("!! poison must wait before its first tick: %g after 0.5s\n", e[ENEMY_HP]); return 3;
+            }
+            for (int i = 0; i < 35; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+            double want = hp_after_hit - tick;
+            if (e[ENEMY_HP] > want + 0.06 || e[ENEMY_HP] < want - 0.06) {
+                printf("!! poison did not deal one discrete tick of %g: %g after ~1s (want %g)\n", tick, e[ENEMY_HP], want); return 3;
+            }
+            if (poison_a <= 0.01) { printf("!! enemy poison ring not visible: %g\n", poison_a); return 3; }
+            printf("=== poison ticks after a delay: %g -> %g (tick %g), ring %g\n", hp_after_hit, e[ENEMY_HP], tick, poison_a);
         }
-        for (int i = 0; i < 35; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
-        if (e[ENEMY_HP] > 9.3 || e[ENEMY_HP] < 9.2) {
-            printf("!! poison did not deal one discrete tick: %g after ~1s\n", e[ENEMY_HP]); return 3;
-        }
-        if (poison_a <= 0.01) { printf("!! enemy poison ring not visible: %g\n", poison_a); return 3; }
-        printf("=== poison ticks after a delay: %g -> %g, ring %g\n", hp_after_hit, e[ENEMY_HP], poison_a);
 
         /* Яд кончается: таймер до нуля, HP замирает. */
         for (int i = 0; i < 320 && e[ENEMY_POISON] > 0; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
@@ -793,8 +836,15 @@ int main(void) {
         run_frames(2);
         {
             double *g = (double *)gift;
-            if (g[GIFT_ACTIVE] != 1) { printf("!! santa snowflake did not launch in solo\n"); return 3; }
+            if (super_windup <= 0) { printf("!! no fake punch windup before solo snowflake\n"); return 3; }
             if (super_cd < 2.9 || super_cd > 3.05) { printf("!! snowflake cooldown should be ~3s, got %g\n", super_cd); return 3; }
+            /* Пока идёт «пустая» анимация удара, держим прицел — снежинка
+             * вылетит в конце анимации. */
+            for (int i = 0; i < 20 && g[GIFT_ACTIVE] == 0; i++) {
+                pl[PLAYER_ANGLE] = 0;
+                run_frames(1);
+            }
+            if (g[GIFT_ACTIVE] != 1) { printf("!! santa snowflake did not launch in solo\n"); return 3; }
             int boom = 0;
             for (int i = 0; i < 90 && !boom; i++) {
                 pl[PLAYER_HP] = 10; pl[PLAYER_ANGLE] = 0;
@@ -804,11 +854,13 @@ int main(void) {
             }
             if (!boom) { printf("!! solo snowflake never exploded\n"); return 3; }
             if (e[ENEMY_FREEZE] <= 0) { printf("!! solo snowflake did not freeze the enemy\n"); return 3; }
-            if (e[ENEMY_HP] < hp_before_boom - 0.01) {
-                printf("!! solo snowflake must not damage: %g -> %g\n", hp_before_boom, e[ENEMY_HP]); return 3;
+            /* В соло взрыв снежинки бьёт ровно на santa_super_damage HP. */
+            if (e[ENEMY_HP] > hp_before_boom - santa_super_damage + 0.01 ||
+                e[ENEMY_HP] < hp_before_boom - santa_super_damage - 0.01) {
+                printf("!! solo snowflake damage should be %g: %g -> %g\n", santa_super_damage, hp_before_boom, e[ENEMY_HP]); return 3;
             }
         }
-        printf("=== santa snowflake: 3s cd, froze the enemy, no damage (hp %g)\n", e[ENEMY_HP]);
+        printf("=== santa snowflake: 3s cd, froze the enemy, damage %g (hp %g)\n", santa_super_damage, e[ENEMY_HP]);
         tap_back(); wait_state(0, 60);
     }
 

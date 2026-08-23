@@ -55,8 +55,10 @@ num event_mode=0, disco_safe=0, disco_t=0, event_t=0, event_flakes=44
 // azum_revived — уже тратили воскрешение, revive_prot — неуязвимость после
 // возрождения. Вспышки на экране нет: Азум просто встаёт в случайной точке.
 num player_class=0, azum_revived=0, revive_prot=0
-// Валюты: кубки — за победы, леденцы — вторая валюта (за победы).
-num cups=0, candies=0, azum_owned=0, santa_owned=0, cup_win=5, candy_win=3, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
+// Валюты: кубки — за победы, леденцы — вторая валюта (за победы),
+// праймы — редкая третья валюта (по одной за победу), обмениваются в
+// магазине на кубки и леденцы.
+num cups=0, candies=0, primes=0, azum_owned=0, santa_owned=0, cup_win=5, candy_win=3, prime_win=1, prime_exchange_cups=10, prime_exchange_candies=10, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0, prime_msg_t=0, prime_ok_t=0
 // Уровни: у каждого класса свой путь из трёх уровней. Первый уровень стоит
 // 30 кубков, каждый следующий на 10 дороже. Уровни 4 и 5 удалены полностью.
 // player_level/levels_unlocked — совместимый алиас для выбранного класса;
@@ -75,8 +77,10 @@ num santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze_ti
 // 1) Посох наносит крошечный урон santa_damage и ОТРАВЛЯЕТ врага: первый
 //    отдельный тик происходит через santa_poison_tick_interval секунд, затем
 //    ещё несколько тиков до конца действия яда.
-// 2) Суператака «Снежинка» урона не наносит совсем (и яда тоже): она только
-//    замораживает врага (еле ходит super_freeze_slow) на super_freeze секунд.
+// 2) Суператака «Снежинка»: сначала Дед Мороз проигрывает «пустую» анимацию
+//    удара (как обычный удар, но без урона и без чёрного хитбокса), и сразу
+//    после неё бросает снежинку. Снежинка замораживает врага (еле ходит
+//    super_freeze_slow) на super_freeze секунд и наносит santa_super_damage.
 //    Кулдаун броска — super_cd_time.
 // Работает против бота в соло и против игроков в онлайне: бросок публикуется
 // в сеть как событие со счётчиком (как удар), каждый поражённый применяет
@@ -105,5 +109,8 @@ num candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
 // Частицы пыли от ходьбы: пул до dust_max штук, dust_fields полей на каждую.
 // dust_life_max — время жизни (с), dust_spawn_cd — интервал спавна (с),
 // dust_r_max — максимальный радиус, dust_spd — скорость разлёта частицы.
-num dust_max=28, dust_fields=5, dust_life_max=0.38, dust_spawn_cd=0.055, dust_r_max=7, dust_spd=34
+// След рискует ЗА кубиком: dust_back_off — насколько далеко позади центра
+// игрока рождаются частицы (вдоль движения назад), dust_back_share — доля
+// скорости, летящая назад, dust_side_share — доля разброса вбок.
+num dust_max=28, dust_fields=5, dust_life_max=0.38, dust_spawn_cd=0.055, dust_r_max=7, dust_spd=34, dust_back_off=34, dust_back_share=0.85, dust_side_share=0.4
 num dust_cd=0

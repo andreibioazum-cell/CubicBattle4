@@ -76,7 +76,7 @@ str FIREBASE="https://project-name-default-rtdb.europe-west1.firebasedatabase.ap
 ```text
 event/   0, 1 или 2 — ивент в корне базы: 1 = «диско», 2 = «снегопад»
 users/
-  <ник>/ nick, pass, cups, candies, cls, azum, santa, level, levels,
+  <ник>/ nick, pass, cups, candies, primes, cls, azum, santa, level, levels,
   ordinary_level, ordinary_levels, azum_level, azum_levels,
   santa_level, santa_levels
 rooms/
@@ -91,6 +91,7 @@ rooms/
 
 - `x`, `y`, `angle`, `hp`, `alive` — состояние игрока;
 - `seq` обновляется вместе с состоянием и помогает заметить зависший слот;
+- `cups`, `candies`, `primes` — валюты аккаунта (кубки, леденцы, праймы);
 - `px`, `py`, `pdx`, `pdy` — точка и направление последнего удара;
 - `punch` — растущий номер удара;
 - `sx`, `sy`, `sdx`, `sdy` — точка и направление последней снежинки (суператака

@@ -80,7 +80,7 @@ function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
-gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0
+gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0; super_windup=0
 player_freeze=0; player_freeze_slow=1; pfreeze_a=0
 player_poison=0; player_poison_tick=0; player_poison_damage=0; ppoison_a=0; poison_a=0
 joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-310; drop_joy
@@ -161,8 +161,10 @@ if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex-fx+sx,ey-fy+sy)==1; return 
 return 0
 end
 function update_aim
-// хитбокс показывается ТОЛЬКО во время самого удара
-if punch_left>0&&finished==0; aim_a=1
+// хитбокс показывается ТОЛЬКО во время самого удара.
+// «Пустой» замах перед снежинкой (super_windup) хитбоксом не считается —
+// это просто анимация без урона.
+if punch_left>0&&super_windup<=0&&finished==0; aim_a=1
 else; aim_a=aim_a-dt/aim_fade_out; if aim_a<0; aim_a=0; end; end
 if punch_cd>0; punch_cd=punch_cd-dt; if punch_cd<0; punch_cd=0; end; end
 end
@@ -434,6 +436,7 @@ if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; e
 follow_punch
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
+tick_super_windup
 if punch_left>0&&punch.active==1&&punch.hit==0
 if enemy_in_punch()==1
 punch.hit=1
@@ -585,6 +588,7 @@ if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; e
 follow_punch
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
+tick_super_windup
 update_dust
 update_gift
 if finished!=0; return; end
@@ -597,15 +601,35 @@ update_event; chat_update
 end
 function fire_punch
 if punch_cd>0; return; end
+// Пока идёт «пустой» замах снежинки, настоящий удар не стартует — иначе он
+// превратил бы анимацию в реальный урон.
+if super_windup>0; return; end
 punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.active=1; punch.shot=punch.shot+1; punch.hit=0
 punch_left=punch_time; punch_cd=punch_cooldown
 ds_log "punch %g (%g,%g)",punch.shot,punch.dx,punch.dy
 end
 function fire_super
 if player_class!=2||super_cd>0; return; end
+if super_windup>0; return; end
+// Сначала проигрывается «пустая» анимация удара: тот же спрайт и та же
+// длительность (punch_time), но punch.active=0 — урона и хитбокса нет.
+// Сама снежинка улетает из tick_super_windup сразу после анимации.
+super_windup=punch_time
+punch_left=punch_time
+punch.active=0; punch.hit=0
+super_cd=super_cd_time
+ds_log "snowflake windup!"
+end
+function tick_super_windup
+// Держим «пустой» замах ровно столько, сколько длится удар, а в конце
+// кидаем снежинку по направлению взгляда игрока.
+if super_windup<=0; return; end
+super_windup=super_windup-dt
+if super_windup>0; return; end
+super_windup=0
+if finished!=0; return; end
 gift.x=player.x; gift.y=player.y; gift.dx=cos(player.angle); gift.dy=sin(player.angle); gift.active=1; gift.t=0
 gift.shot=gift.shot+1
-super_cd=super_cd_time
 // В онлайне бросок публикуется в сеть как событие со счётчиком (как удар):
 // каждый клиент сам летит снежинкой и применяет урон/заморозку у себя.
 if game_state==5; net_publish_snow gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot; end
@@ -665,10 +689,11 @@ if arr_get(dust,base+4)<=0; found=1; i=dust_max; end
 i=i+1
 end
 if found==0; return; end
-// Скорость: перпендикулярно движению + небольшой разброс назад.
+// Скорость: основной импульс летит НАЗАД по ходу движения (след тянется
+// за кубиком), плюс небольшой разброс вбок для пышности.
 num angle=(rand()%628)/100.0
-num vx=cos(angle)*dust_spd*0.55-jdx*dust_spd*0.45
-num vy=sin(angle)*dust_spd*0.55-jdy*dust_spd*0.45
+num vx=cos(angle)*dust_spd*dust_side_share-jdx*dust_spd*dust_back_share
+num vy=sin(angle)*dust_spd*dust_side_share-jdy*dust_spd*dust_back_share
 arr_set dust,base,px
 arr_set dust,base+1,py
 arr_set dust,base+2,vx
@@ -718,9 +743,11 @@ if finished!=0; return; end
 if jmag<0.18; return; end
 if dust_cd>0; dust_cd=dust_cd-dt; return; end
 dust_cd=dust_spawn_cd
-// Спавним 1-2 частицы сразу для пышности.
-dust_spawn player.x,player.y,jdx,jdy
-if rand()%2==0; dust_spawn player.x,player.y,jdx,jdy; end
+// Спавним 1-2 частицы сразу для пышности — позади кубика, чтобы след
+// тянулся сзади, а не под самим персонажем.
+num bx=player.x-jdx*dust_back_off, by=player.y-jdy*dust_back_off
+dust_spawn bx,by,jdx,jdy
+if rand()%2==0; dust_spawn player.x-jdx*dust_back_off*1.4,player.y-jdy*dust_back_off*1.4,jdx,jdy; end
 end
 // ──────────────────────────────────────────────────────────────────────────────
 function draw_candies
@@ -847,11 +874,11 @@ s=s+1
 end
 end
 function finish_game num result
-finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; drop_joy
+finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; super_windup=0; drop_joy
 gift.active=0; boom_t=0
 num i=0; loop i<max_players*snow_fields; arr_set remote_snow,i,0; i=i+1; end
 if result==1&&cups_awarded==0
-cups_awarded=1; cups=cups+cup_win; candies=candies+candy_win; save_progress; ds_log "win +%g cups +%g candies",cup_win,candy_win
+cups_awarded=1; cups=cups+cup_win; candies=candies+candy_win; primes=primes+prime_win; save_progress; ds_log "win +%g cups +%g candies +%g primes",cup_win,candy_win,prime_win
 end
 end
 function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num alpha

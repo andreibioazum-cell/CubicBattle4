@@ -13,7 +13,7 @@ BUILTINS=frozenset({
     'net_chat_send','net_chat_trim','net_chat_count','net_chat_text','net_chat_uid',
     'net_autologin','net_set_nick','net_login_status','net_login_nick','net_auth','net_logout',
     'net_leaderboard_fetch','net_leaderboard_status','net_leaderboard_count','net_leaderboard_nick','net_leaderboard_cups',
-    'net_load_cups','net_load_candies','net_load_class','net_load_azum','net_load_santa','net_load_level','net_load_levels_unlocked','net_load_ordinary_level','net_load_ordinary_levels_unlocked','net_load_azum_level','net_load_azum_levels_unlocked','net_load_santa_level','net_load_santa_levels_unlocked','net_save_progress','net_save_progress_all',
+    'net_load_cups','net_load_candies','net_load_primes','net_load_class','net_load_azum','net_load_santa','net_load_level','net_load_levels_unlocked','net_load_ordinary_level','net_load_ordinary_levels_unlocked','net_load_azum_level','net_load_azum_levels_unlocked','net_load_santa_level','net_load_santa_levels_unlocked','net_save_progress','net_save_progress_all',
     'keyboard_show','keyboard_hide','keyboard_get_text','keyboard_get_raw','keyboard_clear','keyboard_enter_pressed','keyboard_type','keyboard_visible',
     'str_len','str_eq',
     'ds_log','console_count','console_line','console_type','console_clear',
