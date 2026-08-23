@@ -128,7 +128,7 @@ if cls==1&&n==2; if language==1; return "Скорость +3%"; end; return "Spe
 if cls==1&&n==3; if language==1; return "Атака лечит +0.1 HP"; end; return "Attack heals +0.1 HP"; end
 if cls==2&&n==1; if language==1; return "Тик яда +0.15 урона"; end; return "Poison tick +0.15 damage"; end
 if cls==2&&n==2; if language==1; return "Тик яда +0.15 урона (x2)"; end; return "Poison tick +0.15 damage (x2)"; end
-if cls==2&&n==3; if language==1; return "Снежинка морозит +0.5 сек"; end; return "Snowflake freezes +0.5 sec"; end
+if cls==2&&n==3; if language==1; return "Яд стакается, снежинка наносит урон"; end; return "Poison stacks, snowflake deals damage"; end
 if cls==0&&n==1; if language==1; return "Урон атаки +5%"; end; return "Attack damage +5%"; end
 if cls==0&&n==2; if language==1; return "Скорость +2%"; end; return "Speed +2%"; end
 if language==1; return "Атака лечит +0.05 HP"; end; return "Attack heals +0.05 HP"; end

@@ -78,7 +78,7 @@ if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; e
 end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; enemy.poison_tick=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
 gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0
 player_freeze=0; player_freeze_slow=1; pfreeze_a=0
@@ -284,16 +284,19 @@ if enemy.poison_tick<=0; enemy.poison_tick=santa_poison_tick_interval; end
 enemy.poison=enemy.poison-dt; enemy.poison_tick=enemy.poison_tick-dt
 if enemy.poison_tick<=0
 enemy.poison_tick=enemy.poison_tick+santa_poison_tick_interval
-enemy.hp=enemy.hp-santa_poison_damage_for(player_level)
-ds_log "poison tick! enemy hp %g",enemy.hp
+// На 3 уровне используем накопленный стек урона (enemy.poison_damage), иначе обычный урон.
+num tick_dmg=santa_poison_damage_for(player_level)
+if player_level>=3&&enemy.poison_damage>0; tick_dmg=enemy.poison_damage; end
+enemy.hp=enemy.hp-tick_dmg
+ds_log "poison tick! dmg %g enemy hp %g",tick_dmg,enemy.hp
 if enemy.hp<=0
-enemy.hp=0; enemy.poison=0; enemy.poison_tick=0
+enemy.hp=0; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0
 ds_log "poison killed the enemy"
 finish_game 1
 return
 end
 end
-if enemy.poison<=0; enemy.poison=0; enemy.poison_tick=0; end
+if enemy.poison<=0; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; end
 end
 if enemy.poison>0; poison_a=poison_a+dt/freeze_fade_in; else; poison_a=poison_a-dt/freeze_fade_out; end
 if poison_a<0; poison_a=0; end; if poison_a>1; poison_a=1; end
@@ -433,8 +436,23 @@ punch.hit=1
 // Посох Деда Мороза не морозит и почти не бьёт — он отравляет: каждый
 // удар обновляет таймер яда, и враг продолжает терять HP после размена.
 if player_class==2
+// На 3 уровне яд стакается: повторный удар добавляет урон к следующим тикам,
+// не сбрасывая действующий яд, а суммируя урон (стак не сбрасывает тик и таймер не обнуляется).
+if player_level>=3
+// Стак: добавляем урон текущего удара к накопленному.
+// Если яда ещё нет — инициализируем как обычно.
+if enemy.poison<=0
+enemy.poison_tick=santa_poison_tick_interval
+enemy.poison_damage=santa_poison_damage_for(player_level)
+else
+enemy.poison_damage=enemy.poison_damage+santa_poison_damage_for(player_level)
+end
+enemy.poison=santa_poison_time_for(player_level)
+else
+// Обычное поведение: перезапускаем яд без стека.
 if enemy.poison<=0; enemy.poison_tick=santa_poison_tick_interval; end
 enemy.poison=santa_poison_time_for(player_level)
+end
 end
 enemy.hp=enemy.hp-class_punch_damage(player_class); ds_log "hit! enemy hp %g",enemy.hp
 heal_after_attack
@@ -603,11 +621,12 @@ if gift.t>super_range/super_speed; touched=1; end
 end
 if touched==0; return; end
 gift.active=0; boom_x=gift.x; boom_y=gift.y; boom_t=boom_time
-// Снежинка не наносит ни урона, ни яда — только замораживает: враг еле
-// ходит super_freeze секунд. Урон Дед Мороз делает посохом с ядом.
+// Снежинка замораживает и НАНОСИТ урон: santa_super_damage HP.
 if game_state!=5&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
 freeze_enemy santa_freeze_time_for(player_level),super_freeze_slow
-ds_log "snowflake boom! enemy frozen"
+enemy.hp=enemy.hp-santa_super_damage
+ds_log "snowflake boom! enemy frozen, hp %g",enemy.hp
+if enemy.hp<=0; enemy.hp=0; finish_game 1; return; end
 end
 end
 function draw_gift
