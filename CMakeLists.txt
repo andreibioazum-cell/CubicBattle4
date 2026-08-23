@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(YarikCleanSlate C)
+project(ZeroHabit C)
 set(CMAKE_C_STANDARD 99)
 
 if(MSVC)

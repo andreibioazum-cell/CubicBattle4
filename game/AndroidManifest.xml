@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
-        android:label="Ярик Сафонов"
+        android:label="ZeroHabit"
         android:hasCode="true"
         android:extractNativeLibs="true">
 

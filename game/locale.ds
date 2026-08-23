@@ -2,8 +2,7 @@
 // В шрифте нет длинного тире и кавычек-ёлочек, поэтому в строках только
 // обычный дефис и прямые кавычки.
 function tr_title
-if language==1; return "Ярик Сафонов"; end
-return "Yarik Safonov";end
+return "ZeroHabit";end
 function tr_subtitle
 if language==1; return "С чистого листа"; end
 return "Clean slate";end
