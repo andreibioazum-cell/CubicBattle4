@@ -1,4 +1,4 @@
-name: Build DS Game (Android APK & Windows PC .exe)
+name: Build DS Game (Android APK)
 
 on:
   push:
@@ -12,14 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Пакет com.cb4 зашит прямо в исходники: манифест, GameActivity.java и
-    # JNI-имена Java_com_cb4_GameActivity_* в runtime.c. Никаких sed-замен на
-    # лету. Раньше здесь стояла замена "com.dimscript.gamedemo -> com.CB4",
-    # которая НЕ трогала JNI-символы (в них подчёркивания, а не точки):
-    # Java-класс становился com.CB4.GameActivity, а в .so оставались символы
-    # для com.dimscript.gamedemo. Нативные методы редактора не находились,
-    # UnsatisfiedLinkError глушился в catch — и поля ввода молча переставали
-    # принимать текст. Этот шаг сторожит, чтобы все три места не разъехались.
     - name: Check package name consistency
       run: |
         set -e
@@ -58,22 +50,16 @@ jobs:
 
         mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/assets
 
-        # arm64-v8a — min API 29 (Android 10)
         "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/arm64-v8a/libds_game.so
 
-        # arm32 armeabi-v7a — min API 29
         "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
           game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
           -I. -I$GLUE -landroid -llog -lm \
           -o staging/lib/armeabi-v7a/libds_game.so
 
-    # Подпись — временный debug.keystore, как в исходной сборке (без секретов).
-    # ВНИМАНИЕ: каждый билд создаёт новый ключ, поэтому Android ID будет разным
-    # на каждом релизе, и админ по Android ID будет слетать. Для стабильной
-    # подписи используй один постоянный keystore.
     - name: Package APK (Android 10 to 14, target API 34)
       run: |
         SDK_ROOT=$ANDROID_HOME
@@ -94,34 +80,3 @@ jobs:
       with:
         name: Game-APK-Android10-14-arm64-arm32
         path: Game.apk
-
-  build-pc-cmake:
-    name: Build Windows PC (.exe) with CMake
-    runs-on: windows-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-    - name: Build Game.exe
-      run: cmake --build build --config Release
-
-    # Картинки и шрифт уже внутри Game.exe (RCDATA-ресурсы) — в пакете
-    # только сам exe, без папки assets/.
-    - name: Prepare Release ZIP
-      shell: pwsh
-      run: |
-        Compress-Archive -Path build/Release/Game.exe -DestinationPath Game-Windows-PC.zip
-
-    - name: Upload Full Game Windows Package
-      uses: actions/upload-artifact@v4
-      with:
-        name: Game-Windows-PC-Full-Package
-        path: Game-Windows-PC.zip
