@@ -104,7 +104,7 @@ if language==1; return "Возрождение 1 раз за игру"; end; ret
 function tr_class_santa
 if language==1; return "Дед Мороз"; end; return "Santa";end
 function tr_class_santa_desc
-if language==1; return "Посох отравляет, снежинка морозит"; end; return "Staff poisons, flake freezes";end
+if language==1; return "Слабый удар + второй через 0.6 с, снежинка морозит"; end; return "Weak hit + follow-up at 0.6s, flake freezes";end
 function tr_super
 if language==1; return "Снежинка"; end; return "Snowflake";end
 function tr_class_selected

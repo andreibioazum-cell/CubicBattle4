@@ -769,10 +769,9 @@ int main(void) {
     tap_back(); wait_state(0, 60);
 
     /* --- 15. Дед Мороз: посох отравляет, снежинка только морозит --- */
-    /* Класс уже «Дед Мороз» (куплен на шаге 13). В соло проверяем новый баланс:
-     * удар посохом почти не бьёт (0.25), но травит врага — HP утекает сам;
-     * снежинка не наносит ни урона, ни яда, только замораживает, и её
-     * кулдаун ровно 3 секунды. */
+    /* Класс уже «Дед Мороз» (куплен на шаге 13). В соло проверяем баланс:
+     * удар посохом слабый (0.15), через 0.6 с идёт второй удар, яд тикает
+     * один раз; снежинка бьёт santa_super_damage и морозит, кулдаун 3 с. */
     tap_play(); wait_state(2, 30);
     tap_solo();
     if (!wait_state(1, 30)) { printf("!! santa solo did not start, state=%g\n", game_state); return 3; }
@@ -796,8 +795,8 @@ int main(void) {
         }
         if (!hit) { printf("!! santa staff never hit the pinned enemy\n"); return 3; }
         hp_after_hit = e[ENEMY_HP];
-        if (hp_after_hit > 9.8 || hp_after_hit < 9.6) {
-            printf("!! santa staff damage must be tiny (0.25), got 10->%g\n", hp_after_hit); return 3;
+        if (hp_after_hit > 9.9 || hp_after_hit < 9.8) {
+            printf("!! santa staff damage must be tiny (0.15), got 10->%g\n", hp_after_hit); return 3;
         }
         /* Текущий баланс: яд длится santa_poison_time секунд (уровни меняют
          * силу тика и заморозку, а не длительность). */
@@ -813,10 +812,16 @@ int main(void) {
             if (e[ENEMY_HP] < hp_after_hit - 0.01) {
                 printf("!! poison must wait before its first tick: %g after 0.5s\n", e[ENEMY_HP]); return 3;
             }
-            for (int i = 0; i < 35; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
-            double want = hp_after_hit - tick;
-            if (e[ENEMY_HP] > want + 0.06 || e[ENEMY_HP] < want - 0.06) {
-                printf("!! poison did not deal one discrete tick of %g: %g after ~1s (want %g)\n", tick, e[ENEMY_HP], want); return 3;
+            for (int i = 0; i < 35; i++) {
+                pl[PLAYER_HP] = 10; pl[PLAYER_ANGLE] = 0;
+                e[ENEMY_X] = pl[PLAYER_X] + 70; e[ENEMY_Y] = pl[PLAYER_Y];
+                run_frames(1);
+            }
+            /* Через 0.6 с: второй удар посоха (0.15) + один тик яда. */
+            double follow = 0.15;
+            double want = hp_after_hit - tick - follow;
+            if (e[ENEMY_HP] > want + 0.08 || e[ENEMY_HP] < want - 0.08) {
+                printf("!! expected poison tick %g plus follow punch %g: %g after ~1s (want %g)\n", tick, follow, e[ENEMY_HP], want); return 3;
             }
             if (poison_a <= 0.01) { printf("!! enemy poison ring not visible: %g\n", poison_a); return 3; }
             printf("=== poison ticks after a delay: %g -> %g (tick %g), ring %g\n", hp_after_hit, e[ENEMY_HP], tick, poison_a);

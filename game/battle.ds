@@ -78,7 +78,7 @@ if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; e
 end
 function reset_battle
 // сброс игрока в центр, очистка ударов и ремоутов
-player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0
+player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0; santa_follow=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
 gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0; super_windup=0
 player_freeze=0; player_freeze_slow=1; pfreeze_a=0
@@ -289,14 +289,14 @@ if enemy.poison>0
 if enemy.poison_tick<=0; enemy.poison_tick=santa_poison_tick_interval; end
 enemy.poison=enemy.poison-dt; enemy.poison_tick=enemy.poison_tick-dt
 if enemy.poison_tick<=0
-enemy.poison_tick=enemy.poison_tick+santa_poison_tick_interval
-// На 3 уровне используем накопленный стек урона (enemy.poison_damage), иначе обычный урон.
+// Яд бьёт ровно один раз, дальше сразу гаснет.
 num tick_dmg=santa_poison_damage_for(player_level)
 if player_level>=3&&enemy.poison_damage>0; tick_dmg=enemy.poison_damage; end
 enemy.hp=enemy.hp-tick_dmg
 ds_log "poison tick! dmg %g enemy hp %g",tick_dmg,enemy.hp
+enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0
 if enemy.hp<=0
-enemy.hp=0; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0
+enemy.hp=0
 ds_log "poison killed the enemy"
 finish_game 1
 return
@@ -408,9 +408,9 @@ if player_poison>0
 if player_poison_tick<=0; player_poison_tick=santa_poison_tick_interval; end
 player_poison=player_poison-dt; player_poison_tick=player_poison_tick-dt
 if player_poison_tick<=0
-player_poison_tick=player_poison_tick+santa_poison_tick_interval
 take_damage player_poison_damage
 ds_log "remote poison tick! player hp %g",player.hp
+player_poison=0; player_poison_tick=0; player_poison_damage=0
 end
 if player_poison<=0; player_poison=0; player_poison_tick=0; player_poison_damage=0; end
 end
@@ -442,7 +442,9 @@ if enemy_in_punch()==1
 punch.hit=1
 // Посох Деда Мороза не морозит и почти не бьёт — он отравляет: каждый
 // удар обновляет таймер яда, и враг продолжает терять HP после размена.
-if player_class==2
+if player_class==2&&santa_follow>0
+// Яд вешается только с первого (ручного) удара. Автоповтор через 0.6 с
+// бьёт посохом ещё раз, но второй раз яд не обновляет.
 // На 3 уровне яд стакается: повторный удар добавляет урон к следующим тикам,
 // не сбрасывая действующий яд, а суммируя урон (стак не сбрасывает тик и таймер не обнуляется).
 if player_level>=3
@@ -599,14 +601,29 @@ check_online_finish; push_self
 end
 update_event; chat_update
 end
+function start_punch_now
+punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.active=1; punch.shot=punch.shot+1; punch.hit=0
+punch_left=punch_time; punch_cd=punch_cooldown
+ds_log "punch %g (%g,%g)",punch.shot,punch.dx,punch.dy
+end
 function fire_punch
 if punch_cd>0; return; end
 // Пока идёт «пустой» замах снежинки, настоящий удар не стартует — иначе он
 // превратил бы анимацию в реальный урон.
 if super_windup>0; return; end
-punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.active=1; punch.shot=punch.shot+1; punch.hit=0
-punch_left=punch_time; punch_cd=punch_cooldown
-ds_log "punch %g (%g,%g)",punch.shot,punch.dx,punch.dy
+start_punch_now
+// У Деда Мороза ручной удар ставит один автоповтор через santa_follow_delay.
+if player_class==2; santa_follow=santa_follow_delay; end
+end
+function tick_santa_follow
+if santa_follow<=0; return; end
+santa_follow=santa_follow-dt
+if santa_follow>0; return; end
+santa_follow=0
+if finished!=0||player_class!=2; return; end
+if super_windup>0; return; end
+// Второй удар игнорирует оставшийся кулдаун первого и больше не ставит follow.
+start_punch_now
 end
 function fire_super
 if player_class!=2||super_cd>0; return; end
@@ -874,7 +891,7 @@ s=s+1
 end
 end
 function finish_game num result
-finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; super_windup=0; drop_joy
+finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; super_windup=0; santa_follow=0; drop_joy
 gift.active=0; boom_t=0
 num i=0; loop i<max_players*snow_fields; arr_set remote_snow,i,0; i=i+1; end
 if result==1&&cups_awarded==0
@@ -1151,4 +1168,6 @@ end
 if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aim_id=id; return; end
 if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end
 joy_touch x,y,action,id
+end
+ch x,y,action,id
 end
