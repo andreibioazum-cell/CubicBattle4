@@ -89,6 +89,9 @@ num santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze_ti
 // повторяется раз в секунду. Старое имя santa_poison_dps оставлено для
 // совместимости, но означает урон одного тика, а не урон каждого кадра.
 num santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
+// Задержка автоповтора Деда Мороза: после ручного удара через столько секунд
+// он бьёт ещё раз сам (только один раз). Слегка больше паузы между ударами.
+num santa_follow_delay=0.4
 // santa_super_damage — урон от взрыва снежинки по врагу (соло).
 num santa_super_damage=2.0
 num super_freeze=3.0, super_freeze_slow=0.12
