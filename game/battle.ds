@@ -259,7 +259,7 @@ function start_enemy_attack
 num ta=atan2(player.y-enemy.y,player.x-enemy.x), da=ta-enemy.angle
 if da>pi; da=da-2*pi; end
 if da<0-pi; da=da+2*pi; end
-if abs(da)<1.5; enemy.angle=ta; end
+if fabs(da)<1.5; enemy.angle=ta; end
 enemy.state=1; enemy.state_time=enemy_windup; enemy.hit=0
 end
 function enemy_engage num desired
