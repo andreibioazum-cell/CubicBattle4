@@ -41,6 +41,9 @@ Gift gift=new Gift()
 // aim_tx/aim_ty — точка упреждения бота (куда он целится с учётом скорости игрока)
 num aim_tx=0, aim_ty=0
 num finished=0, atk_x=0, atk_y=0, atk2_x=0, atk2_y=0, joy_id=-1, aim_id=-1, super_id=-1, punch_left=0, punch_cd=0, aim_a=0
+// santa_follow — таймер второго удара посохом: после ручного punch через
+// santa_follow_delay секунд Дед Мороз бьёт ещё раз сам (только один раз).
+num santa_follow=0
 // super_windup — сколько секунд ещё идёт «пустая» анимация удара перед
 // броском снежинки: в это время рисуется спрайт удара, но урона и хитбокса нет.
 num super_cd=0, boom_t=0, boom_x=0, boom_y=0, super_windup=0
