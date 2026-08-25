@@ -628,6 +628,11 @@ int text_ink_height(const char *s) {
         const DSFontGlyph *g = ds_font_glyph(font, (uint32_t)cp);
         if (!g) continue;
         float dt = base - g->bearing_top, db = dt + g->height;
+        /* Нижние выносные элементы ('р','у','д','g','y' и т.п.) не должны
+         * раздувать высоту ink-бокса: иначе строка с ними центрируется выше
+         * строк без них, и текст «уезжает вверх» на часть выносного элемента.
+         * Обрезаем низ по базовой линии — она ровно в dt == base. */
+        if (db > base) db = base;
         if (first || dt < minT) minT = dt;
         if (first || db > maxB) maxB = db;
         first = 0;

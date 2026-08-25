@@ -29,6 +29,7 @@ extern double game_state, chat_open, login_field, login_status, t_dir;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
 extern double ordinary_level, azum_level, santa_level, max_level;
 extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a, super_windup, primes;
+extern double azum_prime_level, ordinary_prime_level, santa_prime_level, prime_max_level, prime_cost_base, prime_cost_step;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern void *player, *enemy, *punch, *gift;
@@ -280,6 +281,29 @@ static void tap_levels_btn(void) { do_tap((float)(g_w / 2), 470.0f); }
 static void tap_level_row(int n) {
     float y = 32.0f + 64.0f + 52.0f + (float)(n - 1) * 88.0f + 39.0f;
     do_tap((float)(g_w / 2), y);
+}
+/* Кнопка «Прокачать прайм» в магазине: ey = by+btn_h+12, by = cy+ch+gap,
+ * cy = back_y+btn_h+16 = 112, ch=300, gap=26 -> центр кнопки в (640, 546). */
+static void tap_prime_upgrade(void) { do_tap((float)(g_w / 2), 546.0f); }
+/* Подсчёт пикселей ауры вокруг точки: сравниваем текущий кадр с базовым и
+ * раскладываем изменённые пиксели по доминирующему каналу прироста. */
+static void count_aura_pixels(const uint32_t *base, double px, double py, int rad,
+                              int *red, int *green, int *yellow) {
+    *red = *green = *yellow = 0;
+    for (int y = (int)py - rad; y <= (int)py + rad; y++) {
+        for (int x = (int)px - rad; x <= (int)px + rad; x++) {
+            if (x < 0 || y < 0 || x >= g_w || y >= g_h) continue;
+            uint32_t a = base[ y * g_w + x], b = g_pixels[y * g_w + x];
+            int ar = (int)(a & 0xff), ag = (int)((a >> 8) & 0xff), ab = (int)((a >> 16) & 0xff);
+            int br = (int)(b & 0xff), bg = (int)((b >> 8) & 0xff), bb = (int)((b >> 16) & 0xff);
+            int dr = br - ar, dg = bg - ag, db = bb - ab;
+            int d = abs(dr) + abs(dg) + abs(db);
+            if (d <= 24) continue;
+            if (dr > 20 && dg > 20 && dr > db + 20 && dg > db + 20) { (*yellow)++; continue; }
+            if (dg > 12 && dg > dr + 8 && dg > db + 8) { (*green)++; continue; }
+            if (dr > 12 && dr > dg + 8 && dr > db + 8) { (*red)++; continue; }
+        }
+    }
 }
 
 int main(void) {
@@ -650,7 +674,72 @@ int main(void) {
                azum_level, player_level, levels_unlocked, cups); return 3;
     }
     printf("=== Azum levels 1-3 bought under its card (frame %ld)\n", g_frame);
-    tap_back(); wait_state(0, 30);
+
+    /* --- Прайм-уровни: кнопка «Прокачать прайм» тратит кубки (20/30/40),
+     * максимум — 3, дальше уровень и кубки не меняются. --- */
+    cups = 100; azum_prime_level = 0;
+    tap_prime_upgrade(); run_frames(5);
+    if (azum_prime_level != 1 || cups != 80) {
+        printf("!! prime upgrade 1 failed: level=%g cups=%g\n", azum_prime_level, cups); return 3;
+    }
+    tap_prime_upgrade(); run_frames(5);
+    if (azum_prime_level != 2 || cups != 50) {
+        printf("!! prime upgrade 2 failed: level=%g cups=%g\n", azum_prime_level, cups); return 3;
+    }
+    tap_prime_upgrade(); run_frames(5);
+    if (azum_prime_level != 3 || cups != 10) {
+        printf("!! prime upgrade 3 failed: level=%g cups=%g\n", azum_prime_level, cups); return 3;
+    }
+    tap_prime_upgrade(); run_frames(5);
+    if (azum_prime_level != 3 || cups != 10) {
+        printf("!! prime above max changed something: level=%g cups=%g\n", azum_prime_level, cups); return 3;
+    }
+    if (net_load_azum_prime_level() != 3) { printf("!! azum prime level not persisted\n"); return 3; }
+    printf("=== Azum prime upgraded 1->3 for cups, capped at max (frame %ld)\n", g_frame);
+
+    /* --- Аура в бою: цвет зависит от прайм-уровня (Азум 1 красный,
+     * 2 зелёный, 3 жёлтый). Сравниваем кадры с аурой и без неё. --- */
+    {
+        azum_prime_level = 0;
+        tap_back(); wait_state(0, 40);           /* магазин -> лобби */
+        tap_play(); wait_state(2, 30);
+        tap_solo(); wait_state(1, 30);
+        run_frames(20);
+        double *pl = (double *)player;
+        double px = pl[PLAYER_X], py = pl[PLAYER_Y];
+        int red = 0, green = 0, yellow = 0;
+
+        uint32_t *base = snap_frame();
+        azum_prime_level = 1; run_frames(2);
+        count_aura_pixels(base, px, py, 70, &red, &green, &yellow);
+        printf("=== aura prime1: red=%d green=%d yellow=%d (frame %ld)\n", red, green, yellow, g_frame);
+        if (red + green + yellow < 30 || red < green || red < yellow) {
+            printf("!! azum prime 1 red aura missing\n"); free(base); return 3;
+        }
+        free(base);
+
+        azum_prime_level = 0; run_frames(2);
+        base = snap_frame();
+        azum_prime_level = 2; run_frames(2);
+        count_aura_pixels(base, px, py, 70, &red, &green, &yellow);
+        printf("=== aura prime2: red=%d green=%d yellow=%d (frame %ld)\n", red, green, yellow, g_frame);
+        if (red + green + yellow < 30 || green < red || green < yellow) {
+            printf("!! azum prime 2 green aura missing\n"); free(base); return 3;
+        }
+        free(base);
+
+        azum_prime_level = 0; run_frames(2);
+        base = snap_frame();
+        azum_prime_level = 3; run_frames(2);
+        count_aura_pixels(base, px, py, 70, &red, &green, &yellow);
+        printf("=== aura prime3: red=%d green=%d yellow=%d (frame %ld)\n", red, green, yellow, g_frame);
+        if (red + green + yellow < 30 || yellow < red || yellow < green) {
+            printf("!! azum prime 3 yellow aura missing\n"); free(base); return 3;
+        }
+        free(base);
+        printf("=== aura colors match prime level 1/2/3 (frame %ld)\n", g_frame);
+    }
+    tap_back(); wait_state(0, 40);
 
     /* --- 12. Повторный вход в онлайн с сохранённым аккаунтом --- */
     tap_play(); wait_state(2, 30);
@@ -770,7 +859,7 @@ int main(void) {
 
     /* --- 15. Дед Мороз: посох отравляет, снежинка только морозит --- */
     /* Класс уже «Дед Мороз» (куплен на шаге 13). В соло проверяем баланс:
-     * удар посохом слабый (0.15), через 0.6 с идёт второй удар, яд тикает
+     * удар посохом слабый (0.25), через 0.6 с идёт второй удар, яд тикает
      * один раз; снежинка бьёт santa_super_damage и морозит, кулдаун 3 с. */
     tap_play(); wait_state(2, 30);
     tap_solo();
@@ -795,8 +884,8 @@ int main(void) {
         }
         if (!hit) { printf("!! santa staff never hit the pinned enemy\n"); return 3; }
         hp_after_hit = e[ENEMY_HP];
-        if (hp_after_hit > 9.9 || hp_after_hit < 9.8) {
-            printf("!! santa staff damage must be tiny (0.15), got 10->%g\n", hp_after_hit); return 3;
+        if (hp_after_hit > 9.76 || hp_after_hit < 9.74) {
+            printf("!! santa staff damage must be tiny (0.25), got 10->%g\n", hp_after_hit); return 3;
         }
         /* Текущий баланс: яд длится santa_poison_time секунд (уровни меняют
          * силу тика и заморозку, а не длительность). */
@@ -808,17 +897,19 @@ int main(void) {
         {
             double tick = santa_poison_dps + (player_level >= 1 ? santa_poison_damage_bonus : 0);
             if (player_level >= 2) tick += santa_poison_damage_bonus;
-            for (int i = 0; i < 30; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
+            /* Окно 18 кадров (0.3 с): яд ещё не тикнул, но второй удар посоха
+             * (через 0.4 с после ручного) в него уже не попадает. */
+            for (int i = 0; i < 18; i++) { pl[PLAYER_HP] = 10; run_frames(1); }
             if (e[ENEMY_HP] < hp_after_hit - 0.01) {
-                printf("!! poison must wait before its first tick: %g after 0.5s\n", e[ENEMY_HP]); return 3;
+                printf("!! poison must wait before its first tick: %g after 0.3s\n", e[ENEMY_HP]); return 3;
             }
             for (int i = 0; i < 35; i++) {
                 pl[PLAYER_HP] = 10; pl[PLAYER_ANGLE] = 0;
                 e[ENEMY_X] = pl[PLAYER_X] + 70; e[ENEMY_Y] = pl[PLAYER_Y];
                 run_frames(1);
             }
-            /* Через 0.6 с: второй удар посоха (0.15) + один тик яда. */
-            double follow = 0.15;
+            /* Через 0.6 с: второй удар посоха (0.25) + один тик яда. */
+            double follow = 0.25;
             double want = hp_after_hit - tick - follow;
             if (e[ENEMY_HP] > want + 0.08 || e[ENEMY_HP] < want - 0.08) {
                 printf("!! expected poison tick %g plus follow punch %g: %g after ~1s (want %g)\n", tick, follow, e[ENEMY_HP], want); return 3;

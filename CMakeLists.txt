@@ -8,6 +8,8 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(GAME_C "${CMAKE_CURRENT_SOURCE_DIR}/game/game.c")
+# Скрипты лежат модулями в game/scripts/ (core/ui/combat/fx) — порядок
+# компиляции задаёт gen.py, здесь достаточно просто найти все .ds.
 file(GLOB_RECURSE DS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/game/*.ds")
 
 add_custom_command(

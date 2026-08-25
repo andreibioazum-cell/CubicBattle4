@@ -1,23 +1,41 @@
 """Generate C code for a DimScript game project."""
-import glob
 import os
 import sys
 from ds_compiler import DimScriptCompiler
 def find_ds_files(directory):
-    files = glob.glob(os.path.join(directory, '*.ds'))
-    order = ["config.ds", "locale.ds", "entities.ds", "ui.ds", "chat.ds", "menu.ds", "battle.ds", "engine.ds",
-             "core.ds", "game.ds"]
-    has_plain = any(os.path.basename(f) in order or not os.path.basename(f)[0].isdigit() for f in files)
-    if has_plain:
-        def key(p):
-            b = os.path.basename(p)
-            try:
-                idx = order.index(b)
-                return (0, idx)
-            except ValueError:
-                return (1, b)
-        return sorted(files, key=key)
-    return sorted(files)
+    """Рекурсивно собирает все .ds файлы и сортирует их по модулям.
+
+    Порядок важен для глобальных объявлений (объекты и их экземпляры должны
+    идти до первого использования), поэтому файлы внутри game/scripts лежат по
+    модулям, а порядок модулей зафиксирован здесь: конфигурация и состояние —
+    раньше, бой и эффекты — позже, движок (главный цикл) замыкает список.
+    """
+    order = [
+        "core/config.ds",        # константы и валюты
+        "ui/locale.ds",          # переводы (используются во всех экранах)
+        "core/entities.ds",      # объекты и глобальное состояние
+        "core/ui.ds",            # UI-примитивы (кнопки, бары)
+        "ui/chat.ds",            # онлайн-чат
+        "ui/menu.ds",            # меню, магазин, лидерборд, аккаунт
+        "combat/battle.ds",      # система боя, ИИ бота, сетевые игроки
+        "fx/dust.ds",            # след пыли
+        "fx/aura.ds",            # ауры праймов
+        "core/engine.ds",        # главный цикл update/draw/touch
+    ]
+    files = []
+    for root, _dirs, names in os.walk(directory):
+        for n in names:
+            if n.endswith('.ds'):
+                files.append(os.path.join(root, n))
+    def key(p):
+        rel = os.path.relpath(p, directory).replace(os.sep, '/')
+        try:
+            return (0, order.index(rel))
+        except ValueError:
+            # Незнакомые файлы (например, экспериментальные) идут после всех
+            # модулей, по алфавиту.
+            return (1, rel)
+    return sorted(files, key=key)
 def usage(stream=sys.stdout):
     print(
         "Usage: python gen.py [--dump] "
