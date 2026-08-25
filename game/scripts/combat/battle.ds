@@ -96,7 +96,7 @@ function init_game
 reset_battle; enemy.hp=enemy.max_hp; spawn_enemy; spawn_all_candies
 end
 function init_online
-reset_battle; chat_open=0; keyboard_hide; online_ready=0; net_set_class player_class; net_set_level player_level; net_connect FIREBASE,ROOM
+reset_battle; chat_open=0; keyboard_hide; online_ready=0; net_set_class player_class; net_set_level player_level; net_set_prime_level selected_prime_level(); net_connect FIREBASE,ROOM
 end
 function place_online
 // слот -> позиция на карте
@@ -421,6 +421,7 @@ function update_game
 tick_revive
 tick_freeze
 tick_player_poison
+aura_tick
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
@@ -437,6 +438,7 @@ follow_punch
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
 tick_super_windup
+tick_santa_follow
 if punch_left>0&&punch.active==1&&punch.hit==0
 if enemy_in_punch()==1
 punch.hit=1
@@ -576,6 +578,7 @@ function push_self
 if net_slot()<0; return; end
 num alive=1; if player.hp<=0; alive=0; end
 net_set_level player_level
+net_set_prime_level selected_prime_level()
 net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive
 net_publish_punch punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot
 end
@@ -583,6 +586,7 @@ function update_online
 tick_revive
 tick_freeze
 tick_player_poison
+aura_tick
 update_aim; if finished!=0; return; end
 if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
 move_player
@@ -591,6 +595,7 @@ follow_punch
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
 tick_super_windup
+tick_santa_follow
 update_dust
 update_gift
 if finished!=0; return; end
@@ -696,77 +701,7 @@ end
 function draw_boom
 draw_boom_at boom_x,boom_y,boom_t
 end
-// ── Пыль от ходьбы игрока ──────────────────────────────────────────────────
-function dust_spawn num px, num py, num jdx, num jdy
-// Ищем свободный слот (life==0).
-num i=0, base=0, found=0
-loop i<dust_max
-base=i*dust_fields
-if arr_get(dust,base+4)<=0; found=1; i=dust_max; end
-i=i+1
-end
-if found==0; return; end
-// Скорость: основной импульс летит НАЗАД по ходу движения (след тянется
-// за кубиком), плюс небольшой разброс вбок для пышности.
-num angle=(rand()%628)/100.0
-num vx=cos(angle)*dust_spd*dust_side_share-jdx*dust_spd*dust_back_share
-num vy=sin(angle)*dust_spd*dust_side_share-jdy*dust_spd*dust_back_share
-arr_set dust,base,px
-arr_set dust,base+1,py
-arr_set dust,base+2,vx
-arr_set dust,base+3,vy
-arr_set dust,base+4,dust_life_max
-end
-function update_dust
-num i=0, base=0
-loop i<dust_max
-base=i*dust_fields
-num lf=arr_get(dust,base+4)
-if lf>0
-arr_set dust,base,  arr_get(dust,base)  +arr_get(dust,base+2)*dt
-arr_set dust,base+1,arr_get(dust,base+1)+arr_get(dust,base+3)*dt
-// Трение: замедляем скорость.
-arr_set dust,base+2,arr_get(dust,base+2)*0.82
-arr_set dust,base+3,arr_get(dust,base+3)*0.82
-arr_set dust,base+4,lf-dt
-end
-i=i+1
-end
-end
-function draw_dust
-num i=0, base=0
-loop i<dust_max
-base=i*dust_fields
-num lf=arr_get(dust,base+4)
-if lf>0
-num t=lf/dust_life_max
-// Радиус растёт в начале и сжимается к концу.
-num r=dust_r_max*t*(2-t)
-// Прозрачность: максимум в середине жизни, гаснет к концу.
-num a=floor(t*t*148)
-if a<1; a=1; end
-if a>148; a=148; end
-num grey=floor(140+70*t)
-// Цвет: ARGB серый (0xAA888888 стиль), но через сдвиги как в других местах.
-num c=((((unsigned)(int)a)<<24)|(((unsigned)(int)grey)<<16)|(((unsigned)(int)grey)<<8)|((unsigned)(int)grey))
-circle arr_get(dust,base),arr_get(dust,base+1),r,c
-end
-i=i+1
-end
-end
-// ── Тик спавна пыли (вызывается из move_player) ────────────────────────────
-function tick_dust num jdx, num jdy, num jmag
-if finished!=0; return; end
-if jmag<0.18; return; end
-if dust_cd>0; dust_cd=dust_cd-dt; return; end
-dust_cd=dust_spawn_cd
-// Спавним 1-2 частицы сразу для пышности — позади кубика, чтобы след
-// тянулся сзади, а не под самим персонажем.
-num bx=player.x-jdx*dust_back_off, by=player.y-jdy*dust_back_off
-dust_spawn bx,by,jdx,jdy
-if rand()%2==0; dust_spawn player.x-jdx*dust_back_off*1.4,player.y-jdy*dust_back_off*1.4,jdx,jdy; end
-end
-// ──────────────────────────────────────────────────────────────────────────────
+// След пыли от ходьбы вынесен в отдельный модуль fx/dust.ds.
 function draw_candies
 num hw=25*candy_scale, i=0
 loop i<candy_count
@@ -995,6 +930,9 @@ draw_dust
 draw_player_shadow_layer
 draw_enemy_shadow
 draw_candies
+// Аура прайма — мягкое свечение вокруг персонажа: выше теней и предметов,
+// но ниже хитбоксов удара и самих спрайтов.
+draw_player_aura
 draw_player_hitbox_layer
 draw_enemy_hitbox
 draw_gift; draw_boom
@@ -1112,6 +1050,17 @@ draw_remote_shadow rx,ry,ra,rcls,punching
 end
 i=i+1
 end
+// Ауры (своя и соперников) — выше теней, ниже хитбоксов удара и спрайтов.
+draw_player_aura
+i=0
+loop i<max_players
+b=i*remote_fields
+if arr_get(remotes,b+5)==1
+rx=arr_get(remotes,b+1); ry=arr_get(remotes,b+2); rcls=arr_get(remotes,b+10)
+draw_aura_at rx,ry,rcls,net_player_prime_level(i)
+end
+i=i+1
+end
 draw_player_hitbox_layer
 i=0
 loop i<max_players
@@ -1168,6 +1117,4 @@ end
 if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aim_id=id; return; end
 if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end
 joy_touch x,y,action,id
-end
-ch x,y,action,id
 end

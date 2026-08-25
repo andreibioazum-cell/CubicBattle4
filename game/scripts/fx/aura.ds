@@ -1,0 +1,65 @@
+// fx/aura.ds — ауры праймов: цвет и сила свечения зависят от класса игрока
+// и его прайм-уровня (1..prime_max_level). Уровень 0 — ауры нет.
+// Максимум — prime_max_level: выше цвет и яркость уже не меняются.
+//
+// Цвета по классам:
+//   Обычный    1 — синий     2 — фиолетовый  3 — оранжевый
+//   Азум       1 — красный   2 — зелёный     3 — жёлтый
+//   Дед Мороз  1 — голубой   2 — розовый     3 — белый
+
+function prime_level_for num cls
+if cls==1; return azum_prime_level; end
+if cls==2; return santa_prime_level; end
+return ordinary_prime_level
+end
+function selected_prime_level
+return prime_level_for(player_class)
+end
+function prime_aura_color num cls, num lv
+if lv<1||lv>prime_max_level; return 0; end
+if cls==1
+if lv>=3; return 0x00FFEB3B; end
+if lv==2; return 0x004CAF50; end
+return 0x00F44336
+end
+if cls==2
+if lv>=3; return 0x00FFFFFF; end
+if lv==2; return 0x00FF80AB; end
+return 0x0080DEEA
+end
+if lv>=3; return 0x00FF9800; end
+if lv==2; return 0x00AB47BC; end
+return 0x002196F3
+end
+function draw_aura_at num x, num y, num cls, num lv
+if lv<1; return; end
+// Максимум — prime_max_level: выше свечение остаётся прежним (не меняется).
+if lv>prime_max_level; lv=prime_max_level; end
+// Лёгкое «дыхание» свечения, чтобы аура выглядела живой.
+num pulse=0.8+0.2*sin(aura_t*3.0+cls*2.1)
+num col=prime_aura_color(cls,lv)
+num alpha=floor((52+40*lv)*pulse)
+if alpha<1; alpha=1; end
+if alpha>255; alpha=255; end
+num ac=(((unsigned)(int)alpha)<<24)|((unsigned)(int)col)
+num r=player.size+14
+// Мягкий ореол: внешнее кольцо + полупрозрачная заливка под персонажем.
+ring x,y,r,7,ac
+num fill_a=floor(alpha*0.35)
+if fill_a<1; fill_a=1; end
+circle x,y,r,(((unsigned)(int)fill_a)<<24)|((unsigned)(int)col)
+if lv>=2
+ring x,y,player.size+24,4,(((unsigned)(int)floor(alpha*0.6))<<24)|((unsigned)(int)col)
+end
+if lv>=3
+ring x,y,player.size+34,3,(((unsigned)(int)floor(alpha*0.4))<<24)|((unsigned)(int)col)
+end
+end
+function draw_player_aura
+// Аура своего персонажа (и в соло, и в онлайне).
+draw_aura_at player.x,player.y,player_class,selected_prime_level()
+end
+function aura_tick
+aura_t=aura_t+dt
+if aura_t>100000; aura_t=0; end
+end

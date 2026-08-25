@@ -8,10 +8,11 @@ cd "$(dirname "$0")/.."
 REAL_URL="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com"
 TEST_URL="http://127.0.0.1:18765"
 
-cp game/config.ds /tmp/config.ds.bak
-trap 'cp /tmp/config.ds.bak game/config.ds; python3 gen.py >/dev/null' EXIT
+CONFIG=game/scripts/core/config.ds
+cp "$CONFIG" /tmp/config.ds.bak
+trap 'cp /tmp/config.ds.bak "$CONFIG"; python3 gen.py >/dev/null' EXIT
 
-sed -i "s|$REAL_URL|$TEST_URL|" game/config.ds
+sed -i "s|$REAL_URL|$TEST_URL|" "$CONFIG"
 python3 gen.py >/dev/null
 
 # Regenerate the net.c copy with the test HTTP hook.

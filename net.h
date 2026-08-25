@@ -68,7 +68,9 @@ double net_player_snow_dy(double slot);
 double net_player_snow(double slot);
 double net_player_class(double slot);
 double net_player_level(double slot); /* уровень активного класса соперника */
+double net_player_prime_level(double slot); /* прайм-уровень соперника (для ауры) */
 void net_set_level(double level); /* уровень активного класса своего игрока */
+void net_set_prime_level(double prime); /* прайм-уровень своего игрока */
 
 /* Прогресс игрока: валюты, купленные классы и отдельные уровни каждого класса. */
 double net_load_cups(void);
@@ -84,8 +86,11 @@ double net_load_azum_level(void);
 double net_load_azum_levels_unlocked(void);
 double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
-/* Праймы — третья валюта (за победы). */
+/* Праймы — третья валюта (за победы) и прайм-уровни классов (аура в бою). */
 double net_load_primes(void);
+double net_load_ordinary_prime_level(void);
+double net_load_azum_prime_level(void);
+double net_load_santa_prime_level(void);
 /* Старый семиаргументный вызов сохраняется для совместимости. */
 void net_save_progress(double cups, double candies, double cls, double azum, double santa,
                        double level, double levels_unlocked);
@@ -93,7 +98,8 @@ void net_save_progress_all(double cups, double candies, double primes, double cl
                            double level, double levels_unlocked,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
-                           double santa_level, double santa_levels_unlocked);
+                           double santa_level, double santa_levels_unlocked,
+                           double ordinary_prime_level, double azum_prime_level, double santa_prime_level);
 
 /* Чат читается реже боевого состояния, поэтому не тормозит движение. */
 void net_chat_send(const char *text);
