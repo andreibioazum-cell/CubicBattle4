@@ -1,185 +1,597 @@
 include graphics
 
 function tr_play()
-if language==1; return "Играть"; end; return "Play"; end
+    if language == 1
+        return "Играть"
+    end
+    return "Play"
+end
+
 function tr_settings()
-if language==1; return "Настройки"; end; return "Settings"; end
+    if language == 1
+        return "Настройки"
+    end
+    return "Settings"
+end
+
 function tr_solo()
-if language==1; return "Соло"; end; return "Solo"; end
+    if language == 1
+        return "Соло"
+    end
+    return "Solo"
+end
+
 function tr_online()
-if language==1; return "Онлайн"; end; return "Online"; end
+    if language == 1
+        return "Онлайн"
+    end
+    return "Online"
+end
+
 function tr_console()
-if language==1; return "Консоль"; end; return "Console"; end
+    if language == 1
+        return "Консоль"
+    end
+    return "Console"
+end
+
 function tr_up()
-if language==1; return "Вверх"; end; return "Up"; end
+    if language == 1
+        return "Вверх"
+    end
+    return "Up"
+end
+
 function tr_down()
-if language==1; return "Вниз"; end; return "Down"; end
+    if language == 1
+        return "Вниз"
+    end
+    return "Down"
+end
+
 function tr_clear()
-if language==1; return "Очистить"; end; return "Clear"; end
+    if language == 1
+        return "Очистить"
+    end
+    return "Clear"
+end
+
 function tr_back()
-if language==1; return "Назад"; end; return "Back"; end
+    if language == 1
+        return "Назад"
+    end
+    return "Back"
+end
+
 function tr_punch()
-if language==1; return "Удар"; end; return "Punch"; end
+    if language == 1
+        return "Удар"
+    end
+    return "Punch"
+end
+
 function tr_tap_to_return()
-if language==1; return "Нажмите, чтобы выйти"; end; return "Tap to return"; end
+    if language == 1
+        return "Нажмите, чтобы выйти"
+    end
+    return "Tap to return"
+end
+
 function tr_victory()
-if language==1; return "Победа!"; end; return "Victory!"; end
+    if language == 1
+        return "Победа!"
+    end
+    return "Victory!"
+end
+
 function tr_opponent_defeated()
-if language==1; return "Соперник побеждён"; end; return "Opponent defeated"; end
+    if language == 1
+        return "Соперник побеждён"
+    end
+    return "Opponent defeated"
+end
+
 function tr_defeat()
-if language==1; return "Поражение"; end; return "Defeat"; end
+    if language == 1
+        return "Поражение"
+    end
+    return "Defeat"
+end
+
 function tr_opponent_won()
-if language==1; return "Соперник победил"; end; return "The opponent won"; end
+    if language == 1
+        return "Соперник победил"
+    end
+    return "The opponent won"
+end
+
 function tr_you_were_defeated()
-if language==1; return "Вы повержены"; end; return "You were defeated"; end
+    if language == 1
+        return "Вы повержены"
+    end
+    return "You were defeated"
+end
+
 function tr_no_connection()
-if language==1; return "Нет соединения"; end; return "No connection"; end
+    if language == 1
+        return "Нет соединения"
+    end
+    return "No connection"
+end
+
 function tr_reconnecting()
-if language==1; return "Переподключение..."; end; return "Reconnecting..."; end
+    if language == 1
+        return "Переподключение..."
+    end
+    return "Reconnecting..."
+end
+
 function tr_connecting()
-if language==1; return "Подключение..."; end; return "Connecting..."; end
+    if language == 1
+        return "Подключение..."
+    end
+    return "Connecting..."
+end
+
 function tr_chat()
-if language==1; return "Чат"; end; return "Chat"; end
+    if language == 1
+        return "Чат"
+    end
+    return "Chat"
+end
+
 function tr_online_chat()
-if language==1; return "Онлайн чат"; end; return "Online chat"; end
+    if language == 1
+        return "Онлайн чат"
+    end
+    return "Online chat"
+end
+
 function tr_no_messages()
-if language==1; return "Нет сообщений"; end; return "No messages"; end
+    if language == 1
+        return "Нет сообщений"
+    end
+    return "No messages"
+end
+
 function tr_close()
-if language==1; return "Закрыть"; end; return "Close"; end
+    if language == 1
+        return "Закрыть"
+    end
+    return "Close"
+end
+
 function tr_type_message()
-if language==1; return "Введите сообщение..."; end; return "Type a message..."; end
+    if language == 1
+        return "Введите сообщение..."
+    end
+    return "Type a message..."
+end
+
 function tr_send()
-if language==1; return "Отправить"; end; return "Send"; end
+    if language == 1
+        return "Отправить"
+    end
+    return "Send"
+end
+
 function tr_account()
-if language==1; return "Аккаунт"; end; return "Account"; end
+    if language == 1
+        return "Аккаунт"
+    end
+    return "Account"
+end
+
 function tr_login_title()
-if language==1; return "Вход и регистрация"; end; return "Login / Register"; end
+    if language == 1
+        return "Вход и регистрация"
+    end
+    return "Login / Register"
+end
+
 function tr_nick()
-if language==1; return "Ник"; end; return "Nick"; end
+    if language == 1
+        return "Ник"
+    end
+    return "Nick"
+end
+
 function tr_pass()
-if language==1; return "Пароль"; end; return "Password"; end
+    if language == 1
+        return "Пароль"
+    end
+    return "Password"
+end
+
 function tr_nick_ph()
-if language==1; return "Ник: 1-16 (буквы, цифры, _)"; end; return "Nick: 1-16 (letters, digits, _)"; end
+    if language == 1
+        return "Ник: 1-16 (буквы, цифры, _)"
+    end
+    return "Nick: 1-16 (letters, digits, _)"
+end
+
 function tr_pass_ph()
-if language==1; return "Пароль: от 1 символа"; end; return "Password: 1+ chars"; end
+    if language == 1
+        return "Пароль: от 1 символа"
+    end
+    return "Password: 1+ chars"
+end
+
 function tr_bad_nick()
-if language==1; return "Ник: от 1 до 16 символов, только буквы, цифры и _"; end; return "Nick: 1-16 chars, letters, digits and _ only"; end
+    if language == 1
+        return "Ник: от 1 до 16 символов, только буквы, цифры и _"
+    end
+    return "Nick: 1-16 chars, letters, digits and _ only"
+end
+
 function tr_wrong_pass()
-if language==1; return "Неверный пароль для этого ника"; end; return "Wrong password for this nick"; end
+    if language == 1
+        return "Неверный пароль для этого ника"
+    end
+    return "Wrong password for this nick"
+end
+
 function tr_bad_pass()
-if language==1; return "Пароль: от 1 до 32 символов"; end; return "Password: 1-32 characters"; end
+    if language == 1
+        return "Пароль: от 1 до 32 символов"
+    end
+    return "Password: 1-32 characters"
+end
+
 function tr_login_btn()
-if language==1; return "Войти / Зарегистрироваться"; end; return "Log In / Register"; end
+    if language == 1
+        return "Войти / Зарегистрироваться"
+    end
+    return "Log In / Register"
+end
+
 function tr_your_nick()
-if language==1; return "Ваш ник: "; end; return "Your nick: "; end
+    if language == 1
+        return "Ваш ник: "
+    end
+    return "Your nick: "
+end
+
 function tr_leaderboard()
-if language==1; return "Лидерборд"; end; return "Leaderboard"; end
+    if language == 1
+        return "Лидерборд"
+    end
+    return "Leaderboard"
+end
+
 function tr_leaderboard_title()
-if language==1; return "Лидерборд (кубки)"; end; return "Leaderboard (cups)"; end
+    if language == 1
+        return "Лидерборд (кубки)"
+    end
+    return "Leaderboard (cups)"
+end
+
 function tr_loading()
-if language==1; return "Загрузка..."; end; return "Loading..."; end
+    if language == 1
+        return "Загрузка..."
+    end
+    return "Loading..."
+end
+
 function tr_no_data()
-if language==1; return "Нет данных"; end; return "No data"; end
+    if language == 1
+        return "Нет данных"
+    end
+    return "No data"
+end
+
 function tr_disco_epilepsy()
-return "Epilepsy safe"
+    return "Epilepsy safe"
 end
+
 function tr_mode_on()
-if language==1; return "вкл"; end; return "on"; end
-function tr_mode_off()
-if language==1; return "выкл"; end; return "off"; end
-function tr_shop()
-if language==1; return "Магазин"; end; return "Shop"; end
-function tr_box()
-if language==1; return "Ящик"; end; return "Box"; end
-function tr_candies()
-if language==1; return "Леденцы"; end; return "Candies"; end
-function tr_got()
-if language==1; return "Выпало:"; end; return "You got:"; end
-function tr_class_ordinary()
-if language==1; return "Обычный"; end; return "Ordinary"; end
-function tr_class_azum()
-if language==1; return "Азум"; end; return "Azum"; end
-function tr_class_ordinary_desc()
-if language==1; return "Стандартный боец"; end; return "Standard fighter"; end
-function tr_class_azum_desc()
-if language==1; return "Возрождение 1 раз за игру"; end; return "Revive once per match"; end
-function tr_class_santa()
-if language==1; return "Дед Мороз"; end; return "Santa"; end
-function tr_class_santa_desc()
-if language==1; return "Слабый удар + второй через 0.6 с, снежинка морозит"; end; return "Weak hit + follow-up at 0.6s, flake freezes"; end
-function tr_super()
-if language==1; return "Снежинка"; end; return "Snowflake"; end
-function tr_class_selected()
-if language==1; return "Выбран"; end; return "Selected"; end
-function tr_class_pick()
-if language==1; return "Выбрать"; end; return "Select"; end
-function tr_your_class()
-if language==1; return "Класс: "; end; return "Class: "; end
-function tr_levels()
-if language==1; return "Уровни"; end; return "Levels"; end
-function tr_level()
-if language==1; return "Уровень"; end; return "Level"; end
-function tr_level_absorb()
-if language==1; return "Поглощение урона"; end; return "Damage absorb"; end
-function tr_levels_for_class()
-if language==1; return "Уровни класса"; end; return "Class levels"; end
-function tr_class_level_effect(number cls, number n)
-// У каждого класса своя ветка: эти подписи также показываются прямо под карточкой класса.
-if cls==1&&n==1; if language==1; return "Вторая жизнь: урон -10%"; end; return "Second life: damage -10%"; end
-if cls==1&&n==2; if language==1; return "Скорость +3%"; end; return "Speed +3%"; end
-if cls==1&&n==3; if language==1; return "Атака лечит +0.1 HP"; end; return "Attack heals +0.1 HP"; end
-if cls==2&&n==1; if language==1; return "Тик яда +0.15 урона"; end; return "Poison tick +0.15 damage"; end
-if cls==2&&n==2; if language==1; return "Тик яда +0.15 урона (x2)"; end; return "Poison tick +0.15 damage (x2)"; end
-if cls==2&&n==3; if language==1; return "Яд стакается, снежинка наносит урон"; end; return "Poison stacks, snowflake deals damage"; end
-if cls==0&&n==1; if language==1; return "Урон атаки +5%"; end; return "Attack damage +5%"; end
-if cls==0&&n==2; if language==1; return "Скорость +2%"; end; return "Speed +2%"; end
-if language==1; return "Атака лечит +0.05 HP"; end; return "Attack heals +0.05 HP"; end
-function tr_level_unlock()
-if language==1; return "Открыть за"; end; return "Unlock for"; end
-function tr_cups_unit()
-if language==1; return "кубков"; end; return "cups"; end
-function tr_level_locked()
-if language==1; return "Сначала откройте предыдущий"; end; return "Unlock the previous level first"; end
-function tr_level_need_cups()
-if language==1; return "Не хватает кубков для уровня"; end; return "Not enough cups for this level"; end
-function tr_levels_soon()
-if language==1; return "Скоро!"; end; return "Coming soon!"; end
-function tr_cups()
-if language==1; return "Кубки"; end; return "Cups"; end
-function tr_buy_for(number cost, string currency)
-string out=""
-if language==1; out="Купить · "+cost+" "+currency
-else; out="Buy · "+cost+" "+currency; end
-return out
+    if language == 1
+        return "вкл"
+    end
+    return "on"
 end
+
+function tr_mode_off()
+    if language == 1
+        return "выкл"
+    end
+    return "off"
+end
+
+function tr_shop()
+    if language == 1
+        return "Магазин"
+    end
+    return "Shop"
+end
+
+function tr_box()
+    if language == 1
+        return "Ящик"
+    end
+    return "Box"
+end
+
+function tr_candies()
+    if language == 1
+        return "Леденцы"
+    end
+    return "Candies"
+end
+
+function tr_got()
+    if language == 1
+        return "Выпало:"
+    end
+    return "You got:"
+end
+
+function tr_class_ordinary()
+    if language == 1
+        return "Обычный"
+    end
+    return "Ordinary"
+end
+
+function tr_class_azum()
+    if language == 1
+        return "Азум"
+    end
+    return "Azum"
+end
+
+function tr_class_ordinary_desc()
+    if language == 1
+        return "Стандартный боец"
+    end
+    return "Standard fighter"
+end
+
+function tr_class_azum_desc()
+    if language == 1
+        return "Возрождение 1 раз за игру"
+    end
+    return "Revive once per match"
+end
+
+function tr_class_santa()
+    if language == 1
+        return "Дед Мороз"
+    end
+    return "Santa"
+end
+
+function tr_class_santa_desc()
+    if language == 1
+        return "Слабый удар + второй через 0.6 с, снежинка морозит"
+    end
+    return "Weak hit + follow-up at 0.6s, flake freezes"
+end
+
+function tr_super()
+    if language == 1
+        return "Снежинка"
+    end
+    return "Snowflake"
+end
+
+function tr_class_selected()
+    if language == 1
+        return "Выбран"
+    end
+    return "Selected"
+end
+
+function tr_class_pick()
+    if language == 1
+        return "Выбрать"
+    end
+    return "Select"
+end
+
+function tr_your_class()
+    if language == 1
+        return "Класс: "
+    end
+    return "Class: "
+end
+
+function tr_levels()
+    if language == 1
+        return "Уровни"
+    end
+    return "Levels"
+end
+
+function tr_level()
+    if language == 1
+        return "Уровень"
+    end
+    return "Level"
+end
+
+function tr_level_absorb()
+    if language == 1
+        return "Поглощение урона"
+    end
+    return "Damage absorb"
+end
+
+function tr_levels_for_class()
+    if language == 1
+        return "Уровни класса"
+    end
+    return "Class levels"
+end
+
+function tr_class_level_effect(number cls, number n)
+    // У каждого класса своя ветка: эти подписи также показываются прямо под карточкой класса.
+    if cls == 1 && n == 1
+        if language == 1
+            return "Вторая жизнь: урон -10%"
+        end
+        return "Second life: damage -10%"
+    end
+    if cls == 1 && n == 2
+        if language == 1
+            return "Скорость +3%"
+        end
+        return "Speed +3%"
+    end
+    if cls == 1 && n == 3
+        if language == 1
+            return "Атака лечит +0.1 HP"
+        end
+        return "Attack heals +0.1 HP"
+    end
+    if cls == 2 && n == 1
+        if language == 1
+            return "Тик яда +0.15 урона"
+        end
+        return "Poison tick +0.15 damage"
+    end
+    if cls == 2 && n == 2
+        if language == 1
+            return "Тик яда +0.15 урона (x2)"
+        end
+        return "Poison tick +0.15 damage (x2)"
+    end
+    if cls == 2 && n == 3
+        if language == 1
+            return "Яд стакается, снежинка наносит урон"
+        end
+        return "Poison stacks, snowflake deals damage"
+    end
+    if cls == 0 && n == 1
+        if language == 1
+            return "Урон атаки +5%"
+        end
+        return "Attack damage +5%"
+    end
+    if cls == 0 && n == 2
+        if language == 1
+            return "Скорость +2%"
+        end
+        return "Speed +2%"
+    end
+    if language == 1
+        return "Атака лечит +0.05 HP"
+    end
+    return "Attack heals +0.05 HP"
+end
+
+function tr_level_unlock()
+    if language == 1
+        return "Открыть за"
+    end
+    return "Unlock for"
+end
+
+function tr_cups_unit()
+    if language == 1
+        return "кубков"
+    end
+    return "cups"
+end
+
+function tr_level_locked()
+    if language == 1
+        return "Сначала откройте предыдущий"
+    end
+    return "Unlock the previous level first"
+end
+
+function tr_level_need_cups()
+    if language == 1
+        return "Не хватает кубков для уровня"
+    end
+    return "Not enough cups for this level"
+end
+
+function tr_levels_soon()
+    if language == 1
+        return "Скоро!"
+    end
+    return "Coming soon!"
+end
+
+function tr_cups()
+    if language == 1
+        return "Кубки"
+    end
+    return "Cups"
+end
+
+function tr_buy_for(number cost, string currency)
+    string out = ""
+    if language == 1
+        out = "Купить · " + cost + " " + currency
+    else
+        out = "Buy · " + cost + " " + currency
+    end
+    return out
+end
+
 function tr_class_need_cups()
-if language==1; return "Не хватает кубков"; end; return "Not enough cups"; end
+    if language == 1
+        return "Не хватает кубков"
+    end
+    return "Not enough cups"
+end
+
 function tr_cups_reward()
-if language==1; return "+5 кубков · +3 леденца · +1 прайм"; end; return "+5 cups · +3 candies · +1 prime"; end
+    if language == 1
+        return "+5 кубков · +3 леденца · +1 прайм"
+    end
+    return "+5 cups · +3 candies · +1 prime"
+end
+
 // ── Праймы: третья валюта и прайм-уровни (аура в бою) ──────────────────────
 function tr_primes()
-if language==1; return "Праймы"; end; return "Primes"; end
+    if language == 1
+        return "Праймы"
+    end
+    return "Primes"
+end
+
 // Прокачка прайма за кубки: у каждого класса свой уровень (1..prime_max_level),
 // за уровень в бою появляется аура — цвет зависит от класса (см. fx/aura.ds).
 function tr_prime_upgrade(number cost)
-if cost<=0
-if language==1; return "Прайм: максимум"; end
-return "Prime: max level"
+    if cost <= 0
+        if language == 1
+            return "Прайм: максимум"
+        end
+        return "Prime: max level"
+    end
+    if language == 1
+        return "Прокачать прайм · " + cost + " " + tr_cups_unit()
+    end
+    return "Upgrade prime · " + cost + " " + tr_cups_unit()
 end
-if language==1; return "Прокачать прайм · "+cost+" "+tr_cups_unit(); end
-return "Upgrade prime · "+cost+" "+tr_cups_unit()
-end
+
 function tr_prime_status(number lv)
-if lv>=prime_max_level
-if language==1; return "Прайм: макс. уровень "+lv+" — аура в бою"; end
-return "Prime: max level "+lv+" — battle aura"
+    if lv >= prime_max_level
+        if language == 1
+            return "Прайм: макс. уровень " + lv + " — аура в бою"
+        end
+        return "Prime: max level " + lv + " — battle aura"
+    end
+    if language == 1
+        return "Прайм: уровень " + lv + "/" + prime_max_level + " — аура в бою"
+    end
+    return "Prime: level " + lv + "/" + prime_max_level + " — battle aura"
 end
-if language==1; return "Прайм: уровень "+lv+"/"+prime_max_level+" — аура в бою"; end
-return "Prime: level "+lv+"/"+prime_max_level+" — battle aura"
-end
+
 function tr_prime_need_cups()
-if language==1; return "Не хватает кубков для прайма"; end; return "Not enough cups for the prime"; end
+    if language == 1
+        return "Не хватает кубков для прайма"
+    end
+    return "Not enough cups for the prime"
+end
+
 function tr_prime_upgraded(number lv)
-if language==1; return "Прайм прокачан: уровень "+lv+"! В бою теперь аура"; end
-return "Prime upgraded to level "+lv+"! Battle aura active"
+    if language == 1
+        return "Прайм прокачан: уровень " + lv + "! В бою теперь аура"
+    end
+    return "Prime upgraded to level " + lv + "! Battle aura active"
 end

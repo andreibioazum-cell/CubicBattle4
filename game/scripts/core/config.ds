@@ -7,17 +7,20 @@ include graphics
 // Агрессивный ИИ: атакует без задержки, как только оказывается рядом с игроком,
 // упреждает движение и быстро разворачивается к цели.
 number game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15, punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1, joy_speed=192, bot_speed=188, bot_strafe_speed=96, bot_dodge_speed=330, btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_out=0.1, aim_max_alpha=102
+
 // Онлайн: в remotes по 11 чисел, в remote_punches по 6. Координаты соперника
 // плавно догоняют сетевую цель; большой скачок считается телепортом.
 // Поля remotes: present, x, y, angle, hp, alive, punch, netx, nety, netangle, class.
 // Уровень активного класса передаётся отдельно через сетевой снимок и не меняет
 // старый формат массива remotes.
 number remote_fields=11, punch_fields=6, snow_fields=8, remote_smooth=14, remote_snap=220
+
 // Поведение бота: enemy_dodge_time/cooldown — окно и перезарядка
 // уклонения от удара игрока;
 // enemy_cooldown_min/max — случайная перезарядка удара бота: каждый раз новое
 // значение в диапазоне, но не быстрее enemy_cooldown_min (0.09 с).
 number enemy_min_distance=50, enemy_punch_reach=104, enemy_punch_width=104, enemy_windup=0.14, enemy_lock_time=0.05, enemy_punch_time=0.16, enemy_recovery=0.05, enemy_cooldown_min=0.09, enemy_cooldown_max=0.22, enemy_damage=1, enemy_first_delay=0.05, enemy_dodge_time=0.2, enemy_dodge_cooldown=0.4, enemy_reaction=0.05, enemy_think_min=0, enemy_think_max=0.02
+
 // Новый «мозг» бота: enemy_lead — на сколько секунд вперёд он упреждает удар
 // (замах + половина активного окна), enemy_hit_margin — запас по дальности,
 // чтобы удар гарантированно доставал, enemy_close_gain — резкость подхода к
@@ -25,6 +28,7 @@ number enemy_min_distance=50, enemy_punch_reach=104, enemy_punch_width=104, enem
 // enemy_still_speed — порог «игрок стоит», enemy_punish_react — задержка,
 // с которой бот замечает промах игрока и идёт наказывать.
 number enemy_lead=0.15, enemy_hit_margin=8, enemy_close_gain=5.0, enemy_flank_time=0.9, enemy_still_speed=25, enemy_punish_react=0.05
+
 // Плавность бота: enemy_move_smooth — насколько быстро скорость обхода
 // подтягивается к новой цели (убирает рывки при смене стороны обхода),
 // enemy_face_speed — скорость разворота спрайта к направлению движения,
@@ -32,6 +36,7 @@ number enemy_lead=0.15, enemy_hit_margin=8, enemy_close_gain=5.0, enemy_flank_ti
 // enemy_attack_turn_speed — максимальная скорость поворота видимого хитбокса
 // во время замаха.
 number enemy_move_smooth=18, enemy_face_speed=14, enemy_face_max_speed=42, enemy_attack_turn_speed=28
+
 // Экран аккаунта: вход и регистрация по нику и паролю.
 // login_field — 1=ник, 2=пароль, login_status: 0=идл, 2=ок, 4=сеть,
 // 5=неверный/пустой ник, 6=неверный пароль, 7=пустой/неверный пароль.
@@ -39,13 +44,16 @@ number enemy_move_smooth=18, enemy_face_speed=14, enemy_face_max_speed=42, enemy
 // login_after — куда перейти после входа (0=лобби, 5=онлайн).
 number login_field=1, login_status=0, login_after=0
 number login_ox=0, login_oy=-20, login_fh=50, login_lab=28, login_lab_ox=12
+
 string GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png", AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png", SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png", FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main", login_nick="", login_pass=""
+
 // Звуки: файлы лежат в game/sounds (lobbymusic.wav и другие). snd_load
 // возвращает 0, если файла нет, — игра спокойно живёт и без музыки.
 // music_ok запоминает, удалось ли поднять музыку лобби. music_level — текущая
 // громкость в долях от 0.7: в бой музыка уходит плавно, а не обрывается.
 string LOBBY_MUSIC="lobbymusic.wav"
 number music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1.0
+
 // Ивенты из Firebase (корневой узел /event): event_mode=0 — ивента нет,
 // 1 — «диско» (всё мигает), 2 — снегопад над ареной. Ивенты действуют только
 // в онлайне; в оффлайне (соло-бой) они не обновляются и не рисуются.
@@ -53,22 +61,27 @@ number music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1
 // disco_t — таймер плавной смены цветов, event_t — общий таймер ивента
 // (идёт всегда, по нему падает снег), event_flakes — число снежинок.
 number event_mode=0, disco_safe=0, disco_t=0, event_t=0, event_flakes=44
+
 // Классы: player_class 0 = Обычный, 1 = Азум (одно возрождение за бой).
 // azum_revived — уже тратили воскрешение, revive_prot — неуязвимость после
 // возрождения. Вспышки на экране нет: Азум просто встаёт в случайной точке.
 number player_class=0, azum_revived=0, revive_prot=0
+
 // Валюты: кубки — за победы, леденцы — вторая валюта (за победы),
 // праймы — редкая третья валюта (по одной за победу); прайм-уровни классов
 // прокачиваются за кубки и дают ауру в бою (см. ниже).
 number cups=0, candies=0, primes=0, azum_owned=0, santa_owned=0, cup_win=5, candy_win=3, prime_win=1, azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0, prime_msg_t=0, prime_ok_t=0
+
 // Прайм-уровни классов: прокачиваются в магазине за кубки (prime_cost_base +
 // шаг за уровень), максимум prime_max_level. За уровень у персонажа в бою
 // появляется аура: цвет зависит от класса и уровня (см. fx/aura.ds).
 // Каждый класс копит свой уровень, как и обычные уровни.
 number prime_max_level=3, prime_cost_base=20, prime_cost_step=10
 number ordinary_prime_level=0, azum_prime_level=0, santa_prime_level=0
+
 // aura_t — таймер плавного пульса ауры в бою.
 number aura_t=0
+
 // Уровни: у каждого класса свой путь из трёх уровней. Первый уровень стоит
 // 30 кубков, каждый следующий на 10 дороже. Уровни 4 и 5 удалены полностью.
 // player_level/levels_unlocked — совместимый алиас для выбранного класса;
@@ -76,12 +89,15 @@ number aura_t=0
 // бойца независимо друг от друга.
 number player_level=0, levels_unlocked=0, max_level=3, level_base_cost=30, level_cost_step=10, level_msg_t=0
 number ordinary_level=0, ordinary_levels_unlocked=0, azum_level=0, azum_levels_unlocked=0, santa_level=0, santa_levels_unlocked=0
+
 // Бонусы уровней Азумa: защита работает только после возрождения, скорость
 // постоянная, а лечение срабатывает после успешного попадания.
 number azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
+
 // У обычного бойца и Деда Мороза свои, не совпадающие с Азумом пути.
 number ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
 number santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze_time_bonus=0.50
+
 // Дед Мороз (класс 2). По цифрам он почти как обычный класс: те же HP,
 // та же скорость, тот же хитбокс и ритм удара. Отличий два:
 // 1) Посох наносит слабый урон santa_damage. После ручного удара через
@@ -99,26 +115,33 @@ number santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze
 // повторяется раз в секунду. Старое имя santa_poison_dps оставлено для
 // совместимости, но означает урон одного тика, а не урон каждого кадра.
 number santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
+
 // Задержка автоповтора Деда Мороза: после ручного удара через столько секунд
 // он бьёт ещё раз сам (только один раз). Слегка больше паузы между ударами.
 number santa_follow_delay=0.4
+
 // santa_super_damage — урон от взрыва снежинки по врагу (соло).
 number santa_super_damage=2.0
 number super_freeze=3.0, super_freeze_slow=0.12
 number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
+
 // Плавное появление/исчезновение эффектов: freeze_fade_in/out — за сколько секунд
 // круг заморозки набирает/гасит прозрачность; boom_fade_in/out — то же для взрыва
 // снежинки (доли boom_time в конце жизни эффекта).
 number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
+
 // Тень персонажей: чёрный силуэт текстуры со сдвигом shadow_off влево-вниз и
 // прозрачностью shadow_alpha (0..255).
 number shadow_off=10, shadow_alpha=0x60
+
 // Магазин: Дед Мороз покупается за леденцы (детерминированно).
 number santa_candy_cost=100
+
 // Леденцы-пикапы на карте (соло): candy_count штук разбросаны по случайным
 // точкам экрана (отступ candy_margin от краёв), за каждый подбор +candy_give.
 // Собранный леденец исчезает, и на его месте появляется новый в случайном месте.
 number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
+
 // Частицы пыли от ходьбы: пул до dust_max штук, dust_fields полей на каждую.
 // dust_life_max — время жизни (с), dust_spawn_cd — интервал спавна (с),
 // dust_r_max — максимальный радиус, dust_spd — скорость разлёта частицы.

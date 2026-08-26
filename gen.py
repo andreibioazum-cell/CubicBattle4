@@ -2,6 +2,8 @@
 import os
 import sys
 from ds_compiler import DimScriptCompiler
+
+
 def find_ds_files(directory):
     """Рекурсивно собирает все .ds файлы и сортирует их по модулям.
 
@@ -27,6 +29,7 @@ def find_ds_files(directory):
         for n in names:
             if n.endswith('.ds'):
                 files.append(os.path.join(root, n))
+
     def key(p):
         rel = os.path.relpath(p, directory).replace(os.sep, '/')
         try:
@@ -35,13 +38,18 @@ def find_ds_files(directory):
             # Незнакомые файлы (например, экспериментальные) идут после всех
             # модулей, по алфавиту.
             return (1, rel)
+
     return sorted(files, key=key)
+
+
 def usage(stream=sys.stdout):
     print(
         "Usage: python gen.py [--dump] "
         "[game-directory [output.c]] | [source.ds output.c]",
         file=stream,
     )
+
+
 def main():
     game_dir = 'game'
     args = sys.argv[1:]
@@ -66,6 +74,7 @@ def main():
     else:
         usage(sys.stderr)
         return 2
+
     if os.path.isdir(input_path):
         src_dir = input_path
         # В проекте скрипты лежат в <game_dir>/scripts, а список модулей в
@@ -84,17 +93,20 @@ def main():
             print(f"Error: file not found: {input_path}", file=sys.stderr)
             return 1
         sources = [input_path]
+
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     compiler = DimScriptCompiler()
     if not compiler.compile(sources, output_path):
         print("Compilation failed", file=sys.stderr)
         return 1
+
     note = ""
-    if hasattr(compiler,'warnings') and compiler.warnings:
+    if hasattr(compiler, 'warnings') and compiler.warnings:
         note = f" with {compiler.warnings} warning(s)"
     if compiler.errors:
         note += f" (errors above are non-fatal: game still builds)"
     print(f"{output_path} generated from {len(compiler.lines)} line(s){note}")
+
     if dump_c:
         print("\n" + "=" * 60)
         print("GENERATED C CODE:")
@@ -105,5 +117,7 @@ def main():
         print("END OF GENERATED C CODE")
         print("=" * 60 + "\n")
     return 0
+
+
 if __name__ == '__main__':
     sys.exit(main())
