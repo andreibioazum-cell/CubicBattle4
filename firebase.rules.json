@@ -6,6 +6,10 @@
       ".read": true,
       ".write": true
     },
+    "bans": {
+      ".read": true,
+      ".write": true
+    },
     "users": {
       ".read": true,
       "$nick": {

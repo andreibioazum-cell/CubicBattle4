@@ -19,7 +19,6 @@
 void net_set_java_vm(JavaVM *vm);
 #endif
 
-/* Подключение и аккаунты (вход / регистрация). */
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_set_data_path(const char *path);
@@ -31,16 +30,12 @@ double net_login_status(void);
 const char *net_login_nick(void);
 const char *net_login_pass(void);
 
-/* Лидерборд по кубкам */
 void net_leaderboard_fetch(const char *url);
 double net_leaderboard_status(void);
 double net_leaderboard_count(void);
 const char *net_leaderboard_nick(double idx);
 double net_leaderboard_cups(double idx);
 
-/* Состояние игроков. Удар и снежинка — постоянные события со счётчиками
- * punch/snow: если счётчик изменился, событие нельзя потерять между двумя
- * опросами сети. */
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
 void net_publish_snow(double x, double y, double dx, double dy, double snow);
@@ -48,7 +43,8 @@ void net_set_class(double cls);
 double net_status(void);
 double net_slot(void);
 double net_count(void);
-double net_event(void); /* 0 — ивента нет, 1 — «диско», 2 — снегопад */
+double net_event(void);
+void net_event_set(double mode);
 double net_player_online(double slot);
 double net_player_x(double slot);
 double net_player_y(double slot);
@@ -67,12 +63,10 @@ double net_player_snow_dx(double slot);
 double net_player_snow_dy(double slot);
 double net_player_snow(double slot);
 double net_player_class(double slot);
-double net_player_level(double slot); /* уровень активного класса соперника */
-double net_player_prime_level(double slot); /* прайм-уровень соперника (для ауры) */
-void net_set_level(double level); /* уровень активного класса своего игрока */
-void net_set_prime_level(double prime); /* прайм-уровень своего игрока */
+double net_player_level(double slot);
+void net_set_level(double level);
 
-/* Прогресс игрока: валюты, купленные классы и отдельные уровни каждого класса. */
+/* Прогресс без праймов */
 double net_load_cups(void);
 double net_load_candies(void);
 double net_load_class(void);
@@ -86,24 +80,25 @@ double net_load_azum_level(void);
 double net_load_azum_levels_unlocked(void);
 double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
-/* Праймы — третья валюта (за победы) и прайм-уровни классов (аура в бою). */
-double net_load_primes(void);
-double net_load_ordinary_prime_level(void);
-double net_load_azum_prime_level(void);
-double net_load_santa_prime_level(void);
-/* Старый семиаргументный вызов сохраняется для совместимости. */
 void net_save_progress(double cups, double candies, double cls, double azum, double santa,
                        double level, double levels_unlocked);
-void net_save_progress_all(double cups, double candies, double primes, double cls, double azum, double santa,
+void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
                            double level, double levels_unlocked,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
-                           double santa_level, double santa_levels_unlocked,
-                           double ordinary_prime_level, double azum_prime_level, double santa_prime_level);
+                           double santa_level, double santa_levels_unlocked);
 
-/* Чат читается реже боевого состояния, поэтому не тормозит движение. */
+/* Бан система */
+double net_is_banned(const char *nick);
+void net_ban_set(const char *nick, double banned);
+double net_chat_is_ban(const char *msg);
+double net_chat_is_unban(const char *msg);
+const char* net_chat_ban_target(const char *msg);
+const char* net_chat_unban_target(const char *msg);
+
+/* Чат */
 void net_chat_send(const char *text);
-void net_chat_trim(double keep); /* оставить последние keep, остальное удалить */
+void net_chat_trim(double keep);
 double net_chat_count(void);
 const char *net_chat_text(double idx);
 const char *net_chat_uid(double idx);

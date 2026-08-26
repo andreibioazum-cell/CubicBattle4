@@ -30,6 +30,14 @@ function update_transition()
         if t_target == 1
             init_game()
         else if t_target == 5
+            // проверка бана перед онлайном
+            if net_is_banned(net_login_nick()) == 1
+                banned_msg = tr_banned()
+                game_state = 0
+                t_dir = -1
+                t_fade = 1
+                return
+            end
             init_online()
         else if t_target == 6
             console_scroll = 0
@@ -58,7 +66,6 @@ function init()
     png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
     net_autologin(FIREBASE)
-    // Звуки из game/sounds: музыки может не быть — тогда просто тишина.
     music_ok = snd_load(LOBBY_MUSIC)
     if music_ok == 1
         music_level = 1
@@ -66,11 +73,10 @@ function init()
         snd_loop(LOBBY_MUSIC)
         ds_log("init: lobby music on")
     else
-        ds_log("init: no lobby music (game/sounds/lobbymusic.wav)")
+        ds_log("init: no lobby music")
     end
     cups = net_load_cups()
     candies = net_load_candies()
-    primes = net_load_primes()
     player_class = net_load_class()
     azum_owned = net_load_azum()
     santa_owned = net_load_santa()
@@ -82,9 +88,6 @@ function init()
     azum_levels_unlocked = net_load_azum_levels_unlocked()
     santa_level = net_load_santa_level()
     santa_levels_unlocked = net_load_santa_levels_unlocked()
-    ordinary_prime_level = net_load_ordinary_prime_level()
-    azum_prime_level = net_load_azum_prime_level()
-    santa_prime_level = net_load_santa_prime_level()
     if levels_unlocked < 0
         levels_unlocked = 0
     end
@@ -100,25 +103,13 @@ function init()
     if santa_owned == 0 && player_class == 2
         player_class = 0
     end
-    if ordinary_prime_level < 0 || ordinary_prime_level > prime_max_level
-        ordinary_prime_level = 0
-    end
-    if azum_prime_level < 0 || azum_prime_level > prime_max_level
-        azum_prime_level = 0
-    end
-    if santa_prime_level < 0 || santa_prime_level > prime_max_level
-        santa_prime_level = 0
-    end
     load_selected_level()
     net_set_class(player_class)
     net_set_level(player_level)
-    net_set_prime_level(selected_prime_level())
     ds_log("init: ready")
 end
 
 function update_music()
-    // В бой музыка не обрывается мгновенно: за секунду плавно затихает и только
-    // потом останавливается. При возвращении в меню она так же мягко появляется.
     if music_ok == 0
         return
     end

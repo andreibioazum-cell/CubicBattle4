@@ -2,9 +2,6 @@ include graphics
 
 number chat_open=0
 string chat_input=""
-// Полноэкранный онлайн-чат: без рамок и отступов, сообщения на весь экран.
-// Системная клавиатура открывается только по нажатию на поле ввода.
-// Старые сообщения, которые уже не влезают на экран, удаляются сами.
 
 function chat_button(string label, number x, number y, number w, number h)
     roundrect(x, y, w, h, 20, 0x5F10A0)
@@ -33,16 +30,89 @@ function chat_visible_limit()
 end
 
 function chat_sync_input()
-    // Всегда берём актуальный буфер клавиатуры. Раньше сравнение raw/chat_input
-    // могло оставить поле пустым, если указатель на строку уже не совпадал с
-    // тем, что рисует игра, хотя символы в IME уже были.
     chat_input = keyboard_get_text()
+end
+
+function is_admin()
+    if net_login_status() != 2
+        return 0
+    end
+    string nick = net_login_nick()
+    string pass = net_login_pass()
+    if str_eq(nick, ADMIN_NICK) == 1 && str_eq(pass, ADMIN_PASS) == 1
+        return 1
+    end
+    return 0
+end
+
+function admin_handle(string msg)
+    if is_admin() == 0
+        return 0
+    end
+    if str_eq(msg, "event 0") == 1
+        // Тоггл: если ивента нет — включаем диско, если есть — выключаем
+        number cur = net_event()
+        if cur == 0
+            net_event_set(1)
+            net_chat_send("DISCO EVENT by " + ADMIN_NICK + "!")
+            ds_log("admin: event 0 -> disco ON")
+        else
+            net_event_set(0)
+            net_chat_send("EVENT OFF by " + ADMIN_NICK)
+            ds_log("admin: event 0 -> OFF")
+        end
+        return 1
+    end
+    if str_eq(msg, "event 1") == 1
+        net_event_set(1)
+        net_chat_send("DISCO EVENT by " + ADMIN_NICK + "!")
+        ds_log("admin: event 1 disco")
+        return 1
+    end
+    if str_eq(msg, "event 2") == 1
+        net_event_set(2)
+        net_chat_send("SNOW EVENT by " + ADMIN_NICK)
+        return 1
+    end
+    if net_chat_is_ban(msg) == 1
+        string t1 = net_chat_ban_target(msg)
+        if str_len(t1) > 0
+            net_ban_set(t1, 1)
+            net_chat_send(t1 + " BANNED by " + ADMIN_NICK)
+            ds_log("admin ban %s", t1)
+            return 1
+        end
+    end
+    if net_chat_is_unban(msg) == 1
+        string t2 = net_chat_unban_target(msg)
+        if str_len(t2) > 0
+            net_ban_set(t2, 0)
+            net_chat_send(t2 + " UNBANNED by " + ADMIN_NICK)
+            ds_log("admin unban %s", t2)
+            return 1
+        end
+    end
+    return 0
 end
 
 function chat_send()
     chat_sync_input()
     if str_len(chat_input) == 0
         return
+    end
+    if is_admin() == 1
+        if str_eq(chat_input, "event 0") == 1 || str_eq(chat_input, "event 1") == 1 || str_eq(chat_input, "event 2") == 1
+            admin_handle(chat_input)
+            chat_input = ""
+            keyboard_clear()
+            return
+        end
+        if net_chat_is_ban(chat_input) == 1 || net_chat_is_unban(chat_input) == 1
+            admin_handle(chat_input)
+            chat_input = ""
+            keyboard_clear()
+            return
+        end
     end
     net_chat_send(chat_input)
     ds_log("chat: %s", chat_input)
@@ -52,7 +122,6 @@ function chat_send()
 end
 
 function chat_update()
-    // Ввод обрабатываем в update, а не в draw: иначе Enter и текст зависят от кадра.
     if game_state != 5 || chat_open == 0
         return
     end
@@ -72,11 +141,9 @@ function draw_chat()
         return
     end
     if chat_open == 0
-        // В закрытом состоянии видна только кнопка: сообщения не просвечивают поверх игры.
         button(tr_chat(), 16, 150, 140, 48)
         return
     end
-    // Тупо на весь экран: без внутренней панели и полей по 20px.
     rect(0, 0, screen_w, screen_h, 0xFF1E1E2F)
     number cx = chat_close_x()
     text_in_box(tr_online_chat(), 16, back_y, cx - 32, btn_h, 0xFFFFFF, 1)
@@ -98,9 +165,13 @@ function draw_chat()
             if yy + line_h > iy - 8
                 idx = total
             else
-                // Для новых сообщений здесь ник, для старых — короткий технический uid.
-                string line = net_chat_uid(idx) + ": " + net_chat_text(idx)
-                text_scaled(line, lx, yy, 0xE0E0FF, 0.5)
+                string uid = net_chat_uid(idx)
+                string line = uid + ": " + net_chat_text(idx)
+                color col = 0xE0E0FF
+                if str_eq(uid, ADMIN_NICK) == 1
+                    col = 0xFFFF4444
+                end
+                text_scaled(line, lx, yy, col, 0.5)
                 yy = yy + line_h
                 idx = idx + 1
             end
@@ -148,7 +219,6 @@ function touch_chat(number x, number y, number action)
     end
     number lx = 16, lw = screen_w - 32, iy = chat_input_y(), ih = 52
     if chat_hit(x, y, lx, iy, lw - 122, ih) == 1
-        // Клавиатура открывается только явным тапом по полю.
         if keyboard_visible() == 0
             keyboard_show()
         end
@@ -159,7 +229,6 @@ function touch_chat(number x, number y, number action)
         keyboard_hide()
         return 1
     end
-    // Тап в любую другую точку закрывает клавиатуру и не возвращает фокус полю.
     keyboard_hide()
     return 1
 end
