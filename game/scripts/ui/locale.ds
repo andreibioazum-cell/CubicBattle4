@@ -425,7 +425,6 @@ function tr_levels_for_class()
 end
 
 function tr_class_level_effect(number cls, number n)
-    // У каждого класса своя ветка: эти подписи также показываются прямо под карточкой класса.
     if cls == 1 && n == 1
         if language == 1
             return "Вторая жизнь: урон -10%"
@@ -541,57 +540,28 @@ end
 
 function tr_cups_reward()
     if language == 1
-        return "+5 кубков · +3 леденца · +1 прайм"
+        return "+5 кубков · +3 леденца"
     end
-    return "+5 cups · +3 candies · +1 prime"
+    return "+5 cups · +3 candies"
 end
 
-// ── Праймы: третья валюта и прайм-уровни (аура в бою) ──────────────────────
-function tr_primes()
+function tr_banned()
     if language == 1
-        return "Праймы"
+        return "Вы забанены"
     end
-    return "Primes"
+    return "You are banned"
 end
 
-// Прокачка прайма за кубки: у каждого класса свой уровень (1..prime_max_level),
-// за уровень в бою появляется аура — цвет зависит от класса (см. fx/aura.ds).
-function tr_prime_upgrade(number cost)
-    if cost <= 0
-        if language == 1
-            return "Прайм: максимум"
-        end
-        return "Prime: max level"
-    end
+function tr_admin_event_on()
     if language == 1
-        return "Прокачать прайм · " + cost + " " + tr_cups_unit()
+        return "ДИСКО ИВЕНТ ВКЛЮЧЕН!"
     end
-    return "Upgrade prime · " + cost + " " + tr_cups_unit()
+    return "DISCO EVENT STARTED!"
 end
 
-function tr_prime_status(number lv)
-    if lv >= prime_max_level
-        if language == 1
-            return "Прайм: макс. уровень " + lv + " — аура в бою"
-        end
-        return "Prime: max level " + lv + " — battle aura"
-    end
+function tr_admin_event_off()
     if language == 1
-        return "Прайм: уровень " + lv + "/" + prime_max_level + " — аура в бою"
+        return "Ивент выключен"
     end
-    return "Prime: level " + lv + "/" + prime_max_level + " — battle aura"
-end
-
-function tr_prime_need_cups()
-    if language == 1
-        return "Не хватает кубков для прайма"
-    end
-    return "Not enough cups for the prime"
-end
-
-function tr_prime_upgraded(number lv)
-    if language == 1
-        return "Прайм прокачан: уровень " + lv + "! В бою теперь аура"
-    end
-    return "Prime upgraded to level " + lv + "! Battle aura active"
+    return "Event ended"
 end

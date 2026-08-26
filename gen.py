@@ -13,16 +13,15 @@ def find_ds_files(directory):
     раньше, бой и эффекты — позже, движок (главный цикл) замыкает список.
     """
     order = [
-        "core/config.ds",        # константы и валюты
-        "ui/locale.ds",          # переводы (используются во всех экранах)
-        "core/entities.ds",      # объекты и глобальное состояние
-        "core/ui.ds",            # UI-примитивы (кнопки, бары)
-        "ui/chat.ds",            # онлайн-чат
-        "ui/menu.ds",            # меню, магазин, лидерборд, аккаунт
-        "combat/battle.ds",      # система боя, ИИ бота, сетевые игроки
-        "fx/dust.ds",            # след пыли
-        "fx/aura.ds",            # ауры праймов
-        "core/engine.ds",        # главный цикл update/draw/touch
+        "core/config.ds",
+        "ui/locale.ds",
+        "core/entities.ds",
+        "core/ui.ds",
+        "ui/chat.ds",
+        "ui/menu.ds",
+        "combat/battle.ds",
+        "fx/dust.ds",
+        "core/engine.ds",
     ]
     files = []
     for root, _dirs, names in os.walk(directory):

@@ -39,6 +39,7 @@
 #define LOGIN_NICK_MAX 16
 #define SESSION_FILE "auth.dat"
 #define PROGRESS_FILE "progress.dat"
+#define BANS_FILE "bans.dat"
 #ifdef _WIN32
 typedef SRWLOCK DSMutex;
 #define DS_MUTEX_INIT SRWLOCK_INIT
@@ -69,7 +70,7 @@ typedef struct {
     double x,y,a,hp,alive;
     double punch_x,punch_y,punch_dx,punch_dy,punch;
     double snow_x,snow_y,snow_dx,snow_dy,snow;
-    double cls, level, prime;
+    double cls, level;
     int online;
     char nick[24];
 } Actor;
@@ -94,6 +95,7 @@ static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
 static char s_lg_nick_ret[24];
 static char s_lg_pass_ret[64];
+static char s_ban_target_ret[32];
 static long long now_ms(void);
 static void lock(void);
 static void unlock(void);
@@ -111,18 +113,15 @@ static void lg_unlock(void) { ds_mutex_unlock(lg.lock); }
 
 typedef struct {
     DSMutex lock;
-    int loaded, cups, candies, primes, cls, azum, santa, level, levels_unlocked;
+    int loaded, cups, candies, cls, azum, santa, level, levels_unlocked;
     int ordinary_level, ordinary_levels_unlocked;
     int azum_level, azum_levels_unlocked;
     int santa_level, santa_levels_unlocked;
-    int ordinary_prime_level, azum_prime_level, santa_prime_level;
 } Progress;
 static Progress pg = { .lock = DS_MUTEX_INIT };
 #define LEVEL_MAX 3
-#define PRIME_MAX 3
 static int pending_cls = 0;
 static int pending_level = 0;
-static int pending_prime_level = 0;
 static void pg_lock(void) { ds_mutex_lock(pg.lock); }
 static void pg_unlock(void) { ds_mutex_unlock(pg.lock); }
 static void data_file_path(char *path, size_t cap, const char *name) {
@@ -146,53 +145,41 @@ static void normalize_level_pair(int *level, int *unlocked) {
     *level = clamp_level_value(*level);
     if (*level > *unlocked) *level = 0;
 }
-static void progress_write(int cups, int candies, int primes, int cls, int azum, int santa,
+static void progress_write(int cups, int candies, int cls, int azum, int santa,
                            int level, int levels_unlocked,
                            int ordinary_level, int ordinary_levels_unlocked,
                            int azum_level, int azum_levels_unlocked,
-                           int santa_level, int santa_levels_unlocked,
-                           int ordinary_prime_level, int azum_prime_level, int santa_prime_level) {
+                           int santa_level, int santa_levels_unlocked) {
     char path[320]; FILE *f;
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "w");
     if (f) {
-        /* Первые семь чисел сохраняют формат старых сборок. Шесть новых
-         * чисел — независимые выбранный/открытый уровни каждого класса,
-         * затем праймы (третья валюта), и в самом конце — прайм-уровни
-         * трёх классов (появляются в новых сборках). */
-        fprintf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+        fprintf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d\n",
                 cups, cls, azum, santa, candies, level, levels_unlocked,
                 ordinary_level, ordinary_levels_unlocked,
                 azum_level, azum_levels_unlocked,
-                santa_level, santa_levels_unlocked, primes,
-                ordinary_prime_level, azum_prime_level, santa_prime_level);
+                santa_level, santa_levels_unlocked);
         fclose(f);
     }
 }
 static void progress_read(void) {
     char path[320]; FILE *f;
-    int cups=0, candies=0, primes=0, cls=0, azum=0, santa=0, level=0, levels_unlocked=0;
+    int cups=0, candies=0, cls=0, azum=0, santa=0, level=0, levels_unlocked=0;
     int ordinary_level=-1, ordinary_levels_unlocked=-1;
     int azum_level=-1, azum_levels_unlocked=-1;
     int santa_level=-1, santa_levels_unlocked=-1;
-    int ordinary_prime_level=0, azum_prime_level=0, santa_prime_level=0;
     pg_lock();
     if (pg.loaded) { pg_unlock(); return; }
     pg_unlock();
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "r");
     if (f) {
-        int n = fscanf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
+        int n = fscanf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d",
                        &cups, &cls, &azum, &santa, &candies,
                        &level, &levels_unlocked,
                        &ordinary_level, &ordinary_levels_unlocked,
                        &azum_level, &azum_levels_unlocked,
-                       &santa_level, &santa_levels_unlocked, &primes,
-                       &ordinary_prime_level, &azum_prime_level, &santa_prime_level);
-        if (n < 14) primes = 0;
-        if (n < 15) ordinary_prime_level = 0;
-        if (n < 16) azum_prime_level = 0;
-        if (n < 17) santa_prime_level = 0;
+                       &santa_level, &santa_levels_unlocked);
         if (n < 3) {
             cups=0; candies=0; cls=0; azum=0; santa=0; level=0; levels_unlocked=0;
             ordinary_level=ordinary_levels_unlocked=0;
@@ -201,13 +188,9 @@ static void progress_read(void) {
         } else {
             if (n < 6) { level=0; levels_unlocked=0; }
             else if (n < 7) {
-                /* A file with only the selected level predates the separate
-                 * selection/unlock fields, so that level is the highest unlocked. */
                 levels_unlocked=level;
             }
             if (n < 13) {
-                /* Старый общий уровень переносится только в активный класс,
-                 * чтобы существующий прогресс не пропал после обновления. */
                 ordinary_level=ordinary_levels_unlocked=0;
                 azum_level=azum_levels_unlocked=0;
                 santa_level=santa_levels_unlocked=0;
@@ -220,7 +203,6 @@ static void progress_read(void) {
     }
     if (cups < 0) cups = 0;
     if (candies < 0) candies = 0;
-    if (primes < 0) primes = 0;
     if (cls != 1 && cls != 2) cls = 0;
     azum = azum ? 1 : 0;
     santa = santa ? 1 : 0;
@@ -230,27 +212,20 @@ static void progress_read(void) {
     normalize_level_pair(&ordinary_level, &ordinary_levels_unlocked);
     normalize_level_pair(&azum_level, &azum_levels_unlocked);
     normalize_level_pair(&santa_level, &santa_levels_unlocked);
-    ordinary_prime_level = clamp_level_value(ordinary_prime_level);
-    azum_prime_level = clamp_level_value(azum_prime_level);
-    santa_prime_level = clamp_level_value(santa_prime_level);
     if (cls == 0) { level=ordinary_level; levels_unlocked=ordinary_levels_unlocked; }
     else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
     else { level=santa_level; levels_unlocked=santa_levels_unlocked; }
     pg_lock();
-    pg.cups = cups; pg.candies = candies; pg.primes = primes; pg.cls = cls; pg.azum = azum; pg.santa = santa;
+    pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
     pg.level = level; pg.levels_unlocked = levels_unlocked;
     pg.ordinary_level = ordinary_level; pg.ordinary_levels_unlocked = ordinary_levels_unlocked;
     pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
     pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
-    pg.ordinary_prime_level = ordinary_prime_level;
-    pg.azum_prime_level = azum_prime_level;
-    pg.santa_prime_level = santa_prime_level;
     pg.loaded = 1;
     pg_unlock();
 }
 double net_load_cups(void) { double v; progress_read(); pg_lock(); v = (double)pg.cups; pg_unlock(); return v; }
 double net_load_candies(void) { double v; progress_read(); pg_lock(); v = (double)pg.candies; pg_unlock(); return v; }
-double net_load_primes(void) { double v; progress_read(); pg_lock(); v = (double)pg.primes; pg_unlock(); return v; }
 double net_load_class(void) { double v; progress_read(); pg_lock(); v = (double)pg.cls; pg_unlock(); return v; }
 double net_load_azum(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum; pg_unlock(); return v; }
 double net_load_santa(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa; pg_unlock(); return v; }
@@ -262,13 +237,13 @@ double net_load_azum_level(void) { double v; progress_read(); pg_lock(); v = (do
 double net_load_azum_levels_unlocked(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum_levels_unlocked; pg_unlock(); return v; }
 double net_load_santa_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa_level; pg_unlock(); return v; }
 double net_load_santa_levels_unlocked(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa_levels_unlocked; pg_unlock(); return v; }
-double net_load_ordinary_prime_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.ordinary_prime_level; pg_unlock(); return v; }
-double net_load_azum_prime_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum_prime_level; pg_unlock(); return v; }
-double net_load_santa_prime_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa_prime_level; pg_unlock(); return v; }
 
-/* Асинхронный патч в Firebase при сохранении прогресса */
 typedef struct { char url[URL]; char body[BODY*2]; } HttpJob;
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap);
+static void *http_delete_job(void *arg);
+#ifdef _WIN32
+static unsigned __stdcall win_http_delete(void *arg);
+#endif
 static void *http_patch_job(void *arg) {
     HttpJob *j = (HttpJob*)arg;
     if (j) { http("PATCH", j->url, j->body, NULL, 0); free(j); }
@@ -292,43 +267,35 @@ static void http_patch_async(const char *url, const char *body) {
     free(j);
 }
 
-/* Старый API с одним деревом уровней остаётся рабочим для внешних клиентов.
- * Он обновляет ветку выбранного класса, а новые ветки сохраняет как есть. */
 void net_save_progress(double cups, double candies, double cls, double azum, double santa,
                        double level, double levels_unlocked) {
     int k=(int)cls;
-    int ol,ou,al,au,sl,su,pr;
-    int op,ap,sp;
+    int ol,ou,al,au,sl,su;
     progress_read();
     pg_lock();
     ol=pg.ordinary_level; ou=pg.ordinary_levels_unlocked;
     al=pg.azum_level; au=pg.azum_levels_unlocked;
     sl=pg.santa_level; su=pg.santa_levels_unlocked;
-    pr=pg.primes;
-    op=pg.ordinary_prime_level; ap=pg.azum_prime_level; sp=pg.santa_prime_level;
     pg_unlock();
     if (k==0) { ol=(int)level; ou=(int)levels_unlocked; }
     else if (k==1) { al=(int)level; au=(int)levels_unlocked; }
     else if (k==2) { sl=(int)level; su=(int)levels_unlocked; }
-    net_save_progress_all(cups,candies,pr,cls,azum,santa,level,levels_unlocked,
-                          ol,ou,al,au,sl,su,op,ap,sp);
+    net_save_progress_all(cups,candies,cls,azum,santa,level,levels_unlocked,
+                          ol,ou,al,au,sl,su);
 }
 
-void net_save_progress_all(double cups, double candies, double primes, double cls, double azum, double santa,
+void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
                            double level, double levels_unlocked,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
-                           double santa_level, double santa_levels_unlocked,
-                           double ordinary_prime_level, double azum_prime_level, double santa_prime_level) {
-    int c = (int)cups, cd = (int)candies, pr = (int)primes, k = (int)cls, a = azum ? 1 : 0, sn = santa ? 1 : 0;
+                           double santa_level, double santa_levels_unlocked) {
+    int c = (int)cups, cd = (int)candies, k = (int)cls, a = azum ? 1 : 0, sn = santa ? 1 : 0;
     int lv = (int)level, lu = (int)levels_unlocked;
     int ol = (int)ordinary_level, ou = (int)ordinary_levels_unlocked;
     int al = (int)azum_level, au = (int)azum_levels_unlocked;
     int sl = (int)santa_level, su = (int)santa_levels_unlocked;
-    int op = (int)ordinary_prime_level, ap = (int)azum_prime_level, sp = (int)santa_prime_level;
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
-    if (pr < 0) pr = 0;
     if (k != 1 && k != 2) k = 0;
     if (k == 1 && !a) k = 0;
     if (k == 2 && !sn) k = 0;
@@ -339,22 +306,16 @@ void net_save_progress_all(double cups, double candies, double primes, double cl
     if (k == 0) { lv=ol; lu=ou; }
     else if (k == 1) { lv=al; lu=au; }
     else { lv=sl; lu=su; }
-    op = clamp_level_value(op);
-    ap = clamp_level_value(ap);
-    sp = clamp_level_value(sp);
     pg_lock();
-    pg.cups = c; pg.candies = cd; pg.primes = pr; pg.cls = k; pg.azum = a; pg.santa = sn;
+    pg.cups = c; pg.candies = cd; pg.cls = k; pg.azum = a; pg.santa = sn;
     pg.level = lv; pg.levels_unlocked = lu; pg.loaded = 1;
     pg.ordinary_level = ol; pg.ordinary_levels_unlocked = ou;
     pg.azum_level = al; pg.azum_levels_unlocked = au;
     pg.santa_level = sl; pg.santa_levels_unlocked = su;
-    pg.ordinary_prime_level = op;
-    pg.azum_prime_level = ap;
-    pg.santa_prime_level = sp;
     pg_unlock();
     pending_cls = k;
     pending_level = lv;
-    progress_write(c, cd, pr, k, a, sn, lv, lu, ol, ou, al, au, sl, su, op, ap, sp);
+    progress_write(c, cd, k, a, sn, lv, lu, ol, ou, al, au, sl, su);
 
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
@@ -366,8 +327,8 @@ void net_save_progress_all(double cups, double candies, double primes, double cl
         char url[URL], body[BODY*2];
         snprintf(url, sizeof(url), "%s/users/%s.json", net.base, nick);
         snprintf(body, sizeof(body),
-                 "{\"cups\":%d,\"candies\":%d,\"primes\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d,\"ordinary_prime_level\":%d,\"azum_prime_level\":%d,\"santa_prime_level\":%d}",
-                 c, cd, pr, k, a, sn, lv, lu, ol, ou, al, au, sl, su, op, ap, sp);
+                 "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d}",
+                 c, cd, k, a, sn, lv, lu, ol, ou, al, au, sl, su);
         http_patch_async(url, body);
     }
 }
@@ -388,16 +349,6 @@ void net_set_level(double level) {
     if (net.slot >= 0) net.players[net.slot].level = (double)lv;
     unlock();
 }
-void net_set_prime_level(double prime) {
-    int p = (int)prime;
-    if (p < 0) p = 0;
-    if (p > PRIME_MAX) p = PRIME_MAX;
-    pending_prime_level = p;
-    lock(); net.me.prime = (double)p;
-    if (net.slot >= 0) net.players[net.slot].prime = (double)p;
-    unlock();
-}
-
 
 static int nick_valid(const char *n) {
     size_t i=0, bytes=n ? strlen(n) : 0, chars=0;
@@ -425,7 +376,7 @@ static int pass_valid(const char *p) {
     if (len < 1 || len > 32) return 0;
     for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)p[i];
-        if (c < 0x20 || c == 0x7F || c == '"' || c == '\\' || c == ' ') return 0;
+        if (c < 0x20 || c == 0x7F || c == '\"' || c == '\\' || c == ' ') return 0;
     }
     return 1;
 }
@@ -730,7 +681,6 @@ static void json_escape(const char *src, char *dst, size_t cap){
     dst[o]='\0';
 }
 
-/* Вход и регистрация по нику и паролю */
 double net_auth(const char *url, const char *nick, const char *pass) {
     if (!nick || !nick_valid(nick)) return (double)NET_LOGIN_BAD_NICK;
     if (!pass || !pass_valid(pass)) return (double)NET_LOGIN_BAD_PASS;
@@ -752,25 +702,19 @@ double net_auth(const char *url, const char *nick, const char *pass) {
 
     const char *p = skip_ws(resp);
     if (!p || !*p || !strncmp(p, "null", 4) || code == 404) {
-        /* Аккаунт не существует -> Регистрация и вход! */
         char body[BODY], epass[128], enick[64];
         json_escape(pass, epass, sizeof(epass));
         json_escape(nick, enick, sizeof(enick));
         snprintf(body, sizeof(body),
-                 "{\"nick\":\"%s\",\"pass\":\"%s\",\"cups\":0,\"candies\":0,\"primes\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0}",
+                 "{\"nick\":\"%s\",\"pass\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0}",
                  enick, epass);
-        /* Простой PUT, как в e1dbcd8: узел только что прочитан пустым, так что
-         * запись создаётся. Условный if-match с голым "null" здесь не работает:
-         * Firebase сравнивает значение с ETag "null" (в кавычках), отвечает
-         * 412, а рекурсивный повторный вход из-за этого переполнял стек и
-         * ронял игру прямо во время регистрации. */
         int put_code = http("PUT", req_url, body, NULL, 0);
         if (put_code != 200) {
             if (net_log_ok()) LOGERR("net_auth: register failed HTTP %d", put_code);
             return (double)NET_ERROR;
         }
         pg_lock();
-        pg.cups = 0; pg.candies = 0; pg.primes = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0;
+        pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0;
         pg.level = 0; pg.levels_unlocked = 0;
         pg.ordinary_level = 0; pg.ordinary_levels_unlocked = 0;
         pg.azum_level = 0; pg.azum_levels_unlocked = 0;
@@ -778,7 +722,7 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         pg.loaded = 1;
         pg_unlock();
         pending_cls = 0; pending_level = 0;
-        progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         lg_lock();
         snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
         snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
@@ -793,10 +737,8 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         char got_pass[64] = "";
         strv(resp, "pass", got_pass, sizeof(got_pass));
         if (strcmp(got_pass, pass) == 0) {
-            /* Пароль совпал -> Вход и загрузка облачного прогресса */
             int cups = (int)num(resp, "cups", 0);
             int candies = (int)num(resp, "candies", 0);
-            int primes = (int)num(resp, "primes", 0);
             int cls = (int)num(resp, "cls", 0);
             int azum = (int)num(resp, "azum", 0);
             int santa = (int)num(resp, "santa", 0);
@@ -808,16 +750,9 @@ double net_auth(const char *url, const char *nick, const char *pass) {
             int azum_levels_unlocked = (int)num(resp, "azum_levels", -1);
             int santa_level = (int)num(resp, "santa_level", -1);
             int santa_levels_unlocked = (int)num(resp, "santa_levels", -1);
-            int ordinary_prime_level = (int)num(resp, "ordinary_prime_level", 0);
-            int azum_prime_level = (int)num(resp, "azum_prime_level", 0);
-            int santa_prime_level = (int)num(resp, "santa_prime_level", 0);
-            /* Старые аккаунты имели только один общий level/levels. Переносим
-             * его в класс, который был выбран в момент обновления, а новые
-             * аккаунты хранят три независимых дерева. */
             if (levels_unlocked < 0) levels_unlocked = level;
             if (cups < 0) cups = 0;
             if (candies < 0) candies = 0;
-            if (primes < 0) primes = 0;
             if (cls != 1 && cls != 2) cls = 0;
             azum = azum ? 1 : 0;
             santa = santa ? 1 : 0;
@@ -844,38 +779,30 @@ double net_auth(const char *url, const char *nick, const char *pass) {
             normalize_level_pair(&ordinary_level, &ordinary_levels_unlocked);
             normalize_level_pair(&azum_level, &azum_levels_unlocked);
             normalize_level_pair(&santa_level, &santa_levels_unlocked);
-            ordinary_prime_level = clamp_level_value(ordinary_prime_level);
-            azum_prime_level = clamp_level_value(azum_prime_level);
-            santa_prime_level = clamp_level_value(santa_prime_level);
             if (cls == 0) { level=ordinary_level; levels_unlocked=ordinary_levels_unlocked; }
             else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
             else { level=santa_level; levels_unlocked=santa_levels_unlocked; }
             pg_lock();
-            pg.cups = cups; pg.candies = candies; pg.primes = primes; pg.cls = cls; pg.azum = azum; pg.santa = santa;
+            pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
             pg.level = level; pg.levels_unlocked = levels_unlocked;
             pg.ordinary_level = ordinary_level; pg.ordinary_levels_unlocked = ordinary_levels_unlocked;
             pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
             pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
-            pg.ordinary_prime_level = ordinary_prime_level;
-            pg.azum_prime_level = azum_prime_level;
-            pg.santa_prime_level = santa_prime_level;
             pg.loaded = 1;
             pg_unlock();
             pending_cls = cls;
             pending_level = level;
-            pending_prime_level = (cls==1) ? azum_prime_level : ((cls==2) ? santa_prime_level : ordinary_prime_level);
-            progress_write(cups, candies, primes, cls, azum, santa, level, levels_unlocked,
+            progress_write(cups, candies, cls, azum, santa, level, levels_unlocked,
                            ordinary_level, ordinary_levels_unlocked,
                            azum_level, azum_levels_unlocked,
-                           santa_level, santa_levels_unlocked,
-                           ordinary_prime_level, azum_prime_level, santa_prime_level);
+                           santa_level, santa_levels_unlocked);
             lg_lock();
             snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
             snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
             lg.status = NET_LOGIN_OK;
             lg_unlock();
             session_save(nick, pass);
-            LOG("logged in: '%s' (cups=%d, candies=%d, primes=%d)", nick, cups, candies, primes);
+            LOG("logged in: '%s' (cups=%d, candies=%d)", nick, cups, candies);
             return (double)NET_LOGIN_OK;
         } else {
             if (net_log_ok()) LOG("wrong password for '%s'", nick);
@@ -965,7 +892,178 @@ const char *net_login_pass(void) {
     return s_lg_pass_ret;
 }
 
-/* Лидерборд по кубкам */
+/* Бан система */
+static void bans_file_path(char *path, size_t cap) {
+    data_file_path(path, cap, BANS_FILE);
+}
+static int is_banned_in_file(const char *nick) {
+    if (!nick || !*nick) return 0;
+    char path[320];
+    bans_file_path(path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    char line[64];
+    int found = 0;
+    while (fgets(line, sizeof(line), f)) {
+        // trim whitespace
+        size_t len = strlen(line);
+        while (len && (line[len-1]=='\n'||line[len-1]=='\r'||line[len-1]==' '||line[len-1]=='\t')) line[--len]=0;
+        char *p = line;
+        while (*p==' '||*p=='\t') p++;
+        if (strcmp(p, nick)==0) { found=1; break; }
+    }
+    fclose(f);
+    return found;
+}
+static void add_ban_to_file(const char *nick) {
+    if (!nick || !*nick) return;
+    if (is_banned_in_file(nick)) return;
+    char path[320];
+    bans_file_path(path, sizeof(path));
+    FILE *f = fopen(path, "a");
+    if (f) { fprintf(f, "%s\n", nick); fclose(f); }
+}
+static void remove_ban_from_file(const char *nick) {
+    if (!nick || !*nick) return;
+    char path[320];
+    bans_file_path(path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char lines[256][64]; int count=0;
+    char line[64];
+    while (fgets(line, sizeof(line), f) && count<256) {
+        size_t len = strlen(line);
+        while (len && (line[len-1]=='\n'||line[len-1]=='\r')) line[--len]=0;
+        char *p = line;
+        while (*p==' '||*p=='\t') p++;
+        if (!*p) continue;
+        if (strcmp(p, nick)!=0) {
+            snprintf(lines[count], sizeof(lines[count]), "%s", p);
+            count++;
+        }
+    }
+    fclose(f);
+    f = fopen(path, "w");
+    if (f) {
+        for (int i=0;i<count;i++) fprintf(f, "%s\n", lines[i]);
+        fclose(f);
+    }
+}
+
+double net_is_banned(const char *nick) {
+    if (!nick || !*nick) return 0;
+    if (is_banned_in_file(nick)) return 1;
+    if (!net.base[0]) return 0;
+    char url[URL], resp[RESP];
+    snprintf(url, sizeof(url), "%s/bans/%s.json", net.base, nick);
+    int code = http("GET", url, NULL, resp, sizeof(resp));
+    if (code==200) {
+        const char *p = skip_ws(resp);
+        if (p && *p && strncmp(p,"null",4)!=0) {
+            // if true or object, consider banned
+            add_ban_to_file(nick);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void net_ban_set(const char *nick, double banned) {
+    if (!nick || !*nick) return;
+    if (!nick_valid(nick) && strcmp(nick,"Dimasi4ek229")!=0) {
+        // allow any nick for ban, but validate simple
+        // if not valid, still allow if alphanumeric
+    }
+    if (banned>=0.5) {
+        add_ban_to_file(nick);
+        if (net.base[0]) {
+            char url[URL];
+            snprintf(url, sizeof(url), "%s/bans/%s.json", net.base, nick);
+            http_patch_async(url, "true");
+        }
+        LOG("ban %s", nick);
+    } else {
+        remove_ban_from_file(nick);
+        if (net.base[0]) {
+            char *del_url = (char*)malloc(URL);
+            if (!del_url) return;
+            snprintf(del_url, URL, "%s/bans/%s.json", net.base, nick);
+#ifdef _WIN32
+            DSThread t = ds_thread_start(win_http_delete, del_url);
+#else
+            DSThread t = ds_thread_start(http_delete_job, del_url);
+#endif
+            if (t) ds_thread_detach(t);
+            else free(del_url);
+        }
+        LOG("unban %s", nick);
+    }
+}
+
+void net_event_set(double mode) {
+    int m = (int)mode;
+    if (m<0) m=0;
+    if (m>2) m=2;
+    if (!net.base[0]) return;
+    char url[URL], body[32];
+    snprintf(url, sizeof(url), "%s/event.json", net.base);
+    snprintf(body, sizeof(body), "%d", m);
+    http_patch_async(url, body);
+    lock(); net.event=m; unlock();
+    LOG("event set %d", m);
+}
+
+/* Чат парсеры для админ команд */
+double net_chat_is_ban(const char *msg) {
+    if (!msg) return 0;
+    // check starts with "ban "
+    if (strlen(msg)>=4 && strncmp(msg,"ban ",4)==0) {
+        // ensure there is target
+        const char *t = msg+4;
+        while (*t==' '||*t=='\t') t++;
+        if (*t) return 1;
+    }
+    return 0;
+}
+double net_chat_is_unban(const char *msg) {
+    if (!msg) return 0;
+    if (strlen(msg)>=6 && strncmp(msg,"unban ",6)==0) {
+        const char *t = msg+6;
+        while (*t==' '||*t=='\t') t++;
+        if (*t) return 1;
+    }
+    return 0;
+}
+const char* net_chat_ban_target(const char *msg) {
+    s_ban_target_ret[0]=0;
+    if (!msg) return s_ban_target_ret;
+    if (strncmp(msg,"ban ",4)!=0) return s_ban_target_ret;
+    const char *t = msg+4;
+    while (*t==' '||*t=='\t') t++;
+    size_t i=0;
+    while (t[i] && i<sizeof(s_ban_target_ret)-1 && t[i]!=' '&&t[i]!='\t'&&t[i]!='\n'&&t[i]!='\r') {
+        s_ban_target_ret[i]=t[i];
+        i++;
+    }
+    s_ban_target_ret[i]=0;
+    return s_ban_target_ret;
+}
+const char* net_chat_unban_target(const char *msg) {
+    s_ban_target_ret[0]=0;
+    if (!msg) return s_ban_target_ret;
+    if (strncmp(msg,"unban ",6)!=0) return s_ban_target_ret;
+    const char *t = msg+6;
+    while (*t==' '||*t=='\t') t++;
+    size_t i=0;
+    while (t[i] && i<sizeof(s_ban_target_ret)-1 && t[i]!=' '&&t[i]!='\t'&&t[i]!='\n'&&t[i]!='\r') {
+        s_ban_target_ret[i]=t[i];
+        i++;
+    }
+    s_ban_target_ret[i]=0;
+    return s_ban_target_ret;
+}
+
+/* Лидерборд */
 typedef struct {
     char nick[24];
     int cups;
@@ -973,7 +1071,7 @@ typedef struct {
 
 typedef struct {
     DSMutex lock;
-    int status; /* 0 idle, 1 loading, 2 ready, 4 error */
+    int status;
     int count;
     LeaderboardEntry entries[16];
 } Leaderboard;
@@ -1148,12 +1246,12 @@ static int push_state(void) {
     if(slot<0) return 0;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"cls\":%.0f,\"level\":%.0f,\"prime\":%.0f}",
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"cls\":%.0f,\"level\":%.0f}",
         net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
         safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch),
-        safe(a.snow_x),safe(a.snow_y),safe(a.snow_dx),safe(a.snow_dy),safe(a.snow),safe(a.cls),safe(a.level),safe(a.prime));
+        safe(a.snow_x),safe(a.snow_y),safe(a.snow_dx),safe(a.snow_dy),safe(a.snow),safe(a.cls),safe(a.level));
     int c = http("PUT",url,body,NULL,0);
-    if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d (room write denied? check Firebase rules)", c);
+    if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d", c);
     return c == 200;
 }
 static int pull_state(char *resp,size_t cap) {
@@ -1192,12 +1290,12 @@ static int claim_slot(void) {
         else if(etag[0]&&t-seen_at[slot]>=STALE)claim=1;
         if(!claim)continue;
         if(!etag[0]) {
-            if(net_log_ok()) LOG("claim slot %d: no ETag, claiming empty slot without if-match", slot);
+            if(net_log_ok()) LOG("claim slot %d: no ETag", slot);
         }
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
-            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"cls\":%.0f,\"level\":%.0f,\"prime\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level),safe(net.me.prime));
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"cls\":%.0f,\"level\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level));
         }
         code=http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
@@ -1236,7 +1334,6 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/snow",bp); ps[slot].snow=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/cls",bp); ps[slot].cls=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/level",bp); ps[slot].level=num(resp,p,0);
-        snprintf(p,sizeof(p),"%s/prime",bp); ps[slot].prime=num(resp,p,0);
         ps[slot].online=1; count++;
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); net.count=count; unlock();
@@ -1247,7 +1344,7 @@ static int parse_chat_list(const char *json, ChatMsg *tmp, int cap){
     if(!p||!*p||!strncmp(p,"null",4)) return 0;
     if(*p!='{') return 0;
     for(p=skip_ws(p+1); p&&*p&&*p!='}'&&tmp_cnt<cap; ){
-        if(*p!='"') break;
+        if(*p!='\"') break;
         const char *kend=skip_str(p);
         if(!kend) break;
         char key[28]={0};
@@ -1344,11 +1441,11 @@ static void *thread_main(void *arg) {
         lock(); slot=net.slot; unlock();
         if(slot<0) {
             status(NET_CONNECTING); slot=claim_slot();
-            if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot in room '%s'", net.room);} sleep_ms(500); continue; }
+            if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot");} sleep_ms(500); continue; }
             lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.players[slot].online=1; unlock(); fails=0;
             LOG("slot %d claimed", (int)net.slot);
         }
-        if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push player state");} sleep_ms(300); continue; }
+        if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push state");} sleep_ms(300); continue; }
         fails=0; status(NET_PLAYING);
         long long spent=now_ms()-start; if(spent<WRITE_TICK)sleep_ms((int)(WRITE_TICK-spent));
     }
@@ -1371,10 +1468,6 @@ static void *reader_thread(void *arg) {
             next_chat=now_ms()+CHAT_TICK;
         }
         if(start>=next_event) {
-            /* Корневой узел /event.json: 0 — ивента нет, 1 — «диско»,
-             * 2 — снегопад. Скобки важны: если сеть недоступна, не трогаем
-             * ни значение, ни мьютекс (раньше unlock() вызывался на
-             * незаблокированном мьютексе — неопределённое поведение). */
             if(pull_event(event_resp,sizeof(event_resp))) {
                 int ev=(int)num(event_resp,"",0);
                 if(ev<0) ev=0;
@@ -1414,10 +1507,9 @@ void net_connect(const char *url, const char *room) {
     }
     net.me.cls = (double)pending_cls;
     net.me.level = (double)pending_level;
-    net.me.prime = (double)pending_prime_level;
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
-    LOG("connect %s/%s (write %dms read %dms)", net.base, net.room, WRITE_TICK, READ_TICK);
+    LOG("connect %s/%s", net.base, net.room);
 #ifdef _WIN32
     net.thread = ds_thread_start(win_thread_main, NULL);
     net.rthread = ds_thread_start(win_reader_thread, NULL);
@@ -1558,12 +1650,5 @@ double net_player_level(double slot) {
     if(i>=0){ lock(); v=net.players[i].level; unlock(); }
     if(v<0) v=0;
     if(v>LEVEL_MAX) v=LEVEL_MAX;
-    return v;
-}
-double net_player_prime_level(double slot) {
-    int i=sidx(slot); double v=0;
-    if(i>=0){ lock(); v=net.players[i].prime; unlock(); }
-    if(v<0) v=0;
-    if(v>PRIME_MAX) v=PRIME_MAX;
     return v;
 }
