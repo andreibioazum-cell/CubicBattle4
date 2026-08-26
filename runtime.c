@@ -75,6 +75,9 @@ Joy joy = {0};
 int screen_w = 0;
 int screen_h = 0;
 double dt = 0.0;
+int mouse_clicked = 0;
+double ds_mouse_x = 0.0;
+double ds_mouse_y = 0.0;
 static jmp_buf ds_error_jump;
 static int ds_error_handler_active = 0;
 static int ds_has_error = 0;
@@ -601,3 +604,31 @@ void ds_set_activity(void *act){ (void)act; }
 void keyboard_show(void){ kb_show=1; }
 void keyboard_hide(void){ kb_show=0; }
 #endif
+
+/* Хост-API в стиле примера "Кликер". Основной цикл в этой игре ведёт C-хост
+ * (init/update/draw/touch), поэтому window_create только запоминает размер окна,
+ * а game_run выполняет один кадр и возвращается — скрипт при этом остаётся
+ * совместимым с существующим циклом. */
+double mouse_x(void) { return ds_mouse_x; }
+double mouse_y(void) { return ds_mouse_y; }
+
+void window_create(const char *title, int width, int height) {
+    (void)title;
+    if (width > 0) screen_w = width;
+    if (height > 0) screen_h = height;
+}
+
+void game_run(void (*update_cb)(void), void (*draw_cb)(Buffer *buffer),
+              void (*touch_cb)(float x, float y, int action, int pointer_id)) {
+    (void)touch_cb;
+    ds_log("game_run: single-frame stub (host drives the loop via init/update/draw/touch)");
+    if (update_cb) update_cb();
+    if (draw_cb) draw_cb(NULL);
+}
+
+void particles_spawn(double x, double y) {
+    (void)x; (void)y;
+    /* В текущей игре частицы рисуются самим скриптом (fx/dust.ds). Здесь
+     * оставлен нейтральный хук, чтобы скрипты в стиле "Кликер" могли вызывать
+     * particles_spawn() без привязки к конкретной системе частиц. */
+}

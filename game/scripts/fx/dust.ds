@@ -1,11 +1,13 @@
+include graphics
+
 // fx/dust.ds — след пыли от ходьбы игрока (вынесен из battle.ds в свой модуль).
 // Частицы рождаются ПОЗАДИ кубика (вдоль движения назад) и летят главным
 // образом назад, поэтому след остаётся за спиной, а не под ногами.
 // Пул на dust_max частиц, по dust_fields чисел каждая: x, y, vx, vy, life.
 
-function dust_spawn num px, num py, num jdx, num jdy
+function dust_spawn(number px, number py, number jdx, number jdy)
 // Ищем свободный слот (life==0).
-num i=0, base=0, found=0
+number i=0, base=0, found=0
 loop i<dust_max
 base=i*dust_fields
 if arr_get(dust,base+4)<=0; found=1; i=dust_max; end
@@ -14,62 +16,62 @@ end
 if found==0; return; end
 // Скорость: основной импульс летит НАЗАД по ходу движения (след тянется
 // за кубиком), плюс небольшой разброс вбок для пышности.
-num angle=(rand()%628)/100.0
-num vx=cos(angle)*dust_spd*dust_side_share-jdx*dust_spd*dust_back_share
-num vy=sin(angle)*dust_spd*dust_side_share-jdy*dust_spd*dust_back_share
-arr_set dust,base,px
-arr_set dust,base+1,py
-arr_set dust,base+2,vx
-arr_set dust,base+3,vy
-arr_set dust,base+4,dust_life_max
+number angle=(rand()%628)/100.0
+number vx=cos(angle)*dust_spd*dust_side_share-jdx*dust_spd*dust_back_share
+number vy=sin(angle)*dust_spd*dust_side_share-jdy*dust_spd*dust_back_share
+arr_set(dust,base,px)
+arr_set(dust,base+1,py)
+arr_set(dust,base+2,vx)
+arr_set(dust,base+3,vy)
+arr_set(dust,base+4,dust_life_max)
 end
-function update_dust
-num i=0, base=0
+function update_dust()
+number i=0, base=0
 loop i<dust_max
 base=i*dust_fields
-num lf=arr_get(dust,base+4)
+number lf=arr_get(dust,base+4)
 if lf>0
-arr_set dust,base,  arr_get(dust,base)  +arr_get(dust,base+2)*dt
-arr_set dust,base+1,arr_get(dust,base+1)+arr_get(dust,base+3)*dt
+arr_set(dust,base,  arr_get(dust,base)  +arr_get(dust,base+2)*dt)
+arr_set(dust,base+1,arr_get(dust,base+1)+arr_get(dust,base+3)*dt)
 // Трение: частицы плавно тормозят и останавливаются, а не исчезают рывком.
-arr_set dust,base+2,arr_get(dust,base+2)*0.88
-arr_set dust,base+3,arr_get(dust,base+3)*0.88
-arr_set dust,base+4,lf-dt
+arr_set(dust,base+2,arr_get(dust,base+2)*0.88)
+arr_set(dust,base+3,arr_get(dust,base+3)*0.88)
+arr_set(dust,base+4,lf-dt)
 end
 i=i+1
 end
 end
-function draw_dust
-num i=0, base=0
+function draw_dust()
+number i=0, base=0
 loop i<dust_max
 base=i*dust_fields
-num lf=arr_get(dust,base+4)
+number lf=arr_get(dust,base+4)
 if lf>0
-num t=lf/dust_life_max
+number t=lf/dust_life_max
 // Пока частица «свежая» (t близко к 1) держим её яркой и крупной, а на
 // последней половине жизни плавно гасим — след тает, а не «выключается».
-num fade=clamp(t/0.5,0,1)
-num r=dust_r_max*(0.45+0.55*fade)
-num a=floor(fade*fade*150)
+number fade=clamp(t/0.5,0,1)
+number r=dust_r_max*(0.45+0.55*fade)
+number a=floor(fade*fade*150)
 if a>0
-num grey=floor(120+100*t)
+number grey=floor(120+100*t)
 // Цвет: ARGB серый (0xAA888888 стиль), но через сдвиги как в других местах.
-num c=((((unsigned)(int)a)<<24)|(((unsigned)(int)grey)<<16)|(((unsigned)(int)grey)<<8)|((unsigned)(int)grey))
-circle arr_get(dust,base),arr_get(dust,base+1),r,c
+number c=((((unsigned)(int)a)<<24)|(((unsigned)(int)grey)<<16)|(((unsigned)(int)grey)<<8)|((unsigned)(int)grey))
+circle(arr_get(dust,base),arr_get(dust,base+1),r,c)
 end
 end
 i=i+1
 end
 end
 // ── Тик спавна пыли (вызывается из move_player) ────────────────────────────
-function tick_dust num jdx, num jdy, num jmag
+function tick_dust(number jdx, number jdy, number jmag)
 if finished!=0; return; end
 if jmag<0.18; return; end
 if dust_cd>0; dust_cd=dust_cd-dt; return; end
 dust_cd=dust_spawn_cd
 // Спавним 1-2 частицы сразу для пышности — позади кубика, чтобы след
 // тянулся сзади, а не под самим персонажем.
-num bx=player.x-jdx*dust_back_off, by=player.y-jdy*dust_back_off
-dust_spawn bx,by,jdx,jdy
-if rand()%2==0; dust_spawn player.x-jdx*dust_back_off*1.4,player.y-jdy*dust_back_off*1.4,jdx,jdy; end
+number bx=player.x-jdx*dust_back_off, by=player.y-jdy*dust_back_off
+dust_spawn(bx,by,jdx,jdy)
+if rand()%2==0; dust_spawn(player.x-jdx*dust_back_off*1.4,player.y-jdy*dust_back_off*1.4,jdx,jdy); end
 end

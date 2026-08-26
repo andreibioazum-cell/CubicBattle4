@@ -9,19 +9,19 @@
     },
     {
       "name": "storage.type.dimscript",
-      "match": "\\b(num|str|col)\\b"
+      "match": "\\b(num|number|str|string|col|color|arr|array)\\b"
     },
     {
       "name": "keyword.control.dimscript",
-      "match": "\\b(object|function|if|else|loop|end|return|new)\\b"
+      "match": "\\b(object|function|if|else|loop|end|return|new|include|import)\\b"
     },
     {
       "name": "support.variable.engine.dimscript",
-      "match": "\\b(screen_w|screen_h|dt|joy)\\b"
+      "match": "\\b(screen_w|screen_h|dt|joy|mouse_clicked)\\b"
     },
     {
       "name": "support.function.builtin.dimscript",
-      "match": "\\b(rect|roundrect|circle|ring|line|tex|png_load|text|text_scaled|text_ink_width|text_ink_height|sqrt|sin|cos|atan2|floor|rand|console_count|console_line|console_type|console_clear|ds_log)\\b"
+      "match": "\\b(rect|roundrect|circle|ring|line|tex|tex_tint|png_load|text|text_scaled|text_width|text_height|text_ink_width|text_ink_height|clear_screen|window_create|game_run|mouse_x|mouse_y|particles_spawn|sound_play|snd_play|sqrt|sin|cos|atan2|floor|rand|console_count|console_line|console_type|console_clear|ds_log)\\b"
     },
     {
       "name": "entity.name.function.dimscript",

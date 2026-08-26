@@ -1,9 +1,14 @@
 import re, sys
-TYPES={'num':'double','str':'const char*','col':'uint32_t','arr':'DSArray*'}
+TYPES={'num':'double','number':'double','str':'const char*','string':'const char*','col':'uint32_t','color':'uint32_t','arr':'DSArray*','array':'DSArray*'}
+_TYPE_ALIAS={'number':'num','string':'str','color':'col','array':'arr'}
+def canon_type(t): return _TYPE_ALIAS.get(t,t)
 BUILTINS=frozenset({
     'rect','roundrect','circle','ring','line','tex','tex_tint','text','text_scaled','text_ink_width','text_ink_height','text_ink_top','png_load',
+    'clear_screen','text_width','text_height',
+    'window_create','game_run',
+    'mouse_x','mouse_y','particles_spawn',
     'sqrt','sin','cos','atan2','floor','rand',
-    'snd_load','snd_play','snd_loop','snd_stop','snd_playing','snd_volume','snd_stop_all',
+    'snd_load','snd_play','snd_loop','snd_stop','snd_playing','snd_volume','snd_stop_all','sound_play',
     'net_connect','net_disconnect','net_publish','net_publish_punch','net_publish_snow','net_set_class','net_status','net_slot',
     'net_player_online','net_player_x','net_player_y','net_player_angle','net_player_hp','net_player_alive','net_player_nick',
     'net_player_punch_x','net_player_punch_y','net_player_punch_dx','net_player_punch_dy','net_player_punch',
@@ -20,10 +25,10 @@ BUILTINS=frozenset({
     'arr_new','arr_push','arr_get','arr_set','arr_len','arr_clear',
     'clamp','lerp','dist'
 })
-ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy'}
+ENGINE_VARS={'screen_w':'num','screen_h':'num','dt':'num','joy':'joy','mouse_clicked':'num'}
 STR_BUILTINS=frozenset({'console_line','keyboard_get_text','keyboard_get_raw','net_chat_text','net_chat_uid','net_login_nick','net_player_nick','net_leaderboard_nick'})
 _NAME=r'[A-Za-z_]\w*'
-_FUNC_RE=re.compile(r'^function\s+('+_NAME+r')(?:\s+(.*))?$')
+_FUNC_RE=re.compile(r'^function\s+('+_NAME+r')(?:\s*(.*))?$')
 _NUM_RE=re.compile(r'^(?:[-+]?\d+(?:\.\d+)?|0[xX][0-9a-fA-F]+)$')
 _CALL_RE=re.compile(r'^('+_NAME+r')(?:\s+(.*))?$')
 _LHS_RE=re.compile(r'^('+_NAME+r')(?:\.('+_NAME+r'))?$')
@@ -100,7 +105,7 @@ class DimScriptCompiler:
     def _decl_list(self,line):
         m=re.match(r'^('+_NAME+r')\s+(.+)$',line)
         if not m: return None
-        t,rest=m.group(1),m.group(2).strip()
+        t,rest=canon_type(m.group(1)),m.group(2).strip()
         if t not in TYPES and t not in self.objects and t!='joy': return None
         res=[]
         for part in split_top(rest,','):
@@ -116,6 +121,7 @@ class DimScriptCompiler:
         while i < len(self.lines):
             line=self.lines[i]
             if line=='end': self._error("unexpected 'end' at top level"); i+=1
+            elif line.startswith('include '): i+=1
             elif line.startswith('object '): i=self._parse_object(i)
             elif line.startswith('function '): i=self._parse_function(i)
             elif self._decl_all(line): self._parse_global(line); i+=1
@@ -172,11 +178,14 @@ class DimScriptCompiler:
                 if self.func_ret[name]!=kind: self.func_ret[name]=kind; ch=True
             if not ch: break
     def _parse_params(self,text):
+        text=(text or '').strip()
+        if text.startswith('(') and text.endswith(')'):
+            text=text[1:-1].strip()
         params=[]
         for part in split_top(text,',') if text.strip() else []:
             w=part.split()
             if len(w)!=2 or (w[0] not in TYPES and w[0] not in self.objects): self._error(f"invalid param '{part}'"); continue
-            params.append((w[0],w[1]))
+            params.append((canon_type(w[0]),w[1]))
         return params
     def _collect_block(self,i,what):
         depth=0; body=[]
@@ -268,12 +277,18 @@ class DimScriptCompiler:
             return
         self._emit_statement(line)
     def _open_block(self,header): self.blocks.append(header); self._out(header+' {'); self.indent+=1
+    def _split_call(self,line):
+        m=re.match(r'^('+_NAME+r')\s*\((.*)\)\s*$',line,re.S)
+        if m: return m.group(1),(m.group(2) or '').strip()
+        m=_CALL_RE.match(line)
+        if m: return m.group(1),(m.group(2) or '').strip()
+        return None,None
     def _emit_statement(self,line):
         i=find_assign(line)
         if i>=0: self._emit_assign(line[:i].strip(), line[i+1:].strip()); return
-        m=_CALL_RE.match(line)
-        if not m: return
-        name,rest=m.group(1),m.group(2) or ''; args=split_top(rest,',') if rest else []
+        name,rest=self._split_call(line)
+        if not name: return
+        args=split_top(rest,',') if rest else []
         if name in self.functions:
             if len(args)!=len(self.functions[name][0]): return
             fn=f'ds_fn_{name}'
@@ -349,6 +364,8 @@ class DimScriptCompiler:
         self._emit('}'); self._emit(''); self._emit('void draw(Buffer *buffer) {'); self.indent=1; self._out('(void)buffer;')
         if 'draw' in self.functions: self._out('ds_fn_draw();')
         self._emit('}'); self._emit(''); self._emit('void touch(float x, float y, int action, int pointer_id) {'); self.indent=1
+        self._out('mouse_clicked = (action == 0) ? 1 : 0;')
+        self._out('if (action == 0) { ds_mouse_x = x; ds_mouse_y = y; }')
         if 'touch' in self.functions:
             args=[]
             for i,(pt,_pn) in enumerate(self.functions['touch'][0]):
