@@ -349,6 +349,7 @@ static int snd_start(const char *name, int loop) {
 }
 
 int snd_play(const char *name) { return snd_start(name, 0); }
+int sound_play(const char *name) { return snd_play(name); }
 int snd_loop(const char *name) { return snd_start(name, 1); }
 
 void snd_stop(const char *name) {

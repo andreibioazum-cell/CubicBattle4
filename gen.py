@@ -67,7 +67,15 @@ def main():
         usage(sys.stderr)
         return 2
     if os.path.isdir(input_path):
-        sources = find_ds_files(input_path)
+        src_dir = input_path
+        # В проекте скрипты лежат в <game_dir>/scripts, а список модулей в
+        # find_ds_files отсчитывается именно от этой папки. Если передан корень
+        # проекта (например, game), ищем скрипты в его подкаталоге scripts,
+        # иначе порядок модулей не совпадёт с order в find_ds_files.
+        scripts = os.path.join(input_path, 'scripts')
+        if os.path.isdir(scripts):
+            src_dir = scripts
+        sources = find_ds_files(src_dir)
         if not sources:
             print(f"Error: no .ds files found in {input_path}", file=sys.stderr)
             return 1

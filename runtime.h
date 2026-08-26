@@ -35,6 +35,8 @@ typedef struct {
 } Buffer;
 extern int screen_w, screen_h;
 extern double dt;
+extern int mouse_clicked;
+extern double ds_mouse_x, ds_mouse_y;
 typedef struct { float x, y, dx, dy, ox, oy, r; } Joy;
 extern Joy joy;
 void ds_log(const char *format, ...);
@@ -87,6 +89,16 @@ void roundrect(float x, float y, float w, float h, float r, uint32_t color);
 void circle(float x, float y, float r, uint32_t color);
 void ring(float x, float y, float r, float t, uint32_t color);
 void line(float x1, float y1, float x2, float y2, float thickness, uint32_t color);
+void clear_screen(uint32_t color);
+/* Простой хост-API для скриптов в стиле примера "Кликер". В существующей игре
+ * главный цикл ведёт C-хост (init/update/draw/touch), поэтому window_create и
+ * game_run остаются тонкими обёртками/заглушками: window_create запоминает окно,
+ * game_run выполняет один кадр update+draw и возвращается. */
+void window_create(const char *title, int width, int height);
+void game_run(void (*update_cb)(void), void (*draw_cb)(Buffer *buffer), void (*touch_cb)(float x, float y, int action, int pointer_id));
+double mouse_x(void);
+double mouse_y(void);
+void particles_spawn(double x, double y);
 void ds_set_asset_manager(AAssetManager *assets);
 void ds_release_assets(void);
 int png_load(const char *name);
@@ -96,6 +108,8 @@ void tex_tint(float x, float y, const char *name, float angle, float scale, uint
  * snd_playing — 1/0; snd_volume задаёт громкость конкретного звука (0..1). */
 int snd_load(const char *name);
 int snd_play(const char *name);
+/* короткий синоним snd_play(), чтобы скрипты могли писать sound_play(...) */
+int sound_play(const char *name);
 int snd_loop(const char *name);
 void snd_stop(const char *name);
 int snd_playing(const char *name);
@@ -108,6 +122,9 @@ void ds_sound_resume(void);
 void ds_sound_set_java_vm(void *vm);
 void text(const char *string, float x, float y, uint32_t color);
 void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
+/* Алиасы text_ink_* для более наглядного API из примера "Кликер". */
+int text_width(const char *string);
+int text_height(const char *string);
 int text_ink_width(const char *string);
 int text_ink_height(const char *string);
 int text_ink_top(const char *string);

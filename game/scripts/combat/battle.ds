@@ -1,51 +1,53 @@
+include graphics
+
 // battle.ds — только система боя (без чата)
 // Ближний бой: хитбокс удара широкий (punch_width) и недлинный (punch_reach).
 
-function class_idle_tex num cls
+function class_idle_tex(number cls)
 if cls==1; return AZUM_TEX; end
 if cls==2; return SANTA_TEX; end
 return ORDINARY_TEX
 end
-function class_punch_tex num cls
+function class_punch_tex(number cls)
 if cls==1; return AZUM_PUNCH_TEX; end
 if cls==2; return SANTA_PUNCH_TEX; end
 return PUNCH_TEX
 end
-function player_idle_tex
+function player_idle_tex()
 return class_idle_tex(player_class)
 end
-function player_punch_tex
+function player_punch_tex()
 return class_punch_tex(player_class)
 end
-function class_punch_damage_for num cls, num lv
+function class_punch_damage_for(number cls, number lv)
 // У Деда Мороза обычный удар по-прежнему слабый: основной урон приходит
 // отдельными тиками яда. У обычного бойца первый уровень усиливает удар.
 if cls==2; return santa_damage; end
 if cls==0&&lv>=1; return punch_damage*(1+ordinary_damage_bonus); end
 return punch_damage
 end
-function class_punch_damage num cls
+function class_punch_damage(number cls)
 return class_punch_damage_for(cls,player_level)
 end
-function santa_poison_time_for num lv
-num t=santa_poison_time
+function santa_poison_time_for(number lv)
+number t=santa_poison_time
 return t
 end
-function santa_poison_damage_for num lv
-num d=santa_poison_dps
+function santa_poison_damage_for(number lv)
+number d=santa_poison_dps
 if lv>=1; d=d+santa_poison_damage_bonus; end
 if lv>=2; d=d+santa_poison_damage_bonus; end
 return d
 end
-function santa_freeze_time_for num lv
-num t=super_freeze
+function santa_freeze_time_for(number lv)
+number t=super_freeze
 if lv>=3; t=t+santa_freeze_time_bonus; end
 return t
 end
-function take_damage num dmg
+function take_damage(number dmg)
 // Общого поглощения больше нет. Первый уровень Азумa защищает только
 // вторую жизнь; остальные классы используют свои отдельные бонусы.
-num reduction=0
+number reduction=0
 if player_class==1&&azum_revived==1&&player_level>=1; reduction=azum_second_life_damage_reduction
 else if player_class==0&&player_level>=1; reduction=0.0; end
 if reduction<0; reduction=0; end
@@ -53,57 +55,57 @@ if reduction>0.9; reduction=0.9; end
 player.hp=player.hp-dmg*(1-reduction)
 if player.hp<0; player.hp=0; end
 end
-function heal_after_attack
-num amount=0
+function heal_after_attack()
+number amount=0
 if player_class==1&&player_level>=3; amount=azum_attack_heal
 else if player_class==0&&player_level>=3; amount=ordinary_attack_heal; end
 if amount>0; player.hp=clamp(player.hp+amount,0,player.max_hp); end
 end
-function try_revive
+function try_revive()
 // Азум один раз за бой встаёт с полным HP. Обычный класс сразу проигрывает.
 if player.hp>0; return 0; end
 if player_class!=1; return 0; end
 if azum_revived==1; return 0; end
 azum_revived=1; player.hp=player.max_hp; revive_prot=1.2
-num k=0
+number k=0
 loop k<50
-num rx=70+rand()%(screen_w-140), ry=70+rand()%(screen_h-140)
+number rx=70+rand()%(screen_w-140), ry=70+rand()%(screen_h-140)
 if dist(rx,ry,enemy.x,enemy.y)>200; k=50; player.x=rx; player.y=ry; else; k=k+1; end
 end
-ds_log "azum revived"
+ds_log("azum revived")
 return 1
 end
-function tick_revive
+function tick_revive()
 if revive_prot>0; revive_prot=revive_prot-dt; if revive_prot<0; revive_prot=0; end; end
 end
-function reset_battle
+function reset_battle()
 // сброс игрока в центр, очистка ударов и ремоутов
 player.x=screen_w/2; player.y=screen_h/2; player.angle=0; player.hp=player.max_hp; player.size=25*player_scale; enemy.size=25*enemy_scale; enemy.state=0; enemy.state_time=0; enemy.cooldown=0; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0; enemy.freeze=0; enemy.freeze_slow=1; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; finished=0; punch.active=0; punch.hit=0; punch_left=0; punch_cd=0; aim_id=-1; aim_a=0; santa_follow=0
 azum_revived=0; revive_prot=0; cups_awarded=0; match_seen_foe=0
 gift.active=0; gift.t=0; gift.shot=0; super_cd=0; super_id=-1; boom_t=0; boom_x=0; boom_y=0; freeze_a=0; super_windup=0
 player_freeze=0; player_freeze_slow=1; pfreeze_a=0
 player_poison=0; player_poison_tick=0; player_poison_damage=0; ppoison_a=0; poison_a=0
-joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-310; drop_joy
-arr_clear remotes; arr_clear remote_punches; arr_clear candy_x; arr_clear candy_y; arr_clear remote_snow
-num i=0; loop i<max_players*remote_fields; arr_push remotes,0; i=i+1; end
-i=0; loop i<max_players*punch_fields; arr_push remote_punches,0; i=i+1; end
-i=0; loop i<max_players*snow_fields; arr_push remote_snow,0; i=i+1; end
+joy.x=130; joy.y=screen_h-150; joy.r=70; atk_x=screen_w-140; atk_y=screen_h-150; atk2_x=screen_w-140; atk2_y=screen_h-310; drop_joy()
+arr_clear(remotes); arr_clear(remote_punches); arr_clear(candy_x); arr_clear(candy_y); arr_clear(remote_snow)
+number i=0; loop i<max_players*remote_fields; arr_push(remotes,0); i=i+1; end
+i=0; loop i<max_players*punch_fields; arr_push(remote_punches,0); i=i+1; end
+i=0; loop i<max_players*snow_fields; arr_push(remote_snow,0); i=i+1; end
 // Сброс пула пыли: заполняем нулями (life=0 — слот свободен).
-arr_clear dust; dust_cd=0
-i=0; loop i<dust_max*dust_fields; arr_push dust,0; i=i+1; end
+arr_clear(dust); dust_cd=0
+i=0; loop i<dust_max*dust_fields; arr_push(dust,0); i=i+1; end
 end
-function init_game
-reset_battle; enemy.hp=enemy.max_hp; spawn_enemy; spawn_all_candies
+function init_game()
+reset_battle(); enemy.hp=enemy.max_hp; spawn_enemy(); spawn_all_candies()
 end
-function init_online
-reset_battle; chat_open=0; keyboard_hide; online_ready=0; net_set_class player_class; net_set_level player_level; net_set_prime_level selected_prime_level(); net_connect FIREBASE,ROOM
+function init_online()
+reset_battle(); chat_open=0; keyboard_hide(); online_ready=0; net_set_class(player_class); net_set_level(player_level); net_set_prime_level(selected_prime_level()); net_connect(FIREBASE,ROOM)
 end
-function place_online
+function place_online()
 // слот -> позиция на карте
-num s=net_slot(), row=floor(s/2), col=s-row*2; player.x=screen_w*(0.3+0.4*col); player.y=screen_h*(0.35+0.3*row); online_ready=1
+number s=net_slot(), row=floor(s/2), col=s-row*2; player.x=screen_w*(0.3+0.4*col); player.y=screen_h*(0.35+0.3*row); online_ready=1
 end
-function spawn_enemy
-num margin=70, i=0
+function spawn_enemy()
+number margin=70, i=0
 loop i<50
 enemy.x=margin+rand()%(screen_w-140); enemy.y=margin+rand()%(screen_h-140)
 if dist(enemy.x,enemy.y,player.x,player.y)>280; i=50; else; i=i+1; end
@@ -111,48 +113,48 @@ end
 enemy.state=0; enemy.state_time=0; enemy.cooldown=enemy_first_delay; enemy.hit=0; enemy.dodge_cd=0; enemy.think=0; enemy.mvx=0; enemy.mvy=0; enemy.svx=0; enemy.svy=0
 if rand()%2==0; enemy.strafe=-1; else; enemy.strafe=1; end
 end
-function candy_rand_pos num i
-num m=candy_margin, k=0
-num cx=m+rand()%(int)(screen_w-2*m), cy=m+rand()%(int)(screen_h-2*m)
+function candy_rand_pos(number i)
+number m=candy_margin, k=0
+number cx=m+rand()%(int)(screen_w-2*m), cy=m+rand()%(int)(screen_h-2*m)
 loop k<24
 if dist(cx,cy,player.x,player.y)<80||dist(cx,cy,enemy.x,enemy.y)<80
 cx=m+rand()%(int)(screen_w-2*m); cy=m+rand()%(int)(screen_h-2*m); k=k+1
 else; k=24; end
 end
-arr_set candy_x,i,cx; arr_set candy_y,i,cy
+arr_set(candy_x,i,cx); arr_set(candy_y,i,cy)
 end
-function spawn_all_candies
-num i=0
+function spawn_all_candies()
+number i=0
 loop i<candy_count
-candy_rand_pos i
+candy_rand_pos(i)
 i=i+1
 end
 end
-function sprite_a num a
+function sprite_a(number a)
 // спрайт нарисован «лицом вверх», поэтому к игровому углу добавляем pi/2
 return a+pi/2
 end
-function move_player
+function move_player()
 // движение джойстиком: игрок разворачивается ровно туда, куда наклонён джойстик
 // Пока игрок заморожен снежинкой соперника (онлайн), он идёт медленнее.
-num spd=joy_speed
+number spd=joy_speed
 if player_class==1&&player_level>=2; spd=spd*(1+azum_speed_bonus)
 else if player_class==0&&player_level>=2; spd=spd*(1+ordinary_speed_bonus); end
 if player_freeze>0; spd=spd*player_freeze_slow; end
 player.x=player.x+joy.dx*spd*dt; player.y=player.y+joy.dy*spd*dt
-num jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy); if jm>0.15; player.angle=atan2(joy.dy,joy.dx); end
+number jm=sqrt(joy.dx*joy.dx+joy.dy*joy.dy); if jm>0.15; player.angle=atan2(joy.dy,joy.dx); end
 if player.x<player.size; player.x=player.size; end; if player.x>screen_w-player.size; player.x=screen_w-player.size; end; if player.y<player.size; player.y=player.size; end; if player.y>screen_h-player.size; player.y=screen_h-player.size; end
-tick_dust joy.dx,joy.dy,jm
+tick_dust(joy.dx,joy.dy,jm)
 end
-function in_punch_box num px, num py, num pdx, num pdy, num tx, num ty
+function in_punch_box(number px, number py, number pdx, number pdy, number tx, number ty)
 // хитбокс удара повёрнут вместе с игроком: вперёд по (pdx,pdy) не дальше
 // punch_reach (недлинный), вбок ±punch_width/2 (широкий)
-num rx=tx-px, ry=ty-py, fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy
+number rx=tx-px, ry=ty-py, fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy
 if fw>=0&&fw<=punch_reach&&side*side<=punch_width*punch_width/4; return 1; end; return 0
 end
-function enemy_in_punch
-num ex=enemy.x, ey=enemy.y, hs=enemy.size*0.65
-num fx=cos(enemy.angle)*hs, fy=sin(enemy.angle)*hs, sx=-sin(enemy.angle)*hs, sy=cos(enemy.angle)*hs
+function enemy_in_punch()
+number ex=enemy.x, ey=enemy.y, hs=enemy.size*0.65
+number fx=cos(enemy.angle)*hs, fy=sin(enemy.angle)*hs, sx=-sin(enemy.angle)*hs, sy=cos(enemy.angle)*hs
 if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex,ey)==1; return 1; end
 if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex-fx-sx,ey-fy-sy)==1; return 1; end
 if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex+fx-sx,ey+fy-sy)==1; return 1; end
@@ -160,7 +162,7 @@ if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex+fx+sx,ey+fy+sy)==1; return 
 if in_punch_box(punch.x,punch.y,punch.dx,punch.dy,ex-fx+sx,ey-fy+sy)==1; return 1; end
 return 0
 end
-function update_aim
+function update_aim()
 // хитбокс показывается ТОЛЬКО во время самого удара.
 // «Пустой» замах перед снежинкой (super_windup) хитбоксом не считается —
 // это просто анимация без урона.
@@ -168,19 +170,19 @@ if punch_left>0&&super_windup<=0&&finished==0; aim_a=1
 else; aim_a=aim_a-dt/aim_fade_out; if aim_a<0; aim_a=0; end; end
 if punch_cd>0; punch_cd=punch_cd-dt; if punch_cd<0; punch_cd=0; end; end
 end
-function follow_punch
+function follow_punch()
 if punch_left<=0; return; end
 punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle)
 end
-function enemy_freeze_factor
+function enemy_freeze_factor()
 if enemy.freeze>0; return enemy.freeze_slow; end
 return 1
 end
-function freeze_enemy num t, num slow
+function freeze_enemy(number t, number slow)
 if t>enemy.freeze; enemy.freeze=t; enemy.freeze_slow=slow; end
 end
-function enemy_move num vx, num vy
-num f=enemy_freeze_factor()
+function enemy_move(number vx, number vy)
+number f=enemy_freeze_factor()
 enemy.mvx=vx*f; enemy.mvy=vy*f; enemy.svx=vx; enemy.svy=vy
 enemy.x=enemy.x+vx*f*dt; enemy.y=enemy.y+vy*f*dt
 if enemy.x<enemy.size; enemy.x=enemy.size; end
@@ -188,94 +190,94 @@ if enemy.x>screen_w-enemy.size; enemy.x=screen_w-enemy.size; end
 if enemy.y<enemy.size; enemy.y=enemy.size; end
 if enemy.y>screen_h-enemy.size; enemy.y=screen_h-enemy.size; end
 end
-function enemy_face_motion
-num sp=sqrt(enemy.mvx*enemy.mvx+enemy.mvy*enemy.mvy)
+function enemy_face_motion()
+number sp=sqrt(enemy.mvx*enemy.mvx+enemy.mvy*enemy.mvy)
 if sp<10; return; end
-num ta=atan2(enemy.mvy,enemy.mvx), da=ta-enemy.angle
+number ta=atan2(enemy.mvy,enemy.mvx), da=ta-enemy.angle
 if da>pi; da=da-2*pi; end
 if da<0-pi; da=da+2*pi; end
-num turn=da*clamp(dt*enemy_face_speed,0,1), maxturn=enemy_face_max_speed*dt
+number turn=da*clamp(dt*enemy_face_speed,0,1), maxturn=enemy_face_max_speed*dt
 enemy.angle=enemy.angle+clamp(turn,0-maxturn,maxturn)
 end
-function enemy_track_player
+function enemy_track_player()
 if enemy.seen==0; enemy.px=player.x; enemy.py=player.y; enemy.pvx=0; enemy.pvy=0; enemy.seen=1; return; end
-num vx=0, vy=0
+number vx=0, vy=0
 if dt>0; vx=(player.x-enemy.px)/dt; vy=(player.y-enemy.py)/dt; end
-num sp=sqrt(vx*vx+vy*vy)
+number sp=sqrt(vx*vx+vy*vy)
 if sp>joy_speed; vx=vx/sp*joy_speed; vy=vy/sp*joy_speed; end
 enemy.pvx=lerp(enemy.pvx,vx,0.3); enemy.pvy=lerp(enemy.pvy,vy,0.3)
 enemy.px=player.x; enemy.py=player.y
 end
-function enemy_speed_of_player
+function enemy_speed_of_player()
 return sqrt(enemy.pvx*enemy.pvx+enemy.pvy*enemy.pvy)
 end
-function enemy_predict num lead
+function enemy_predict(number lead)
 aim_tx=clamp(player.x+enemy.pvx*lead,player.size,screen_w-player.size)
 aim_ty=clamp(player.y+enemy.pvy*lead,player.size,screen_h-player.size)
 end
-function enemy_turn_prediction
-enemy_predict enemy_lead
-num ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x), da=ta-enemy.angle
+function enemy_turn_prediction()
+enemy_predict(enemy_lead)
+number ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x), da=ta-enemy.angle
 if da>pi; da=da-2*pi; end
 if da<0-pi; da=da+2*pi; end
-num step=enemy_attack_turn_speed*dt
+number step=enemy_attack_turn_speed*dt
 enemy.angle=enemy.angle+clamp(da,0-step,step)
 end
-function player_in_enemy_punch
-num pdx=cos(enemy.angle), pdy=sin(enemy.angle), rx=player.x-enemy.x, ry=player.y-enemy.y
-num fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy, pr=player.size*0.65, half=enemy_punch_width/2+pr
+function player_in_enemy_punch()
+number pdx=cos(enemy.angle), pdy=sin(enemy.angle), rx=player.x-enemy.x, ry=player.y-enemy.y
+number fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy, pr=player.size*0.65, half=enemy_punch_width/2+pr
 if fw>=0&&fw<=enemy_punch_reach+pr&&side*side<=half*half; return 1; end
 return 0
 end
-function enemy_would_hit
-enemy_predict enemy_lead
-num rx=aim_tx-enemy.x, ry=aim_ty-enemy.y, fd=sqrt(rx*rx+ry*ry)
-num pr=player.size*0.65
-num margin=enemy_hit_margin
+function enemy_would_hit()
+enemy_predict(enemy_lead)
+number rx=aim_tx-enemy.x, ry=aim_ty-enemy.y, fd=sqrt(rx*rx+ry*ry)
+number pr=player.size*0.65
+number margin=enemy_hit_margin
 if enemy_speed_of_player()<enemy_still_speed; margin=0; end
 if fd<=enemy_punch_reach+pr-margin; return 1; end
 return 0
 end
-function enemy_in_danger
-num pdx=cos(player.angle), pdy=sin(player.angle), rx=enemy.x-player.x, ry=enemy.y-player.y
-num fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy, er=enemy.size*0.65, half=punch_width/2+er
+function enemy_in_danger()
+number pdx=cos(player.angle), pdy=sin(player.angle), rx=enemy.x-player.x, ry=enemy.y-player.y
+number fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy, er=enemy.size*0.65, half=punch_width/2+er
 if fw>=-er&&fw<=punch_reach+er&&side*side<=half*half; return 1; end
 return 0
 end
-function enemy_free_window
+function enemy_free_window()
 if punch_left<=0&&punch_cd>enemy_punish_react; return 1; end
 return 0
 end
-function enemy_pick_flank
-num side=(enemy.y-player.y)*cos(player.angle)-(enemy.x-player.x)*sin(player.angle)
+function enemy_pick_flank()
+number side=(enemy.y-player.y)*cos(player.angle)-(enemy.x-player.x)*sin(player.angle)
 if side>=0; enemy.strafe=1; else; enemy.strafe=-1; end
 end
-function enemy_roll_cooldown
-num r=enemy_cooldown_min+(rand()%1000)/1000.0*(enemy_cooldown_max-enemy_cooldown_min)
+function enemy_roll_cooldown()
+number r=enemy_cooldown_min+(rand()%1000)/1000.0*(enemy_cooldown_max-enemy_cooldown_min)
 if r<enemy_cooldown_min; r=enemy_cooldown_min; end
 return r
 end
-function start_enemy_attack
-num ta=atan2(player.y-enemy.y,player.x-enemy.x), da=ta-enemy.angle
+function start_enemy_attack()
+number ta=atan2(player.y-enemy.y,player.x-enemy.x), da=ta-enemy.angle
 if da>pi; da=da-2*pi; end
 if da<0-pi; da=da+2*pi; end
 if fabs(da)<1.5; enemy.angle=ta; end
 enemy.state=1; enemy.state_time=enemy_windup; enemy.hit=0
 end
-function enemy_engage num desired
-num dx=aim_tx-enemy.x, dy=aim_ty-enemy.y, d=sqrt(dx*dx+dy*dy); if d<1; d=1; end
-num radial=clamp((d-desired)*enemy_close_gain,-bot_speed,bot_speed)
-num orbit=bot_strafe_speed*enemy.strafe*0.4
+function enemy_engage(number desired)
+number dx=aim_tx-enemy.x, dy=aim_ty-enemy.y, d=sqrt(dx*dx+dy*dy); if d<1; d=1; end
+number radial=clamp((d-desired)*enemy_close_gain,-bot_speed,bot_speed)
+number orbit=bot_strafe_speed*enemy.strafe*0.4
 if d>desired+100; orbit=orbit*0.5; end
-num vx=dx/d*radial-dy/d*orbit, vy=dy/d*radial+dx/d*orbit
-num sp=sqrt(vx*vx+vy*vy), cap=bot_speed
+number vx=dx/d*radial-dy/d*orbit, vy=dy/d*radial+dx/d*orbit
+number sp=sqrt(vx*vx+vy*vy), cap=bot_speed
 if sp>cap&&sp>0.001; vx=vx/sp*cap; vy=vy/sp*cap; end
-num ms=clamp(dt*enemy_move_smooth,0,1)
+number ms=clamp(dt*enemy_move_smooth,0,1)
 enemy.svx=lerp(enemy.svx,vx,ms); enemy.svy=lerp(enemy.svy,vy,ms)
-enemy_move enemy.svx,enemy.svy
+enemy_move(enemy.svx,enemy.svy)
 end
-function update_enemy
-enemy_track_player
+function update_enemy()
+enemy_track_player()
 enemy.mvx=0; enemy.mvy=0
 if enemy.freeze>0; enemy.freeze=enemy.freeze-dt; if enemy.freeze<0; enemy.freeze=0; end; end
 if enemy.freeze>0; freeze_a=freeze_a+dt/freeze_fade_in; else; freeze_a=freeze_a-dt/freeze_fade_out; end
@@ -290,15 +292,15 @@ if enemy.poison_tick<=0; enemy.poison_tick=santa_poison_tick_interval; end
 enemy.poison=enemy.poison-dt; enemy.poison_tick=enemy.poison_tick-dt
 if enemy.poison_tick<=0
 // Яд бьёт ровно один раз, дальше сразу гаснет.
-num tick_dmg=santa_poison_damage_for(player_level)
+number tick_dmg=santa_poison_damage_for(player_level)
 if player_level>=3&&enemy.poison_damage>0; tick_dmg=enemy.poison_damage; end
 enemy.hp=enemy.hp-tick_dmg
-ds_log "poison tick! dmg %g enemy hp %g",tick_dmg,enemy.hp
+ds_log("poison tick! dmg %g enemy hp %g",tick_dmg,enemy.hp)
 enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0
 if enemy.hp<=0
 enemy.hp=0
-ds_log "poison killed the enemy"
-finish_game 1
+ds_log("poison killed the enemy")
+finish_game(1)
 return
 end
 end
@@ -306,18 +308,18 @@ if enemy.poison<=0; enemy.poison=0; enemy.poison_tick=0; enemy.poison_damage=0; 
 end
 if enemy.poison>0; poison_a=poison_a+dt/freeze_fade_in; else; poison_a=poison_a-dt/freeze_fade_out; end
 if poison_a<0; poison_a=0; end; if poison_a>1; poison_a=1; end
-num dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
+number dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
 if d<1; d=1; end
-num pr=player.size*0.65, reach=enemy_punch_reach+pr
+number pr=player.size*0.65, reach=enemy_punch_reach+pr
 
 // Замах: бот быстро наводит удар к игроку, затем фиксирует перед самым ударом
 if enemy.state==1
 enemy.state_time=enemy.state_time-dt
-if enemy.state_time>enemy_lock_time; enemy_turn_prediction; end
-enemy_predict enemy_lead
-num adx=aim_tx-enemy.x, ady=aim_ty-enemy.y, ad=sqrt(adx*adx+ady*ady); if ad<1; ad=1; end
+if enemy.state_time>enemy_lock_time; enemy_turn_prediction(); end
+enemy_predict(enemy_lead)
+number adx=aim_tx-enemy.x, ady=aim_ty-enemy.y, ad=sqrt(adx*adx+ady*ady); if ad<1; ad=1; end
 if ad>reach-enemy_hit_margin
-enemy_move adx/ad*bot_speed*0.9,ady/ad*bot_speed*0.9
+enemy_move(adx/ad*bot_speed*0.9,ady/ad*bot_speed*0.9)
 end
 if enemy.state_time<=0; enemy.state=2; enemy.state_time=enemy_punch_time; enemy.hit=0; end
 return
@@ -329,8 +331,8 @@ enemy.state_time=enemy.state_time-dt
 if enemy.hit==0&&player_in_enemy_punch()==1
 enemy.hit=1
 if revive_prot<=0
-take_damage enemy_damage; ds_log "enemy punch! hp %g",player.hp
-if player.hp<=0; player.hp=0; if try_revive()==0; finish_game 2; return; end; end
+take_damage(enemy_damage); ds_log("enemy punch! hp %g",player.hp)
+if player.hp<=0; player.hp=0; if try_revive()==0; finish_game(2); return; end; end
 end
 end
 if enemy.state_time<=0
@@ -344,27 +346,27 @@ end
 // Пауза после удара
 if enemy.state==3
 enemy.state_time=enemy.state_time-dt
-if enemy_free_window()==0&&d<reach*0.8; enemy_predict 0; enemy_engage reach*0.9; end
-enemy_face_motion
-if enemy.state_time<=0; enemy.state=0; if enemy.flank<=0; enemy_pick_flank; enemy.flank=enemy_flank_time; end; end
+if enemy_free_window()==0&&d<reach*0.8; enemy_predict(0); enemy_engage(reach*0.9); end
+enemy_face_motion()
+if enemy.state_time<=0; enemy.state=0; if enemy.flank<=0; enemy_pick_flank(); enemy.flank=enemy_flank_time; end; end
 return
 end
 
 // Уклонение
 if enemy.state==4
 enemy.state_time=enemy.state_time-dt
-num dpx=cos(player.angle), dpy=sin(player.angle)
-num dvx=-dpy*enemy.strafe*bot_dodge_speed-dpx*bot_speed*0.25
-num dvy=dpx*enemy.strafe*bot_dodge_speed-dpy*bot_speed*0.25
-enemy_move dvx,dvy
-enemy_face_motion
+number dpx=cos(player.angle), dpy=sin(player.angle)
+number dvx=-dpy*enemy.strafe*bot_dodge_speed-dpx*bot_speed*0.25
+number dvy=dpx*enemy.strafe*bot_dodge_speed-dpy*bot_speed*0.25
+enemy_move(dvx,dvy)
+enemy_face_motion()
 if enemy.state_time<=0; enemy.state=0; enemy.dodge_cd=enemy_dodge_cooldown; enemy.cooldown=0; enemy.think=0; end
 return
 end
 
 // Реагирование на удар игрока: уклонение
 if punch_left>0&&punch_left<=punch_time-enemy_reaction&&enemy.dodge_cd<=0&&enemy_in_danger()==1
-num side=(enemy.y-player.y)*cos(player.angle)-(enemy.x-player.x)*sin(player.angle)
+number side=(enemy.y-player.y)*cos(player.angle)-(enemy.x-player.x)*sin(player.angle)
 if side>=0; enemy.strafe=1; else; enemy.strafe=-1; end
 enemy.state=4; enemy.state_time=enemy_dodge_time
 return
@@ -373,43 +375,43 @@ end
 // Наказание промаха: игрок промахнулся, бот сразу нападает
 if enemy_free_window()==1
 enemy.think=0
-if enemy.cooldown<=0&&(d<=reach||enemy_would_hit()==1); start_enemy_attack; return; end
-enemy_predict enemy_lead
-enemy_engage reach*0.5
-enemy_face_motion
+if enemy.cooldown<=0&&(d<=reach||enemy_would_hit()==1); start_enemy_attack(); return; end
+enemy_predict(enemy_lead)
+enemy_engage(reach*0.5)
+enemy_face_motion()
 return
 end
 
 // Новый ИИ: если враг около игрока — бьёт сразу без задержек!
 if enemy.cooldown<=0&&enemy.think<=0&&(d<=reach*0.95||enemy_would_hit()==1)
-start_enemy_attack; return
+start_enemy_attack(); return
 end
 
 if enemy.think>0; enemy.think=enemy.think-dt; end
-if enemy.flank<=0; enemy_pick_flank; enemy.flank=enemy_flank_time; end
+if enemy.flank<=0; enemy_pick_flank(); enemy.flank=enemy_flank_time; end
 
 // Агрессивное сближение с игроком
-num desired=reach*0.6
+number desired=reach*0.6
 if d<enemy_min_distance*0.7; desired=enemy_min_distance*0.7; end
-enemy_predict enemy_lead
-enemy_engage desired
-enemy_face_motion
+enemy_predict(enemy_lead)
+enemy_engage(desired)
+enemy_face_motion()
 end
-function tick_freeze
+function tick_freeze()
 // Заморозка самого игрока (снежинка соперника в онлайне): таймер и плавная
 // прозрачность ледяного круга вокруг игрока.
 if player_freeze>0; player_freeze=player_freeze-dt; if player_freeze<0; player_freeze=0; end; end
 if player_freeze>0; pfreeze_a=pfreeze_a+dt/freeze_fade_in; else; pfreeze_a=pfreeze_a-dt/freeze_fade_out; end
 if pfreeze_a<0; pfreeze_a=0; end; if pfreeze_a>1; pfreeze_a=1; end
 end
-function tick_player_poison
+function tick_player_poison()
 // В онлайне яд использует ту же секундную сетку, что и в соло.
 if player_poison>0
 if player_poison_tick<=0; player_poison_tick=santa_poison_tick_interval; end
 player_poison=player_poison-dt; player_poison_tick=player_poison_tick-dt
 if player_poison_tick<=0
-take_damage player_poison_damage
-ds_log "remote poison tick! player hp %g",player.hp
+take_damage(player_poison_damage)
+ds_log("remote poison tick! player hp %g",player.hp)
 player_poison=0; player_poison_tick=0; player_poison_damage=0
 end
 if player_poison<=0; player_poison=0; player_poison_tick=0; player_poison_damage=0; end
@@ -417,28 +419,28 @@ end
 if player_poison>0; ppoison_a=ppoison_a+dt/freeze_fade_in; else; ppoison_a=ppoison_a-dt/freeze_fade_out; end
 if ppoison_a<0; ppoison_a=0; end; if ppoison_a>1; ppoison_a=1; end
 end
-function update_game
-tick_revive
-tick_freeze
-tick_player_poison
-aura_tick
-update_aim; if finished!=0; return; end
-if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
-move_player
-num ci=0
+function update_game()
+tick_revive()
+tick_freeze()
+tick_player_poison()
+aura_tick()
+update_aim(); if finished!=0; return; end
+if player.hp<=0; if try_revive()==0; finish_game(2); return; end; end
+move_player()
+number ci=0
 loop ci<candy_count
 if dist(arr_get(candy_x,ci),arr_get(candy_y,ci),player.x,player.y)<player.size*0.65+18
-candies=candies+candy_give; save_progress; ds_log "candy picked -> %g",candies
-candy_rand_pos ci
+candies=candies+candy_give; save_progress(); ds_log("candy picked -> %g",candies)
+candy_rand_pos(ci)
 end
 ci=ci+1
 end
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
-follow_punch
+follow_punch()
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
-tick_super_windup
-tick_santa_follow
+tick_super_windup()
+tick_santa_follow()
 if punch_left>0&&punch.active==1&&punch.hit==0
 if enemy_in_punch()==1
 punch.hit=1
@@ -465,162 +467,162 @@ if enemy.poison<=0; enemy.poison_tick=santa_poison_tick_interval; end
 enemy.poison=santa_poison_time_for(player_level)
 end
 end
-enemy.hp=enemy.hp-class_punch_damage(player_class); ds_log "hit! enemy hp %g",enemy.hp
-heal_after_attack
-if enemy.hp<=0; finish_game 1; return; end
+enemy.hp=enemy.hp-class_punch_damage(player_class); ds_log("hit! enemy hp %g",enemy.hp)
+heal_after_attack()
+if enemy.hp<=0; finish_game(1); return; end
 end
 end
-update_dust
-update_gift
+update_dust()
+update_gift()
 if finished!=0; return; end
-update_enemy
+update_enemy()
 end
-function clear_remote_punch num s
-num rb=s*punch_fields, k=0; loop k<punch_fields; arr_set remote_punches,rb+k,0; k=k+1; end
+function clear_remote_punch(number s)
+number rb=s*punch_fields, k=0; loop k<punch_fields; arr_set(remote_punches,rb+k,0); k=k+1; end
 end
-function start_remote_punch num s
-num rb=s*punch_fields
-arr_set remote_punches,rb,1
-arr_set remote_punches,rb+1,net_player_punch_x(s)*screen_w
-arr_set remote_punches,rb+2,net_player_punch_y(s)*screen_h
-arr_set remote_punches,rb+3,net_player_punch_dx(s)
-arr_set remote_punches,rb+4,net_player_punch_dy(s)
-arr_set remote_punches,rb+5,0
+function start_remote_punch(number s)
+number rb=s*punch_fields
+arr_set(remote_punches,rb,1)
+arr_set(remote_punches,rb+1,net_player_punch_x(s)*screen_w)
+arr_set(remote_punches,rb+2,net_player_punch_y(s)*screen_h)
+arr_set(remote_punches,rb+3,net_player_punch_dx(s))
+arr_set(remote_punches,rb+4,net_player_punch_dy(s))
+arr_set(remote_punches,rb+5,0)
 end
-function read_remotes
+function read_remotes()
 if net_slot()<0; return; end
-num s=0
+number s=0
 loop s<max_players
-num b=s*remote_fields
+number b=s*remote_fields
 if net_player_online(s)==1&&s!=net_slot()
-num x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h, a=net_player_angle(s)
+number x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h, a=net_player_angle(s)
 if arr_get(remotes,b)==0
-arr_set remotes,b,1; arr_set remotes,b+1,x; arr_set remotes,b+2,y; arr_set remotes,b+3,a
-arr_set remotes,b+7,x; arr_set remotes,b+8,y; arr_set remotes,b+9,a
+arr_set(remotes,b,1); arr_set(remotes,b+1,x); arr_set(remotes,b+2,y); arr_set(remotes,b+3,a)
+arr_set(remotes,b+7,x); arr_set(remotes,b+8,y); arr_set(remotes,b+9,a)
 else
-arr_set remotes,b+7,x; arr_set remotes,b+8,y; arr_set remotes,b+9,a
+arr_set(remotes,b+7,x); arr_set(remotes,b+8,y); arr_set(remotes,b+9,a)
 end
-arr_set remotes,b+4,net_player_hp(s)
-arr_set remotes,b+5,net_player_alive(s)
-arr_set remotes,b+10,net_player_class(s)
-num net_p=net_player_punch(s), prev_p=arr_get(remotes,b+6)
+arr_set(remotes,b+4,net_player_hp(s))
+arr_set(remotes,b+5,net_player_alive(s))
+arr_set(remotes,b+10,net_player_class(s))
+number net_p=net_player_punch(s), prev_p=arr_get(remotes,b+6)
 if net_p!=prev_p
-arr_set remotes,b+6,net_p
-start_remote_punch s
+arr_set(remotes,b+6,net_p)
+start_remote_punch(s)
 end
 else
-arr_set remotes,b,0; arr_set remotes,b+5,0
-clear_remote_punch s
+arr_set(remotes,b,0); arr_set(remotes,b+5,0)
+clear_remote_punch(s)
 end
 s=s+1
 end
 end
-function update_remote_punches
-num s=0
+function update_remote_punches()
+number s=0
 loop s<max_players
-num rb=s*punch_fields
+number rb=s*punch_fields
 if arr_get(remote_punches,rb)==1
-num t=arr_get(remote_punches,rb+5)+dt
-arr_set remote_punches,rb+5,t
+number t=arr_get(remote_punches,rb+5)+dt
+arr_set(remote_punches,rb+5,t)
 if arr_get(remotes,s*remote_fields+5)==0
-clear_remote_punch s
+clear_remote_punch(s)
 else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
-num rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
-take_damage class_punch_damage_for(rcls,rlevel); ds_log "remote hit! hp %g",player.hp
+number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
+take_damage(class_punch_damage_for(rcls,rlevel)); ds_log("remote hit! hp %g",player.hp)
 // Посох чужого Деда Мороза отравляет нас так же, как бот в соло.
 if rcls==2
 if player_poison<=0; player_poison_tick=santa_poison_tick_interval; end
 player_poison=santa_poison_time_for(rlevel); player_poison_damage=santa_poison_damage_for(rlevel)
 end
-clear_remote_punch s
-if player.hp<=0; player.hp=0; if try_revive()==0; finish_game 2; return; end; end
+clear_remote_punch(s)
+if player.hp<=0; player.hp=0; if try_revive()==0; finish_game(2); return; end; end
 else if t>punch_time
-clear_remote_punch s
+clear_remote_punch(s)
 end
 end
 s=s+1
 end
 end
-function smooth_remotes
-num s=0
+function smooth_remotes()
+number s=0
 loop s<max_players
-num b=s*remote_fields
+number b=s*remote_fields
 if arr_get(remotes,b+5)==1
-num rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3)
-num nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=arr_get(remotes,b+9)
+number rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3)
+number nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=arr_get(remotes,b+9)
 if dist(rx,ry,nx,ny)>remote_snap; rx=nx; ry=ny; ra=na
 else
 rx=lerp(rx,nx,clamp(dt*remote_smooth,0,1)); ry=lerp(ry,ny,clamp(dt*remote_smooth,0,1))
-num da=na-ra
+number da=na-ra
 if da>pi; da=da-2*pi; end; if da<0-pi; da=da+2*pi; end
 ra=ra+da*clamp(dt*remote_smooth,0,1)
 end
-arr_set remotes,b+1,rx; arr_set remotes,b+2,ry; arr_set remotes,b+3,ra
+arr_set(remotes,b+1,rx); arr_set(remotes,b+2,ry); arr_set(remotes,b+3,ra)
 end
 s=s+1
 end
 end
-function count_living_remotes
-num count=0, s=0
+function count_living_remotes()
+number count=0, s=0
 loop s<max_players
 if s!=net_slot()&&arr_get(remotes,s*remote_fields+5)==1; count=count+1; end
 s=s+1
 end
 return count
 end
-function check_online_finish
+function check_online_finish()
 if online_ready==0||finished!=0; return; end
-num enemies_alive=count_living_remotes()
+number enemies_alive=count_living_remotes()
 if enemies_alive>0; match_seen_foe=1; end
-if match_seen_foe==1&&enemies_alive==0; finish_game 1; end
+if match_seen_foe==1&&enemies_alive==0; finish_game(1); end
 end
-function push_self
+function push_self()
 if net_slot()<0; return; end
-num alive=1; if player.hp<=0; alive=0; end
-net_set_level player_level
-net_set_prime_level selected_prime_level()
-net_publish player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive
-net_publish_punch punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot
+number alive=1; if player.hp<=0; alive=0; end
+net_set_level(player_level)
+net_set_prime_level(selected_prime_level())
+net_publish(player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive)
+net_publish_punch(punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot)
 end
-function update_online
-tick_revive
-tick_freeze
-tick_player_poison
-aura_tick
-update_aim; if finished!=0; return; end
-if player.hp<=0; if try_revive()==0; finish_game 2; return; end; end
-move_player
+function update_online()
+tick_revive()
+tick_freeze()
+tick_player_poison()
+aura_tick()
+update_aim(); if finished!=0; return; end
+if player.hp<=0; if try_revive()==0; finish_game(2); return; end; end
+move_player()
 if punch_left>0; punch_left=punch_left-dt; if punch_left<0; punch_left=0; end; end
-follow_punch
+follow_punch()
 if super_cd>0; super_cd=super_cd-dt; if super_cd<0; super_cd=0; end; end
 if boom_t>0; boom_t=boom_t-dt; if boom_t<0; boom_t=0; end; end
-tick_super_windup
-tick_santa_follow
-update_dust
-update_gift
+tick_super_windup()
+tick_santa_follow()
+update_dust()
+update_gift()
 if finished!=0; return; end
 if net_status()==NET_PLAYING
-if online_ready==0; place_online; end
-read_remotes; smooth_remotes; update_remote_punches; update_remote_snow
-check_online_finish; push_self
+if online_ready==0; place_online(); end
+read_remotes(); smooth_remotes(); update_remote_punches(); update_remote_snow()
+check_online_finish(); push_self()
 end
-update_event; chat_update
+update_event(); chat_update()
 end
-function start_punch_now
+function start_punch_now()
 punch.x=player.x; punch.y=player.y; punch.dx=cos(player.angle); punch.dy=sin(player.angle); punch.active=1; punch.shot=punch.shot+1; punch.hit=0
 punch_left=punch_time; punch_cd=punch_cooldown
-ds_log "punch %g (%g,%g)",punch.shot,punch.dx,punch.dy
+ds_log("punch %g (%g,%g)",punch.shot,punch.dx,punch.dy)
 end
-function fire_punch
+function fire_punch()
 if punch_cd>0; return; end
 // Пока идёт «пустой» замах снежинки, настоящий удар не стартует — иначе он
 // превратил бы анимацию в реальный урон.
 if super_windup>0; return; end
-start_punch_now
+start_punch_now()
 // У Деда Мороза ручной удар ставит один автоповтор через santa_follow_delay.
 if player_class==2; santa_follow=santa_follow_delay; end
 end
-function tick_santa_follow
+function tick_santa_follow()
 if santa_follow<=0; return; end
 santa_follow=santa_follow-dt
 if santa_follow>0; return; end
@@ -628,9 +630,9 @@ santa_follow=0
 if finished!=0||player_class!=2; return; end
 if super_windup>0; return; end
 // Второй удар игнорирует оставшийся кулдаун первого и больше не ставит follow.
-start_punch_now
+start_punch_now()
 end
-function fire_super
+function fire_super()
 if player_class!=2||super_cd>0; return; end
 if super_windup>0; return; end
 // Сначала проигрывается «пустая» анимация удара: тот же спрайт и та же
@@ -640,9 +642,9 @@ super_windup=punch_time
 punch_left=punch_time
 punch.active=0; punch.hit=0
 super_cd=super_cd_time
-ds_log "snowflake windup!"
+ds_log("snowflake windup!")
 end
-function tick_super_windup
+function tick_super_windup()
 // Держим «пустой» замах ровно столько, сколько длится удар, а в конце
 // кидаем снежинку по направлению взгляда игрока.
 if super_windup<=0; return; end
@@ -654,20 +656,20 @@ gift.x=player.x; gift.y=player.y; gift.dx=cos(player.angle); gift.dy=sin(player.
 gift.shot=gift.shot+1
 // В онлайне бросок публикуется в сеть как событие со счётчиком (как удар):
 // каждый клиент сам летит снежинкой и применяет урон/заморозку у себя.
-if game_state==5; net_publish_snow gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot; end
-ds_log "snowflake thrown!"
+if game_state==5; net_publish_snow(gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot); end
+ds_log("snowflake thrown!")
 end
-function update_gift
+function update_gift()
 if gift.active==0; return; end
 gift.t=gift.t+dt
 gift.x=gift.x+gift.dx*super_speed*dt; gift.y=gift.y+gift.dy*super_speed*dt
-num touched=0
+number touched=0
 if game_state==5
 // В онлайне снежинка летит до дальнего края; попавшие под взрыв игроки
 // сами применяют урон и заморозку (см. update_remote_snow).
 if gift.t>super_range/super_speed; touched=1; end
 else
-num hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
+number hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
 if hd<enemy.size*0.65+24; touched=1; end
 if gift.t>super_range/super_speed; touched=1; end
 end
@@ -675,292 +677,292 @@ if touched==0; return; end
 gift.active=0; boom_x=gift.x; boom_y=gift.y; boom_t=boom_time
 // Снежинка замораживает и НАНОСИТ урон: santa_super_damage HP.
 if game_state!=5&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
-freeze_enemy santa_freeze_time_for(player_level),super_freeze_slow
+freeze_enemy(santa_freeze_time_for(player_level),super_freeze_slow)
 enemy.hp=enemy.hp-santa_super_damage
-ds_log "snowflake boom! enemy frozen, hp %g",enemy.hp
-if enemy.hp<=0; enemy.hp=0; finish_game 1; return; end
+ds_log("snowflake boom! enemy frozen, hp %g",enemy.hp)
+if enemy.hp<=0; enemy.hp=0; finish_game(1); return; end
 end
 end
-function draw_gift
+function draw_gift()
 if gift.active==0; return; end
-num hw=16, rot=gift.t*3
-tex gift.x-hw,gift.y-hw,SNOWFLAKE_TEX,rot,0.5
+number hw=16, rot=gift.t*3
+tex(gift.x-hw,gift.y-hw,SNOWFLAKE_TEX,rot,0.5)
 end
-function draw_boom_at num x, num y, num bt
+function draw_boom_at(number x, number y, number bt)
 if bt<=0; return; end
-num p=1-bt/boom_time, r=super_radius*p
+number p=1-bt/boom_time, r=super_radius*p
 // Плавное появление в начале и плавное исчезновение в конце жизни взрыва.
-num fade_in=clamp(p/boom_fade_in,0,1), fade_out=clamp(bt/(boom_time*boom_fade_out),0,1)
-num a=floor(fade_in*fade_out*255)
+number fade_in=clamp(p/boom_fade_in,0,1), fade_out=clamp(bt/(boom_time*boom_fade_out),0,1)
+number a=floor(fade_in*fade_out*255)
 if a<=0; return; end
-num c0=(((unsigned)(int)a)<<24)|0x00B3E5FC, c1=(((unsigned)(int)a)<<24)|0x00E1F5FE
-ring x,y,r,9,c0
-ring x,y,r*0.6,6,c1
-circle x,y,super_radius*0.3,c0
+number c0=(((unsigned)(int)a)<<24)|0x00B3E5FC, c1=(((unsigned)(int)a)<<24)|0x00E1F5FE
+ring(x,y,r,9,c0)
+ring(x,y,r*0.6,6,c1)
+circle(x,y,super_radius*0.3,c0)
 end
-function draw_boom
-draw_boom_at boom_x,boom_y,boom_t
+function draw_boom()
+draw_boom_at(boom_x,boom_y,boom_t)
 end
 // След пыли от ходьбы вынесен в отдельный модуль fx/dust.ds.
-function draw_candies
-num hw=25*candy_scale, i=0
+function draw_candies()
+number hw=25*candy_scale, i=0
 loop i<candy_count
-tex arr_get(candy_x,i)-hw,arr_get(candy_y,i)-hw,CANDY_TEX,0,candy_scale
+tex(arr_get(candy_x,i)-hw,arr_get(candy_y,i)-hw,CANDY_TEX,0,candy_scale)
 i=i+1
 end
 end
-function draw_freeze
+function draw_freeze()
 if freeze_a<=0; return; end
 // Заливка заметно прозрачнее, чем раньше: враг подсвечивается синим,
 // а не становится полностью голубым. Окантовка остаётся поярче.
-num fa=freeze_a*255
-num af=floor(fa*0.3)
+number fa=freeze_a*255
+number af=floor(fa*0.3)
 if af<=0; return; end
-num half=enemy.size+6
-num fill=(((unsigned)(int)af)<<24)|0x001E88E5
-num ar=floor(fa*0.7)
-num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
-circle enemy.x,enemy.y,half,fill
-ring enemy.x,enemy.y,half,5,rim
+number half=enemy.size+6
+number fill=(((unsigned)(int)af)<<24)|0x001E88E5
+number ar=floor(fa*0.7)
+number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+circle(enemy.x,enemy.y,half,fill)
+ring(enemy.x,enemy.y,half,5,rim)
 end
-function draw_poison
+function draw_poison()
 // Яд использует тот же голубой эффект, что и взрыв снежинки.
 if poison_a<=0; return; end
-num fa=poison_a*255
-num af=floor(fa*0.3)
+number fa=poison_a*255
+number af=floor(fa*0.3)
 if af<=0; return; end
-num half=enemy.size+6
-num fill=(((unsigned)(int)af)<<24)|0x001E88E5
-num ar=floor(fa*0.7)
-num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
-circle enemy.x,enemy.y,half,fill
-ring enemy.x,enemy.y,half,5,rim
+number half=enemy.size+6
+number fill=(((unsigned)(int)af)<<24)|0x001E88E5
+number ar=floor(fa*0.7)
+number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+circle(enemy.x,enemy.y,half,fill)
+ring(enemy.x,enemy.y,half,5,rim)
 end
-function draw_player_freeze
+function draw_player_freeze()
 // Ледяной круг вокруг своего игрока, пока он заморожен снежинкой соперника.
 if pfreeze_a<=0; return; end
-num af=floor(pfreeze_a*255*0.3)
+number af=floor(pfreeze_a*255*0.3)
 if af<=0; return; end
-num half=player.size+6
-num fill=(((unsigned)(int)af)<<24)|0x001E88E5
-num ar=floor(pfreeze_a*255*0.7)
-num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
-circle player.x,player.y,half,fill
-ring player.x,player.y,half,5,rim
+number half=player.size+6
+number fill=(((unsigned)(int)af)<<24)|0x001E88E5
+number ar=floor(pfreeze_a*255*0.7)
+number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+circle(player.x,player.y,half,fill)
+ring(player.x,player.y,half,5,rim)
 end
-function draw_player_poison
+function draw_player_poison()
 // Голубой эффект яда вокруг своего игрока совпадает с эффектом снежинки.
 if ppoison_a<=0; return; end
-num af=floor(ppoison_a*255*0.3)
+number af=floor(ppoison_a*255*0.3)
 if af<=0; return; end
-num half=player.size+6
-num fill=(((unsigned)(int)af)<<24)|0x001E88E5
-num ar=floor(ppoison_a*255*0.7)
-num rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
-circle player.x,player.y,half,fill
-ring player.x,player.y,half,5,rim
+number half=player.size+6
+number fill=(((unsigned)(int)af)<<24)|0x001E88E5
+number ar=floor(ppoison_a*255*0.7)
+number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+circle(player.x,player.y,half,fill)
+ring(player.x,player.y,half,5,rim)
 end
-function update_remote_snow
+function update_remote_snow()
 // Чужие снежинки в онлайне. Событие — постоянное со счётчиком (как удар):
 // увидели новый номер броска — летим снежинкой от точки броска до взрыва.
 // Если снежинка задевает нас — применяем урон и заморозку у себя.
 if net_slot()<0; return; end
-num s=0
+number s=0
 loop s<max_players
-num b=s*snow_fields
+number b=s*snow_fields
 if s==net_slot()||net_player_online(s)!=1
-arr_set remote_snow,b+1,0; arr_set remote_snow,b+5,0
+arr_set(remote_snow,b+1,0); arr_set(remote_snow,b+5,0)
 else
-num cnt=net_player_snow(s)
-num prev=arr_get(remote_snow,b)
+number cnt=net_player_snow(s)
+number prev=arr_get(remote_snow,b)
 if cnt!=prev&&cnt>0
-arr_set remote_snow,b,cnt
-arr_set remote_snow,b+1,1
-arr_set remote_snow,b+2,0
-arr_set remote_snow,b+3,net_player_snow_x(s)*screen_w
-arr_set remote_snow,b+4,net_player_snow_y(s)*screen_h
+arr_set(remote_snow,b,cnt)
+arr_set(remote_snow,b+1,1)
+arr_set(remote_snow,b+2,0)
+arr_set(remote_snow,b+3,net_player_snow_x(s)*screen_w)
+arr_set(remote_snow,b+4,net_player_snow_y(s)*screen_h)
 end
 if arr_get(remote_snow,b+1)==1
-num t=arr_get(remote_snow,b+2)+dt
-num x=arr_get(remote_snow,b+3)+net_player_snow_dx(s)*super_speed*dt
-num y=arr_get(remote_snow,b+4)+net_player_snow_dy(s)*super_speed*dt
-arr_set remote_snow,b+2,t; arr_set remote_snow,b+3,x; arr_set remote_snow,b+4,y
-num hit=0
+number t=arr_get(remote_snow,b+2)+dt
+number x=arr_get(remote_snow,b+3)+net_player_snow_dx(s)*super_speed*dt
+number y=arr_get(remote_snow,b+4)+net_player_snow_dy(s)*super_speed*dt
+arr_set(remote_snow,b+2,t); arr_set(remote_snow,b+3,x); arr_set(remote_snow,b+4,y)
+number hit=0
 if dist(x,y,player.x,player.y)<player.size*0.65+24; hit=1; end
 if t>super_range/super_speed; hit=1; end
 if hit==1
-arr_set remote_snow,b+1,0
-arr_set remote_snow,b+5,boom_time
-arr_set remote_snow,b+6,x; arr_set remote_snow,b+7,y
+arr_set(remote_snow,b+1,0)
+arr_set(remote_snow,b+5,boom_time)
+arr_set(remote_snow,b+6,x); arr_set(remote_snow,b+7,y)
 // Чужая снежинка урона не наносит и яда не даёт — только замораживает.
 if dist(x,y,player.x,player.y)<=super_radius
-num rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
+number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
 if rcls==2; freeze_time=santa_freeze_time_for(rlevel); end
 if player_freeze<freeze_time; player_freeze=freeze_time; player_freeze_slow=super_freeze_slow; end
-ds_log "remote snowflake froze the player"
+ds_log("remote snowflake froze the player")
 end
 end
 end
 if arr_get(remote_snow,b+5)>0
-num bt=arr_get(remote_snow,b+5)-dt
+number bt=arr_get(remote_snow,b+5)-dt
 if bt<0; bt=0; end
-arr_set remote_snow,b+5,bt
+arr_set(remote_snow,b+5,bt)
 end
 end
 s=s+1
 end
 end
-function draw_remote_snow
-num s=0
+function draw_remote_snow()
+number s=0
 loop s<max_players
-num b=s*snow_fields
+number b=s*snow_fields
 if arr_get(remote_snow,b+1)==1
-num x=arr_get(remote_snow,b+3), y=arr_get(remote_snow,b+4), t=arr_get(remote_snow,b+2)
-num hw=16
-tex x-hw,y-hw,SNOWFLAKE_TEX,t*3,0.5
+number x=arr_get(remote_snow,b+3), y=arr_get(remote_snow,b+4), t=arr_get(remote_snow,b+2)
+number hw=16
+tex(x-hw,y-hw,SNOWFLAKE_TEX,t*3,0.5)
 end
 if arr_get(remote_snow,b+5)>0
-draw_boom_at arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),arr_get(remote_snow,b+5)
+draw_boom_at(arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),arr_get(remote_snow,b+5))
 end
 s=s+1
 end
 end
-function finish_game num result
-finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; super_windup=0; santa_follow=0; drop_joy
+function finish_game(number result)
+finished=result; aim_id=-1; super_id=-1; aim_a=0; punch.active=0; punch.hit=0; punch_left=0; super_windup=0; santa_follow=0; drop_joy()
 gift.active=0; boom_t=0
-num i=0; loop i<max_players*snow_fields; arr_set remote_snow,i,0; i=i+1; end
+number i=0; loop i<max_players*snow_fields; arr_set(remote_snow,i,0); i=i+1; end
 if result==1&&cups_awarded==0
-cups_awarded=1; cups=cups+cup_win; candies=candies+candy_win; primes=primes+prime_win; save_progress; ds_log "win +%g cups +%g candies +%g primes",cup_win,candy_win,prime_win
+cups_awarded=1; cups=cups+cup_win; candies=candies+candy_win; primes=primes+prime_win; save_progress(); ds_log("win +%g cups +%g candies +%g primes",cup_win,candy_win,prime_win)
 end
 end
-function draw_punch_box num x, num y, num dx, num dy, num reach, num width, num alpha
-num aa=floor(clamp(alpha,0,1)*aim_max_alpha)
-if aa>0; line x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000; end
+function draw_punch_box(number x, number y, number dx, number dy, number reach, number width, number alpha)
+number aa=floor(clamp(alpha,0,1)*aim_max_alpha)
+if aa>0; line(x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000); end
 end
-function draw_player_shadow num x, num y, num ang, num punching
+function draw_player_shadow(number x, number y, number ang, number punching)
 // Тень игрока: чёрный силуэт той же текстуры, чуть левее и ниже.
-num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-str t=player_idle_tex()
+number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+string t=player_idle_tex()
 if punching==1; t=player_punch_tex(); end
-tex_tint x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24)
+tex_tint(x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
 end
-function draw_player_body num x, num y, num ang, num punching
+function draw_player_body(number x, number y, number ang, number punching)
 // Сам спрайт игрока — верхний слой персонажа.
-num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-str t=player_idle_tex()
+number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+string t=player_idle_tex()
 if punching==1; t=player_punch_tex(); end
-tex x-hw,y-hw,t,sprite_a(ang),ps
+tex(x-hw,y-hw,t,sprite_a(ang),ps)
 end
-function draw_remote_shadow num x, num y, num ang, num cls, num punching
+function draw_remote_shadow(number x, number y, number ang, number cls, number punching)
 // Тень сетевого соперника.
-num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-str t=class_idle_tex(cls)
+number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+string t=class_idle_tex(cls)
 if punching==1; t=class_punch_tex(cls); end
-tex_tint x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24)
+tex_tint(x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
 end
-function draw_remote_body num x, num y, num ang, num cls, num punching
+function draw_remote_body(number x, number y, number ang, number cls, number punching)
 // Спрайт сетевого соперника.
-num hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-str t=class_idle_tex(cls)
+number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+string t=class_idle_tex(cls)
 if punching==1; t=class_punch_tex(cls); end
-tex x-hw,y-hw,t,sprite_a(ang),ps
+tex(x-hw,y-hw,t,sprite_a(ang),ps)
 end
-function draw_grass
-num y=0; loop y<screen_h; num x=0; loop x<screen_w; tex x,y,GRASS,0,1; x=x+256; end; y=y+256; end
+function draw_grass()
+number y=0; loop y<screen_h; number x=0; loop x<screen_w; tex(x,y,GRASS,0,1); x=x+256; end; y=y+256; end
 end
-function draw_field
+function draw_field()
 // Только затемнение арены — самый нижний слой после травы. Сам бой рисуется
 // раздельными слоями (тени -> хитбоксы -> персонажи), см. draw_game/draw_online.
-rect 0,0,screen_w,screen_h,0x33000000
+rect(0,0,screen_w,screen_h,0x33000000)
 end
-function draw_player_shadow_layer
-if punch_left>0; draw_player_shadow player.x,player.y,player.angle,1
-else; draw_player_shadow player.x,player.y,player.angle,0; end
+function draw_player_shadow_layer()
+if punch_left>0; draw_player_shadow(player.x,player.y,player.angle,1)
+else; draw_player_shadow(player.x,player.y,player.angle,0); end
 end
-function draw_player_hitbox_layer
-if aim_a>0&&finished==0; draw_punch_box player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a; end
+function draw_player_hitbox_layer()
+if aim_a>0&&finished==0; draw_punch_box(player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a); end
 end
-function draw_player_body_layer
-if punch_left>0; draw_player_body player.x,player.y,player.angle,1
-else; draw_player_body player.x,player.y,player.angle,0; end
+function draw_player_body_layer()
+if punch_left>0; draw_player_body(player.x,player.y,player.angle,1)
+else; draw_player_body(player.x,player.y,player.angle,0); end
 end
-function enemy_battle_tex
+function enemy_battle_tex()
 if enemy.state==1||enemy.state==2; return PUNCH_TEX; end
 return ORDINARY_TEX
 end
-function draw_enemy_shadow
-num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
-tex_tint enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,enemy_battle_tex(),sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24)
+function draw_enemy_shadow()
+number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
+tex_tint(enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,enemy_battle_tex(),sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24))
 end
-function draw_enemy_hitbox
-if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1; end
+function draw_enemy_hitbox()
+if (enemy.state==1||enemy.state==2)&&finished==0; draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1); end
 end
-function draw_enemy_body
-num ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
-tex enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es
+function draw_enemy_body()
+number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
+tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
 end
-function draw_controls
-ring joy.x,joy.y,joy.r,4,0x000000; circle joy.x+joy.ox,joy.y+joy.oy,34,0x000000
-circle atk_x,atk_y,70,0xE94560; ring atk_x,atk_y,70,4,0x000000
-text_in_box tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55
+function draw_controls()
+ring(joy.x,joy.y,joy.r,4,0x000000); circle(joy.x+joy.ox,joy.y+joy.oy,34,0x000000)
+circle(atk_x,atk_y,70,0xE94560); ring(atk_x,atk_y,70,4,0x000000)
+text_in_box(tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55)
 if player_class==2&&(game_state==1||game_state==5)
 // Суператака «Снежинка»: большая фиолетовая кнопка (размер как у кнопки удара).
 // Работает и в соло-бою, и в онлайне. На перезарядке вместо названия
 // показываем только секунды до конца кулдауна, крупнее, чтобы число
 // читалось на ходу.
-circle atk2_x,atk2_y,70,0x5F10A0; ring atk2_x,atk2_y,70,4,0x000000
-str sl=tr_super(); num sls=0.55
+circle(atk2_x,atk2_y,70,0x5F10A0); ring(atk2_x,atk2_y,70,4,0x000000)
+string sl=tr_super(); number sls=0.55
 if super_cd>0; sl=floor(super_cd+0.999)+""; sls=0.95; end
-text_in_box sl,atk2_x-70,atk2_y-70,140,140,0xFFFFFF,sls
+text_in_box(sl,atk2_x-70,atk2_y-70,140,140,0xFFFFFF,sls)
 end
-draw_back
+draw_back()
 end
-function draw_result str title, str note
-rect 0,0,screen_w,screen_h,0x99000000; num y=screen_h/2-85; roundrect screen_w/2-165,y,330,180,24,0x5F10A0; ctext title,y+28,0xFFFFFF; ctext note,y+68,0xFFFFFF
-if cups_awarded==1; ctext tr_cups_reward(),y+100,0xFFD54A; end
-ctext tr_tap_to_return(),y+132,0xFFCDD2
+function draw_result(string title, string note)
+rect(0,0,screen_w,screen_h,0x99000000); number y=screen_h/2-85; roundrect(screen_w/2-165,y,330,180,24,0x5F10A0); ctext(title,y+28,0xFFFFFF); ctext(note,y+68,0xFFFFFF)
+if cups_awarded==1; ctext(tr_cups_reward(),y+100,0xFFD54A); end
+ctext(tr_tap_to_return(),y+132,0xFFCDD2)
 end
-function draw_game
-draw_grass
-draw_field
-draw_dust
+function draw_game()
+draw_grass()
+draw_field()
+draw_dust()
 // Нормальные слои боя: сначала ВСЕ тени, потом предметы на земле, затем
 // хитбоксы ударов, снаряды — и только после сами персонажи. Так чёрная
 // полоса удара лежит выше тени, но никогда не закрывает ни игрока, ни врага.
-draw_player_shadow_layer
-draw_enemy_shadow
-draw_candies
+draw_player_shadow_layer()
+draw_enemy_shadow()
+draw_candies()
 // Аура прайма — мягкое свечение вокруг персонажа: выше теней и предметов,
 // но ниже хитбоксов удара и самих спрайтов.
-draw_player_aura
-draw_player_hitbox_layer
-draw_enemy_hitbox
-draw_gift; draw_boom
-draw_player_body_layer
-draw_enemy_body
-draw_freeze
-draw_poison
-num w=screen_w/4
-hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0; hud_bar screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1
-draw_controls
-if finished==1; draw_result tr_victory(),tr_opponent_defeated(); else if finished==2; draw_result tr_defeat(),tr_opponent_won(); end
+draw_player_aura()
+draw_player_hitbox_layer()
+draw_enemy_hitbox()
+draw_gift(); draw_boom()
+draw_player_body_layer()
+draw_enemy_body()
+draw_freeze()
+draw_poison()
+number w=screen_w/4
+hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0); hud_bar(screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1)
+draw_controls()
+if finished==1; draw_result(tr_victory(),tr_opponent_defeated()); else if finished==2; draw_result(tr_defeat(),tr_opponent_won()); end
 end
-function disco_color num phase
-num r=127+127*sin(phase)
-num g=127+127*sin(phase+2.094)
-num b=127+127*sin(phase+4.188)
-num a=55+90*(0.5+0.5*sin(disco_t*16))
+function disco_color(number phase)
+number r=127+127*sin(phase)
+number g=127+127*sin(phase+2.094)
+number b=127+127*sin(phase+4.188)
+number a=55+90*(0.5+0.5*sin(disco_t*16))
 return ((((unsigned)(int)a)<<24)|(((unsigned)(int)r)<<16)|(((unsigned)(int)g)<<8)|((unsigned)(int)b))
 end
-function draw_disco
+function draw_disco()
 if event_mode!=1||disco_safe==1; return; end
-num col=disco_color(disco_t*18)
-rect 0,0,screen_w,screen_h,col
-num ct=disco_t*12
-num r=110+40*sin(ct)
-ring screen_w/2,screen_h/2,r,7,0xC0FFFFFF
+number col=disco_color(disco_t*18)
+rect(0,0,screen_w,screen_h,col)
+number ct=disco_t*12
+number r=110+40*sin(ct)
+ring(screen_w/2,screen_h/2,r,7,0xC0FFFFFF)
 end
-function update_event
+function update_event()
 // Ивенты обновляются только в онлайне. В оффлайне (соло-бой) event_mode
 // не читается и ничего не рисуется — узел /event на соло не влияет.
 event_mode=net_event()
@@ -968,113 +970,113 @@ event_t=event_t+dt
 if event_t>100000; event_t=0; end
 if event_mode==1&&disco_safe==0; disco_t=disco_t+dt; else; disco_t=0; end
 end
-function hash01 num i
+function hash01(number i)
 // Псевдослучайное число 0..1 по номеру снежинки: одинаковое каждый кадр,
 // поэтому снег падает ровно, а не дёргается.
-num v=sin(i*127.1+11.7)*43758.5453
+number v=sin(i*127.1+11.7)*43758.5453
 return v-floor(v)
 end
-function frac01 num v
+function frac01(number v)
 // Дробная часть — ей закольцовываем падение и снос по экрану.
 return v-floor(v)
 end
-function draw_flake num cx, num cy, num r, num rot, num alpha
+function draw_flake(number cx, number cy, number r, number rot, number alpha)
 // Настоящая снежинка: шестилучевая симметрия (три диаметра через 60°),
 // на каждом луче пара боковых веточек под тем же углом 60° и маленькое
 // ядро в центре. Один угол rot медленно вращает снежинку в полёте.
-num a=alpha
+number a=alpha
 if a<0; a=0; end
 if a>255; a=255; end
-num c=((((unsigned)(int)a)<<24)|0x00EAF6FF)
+number c=((((unsigned)(int)a)<<24)|0x00EAF6FF)
 if r<4.2
 // Дальние снежинки мельче кристалла — рисуем крупинкой.
-circle cx,cy,r*0.85,c
+circle(cx,cy,r*0.85,c)
 return
 end
-num step=pi/3, th=1+r*0.13
-num i=0
+number step=pi/3, th=1+r*0.13
+number i=0
 loop i<3
-num a1=rot+i*step, dx=cos(a1)*r, dy=sin(a1)*r
-line cx-dx,cy-dy,cx+dx,cy+dy,th,c
+number a1=rot+i*step, dx=cos(a1)*r, dy=sin(a1)*r
+line(cx-dx,cy-dy,cx+dx,cy+dy,th,c)
 i=i+1
 end
 i=0
 loop i<6
-num aa=rot+i*step, ux=cos(aa), uy=sin(aa)
-num bx=cx+ux*r*0.54, by=cy+uy*r*0.54, bl=r*0.36
-line bx,by,bx+cos(aa+step)*bl,by+sin(aa+step)*bl,th*0.8,c
-line bx,by,bx+cos(aa-step)*bl,by+sin(aa-step)*bl,th*0.8,c
-num tx=cx+ux*r*0.82, ty=cy+uy*r*0.82, tl=r*0.2
-line tx,ty,tx+cos(aa+step)*tl,ty+sin(aa+step)*tl,th*0.7,c
-line tx,ty,tx+cos(aa-step)*tl,ty+sin(aa-step)*tl,th*0.7,c
+number aa=rot+i*step, ux=cos(aa), uy=sin(aa)
+number bx=cx+ux*r*0.54, by=cy+uy*r*0.54, bl=r*0.36
+line(bx,by,bx+cos(aa+step)*bl,by+sin(aa+step)*bl,th*0.8,c)
+line(bx,by,bx+cos(aa-step)*bl,by+sin(aa-step)*bl,th*0.8,c)
+number tx=cx+ux*r*0.82, ty=cy+uy*r*0.82, tl=r*0.2
+line(tx,ty,tx+cos(aa+step)*tl,ty+sin(aa+step)*tl,th*0.7,c)
+line(tx,ty,tx+cos(aa-step)*tl,ty+sin(aa-step)*tl,th*0.7,c)
 i=i+1
 end
-circle cx,cy,r*0.2,c
+circle(cx,cy,r*0.2,c)
 end
-function draw_snow
+function draw_snow()
 // Снегопад (event_mode=2) рисуется только в онлайне — оффлайн без ивентов.
 if event_mode!=2; return; end
-num span_y=screen_h+140, span_x=screen_w+120
-num i=0
+number span_y=screen_h+140, span_x=screen_w+120
+number i=0
 loop i<event_flakes
-num h1=hash01(i), h2=hash01(i+91), h3=hash01(i+37), h4=hash01(i+153)
+number h1=hash01(i), h2=hash01(i+91), h3=hash01(i+37), h4=hash01(i+153)
 // depth — «слой» снежинки: ближние крупнее, быстрее, ярче и заметнее качаются.
-num depth=0.3+0.7*h3
-num r=3+11*depth
-num yy=h2*span_y+event_t*(46+92*depth)
+number depth=0.3+0.7*h3
+number r=3+11*depth
+number yy=h2*span_y+event_t*(46+92*depth)
 yy=frac01(yy/span_y)*span_y-70
-num sway=(14+26*h4)*sin(event_t*(0.55+0.9*h1)+h1*2*pi)
-num xx=h1*span_x+sway+event_t*22*depth
+number sway=(14+26*h4)*sin(event_t*(0.55+0.9*h1)+h1*2*pi)
+number xx=h1*span_x+sway+event_t*22*depth
 xx=frac01(xx/span_x)*span_x-60
-draw_flake xx,yy,r,h4*2*pi+event_t*(0.3+0.55*h1),85+165*depth
+draw_flake(xx,yy,r,h4*2*pi+event_t*(0.3+0.55*h1),85+165*depth)
 i=i+1
 end
 end
-function draw_online
-draw_grass
-draw_disco
-draw_field
-draw_dust
+function draw_online()
+draw_grass()
+draw_disco()
+draw_field()
+draw_dust()
 // Те же нормальные слои, что и в соло: ВСЕ тени -> хитбоксы ударов ->
 // снаряды -> сами персонажи. Хитбокс (свой и чужой) выше тени, но ниже
 // любого спрайта — и игрока, и соперников.
-draw_player_shadow_layer
-num i=0, b=0, rb=0, rx=0, ry=0, ra=0, rcls=0, punching=0
+draw_player_shadow_layer()
+number i=0, b=0, rb=0, rx=0, ry=0, ra=0, rcls=0, punching=0
 loop i<max_players
 b=i*remote_fields; rb=i*punch_fields
 if arr_get(remotes,b+5)==1
 rx=arr_get(remotes,b+1); ry=arr_get(remotes,b+2); ra=arr_get(remotes,b+3); rcls=arr_get(remotes,b+10)
 punching=0
 if arr_get(remote_punches,rb)==1; punching=1; ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3)); end
-draw_remote_shadow rx,ry,ra,rcls,punching
+draw_remote_shadow(rx,ry,ra,rcls,punching)
 end
 i=i+1
 end
 // Ауры (своя и соперников) — выше теней, ниже хитбоксов удара и спрайтов.
-draw_player_aura
+draw_player_aura()
 i=0
 loop i<max_players
 b=i*remote_fields
 if arr_get(remotes,b+5)==1
 rx=arr_get(remotes,b+1); ry=arr_get(remotes,b+2); rcls=arr_get(remotes,b+10)
-draw_aura_at rx,ry,rcls,net_player_prime_level(i)
+draw_aura_at(rx,ry,rcls,net_player_prime_level(i))
 end
 i=i+1
 end
-draw_player_hitbox_layer
+draw_player_hitbox_layer()
 i=0
 loop i<max_players
 b=i*remote_fields; rb=i*punch_fields
 if arr_get(remotes,b+5)==1&&arr_get(remote_punches,rb)==1
-draw_punch_box arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1
+draw_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1)
 end
 i=i+1
 end
-draw_gift; draw_boom; draw_remote_snow
-draw_player_body_layer
-num hw=25*cube_scale*player_scale
-str myn=net_player_nick(net_slot())
-if str_len(myn)>0; num mnw=text_ink_width(myn)*0.5; text_scaled myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5; end
+draw_gift(); draw_boom(); draw_remote_snow()
+draw_player_body_layer()
+number hw=25*cube_scale*player_scale
+string myn=net_player_nick(net_slot())
+if str_len(myn)>0; number mnw=text_ink_width(myn)*0.5; text_scaled(myn,player.x-mnw/2,player.y-hw-26,0xFFFFFF,0.5); end
 i=0
 loop i<max_players
 b=i*remote_fields; rb=i*punch_fields
@@ -1082,39 +1084,39 @@ if arr_get(remotes,b+5)==1
 rx=arr_get(remotes,b+1); ry=arr_get(remotes,b+2); ra=arr_get(remotes,b+3); rcls=arr_get(remotes,b+10)
 punching=0
 if arr_get(remote_punches,rb)==1; punching=1; ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3)); end
-draw_remote_body rx,ry,ra,rcls,punching
-str rn=net_player_nick(i)
-if str_len(rn)>0; num rnw=text_ink_width(rn)*0.5; text_scaled rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5; end
+draw_remote_body(rx,ry,ra,rcls,punching)
+string rn=net_player_nick(i)
+if str_len(rn)>0; number rnw=text_ink_width(rn)*0.5; text_scaled(rn,rx-rnw/2,ry-hw-26,0xFFFFFF,0.5); end
 end
 i=i+1
 end
-draw_player_freeze; draw_player_poison
-draw_snow
-num w=screen_w/3
-hud_bar 20,20,w,28,player.hp,player.max_hp,0x7ED321,0
-draw_controls; draw_chat
-num st=net_status(), sy=back_y+btn_h+18
-if st==4; ctext tr_no_connection(),sy,0xFF8A80; ctext tr_reconnecting(),sy+32,0xFFF176
-else if st==1; ctext tr_connecting(),sy,0xFFF176; end
-if finished==2; draw_result tr_defeat(),tr_you_were_defeated(); end
+draw_player_freeze(); draw_player_poison()
+draw_snow()
+number w=screen_w/3
+hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
+draw_controls(); draw_chat()
+number st=net_status(), sy=back_y+btn_h+18
+if st==4; ctext(tr_no_connection(),sy,0xFF8A80); ctext(tr_reconnecting(),sy+32,0xFFF176)
+else if st==1; ctext(tr_connecting(),sy,0xFFF176); end
+if finished==2; draw_result(tr_defeat(),tr_you_were_defeated()); end
 end
-function drop_joy
+function drop_joy()
 joy_id=-1; joy.dx=0; joy.dy=0; joy.ox=0; joy.oy=0
 end
-function joy_touch num x, num y, num action, num id
-if action==1; if id==joy_id; drop_joy; end; return; end; if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end; if id!=joy_id; return; end; num dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy); if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
+function joy_touch(number x, number y, number action, number id)
+if action==1; if id==joy_id; drop_joy(); end; return; end; if action==0; if joy_id!=-1; return; end; if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150; return; end; joy_id=id; end; if id!=joy_id; return; end; number dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy); if d>joy.r; joy.dx=dx/d; joy.dy=dy/d; joy.ox=joy.dx*joy.r; joy.oy=joy.dy*joy.r; else; joy.dx=dx/joy.r; joy.dy=dy/joy.r; joy.ox=dx; joy.oy=dy; end
 end
-function touch_game num x, num y, num action, num id
-if finished!=0; if action==0; start_transition 0; end; return; end
-if action==3; aim_id=-1; super_id=-1; drop_joy; return; end
+function touch_game(number x, number y, number action, number id)
+if finished!=0; if action==0; start_transition(0); end; return; end
+if action==3; aim_id=-1; super_id=-1; drop_joy(); return; end
 if game_state==5&&touch_chat(x,y,action)==1; return; end
-if back_hit(x,y)==1&&action!=2; start_transition 0; return; end
+if back_hit(x,y)==1&&action!=2; start_transition(0); return; end
 if chat_open==1; return; end
 if player_class==2&&(game_state==1||game_state==5)
 if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=96; super_id=id; return; end
-if action==1&&id==super_id; super_id=-1; fire_super; return; end
+if action==1&&id==super_id; super_id=-1; fire_super(); return; end
 end
 if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96; aim_id=id; return; end
-if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch; end; return; end
-joy_touch x,y,action,id
+if action==1&&id==aim_id; aim_id=-1; if game_state==1||online_ready==1; fire_punch(); end; return; end
+joy_touch(x,y,action,id)
 end
