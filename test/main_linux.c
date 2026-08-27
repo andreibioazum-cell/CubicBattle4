@@ -25,7 +25,7 @@
 #include "net.h"
 
 /* globals generated into game.c (non-static) — read them for debugging */
-extern double game_state, chat_open, login_field, login_status, t_dir, warn_open;
+extern double game_state, chat_open, login_field, login_status, t_dir, warn_open, warn_a, warn_hold, warn_fade;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
 extern double ordinary_level, azum_level, santa_level, max_level;
 extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a, super_windup;
@@ -361,14 +361,49 @@ int main(void) {
     printf("=== init ok (frame %ld)\n", g_frame);
     run_frames(10);
 
-    /* --- 0. Предупреждение о вспышках света: показывается при запуске,
-     * закрывается нажатием и не пропускает тапы в меню. --- */
+    /* --- 0. Предупреждение об эпилепсии: полный чёрный экран, красный
+     * заголовок на двух языках, без кнопки. Тап не закрывает и не проходит
+     * в меню; через 2.5 с + фейд само тает. --- */
     if (warn_open != 1) { printf("!! photosensitivity warning is not shown at start\n"); return 3; }
     tap_play();
     run_frames(10);
     if (game_state != 0) { printf("!! warning did not block the menu tap, state=%g\n", game_state); return 3; }
-    if (warn_open != 0) { printf("!! warning was not dismissed by a tap\n"); return 3; }
-    printf("=== photosensitivity warning shown at start, dismissed by a tap\n");
+    if (warn_open != 1) { printf("!! warning must stay until 2.5s fade, not close on tap\n"); return 3; }
+    {
+        int corners[4][2] = {{8, 8}, {g_w - 9, 8}, {8, g_h - 9}, {g_w - 9, g_h - 9}};
+        for (int i = 0; i < 4; i++) {
+            uint32_t p = g_pixels[corners[i][1] * g_w + corners[i][0]];
+            int r = (int)(p & 0xff), g = (int)((p >> 8) & 0xff), b = (int)((p >> 16) & 0xff);
+            if (r > 8 || g > 8 || b > 8) {
+                printf("!! warning is not a full-screen black overlay at (%d,%d): pixel %08x\n",
+                       corners[i][0], corners[i][1], p);
+                return 3;
+            }
+        }
+        int red = 0, yellow = 0, purple = 0;
+        for (int y = 40; y < g_h - 40; y += 2) {
+            for (int x = 40; x < g_w - 40; x += 2) {
+                uint32_t q = g_pixels[y * g_w + x];
+                int qr = (int)(q & 0xff), qg = (int)((q >> 8) & 0xff), qb = (int)((q >> 16) & 0xff);
+                if (qr >= 180 && qg <= 90 && qb <= 90) red++;
+                if (qr >= 230 && qg >= 190 && qg <= 230 && qb <= 110) yellow++;
+                if (qr >= 0x50 && qr <= 0x70 && qg <= 0x28 && qb >= 0x90) purple++;
+            }
+        }
+        if (red < 40) { printf("!! warning title is not red (%d px)\n", red); return 3; }
+        if (yellow > 10) { printf("!! warning title is still yellow (%d px)\n", yellow); return 3; }
+        if (purple > 30) { printf("!! warning still has the old purple window (%d px)\n", purple); return 3; }
+    }
+    {
+        int gone = 0;
+        int need = (int)((warn_hold + warn_fade) * 60.0) + 20;
+        for (int i = 0; i < need && !gone; i++) {
+            run_frames(1);
+            if (warn_open == 0) gone = 1;
+        }
+        if (!gone) { printf("!! warning did not auto-hide after 2.5s + fade (open=%g a=%g)\n", warn_open, warn_a); return 3; }
+    }
+    printf("=== photosensitivity warning: fullscreen black, red bilingual, 2.5s fade, tap ignored\n");
 
     /* --- 1. Без сохранённого аккаунта «Онлайн» открывает экран входа --- */
     if (net_login_status() != 0) { printf("!! expected idle login status on fresh start, got %g\n", net_login_status()); return 3; }
@@ -730,6 +765,21 @@ int main(void) {
         return 3;
     }
     printf("=== classes tab: Azum bought and selected (frame %ld)\n", g_frame);
+    /* Снизу два бара выбранного класса: HP красный, сила голубая. */
+    {
+        int bar_w = 380, hp_y = g_h - 78, st_y = g_h - 36, bx = (g_w - bar_w) / 2;
+        uint32_t hp = g_pixels[(hp_y + 9) * g_w + (bx + 80)];
+        uint32_t st = g_pixels[(st_y + 9) * g_w + (bx + 80)];
+        int hr = (int)(hp & 0xff), hg = (int)((hp >> 8) & 0xff), hb = (int)((hp >> 16) & 0xff);
+        int sr = (int)(st & 0xff), sg = (int)((st >> 8) & 0xff), sb = (int)((st >> 16) & 0xff);
+        if (hr < 180 || hg > 110 || hb > 140) {
+            printf("!! class HP bar is not red: %08x rgb=%02x%02x%02x\n", hp, hr, hg, hb); return 3;
+        }
+        if (sb < 180 || sr > 130 || sg < 140) {
+            printf("!! class strength bar is not blue: %08x rgb=%02x%02x%02x\n", st, sr, sg, sb); return 3;
+        }
+        printf("=== class HP/strength bars shown for Azum (hp %08x str %08x)\n", hp, st);
+    }
     /* Уровни находятся прямо под каждой карточкой и у веток свой прогресс. */
     if (max_level != 3) { printf("!! levels 4 and 5 were not removed: max=%g\n", max_level); return 3; }
     cups = 30; do_tap(640.0f, 283.0f); run_frames(5);

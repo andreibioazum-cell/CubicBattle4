@@ -178,11 +178,8 @@ function draw_chat()
                 idx = total
             else
                 string uid = net_chat_uid(idx)
-                string line = uid + ": " + net_chat_text(idx)
-                // Ник админа подсвечивается его цветом: красный у главного,
-                // голубой у второго.
-                color col = admin_color_of(uid, 0xE0E0FF)
-                text_scaled(line, lx, yy, col, 0.5)
+                // Цвет только у ника, текст сообщения всегда обычный.
+                draw_nick_msg(uid, ": " + net_chat_text(idx), lx, yy, 0xE0E0FF, 0.5)
                 yy = yy + line_h
                 idx = idx + 1
             end

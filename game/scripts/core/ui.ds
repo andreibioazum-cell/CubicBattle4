@@ -33,6 +33,19 @@ function ctext(string s, number y, color color)
     text(s, (screen_w - text_ink_width(s)) / 2, y, color)
 end
 
+function ctext_scaled(string s, number y, color color, number scale)
+    text_scaled(s, (screen_w - text_ink_width(s) * scale) / 2, y, color, scale)
+end
+
+// Ник админа своим цветом, остальной текст — обычный. Нужно и в лобби
+// («Hi, "nick"»), и в чате, чтобы краснела/голубела только подпись, а не
+// вся строка.
+function draw_nick_msg(string nick, string rest, number x, number y, color base, number scale)
+    number nw = text_ink_width(nick) * scale
+    text_scaled(nick, x, y, admin_color_of(nick, base), scale)
+    text_scaled(rest, x + nw, y, base, scale)
+end
+
 function text_in_box(string label, number x, number y, number w, number h, color color, number scale)
     // Центруем реальные видимые границы глифов, а не условную базовую линию шрифта.
     // Небольшая оптическая поправка вниз не даёт Play/Играть и подсказкам «уезжать» вверх.
