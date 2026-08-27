@@ -38,7 +38,7 @@ string FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", R
 // Пусто — старый режим без Firebase Auth (переходный для собранных версий).
 // Заполни ключом — и база открывается только нашему приложению: все запросы
 // подписываются токеном Firebase Auth, см. FIREBASE.md.
-string FB_KEY=""
+string FB_KEY="AIzaSyDJEqopxP5EqEoxP_ehO3jFXbNztu3DgVs"
 string login_nick="", login_pass=""
 
 string LOBBY_MUSIC="lobbymusic.wav"
