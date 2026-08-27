@@ -22,6 +22,9 @@ void net_set_java_vm(JavaVM *vm);
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_set_data_path(const char *path);
+/* Ключ Firebase (API key, ограниченный пакетом com.cb4): включает защищённый
+ * режим — все запросы к базе подписываются токеном Firebase Auth. */
+void net_set_firebase_key(const char *key);
 void net_autologin(const char *url);
 double net_auth(const char *url, const char *nick, const char *pass);
 double net_set_nick(const char *nick);

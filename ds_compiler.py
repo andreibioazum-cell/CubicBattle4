@@ -45,6 +45,7 @@ BUILTINS = frozenset({
     'net_is_banned', 'net_banned', 'net_ban_set', 'net_chat_is_ban',
     'net_chat_is_unban', 'net_chat_ban_target', 'net_chat_unban_target',
     'net_autologin', 'net_set_nick', 'net_login_status', 'net_login_nick',
+    'net_set_firebase_key',
     'net_login_pass',
     'net_auth', 'net_logout', 'net_leaderboard_fetch', 'net_leaderboard_status',
     'net_leaderboard_count', 'net_leaderboard_nick', 'net_leaderboard_cups',

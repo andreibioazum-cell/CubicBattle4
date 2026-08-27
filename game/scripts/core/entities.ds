@@ -40,6 +40,8 @@ array remotes=arr_new(), remote_punches=arr_new()
 array remote_snow=arr_new()
 array candy_x=arr_new(), candy_y=arr_new()
 array dust=arr_new()
+// Кулдаун спавна пыли для каждого сетевого соперника (0..3).
+array remote_dust_cd=arr_new()
 
 // баны и админ
 number banned_until=0

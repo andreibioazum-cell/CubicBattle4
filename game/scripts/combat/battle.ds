@@ -175,6 +175,7 @@ function reset_battle()
     revive_prot=0
     cups_awarded=0
     match_seen_foe=0
+    foes_seen_t=0
     gift.active=0
     gift.t=0
     gift.shot=0
@@ -223,9 +224,16 @@ function reset_battle()
     end
     arr_clear(dust)
     dust_cd=0
+    enemy_dust_cd=0
     i=0
     loop i<dust_max*dust_fields
         arr_push(dust,0)
+        i=i+1
+    end
+    arr_clear(remote_dust_cd)
+    i=0
+    loop i<max_players
+        arr_push(remote_dust_cd,0)
         i=i+1
     end
 end
@@ -438,6 +446,8 @@ function enemy_move(number vx, number vy)
     if enemy.y>screen_h-enemy.size
         enemy.y=screen_h-enemy.size
     end
+    // Враг тоже оставляет шлейф пыли за спиной — как и игрок.
+    tick_enemy_dust(enemy.mvx,enemy.mvy)
 end
 
 function enemy_face_motion()
@@ -1191,6 +1201,8 @@ function smooth_remotes()
                     da=da+2*pi
                 end
                 ra=ra+da*clamp(dt*remote_smooth,0,1)
+                // Соперник в онлайне тоже тянет за собой след пыли.
+                tick_remote_dust(s,rx,ry,nx,ny)
             end
             arr_set(remotes,b+1,rx)
             arr_set(remotes,b+2,ry)
@@ -1217,7 +1229,13 @@ function check_online_finish()
     end
     number enemies_alive=count_living_remotes()
     if enemies_alive>0
-        match_seen_foe=1
+        // Дебаунс: соперник должен реально побыть в комнате (секунду), прежде
+        // чем его исчезновение станет победой. Один «фантомный» сетевой снимок
+        // (например, гонка с удалением чужого слота) победу засчитать не может.
+        foes_seen_t=foes_seen_t+dt
+        if foes_seen_t>foes_seen_min
+            match_seen_foe=1
+        end
     end
     if match_seen_foe==1&&enemies_alive==0
         finish_game(1)

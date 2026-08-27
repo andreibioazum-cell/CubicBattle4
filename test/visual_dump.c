@@ -15,7 +15,7 @@
 #include "runtime.h"
 #include "net.h"
 
-extern double game_state, t_dir, t_fade, player_class, primes, cups, candies, santa_owned, dust_back_off;
+extern double game_state, t_dir, t_fade, player_class, cups, candies, santa_owned, dust_back_off, dust_max, warn_open;
 extern void *player;
 extern DSArray *dust;
 #define DUST_FIELDS 5
@@ -98,10 +98,13 @@ int main(void) {
 
     /* Лобби с тремя валютами. */
     run_frames(10);
+    /* Предупреждение об эпилепсии держит экран 2.5 с и глотает тапы —
+     * ждём, пока оно полностью не растает. */
+    while (warn_open != 0 && g_frame < 600) run_frames(5);
     dump_bmp("shot_lobby.bmp");
 
     /* Соло-бой: Дед Мороз с ультой, движение вправо — след пыли позади. */
-    player_class = 2; santa_owned = 1; primes = 2;
+    player_class = 2; santa_owned = 1;
     do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 88));      /* Играть */
     wait_state(2, 30);
     do_tap((float)(g_w - 280) / 2 + 140, (float)(g_h / 2 - 8));      /* Соло */
@@ -115,7 +118,7 @@ int main(void) {
         double *pl = (double *)player;
         int alive = 0, behind = 0;
         double max_x = -1e9;
-        for (int i = 0; i < 28; i++) {
+        for (int i = 0; i < (int)dust_max; i++) {
             double life = arr_get(dust, i * DUST_FIELDS + 4);
             if (life <= 0) continue;
             alive++;

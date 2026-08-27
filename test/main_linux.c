@@ -36,6 +36,8 @@ extern const char *ADMIN2_NICK, *ADMIN2_PASS;
 extern double admin2_color;
 extern void *player, *enemy, *punch, *gift;
 extern DSArray *remotes, *remote_punches, *remote_snow;
+extern DSArray *dust;
+extern double dust_max;
 extern double enemy_cooldown_min, enemy_cooldown_max;
 extern double santa_poison_time, santa_poison_tick_interval, santa_poison_dps, santa_poison_damage_bonus, santa_super_damage;
 extern double enemy_lock_time, enemy_attack_turn_speed, enemy_face_max_speed;
@@ -61,6 +63,8 @@ extern double enemy_lock_time, enemy_attack_turn_speed, enemy_face_max_speed;
 #define PUNCH_ACTIVE 4
 /* Поля remote_snow на каждого игрока: счётчик, active, t, x, y, boom_t, bx, by. */
 #define SNOW_FIELDS 8
+/* Поля пыли: x, y, vx, vy, life. */
+#define DUST_FIELDS 5
 
 static uint32_t *g_pixels = NULL;
 static int g_w = 1280, g_h = 720;
@@ -478,7 +482,9 @@ int main(void) {
     printf("=== online with nick '%s': status=%g slot=%g count=%g (frame %ld)\n", nick, net_status(), net_slot(), net_count(), g_frame);
 
     /* --- 5. Чат: открыть -> написать -> отправить --- */
-    do_tap(86, 174);
+    /* Тап в правый нижний угол кнопки чата: она теперь размером с «Назад»
+     * (btn_w × btn_h = 280×64), старая маленькая 140×48 сюда не доставала. */
+    do_tap(270, 205);
     run_frames(10);
     if (chat_open != 1) { printf("!! chat did not open\n"); return 3; }
     do_tap(100, (float)(g_h - 45));
@@ -492,6 +498,34 @@ int main(void) {
     }
     if (net_chat_count() < 1) { printf("!! chat message not registered\n"); return 3; }
     printf("=== chat send ok (frame %ld)\n", g_frame);
+
+    /* --- 5b. Защищённый режим: к базе ходим только с токеном --- */
+    {
+        char stats[512] = "";
+        const char *p;
+        int no_auth = -1, authed = 0, sign_up = 0;
+        if (server_get("/__stats.json", stats, sizeof(stats)) != 200) {
+            printf("!! cannot read /__stats.json from the fake server\n");
+            return 3;
+        }
+        p = strstr(stats, "\"rtdb_no_auth\"");
+        if (p) no_auth = (int)strtol(strchr(p, ':') + 1, NULL, 10);
+        p = strstr(stats, "\"rtdb_auth\"");
+        if (p) authed = (int)strtol(strchr(p, ':') + 1, NULL, 10);
+        p = strstr(stats, "\"sign_up\"");
+        if (p) sign_up = (int)strtol(strchr(p, ':') + 1, NULL, 10);
+        printf("=== fb auth stats: sign_up=%d rtdb_auth=%d rtdb_no_auth=%d\n",
+               sign_up, authed, no_auth);
+        if (sign_up == 0 && authed == 0) {
+            /* Сборка без FB_KEY (переходный режим): Firebase Auth не используется,
+             * проверять нечего. */
+            printf("=== fb auth disabled in this build, skipping token checks\n");
+        } else {
+            if (sign_up < 1) { printf("!! no Firebase Auth sign-up happened\n"); return 3; }
+            if (no_auth != 0) { printf("!! client made %d RTDB requests without ?auth=\n", no_auth); return 3; }
+            if (authed < 5) { printf("!! too few authed RTDB requests (%d)\n", authed); return 3; }
+        }
+    }
 
     /* Закрыть чат */
     do_tap((float)(g_w - 140), 32 + 32);
@@ -606,12 +640,14 @@ int main(void) {
         double *pl = (double *)player;
         double prev = e[ENEMY_STATE], cds[64], locked_ang = 0;
         int attacks = 0, ncd = 0, distinct = 0, snap = 0, have_lock = 0;
+        int frames_with_dust = 0;   /* след пыли врага: игрок стоит на месте */
         /* Поворот обязан быть плавным: не больше лимита скорости за кадр. */
         double ang_prev = e[ENEMY_ANGLE], max_turn = 0;
         double turn_cap = (enemy_attack_turn_speed > enemy_face_max_speed
                                ? enemy_attack_turn_speed : enemy_face_max_speed);
         double turn_limit = turn_cap / 60.0;
         for (int i = 0; i < 900 && finished == 0; i++) {
+            int alive_dust = 0;
             run_frames(1);
             double st = e[ENEMY_STATE];
             if (st == 1 && prev != 1) attacks++;
@@ -630,6 +666,10 @@ int main(void) {
                 }
             } else have_lock = 0;
             if (st == 3 && prev == 2 && ncd < 64) cds[ncd++] = e[ENEMY_COOLDOWN];
+            /* Джойстик не трогаем, значит любая живая пыль — шлейф врага. */
+            for (int d = 0; d < (int)dust_max; d++)
+                if (arr_get(dust, d * DUST_FIELDS + 4) > 0) alive_dust++;
+            if (alive_dust > 0) frames_with_dust++;
             prev = st;
         }
         if (snap) { printf("!! bot snap-aimed at the player during the punch\n"); return 3; }
@@ -649,6 +689,11 @@ int main(void) {
         if (ncd < 3 || !distinct) { printf("!! bot cooldown is not random (%d samples)\n", ncd); return 3; }
         printf("=== bot attacks fast, cooldown random: %d attacks, %d cooldowns in [%g..%g]\n",
                attacks, ncd, enemy_cooldown_min, enemy_cooldown_max);
+        if (frames_with_dust < 30) {
+            printf("!! enemy leaves no dust trail while running (%d frames with dust)\n", frames_with_dust);
+            return 3;
+        }
+        printf("=== enemy leaves a dust trail too: %d frames with alive dust\n", frames_with_dust);
     }
     tap_back(); wait_state(0, 40);
 
@@ -765,9 +810,11 @@ int main(void) {
         return 3;
     }
     printf("=== classes tab: Azum bought and selected (frame %ld)\n", g_frame);
-    /* Снизу два бара выбранного класса: HP красный, сила голубая. */
+    /* Снизу два бара выбранного класса: HP красный, сила голубой.
+     * (Геометрия синхронизирована с draw_class_stats() в menu.ds:
+     * bar_w=520, hp_y=screen_h-110, st_y=screen_h-46.) */
     {
-        int bar_w = 380, hp_y = g_h - 78, st_y = g_h - 36, bx = (g_w - bar_w) / 2;
+        int bar_w = 520, hp_y = g_h - 110, st_y = g_h - 46, bx = (g_w - bar_w) / 2;
         uint32_t hp = g_pixels[(hp_y + 9) * g_w + (bx + 80)];
         uint32_t st = g_pixels[(st_y + 9) * g_w + (bx + 80)];
         int hr = (int)(hp & 0xff), hg = (int)((hp >> 8) & 0xff), hb = (int)((hp >> 16) & 0xff);
@@ -1213,6 +1260,18 @@ int main(void) {
         printf("=== unbanned nick is back online (slot=%g, frame %ld)\n", net_slot(), g_frame);
         tap_back();
         if (!wait_state(0, 60)) { printf("!! did not return to the lobby after the ban test\n"); return 3; }
+
+        /* Убираем «трупы» соперников с сервера: бан с BotRival снят, его
+         * слот и слот RivalTwo больше никто не прячет и не кикает, а молча
+         * засыхающий слот в тесте 18 успевает «показаться» и «выйти» —
+         * обычному игроку тут же засчитывается победа и закрывает чат. */
+        {
+            char u1[160], u2[160];
+            snprintf(u1, sizeof(u1), "http://127.0.0.1:%d/rooms/main/players/1.json", TEST_PORT);
+            snprintf(u2, sizeof(u2), "http://127.0.0.1:%d/rooms/main/players/2.json", TEST_PORT);
+            test_http_impl("DELETE", u1, NULL, NULL, 0, NULL, NULL, NULL, 0);
+            test_http_impl("DELETE", u2, NULL, NULL, 0, NULL, NULL, NULL, 0);
+        }
     }
 
     /* --- 18. Второй админ: те же команды, но подпись — его ник --- */
@@ -1244,7 +1303,11 @@ int main(void) {
         run_frames(2);
         do_tap(86, 174);
         run_frames(10);
-        if (chat_open != 1) { printf("!! chat did not open for the second admin\n"); return 3; }
+        if (chat_open != 1) {
+            printf("!! chat did not open for the second admin: state=%g finished=%g status=%g slot=%g banned=%g cups=%g\n",
+                   game_state, finished, net_status(), net_slot(), net_banned(), cups);
+            return 3;
+        }
         chat_command("event 2");
         buf[0] = 0;
         for (i = 0; i < 200; i++) {
@@ -1307,7 +1370,11 @@ int main(void) {
         run_frames(2);
         do_tap(86, 174);
         run_frames(10);
-        if (chat_open != 1) { printf("!! chat did not open for a regular player\n"); return 3; }
+        if (chat_open != 1) {
+            printf("!! chat did not open for a regular player: state=%g finished=%g status=%g slot=%g banned=%g\n",
+                   game_state, finished, net_status(), net_slot(), net_banned());
+            return 3;
+        }
         chat_command("event 2");
         chat_command("ban RegTarget");
         run_frames(40);
