@@ -868,6 +868,20 @@ static int fb_http(const char *method,const char *url,const char *body,char *out
     return fb_http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
 }
 
+/* E-mail аккаунта игры: <ник>@cb4.game, всегда в нижнем регистре — правила
+ * базы сверяют токен с ником в нижнем регистре, а Firebase может
+ * нормализовать регистр e-mail по-своему. Ник в /users сохраняет регистр. */
+static void fb_email_of(const char *nick, char *dst, size_t cap) {
+    static const char domain[] = FB_EMAIL_DOMAIN;
+    size_t i = 0;
+    if (!nick) nick = "";
+    for (; nick[i] && i + sizeof(domain) < cap; i++) {
+        char c = nick[i];
+        dst[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+    }
+    memcpy(dst + i, domain, sizeof(domain));
+}
+
 static int fb_err_is(const char *resp, const char *code_name) {
     return resp && strstr(resp, code_name) != NULL;
 }
@@ -881,7 +895,7 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
     char email[96], epass[192], idt[FB_ID_MAX], rt[FB_REFRESH_MAX];
     int code;
     if (registered) *registered = 0;
-    snprintf(email, sizeof(email), "%s%s", nick, FB_EMAIL_DOMAIN);
+    fb_email_of(nick, email, sizeof(email));
     snprintf(epass, sizeof(epass), "%s%s", pass, FB_PASS_SUFFIX);
 
     fb_auth_endpoint(url, sizeof(url), "/v1/accounts:signInWithPassword");

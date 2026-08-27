@@ -1,26 +1,31 @@
 {
   "rules": {
+    "functions": {
+      "gameUser": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
+      "adminUser": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')"
+    },
+
     ".read": false,
     ".write": false,
 
     "event": {
-      ".read": "auth != null",
-      ".write": "auth != null && (auth.token.email == 'Dimasi4ek229@cb4.game' || auth.token.email == 'qwertyuiopaj1234@cb4.game')",
+      ".read": "gameUser()",
+      ".write": "adminUser()",
       ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2"
     },
 
     "bans": {
-      ".read": "auth != null",
+      ".read": "gameUser()",
       "$nick": {
-        ".write": "auth != null && (auth.token.email == 'Dimasi4ek229@cb4.game' || auth.token.email == 'qwertyuiopaj1234@cb4.game')",
+        ".write": "adminUser()",
         ".validate": "$nick.matches(/^[A-Za-z0-9_]{1,16}$/) && newData.isBoolean()"
       }
     },
 
     "users": {
-      ".read": "auth != null",
+      ".read": "gameUser()",
       "$nick": {
-        ".write": "auth != null && auth.token.email == $nick + '@cb4.game'",
+        ".write": "gameUser() && auth.token.email.toLowerCase() == $nick.toLowerCase() + '@cb4.game'",
         ".validate": "$nick.matches(/^[A-Za-z0-9_]{1,16}$/) && newData.hasChildren(['nick','cups','candies','cls','azum','santa','level','levels'])",
         "nick": { ".validate": "newData.isString() && newData.val().length <= 16" },
         "pass": { ".validate": false },
@@ -42,12 +47,12 @@
     },
 
     "rooms": {
-      ".read": "auth != null",
+      ".read": "gameUser()",
       "$room": {
         "players": {
-          ".read": "auth != null",
+          ".read": "gameUser()",
           "$slot": {
-            ".write": "auth != null",
+            ".write": "gameUser()",
             ".validate": "$slot.matches(/^[0-3]$/) && newData.hasChildren(['uid','nick','x','y','angle','hp','alive','seq'])",
             "uid": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 24" },
             "nick": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
@@ -73,10 +78,10 @@
           }
         },
         "chat": {
-          ".read": "auth != null",
+          ".read": "gameUser()",
           ".indexOn": ".key",
           "$msg": {
-            ".write": "auth != null",
+            ".write": "gameUser()",
             ".validate": "newData.hasChildren(['uid','nick','text'])",
             "uid": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 24" },
             "nick": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
