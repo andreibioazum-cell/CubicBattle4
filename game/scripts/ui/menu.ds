@@ -186,13 +186,19 @@ function draw_lobby()
     if net_login_status() == 2
         string ln = net_login_nick()
         if str_len(ln) > 0
-            string greet = "Hi, \"" + ln + "\""
+            // Цвет только у ника: «Hi, "» и закрывающая кавычка остаются белыми.
+            string pre = "Hi, \""
             if language == 1
-                greet = "Привет, \"" + ln + "\""
+                pre = "Привет, \""
             end
-            number lw = text_ink_width(greet) * 0.5
-            color col = admin_color_of(ln, 0xFFFFFF)
-            text_scaled(greet, (screen_w - lw) / 2, 18, col, 0.5)
+            string post = "\""
+            number pw = text_ink_width(pre) * 0.5
+            number nw = text_ink_width(ln) * 0.5
+            number sw = text_ink_width(post) * 0.5
+            number gx = (screen_w - pw - nw - sw) / 2
+            text_scaled(pre, gx, 18, 0xFFFFFF, 0.5)
+            text_scaled(ln, gx + pw, 18, admin_color_of(ln, 0xFFFFFF), 0.5)
+            text_scaled(post, gx + pw + nw, 18, 0xFFFFFF, 0.5)
         end
     end
     draw_lobby_money(my + 240 + btn_h + 14)
@@ -271,7 +277,37 @@ function draw_classes()
         class_msg_t = class_msg_t - dt
         ctext(tr_class_need_cups(), sy, 0xFF8A80)
     end
+    draw_class_stats()
     draw_back()
+end
+
+// Два бара выбранного класса: здоровье красное, сила голубая.
+function class_hp_of(number cls)
+    return 10
+end
+
+function class_str_of(number cls)
+    return class_punch_damage_for(cls, class_level_for(cls))
+end
+
+function draw_stat_row(string label, number x, number y, number w, number h, number cur, number maxv, color col)
+    text_scaled(label, x, y - 16, 0xC8C8E0, 0.38)
+    hud_bar(x, y, w, h, cur, maxv, col, 0)
+end
+
+function draw_class_stats()
+    number bar_w = 380, bar_h = 18
+    number bx = (screen_w - bar_w) / 2
+    number hp_y = screen_h - 78, st_y = screen_h - 36
+    number hp = class_hp_of(player_class), str = class_str_of(player_class)
+    string who = class_name()
+    ctext_scaled(who, hp_y - 40, 0xFFFFFF, 0.45)
+    draw_stat_row(tr_hp(), bx, hp_y, bar_w, bar_h, hp, 10, 0xE94560)
+    number str_max = 1
+    if str > str_max
+        str = str_max
+    end
+    draw_stat_row(tr_strength(), bx, st_y, bar_w, bar_h, str, str_max, 0x4FC3F7)
 end
 
 function pick_class(number cls)
@@ -529,18 +565,28 @@ function draw_settings()
     button("Русский", x, y + 160, btn_w, btn_h)
 end
 
-// Предупреждение о вспышках света: показывается поверх меню при запуске
-// и закрывается любым нажатием. Отдельной кнопки «для эпилептиков» больше нет.
+// Полноэкранное предупреждение об эпилепсии: чёрный фон на весь экран,
+// оба языка, красный WARNING/ВНИМАНИЕ, без кнопки. Альфа из warn_a —
+// после 2.5 с надпись и фон плавно тают.
+function warn_rgb(number rgb)
+    return (1 + floor(warn_a * 254)) * 0x1000000 + rgb
+end
+
 function draw_warning()
-    rect(0, 0, screen_w, screen_h, 0xF20A0A18)
-    number w = 620, x = (screen_w - w) / 2, y = screen_h / 2 - 160
-    roundrect(x, y, w, 320, 24, 0x5F10A0)
-    ctext(tr_warn_title(), y + 32, 0xFFD54A)
-    ctext(tr_warn_line1(), y + 86, 0xFFFFFF)
-    ctext(tr_warn_line2(), y + 118, 0xFFFFFF)
-    ctext(tr_warn_line3(), y + 162, 0xFFFFFF)
-    ctext(tr_warn_line4(), y + 194, 0xFFFFFF)
-    button_scaled(tr_warn_ok(), (screen_w - 300) / 2, y + 234, 300, btn_h, 0.7)
+    rect(0, 0, screen_w, screen_h, warn_rgb(0))
+    color red = warn_rgb(0xFF2A2A)
+    color body = warn_rgb(0xFFFFFF)
+    number y = screen_h / 2 - 196
+    ctext_scaled(tr_warn_title_en(), y, red, 1.15)
+    ctext_scaled(tr_warn_en1(), y + 48, body, 0.52)
+    ctext_scaled(tr_warn_en2(), y + 76, body, 0.52)
+    ctext_scaled(tr_warn_en3(), y + 104, body, 0.52)
+    ctext_scaled(tr_warn_en4(), y + 132, body, 0.52)
+    ctext_scaled(tr_warn_title_ru(), y + 186, red, 1.15)
+    ctext_scaled(tr_warn_ru1(), y + 234, body, 0.52)
+    ctext_scaled(tr_warn_ru2(), y + 262, body, 0.52)
+    ctext_scaled(tr_warn_ru3(), y + 290, body, 0.52)
+    ctext_scaled(tr_warn_ru4(), y + 318, body, 0.52)
 end
 
 function draw_leaderboard()

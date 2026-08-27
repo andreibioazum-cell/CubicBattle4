@@ -280,47 +280,59 @@ function tr_no_data()
     return "No data"
 end
 
-// Предупреждение о вспышках света — показывается один раз при запуске игры.
-function tr_warn_title()
-    if language == 1
-        return "Внимание"
-    end
-    return "Warning"
+// Предупреждение об эпилепсии — оба языка сразу, язык настроек не важен.
+function tr_warn_title_en()
+    return "WARNING"
 end
 
-function tr_warn_line1()
-    if language == 1
-        return "В игре есть яркие вспышки и быстрая"
-    end
+function tr_warn_title_ru()
+    return "ВНИМАНИЕ"
+end
+
+function tr_warn_en1()
     return "This game contains bright flashes and"
 end
 
-function tr_warn_line2()
-    if language == 1
-        return "смена цветов (диско-режим в онлайне)."
-    end
+function tr_warn_en2()
     return "fast color changes (disco mode online)."
 end
 
-function tr_warn_line3()
-    if language == 1
-        return "При эпилепсии или чувствительности"
-    end
+function tr_warn_en3()
     return "If you have epilepsy or are sensitive"
 end
 
-function tr_warn_line4()
-    if language == 1
-        return "к свету играйте осторожно."
-    end
+function tr_warn_en4()
     return "to light, please play with caution."
 end
 
-function tr_warn_ok()
+function tr_warn_ru1()
+    return "В игре есть яркие вспышки и быстрая"
+end
+
+function tr_warn_ru2()
+    return "смена цветов (диско-режим в онлайне)."
+end
+
+function tr_warn_ru3()
+    return "При эпилепсии или чувствительности"
+end
+
+function tr_warn_ru4()
+    return "к свету играйте осторожно."
+end
+
+function tr_hp()
     if language == 1
-        return "Понятно"
+        return "Здоровье"
     end
-    return "OK"
+    return "HP"
+end
+
+function tr_strength()
+    if language == 1
+        return "Сила"
+    end
+    return "Power"
 end
 
 function tr_shop()

@@ -135,7 +135,24 @@ function update_music()
     end
 end
 
+function update_warning()
+    if warn_open != 1
+        return
+    end
+    warn_t = warn_t + dt
+    if warn_t <= warn_hold
+        warn_a = 1
+        return
+    end
+    warn_a = 1 - (warn_t - warn_hold) / warn_fade
+    if warn_a <= 0
+        warn_a = 0
+        warn_open = 0
+    end
+end
+
 function update()
+    update_warning()
     update_transition()
     update_music()
     if game_state == 1
@@ -167,12 +184,12 @@ function draw()
     else
         draw_online()
     end
-    // Предупреждение о вспышках рисуется поверх всего и только до первого нажатия.
-    if warn_open == 1
-        draw_warning()
-    end
     if t_fade > 0
         rect(0, 0, screen_w, screen_h, (1 + floor(t_fade * 254)) * 0x1000000)
+    end
+    // Полноэкранное предупреждение поверх всего, включая фейд перехода.
+    if warn_open == 1
+        draw_warning()
     end
 end
 
@@ -180,11 +197,9 @@ function touch(number x, number y, number action, number id)
     if t_dir != 0
         return
     end
-    // Пока висит предупреждение, нажатия в меню не проходят.
+    // Пока висит предупреждение, нажатия в меню не проходят и не закрывают его:
+    // экран сам тает через 2.5 с, кнопки OK нет.
     if warn_open == 1
-        if action == 1
-            warn_open = 0
-        end
         return
     end
     if game_state == 0
