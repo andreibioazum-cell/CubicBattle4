@@ -533,11 +533,20 @@ function draw_settings()
     button(tr_back(), x, y, btn_w, btn_h)
     button("English", x, y + 80, btn_w, btn_h)
     button("Русский", x, y + 160, btn_w, btn_h)
-    string lbl = tr_disco_epilepsy() + " (" + tr_mode_off() + ")"
-    if disco_safe == 1
-        lbl = tr_disco_epilepsy() + " (" + tr_mode_on() + ")"
-    end
-    button_scaled(lbl, x, y + 240, btn_w, btn_h, 0.7)
+end
+
+// Предупреждение о вспышках света: показывается поверх меню при запуске
+// и закрывается любым нажатием. Отдельной кнопки «для эпилептиков» больше нет.
+function draw_warning()
+    rect(0, 0, screen_w, screen_h, 0xF20A0A18)
+    number w = 620, x = (screen_w - w) / 2, y = screen_h / 2 - 160
+    roundrect(x, y, w, 320, 24, 0x5F10A0)
+    ctext(tr_warn_title(), y + 32, 0xFFD54A)
+    ctext(tr_warn_line1(), y + 86, 0xFFFFFF)
+    ctext(tr_warn_line2(), y + 118, 0xFFFFFF)
+    ctext(tr_warn_line3(), y + 162, 0xFFFFFF)
+    ctext(tr_warn_line4(), y + 194, 0xFFFFFF)
+    button_scaled(tr_warn_ok(), (screen_w - 300) / 2, y + 234, 300, btn_h, 0.7)
 end
 
 function draw_leaderboard()
@@ -836,12 +845,6 @@ function touch_menu(number x, number y, number action)
             language = 0
         else if y >= sy + 152 && y <= sy + btn_h + 168
             language = 1
-        else if y >= sy + 232 && y <= sy + btn_h + 248
-            if disco_safe == 1
-                disco_safe = 0
-            else
-                disco_safe = 1
-            end
         end
     end
 end

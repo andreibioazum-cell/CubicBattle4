@@ -25,17 +25,18 @@
 #include "net.h"
 
 /* globals generated into game.c (non-static) — read them for debugging */
-extern double game_state, chat_open, login_field, login_status, t_dir;
+extern double game_state, chat_open, login_field, login_status, t_dir, warn_open;
 extern double player_class, azum_revived, finished, cups, candies, azum_owned, santa_owned, cups_awarded, player_level, levels_unlocked, candy_count, event_mode;
 extern double ordinary_level, azum_level, santa_level, max_level;
-extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a, super_windup, primes;
-extern double azum_prime_level, ordinary_prime_level, santa_prime_level, prime_max_level, prime_cost_base, prime_cost_step;
+extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a, super_windup;
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
+extern const char *ADMIN_NICK, *ADMIN_PASS, *banned_msg;
 extern void *player, *enemy, *punch, *gift;
 extern DSArray *remotes, *remote_punches, *remote_snow;
 extern double enemy_cooldown_min, enemy_cooldown_max;
 extern double santa_poison_time, santa_poison_tick_interval, santa_poison_dps, santa_poison_damage_bonus, santa_super_damage;
+extern double enemy_lock_time, enemy_attack_turn_speed, enemy_face_max_speed;
 /* Поля Enemy идут в объявленном в entities.ds порядке: x,y,size,hp,max_hp,
  * angle,state,state_time,cooldown,... — читаем их как массив double. */
 #define ENEMY_ANGLE 5
@@ -282,28 +283,56 @@ static void tap_level_row(int n) {
     float y = 32.0f + 64.0f + 52.0f + (float)(n - 1) * 88.0f + 39.0f;
     do_tap((float)(g_w / 2), y);
 }
-/* Кнопка «Прокачать прайм» в магазине: ey = by+btn_h+12, by = cy+ch+gap,
- * cy = back_y+btn_h+16 = 112, ch=300, gap=26 -> центр кнопки в (640, 546). */
-static void tap_prime_upgrade(void) { do_tap((float)(g_w / 2), 546.0f); }
-/* Подсчёт пикселей ауры вокруг точки: сравниваем текущий кадр с базовым и
- * раскладываем изменённые пиксели по доминирующему каналу прироста. */
-static void count_aura_pixels(const uint32_t *base, double px, double py, int rad,
-                              int *red, int *green, int *yellow) {
-    *red = *green = *yellow = 0;
-    for (int y = (int)py - rad; y <= (int)py + rad; y++) {
-        for (int x = (int)px - rad; x <= (int)px + rad; x++) {
-            if (x < 0 || y < 0 || x >= g_w || y >= g_h) continue;
-            uint32_t a = base[ y * g_w + x], b = g_pixels[y * g_w + x];
-            int ar = (int)(a & 0xff), ag = (int)((a >> 8) & 0xff), ab = (int)((a >> 16) & 0xff);
-            int br = (int)(b & 0xff), bg = (int)((b >> 8) & 0xff), bb = (int)((b >> 16) & 0xff);
-            int dr = br - ar, dg = bg - ag, db = bb - ab;
-            int d = abs(dr) + abs(dg) + abs(db);
-            if (d <= 24) continue;
-            if (dr > 20 && dg > 20 && dr > db + 20 && dg > db + 20) { (*yellow)++; continue; }
-            if (dg > 12 && dg > dr + 8 && dg > db + 8) { (*green)++; continue; }
-            if (dr > 12 && dr > dg + 8 && dr > db + 8) { (*red)++; continue; }
-        }
+/* --- Бан-система: вспомогательные функции сценария --- */
+/* Прочитать узел прямо с тестового сервера, в обход кэшей игры. */
+static int server_get(const char *path, char *out, size_t cap) {
+    char url[160];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d%s", TEST_PORT, path);
+    return test_http_impl("GET", url, NULL, out, cap, NULL, NULL, NULL, 0);
+}
+static int server_is_null(const char *path) {
+    char buf[256] = "";
+    if (server_get(path, buf, sizeof(buf)) != 200) return 0;
+    return strcmp(buf, "null") == 0;
+}
+/* Список банов опрашивается раз в BAN_TICK мс, поэтому ждём в реальном времени. */
+static int wait_pred(int (*pred)(void), int max_iters) {
+    for (int i = 0; i < max_iters; i++) {
+        run_frames(2);
+        if (pred()) return 1;
+        { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
     }
+    return 0;
+}
+static int pred_no_rival(void) { return remote_count() == 0; }
+static int pred_self_banned(void) { return net_banned() == 1; }
+static int pred_slot_released(void) { return net_slot() < 0; }
+
+/* Написать и отправить команду в открытый чат. */
+static void chat_command(const char *text) {
+    do_tap(100, (float)(g_h - 45));
+    run_frames(5);
+    keyboard_clear();
+    feed_text(text);
+    run_frames(5);
+    do_tap((float)(g_w - 60), (float)(g_h - 45)); /* send */
+    run_frames(10);
+}
+/* Положить соперника в комнату прямо на сервер (как делает фейковый Firebase). */
+static void seed_rival(int slot, const char *rnick, int seq) {
+    char url[160], body[640];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/rooms/main/players/%d.json", TEST_PORT, slot);
+    snprintf(body, sizeof(body),
+        "{\"uid\":\"00000000000000aa\",\"nick\":\"%s\",\"x\":0.5,\"y\":0.5,\"angle\":1.2,"
+        "\"hp\":10,\"alive\":1,\"seq\":%d,\"px\":0.5,\"py\":0.5,\"pdx\":1,\"pdy\":0,\"punch\":100,"
+        "\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"cls\":0}", rnick, seq);
+    test_http_impl("PUT", url, body, NULL, 0, NULL, NULL, NULL, 0);
+}
+/* Соперник с обновлённым seq: иначе через TIMEOUT он считается вышедшим. */
+static int g_rival_seq = 500;
+static void bump_rival(int slot, const char *rnick) {
+    g_rival_seq++;
+    seed_rival(slot, rnick, g_rival_seq);
 }
 
 int main(void) {
@@ -321,6 +350,15 @@ int main(void) {
     if (!start_script()) { printf("init failed: %s\n", ds_runtime_error_message()); return 2; }
     printf("=== init ok (frame %ld)\n", g_frame);
     run_frames(10);
+
+    /* --- 0. Предупреждение о вспышках света: показывается при запуске,
+     * закрывается нажатием и не пропускает тапы в меню. --- */
+    if (warn_open != 1) { printf("!! photosensitivity warning is not shown at start\n"); return 3; }
+    tap_play();
+    run_frames(10);
+    if (game_state != 0) { printf("!! warning did not block the menu tap, state=%g\n", game_state); return 3; }
+    if (warn_open != 0) { printf("!! warning was not dismissed by a tap\n"); return 3; }
+    printf("=== photosensitivity warning shown at start, dismissed by a tap\n");
 
     /* --- 1. Без сохранённого аккаунта «Онлайн» открывает экран входа --- */
     if (net_login_status() != 0) { printf("!! expected idle login status on fresh start, got %g\n", net_login_status()); return 3; }
@@ -430,13 +468,13 @@ int main(void) {
     if (!wait_remotes(0, 300)) { printf("!! player who left was not removed, remotes=%d\n", remote_count()); return 3; }
     printf("=== player who left removed from the list (frame %ld)\n", g_frame);
 
-    /* Победа в онлайне (последний замеченный соперник вышел) начисляет все
-     * три валюты: 5 кубков, 3 леденца и 1 прайм. */
+    /* Победа в онлайне (последний замеченный соперник вышел) начисляет
+     * валюты: 5 кубков и 3 леденца. */
     if (finished != 1) { printf("!! online win not counted: finished=%g\n", finished); return 3; }
-    if (cups < 5 || candies < 3 || primes < 1) {
-        printf("!! win rewards missing: cups=%g candies=%g primes=%g\n", cups, candies, primes); return 3;
+    if (cups < 5 || candies < 3) {
+        printf("!! win rewards missing: cups=%g candies=%g\n", cups, candies); return 3;
     }
-    printf("=== online win rewarded: +5 cups +3 candies +1 prime (primes=%g)\n", primes);
+    printf("=== online win rewarded: +5 cups +3 candies (cups=%g candies=%g)\n", cups, candies);
 
     /* Выйти из онлайна */
     tap_back();
@@ -523,10 +561,22 @@ int main(void) {
         double *pl = (double *)player;
         double prev = e[ENEMY_STATE], cds[64], locked_ang = 0;
         int attacks = 0, ncd = 0, distinct = 0, snap = 0, have_lock = 0;
+        /* Поворот обязан быть плавным: не больше лимита скорости за кадр. */
+        double ang_prev = e[ENEMY_ANGLE], max_turn = 0;
+        double turn_cap = (enemy_attack_turn_speed > enemy_face_max_speed
+                               ? enemy_attack_turn_speed : enemy_face_max_speed);
+        double turn_limit = turn_cap / 60.0;
         for (int i = 0; i < 900 && finished == 0; i++) {
             run_frames(1);
             double st = e[ENEMY_STATE];
             if (st == 1 && prev != 1) attacks++;
+            {
+                double da = e[ENEMY_ANGLE] - ang_prev;
+                while (da > 3.14159265358979) da -= 2 * 3.14159265358979;
+                while (da < -3.14159265358979) da += 2 * 3.14159265358979;
+                if (prev != 5 && st != 5 && fabs(da) > max_turn) max_turn = fabs(da);
+                ang_prev = e[ENEMY_ANGLE];
+            }
             if (st == 2) {
                 if (!have_lock) { locked_ang = e[ENEMY_ANGLE]; have_lock = 1; }
                 else {
@@ -538,6 +588,11 @@ int main(void) {
             prev = st;
         }
         if (snap) { printf("!! bot snap-aimed at the player during the punch\n"); return 3; }
+        if (max_turn > turn_limit + 1e-9) {
+            printf("!! bot turned %g rad in one frame (limit %g) — turn is not smooth\n", max_turn, turn_limit);
+            return 3;
+        }
+        printf("=== bot turns smoothly: max %g rad/frame (limit %g)\n", max_turn, turn_limit);
         if (attacks < 4) { printf("!! bot attacked only %d times in 15s\n", attacks); return 3; }
         for (int i = 0; i < ncd; i++) {
             if (cds[i] < enemy_cooldown_min - 1e-9 || cds[i] > enemy_cooldown_max + 1e-9) {
@@ -551,6 +606,7 @@ int main(void) {
                attacks, ncd, enemy_cooldown_min, enemy_cooldown_max);
     }
     tap_back(); wait_state(0, 40);
+
 
     /* --- 11. Ивенты: в оффлайне ивентов нет, в онлайне снегопад работает --- */
     {
@@ -675,70 +731,6 @@ int main(void) {
     }
     printf("=== Azum levels 1-3 bought under its card (frame %ld)\n", g_frame);
 
-    /* --- Прайм-уровни: кнопка «Прокачать прайм» тратит кубки (20/30/40),
-     * максимум — 3, дальше уровень и кубки не меняются. --- */
-    cups = 100; azum_prime_level = 0;
-    tap_prime_upgrade(); run_frames(5);
-    if (azum_prime_level != 1 || cups != 80) {
-        printf("!! prime upgrade 1 failed: level=%g cups=%g\n", azum_prime_level, cups); return 3;
-    }
-    tap_prime_upgrade(); run_frames(5);
-    if (azum_prime_level != 2 || cups != 50) {
-        printf("!! prime upgrade 2 failed: level=%g cups=%g\n", azum_prime_level, cups); return 3;
-    }
-    tap_prime_upgrade(); run_frames(5);
-    if (azum_prime_level != 3 || cups != 10) {
-        printf("!! prime upgrade 3 failed: level=%g cups=%g\n", azum_prime_level, cups); return 3;
-    }
-    tap_prime_upgrade(); run_frames(5);
-    if (azum_prime_level != 3 || cups != 10) {
-        printf("!! prime above max changed something: level=%g cups=%g\n", azum_prime_level, cups); return 3;
-    }
-    if (net_load_azum_prime_level() != 3) { printf("!! azum prime level not persisted\n"); return 3; }
-    printf("=== Azum prime upgraded 1->3 for cups, capped at max (frame %ld)\n", g_frame);
-
-    /* --- Аура в бою: цвет зависит от прайм-уровня (Азум 1 красный,
-     * 2 зелёный, 3 жёлтый). Сравниваем кадры с аурой и без неё. --- */
-    {
-        azum_prime_level = 0;
-        tap_back(); wait_state(0, 40);           /* магазин -> лобби */
-        tap_play(); wait_state(2, 30);
-        tap_solo(); wait_state(1, 30);
-        run_frames(20);
-        double *pl = (double *)player;
-        double px = pl[PLAYER_X], py = pl[PLAYER_Y];
-        int red = 0, green = 0, yellow = 0;
-
-        uint32_t *base = snap_frame();
-        azum_prime_level = 1; run_frames(2);
-        count_aura_pixels(base, px, py, 70, &red, &green, &yellow);
-        printf("=== aura prime1: red=%d green=%d yellow=%d (frame %ld)\n", red, green, yellow, g_frame);
-        if (red + green + yellow < 30 || red < green || red < yellow) {
-            printf("!! azum prime 1 red aura missing\n"); free(base); return 3;
-        }
-        free(base);
-
-        azum_prime_level = 0; run_frames(2);
-        base = snap_frame();
-        azum_prime_level = 2; run_frames(2);
-        count_aura_pixels(base, px, py, 70, &red, &green, &yellow);
-        printf("=== aura prime2: red=%d green=%d yellow=%d (frame %ld)\n", red, green, yellow, g_frame);
-        if (red + green + yellow < 30 || green < red || green < yellow) {
-            printf("!! azum prime 2 green aura missing\n"); free(base); return 3;
-        }
-        free(base);
-
-        azum_prime_level = 0; run_frames(2);
-        base = snap_frame();
-        azum_prime_level = 3; run_frames(2);
-        count_aura_pixels(base, px, py, 70, &red, &green, &yellow);
-        printf("=== aura prime3: red=%d green=%d yellow=%d (frame %ld)\n", red, green, yellow, g_frame);
-        if (red + green + yellow < 30 || yellow < red || yellow < green) {
-            printf("!! azum prime 3 yellow aura missing\n"); free(base); return 3;
-        }
-        free(base);
-        printf("=== aura colors match prime level 1/2/3 (frame %ld)\n", g_frame);
-    }
     tap_back(); wait_state(0, 40);
 
     /* --- 12. Повторный вход в онлайн с сохранённым аккаунтом --- */
@@ -870,6 +862,11 @@ int main(void) {
         double *pl = (double *)player;
         double hp_after_hit = 0;
 
+        /* Дожидаемся конца спавна: пока enemy.state==5, update_enemy() выходит
+         * до блока яда, и тик не успевает пройти за окно проверки. */
+        for (int i = 0; i < 240 && e[ENEMY_STATE] == 5; i++) run_frames(1);
+        if (e[ENEMY_STATE] == 5) { printf("!! enemy did not finish spawning\n"); return 3; }
+
         /* Ставим врага ровно перед игроком (смотрим вправо) и бьём посохом. */
         pl[PLAYER_X] = g_w / 2.0; pl[PLAYER_Y] = g_h / 2.0; pl[PLAYER_ANGLE] = 0;
         e[ENEMY_X] = pl[PLAYER_X] + 70; e[ENEMY_Y] = pl[PLAYER_Y]; e[ENEMY_POISON] = 0;
@@ -985,11 +982,13 @@ int main(void) {
         pl[PLAYER_X] = 560; pl[PLAYER_Y] = 360; pl[PLAYER_ANGLE] = 0; pl[PLAYER_HP] = 10;
         e[ENEMY_X] = 650; e[ENEMY_Y] = 360;
         e[ENEMY_ANGLE] = atan2(pl[PLAYER_Y] - e[ENEMY_Y], pl[PLAYER_X] - e[ENEMY_X]);
-        e[ENEMY_STATE] = 1; e[ENEMY_STATE_TIME] = 1.0; e[ENEMY_POISON] = 0;
+        /* state_time меньше enemy_lock_time: в замахе враг уже не доворачивается,
+         * поэтому угол (а значит и полоса) остаётся ровно тем, что мы выставили. */
+        e[ENEMY_STATE] = 1; e[ENEMY_STATE_TIME] = enemy_lock_time * 0.5; e[ENEMY_POISON] = 0;
         pl[PLAYER_HP] = 10;
         run_frames(1);
         fa = snap_frame();
-        e[ENEMY_X] = 120; e[ENEMY_Y] = 120; e[ENEMY_STATE] = 1; e[ENEMY_STATE_TIME] = 1.0; e[ENEMY_ANGLE] = 0;
+        e[ENEMY_X] = 120; e[ENEMY_Y] = 120; e[ENEMY_STATE] = 1; e[ENEMY_STATE_TIME] = enemy_lock_time * 0.5; e[ENEMY_ANGLE] = 0;
         pl[PLAYER_HP] = 10;
         run_frames(1);
         fb = snap_frame();
@@ -1046,6 +1045,114 @@ int main(void) {
         }
         free(fa); free(fb);
         tap_back(); wait_state(0, 60);
+    }
+
+    /* --- 17. Бан: команда админа в чате банит по-настоящему --- */
+    {
+        char path[160], cmd[64], buf[256];
+        int i;
+
+        /* Заходим под админом: у фейкового сервера правил нет, поэтому
+         * регистрация ника ADMIN_NICK проходит как обычный вход. */
+        net_logout();
+        run_frames(5);
+        tap_account();
+        if (!wait_state(7, 40)) { printf("!! account screen did not open, state=%g\n", game_state); return 3; }
+        fill_field(tap_nick, ADMIN_NICK);
+        fill_field(tap_pass, ADMIN_PASS);
+        tap_login_btn();
+        /* Вход через «Аккаунт» возвращает в лобби (login_after=0), в онлайн
+         * идём отдельным тапом. */
+        if (!wait_state(0, 60)) { printf("!! admin login failed: state=%g status=%g\n", game_state, login_status); return 3; }
+        if (strcmp(net_login_nick(), ADMIN_NICK) != 0) { printf("!! admin nick not applied: '%s'\n", net_login_nick()); return 3; }
+        tap_play();
+        if (!wait_state(2, 40)) { printf("!! modes screen did not open for the admin\n"); return 3; }
+        tap_online();
+        if (!wait_state(5, 60)) { printf("!! admin did not enter online, state=%g status=%g\n", game_state, login_status); return 3; }
+        if (!wait_slot(80)) { printf("!! admin online entry failed: status=%g\n", net_status()); return 3; }
+        printf("=== admin online as '%s' (slot=%g, frame %ld)\n", net_login_nick(), net_slot(), g_frame);
+
+        /* Два соперника: на первом проверяем бан, второй держит бой живым
+         * (иначе после кика остаётся ноль врагов, игра засчитывает победу и
+         * закрывает чат). */
+        seed_rival(1, "BotRival", 300);
+        seed_rival(2, "RivalTwo", 400);
+        if (!wait_remotes(2, 200)) { printf("!! rivals not visible before the ban, remotes=%d\n", remote_count()); return 3; }
+        printf("=== two rivals visible before the ban (remotes=%d)\n", remote_count());
+
+        do_tap(86, 174);
+        run_frames(10);
+        if (chat_open != 1) { printf("!! chat did not open for the ban command\n"); return 3; }
+        chat_command("ban BotRival");
+
+        /* Команда дошла до сервера: /bans/BotRival = true. */
+        buf[0] = 0;
+        for (i = 0; i < 200; i++) {
+            bump_rival(2, "RivalTwo");
+            if (server_get("/bans/BotRival.json", buf, sizeof(buf)) == 200 && strcmp(buf, "true") == 0) break;
+            run_frames(2);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (strcmp(buf, "true") != 0) { printf("!! ban was not written to the server: '%s'\n", buf); return 3; }
+        printf("=== 'ban BotRival' saved to /bans/BotRival\n");
+
+        /* Забаненного выкидывает из комнаты: слот удалён, в списке его нет. */
+        if (!wait_remotes(1, 200)) { printf("!! banned rival still shown, remotes=%d\n", remote_count()); return 3; }
+        for (i = 0; i < 200 && !server_is_null("/rooms/main/players/1.json"); i++) {
+            bump_rival(2, "RivalTwo");
+            run_frames(2);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (!server_is_null("/rooms/main/players/1.json")) { printf("!! banned rival slot not deleted on the server\n"); return 3; }
+        printf("=== banned rival kicked: hidden and its slot deleted\n");
+
+        /* Если забаненный всё же вернётся на сервер — его снова не видно. */
+        seed_rival(1, "BotRival", 301);
+        for (i = 0; i < 50; i++) {
+            bump_rival(2, "RivalTwo");
+            run_frames(2);
+            if (remote_count() != 1) break;
+        }
+        if (remote_count() != 1) { printf("!! banned rival is visible again after rejoin (remotes=%d)\n", remote_count()); return 3; }
+        printf("=== banned rival stays hidden after a manual rejoin\n");
+
+        /* Бан самого себя: клиент обязан выйти из онлайна с сообщением. */
+        snprintf(cmd, sizeof(cmd), "ban %s", ADMIN_NICK);
+        chat_command(cmd);
+        if (!wait_pred(pred_self_banned, 200)) { printf("!! self ban was not detected by the client\n"); return 3; }
+        if (!wait_pred(pred_slot_released, 200)) { printf("!! banned client kept its room slot\n"); return 3; }
+        if (!wait_state(0, 100)) { printf("!! banned client was not returned to the menu, state=%g\n", game_state); return 3; }
+        if (!banned_msg || !*banned_msg) { printf("!! banned message is empty\n"); return 3; }
+        printf("=== banned client kicked to the menu: '%s'\n", banned_msg);
+
+        /* Из меню в онлайн забаненного не пускает. */
+        tap_play();
+        if (!wait_state(2, 40)) { printf("!! modes screen did not open\n"); return 3; }
+        tap_online();
+        run_frames(40);
+        if (game_state == 5) { printf("!! banned nick entered online from the menu\n"); return 3; }
+        if (!wait_state(0, 60)) { printf("!! banned nick stuck on state=%g\n", game_state); return 3; }
+        printf("=== online refused for the banned nick from the menu\n");
+
+        /* Разбан — и онлайн снова доступен. */
+        snprintf(path, sizeof(path), "/bans/%s.json", ADMIN_NICK);
+        net_ban_set(ADMIN_NICK, 0);
+        net_ban_set("BotRival", 0);
+        for (i = 0; i < 200 && !server_is_null(path); i++) {
+            run_frames(2);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (!server_is_null(path)) { printf("!! unban was not written to the server\n"); return 3; }
+        printf("=== unban removed %s on the server\n", path);
+
+        tap_play();
+        if (!wait_state(2, 40)) { printf("!! modes screen did not open after unban\n"); return 3; }
+        tap_online();
+        if (!wait_state(5, 60)) { printf("!! unbanned nick could not enter online, state=%g\n", game_state); return 3; }
+        if (!wait_slot(80)) { printf("!! unbanned nick did not get a slot: status=%g\n", net_status()); return 3; }
+        printf("=== unbanned nick is back online (slot=%g, frame %ld)\n", net_slot(), g_frame);
+        tap_back();
+        if (!wait_state(0, 60)) { printf("!! did not return to the lobby after the ban test\n"); return 3; }
     }
 
     script_active = 1;

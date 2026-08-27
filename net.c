@@ -40,6 +40,10 @@
 #define SESSION_FILE "auth.dat"
 #define PROGRESS_FILE "progress.dat"
 #define BANS_FILE "bans.dat"
+#define BAN_MAX 64
+#define BAN_TICK 2000
+#define BAN_WAIT 2500
+#define BAN_KICK_TICK 2000
 #ifdef _WIN32
 typedef SRWLOCK DSMutex;
 #define DS_MUTEX_INIT SRWLOCK_INIT
@@ -82,12 +86,26 @@ static struct {
     JavaVM *vm;
 #endif
     int run, started, slot, status;
+    int self_banned;
     char base[256], room[48], uid[24];
     Actor me; unsigned long seq, count;
     Actor players[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
     int event;
 } net = { .lock = DS_MUTEX_INIT };
+
+/* Список банов, прочитанный из облака. Это общий для всех клиентов источник
+ * правды: локальный bans.dat есть только у того, кто ставил бан, поэтому
+ * выкидывать из комнаты чужого забаненного игрока можно лишь по этому списку. */
+typedef struct {
+    DSMutex lock;
+    char nick[BAN_MAX][LOGIN_NICK_MAX + 1];
+    int count, synced;
+    long long synced_at;
+} BanList;
+static BanList banlist = { .lock = DS_MUTEX_INIT };
+static void ban_lock(void) { ds_mutex_lock(banlist.lock); }
+static void ban_unlock(void) { ds_mutex_unlock(banlist.lock); }
 
 static volatile sig_atomic_t net_fast = 0;
 static char s_chat_text_ret[CHAT_TEXT_MAX];
@@ -244,6 +262,7 @@ static void *http_delete_job(void *arg);
 #ifdef _WIN32
 static unsigned __stdcall win_http_delete(void *arg);
 #endif
+static void room_slot_delete_async(int slot);
 static void *http_patch_job(void *arg) {
     HttpJob *j = (HttpJob*)arg;
     if (j) { http("PATCH", j->url, j->body, NULL, 0); free(j); }
@@ -548,8 +567,21 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     ju=(*env)->NewStringUTF(env,url); JNI_CHECK();
     urlobj=(*env)->NewObject(env,urlc,(*env)->GetMethodID(env,urlc,"<init>","(Ljava/lang/String;)V"),ju); JNI_CHECK();
     conn=(*env)->CallObjectMethod(env,urlobj,(*env)->GetMethodID(env,urlc,"openConnection","()Ljava/net/URLConnection;")); JNI_CHECK();
-    jm=(*env)->NewStringUTF(env,method); JNI_CHECK();
-    (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm); JNI_CHECK();
+    {
+        /* HttpURLConnection бросает ProtocolException на PATCH, а сохранение
+         * прогресса и банов идёт именно им. Firebase умеет принимать такой
+         * запрос как POST с заголовком X-HTTP-Method-Override. */
+        const char *send_method = method;
+        const char *override = NULL;
+        if (!strcmp(method, "PATCH")) { send_method = "POST"; override = "PATCH"; }
+        jm=(*env)->NewStringUTF(env,send_method); JNI_CHECK();
+        (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setRequestMethod","(Ljava/lang/String;)V"),jm); JNI_CHECK();
+        if (override) {
+            jmethodID set_override=(*env)->GetMethodID(env,connc,"setRequestProperty","(Ljava/lang/String;Ljava/lang/String;)V");
+            jstring ok=(*env)->NewStringUTF(env,"X-HTTP-Method-Override"), ov=(*env)->NewStringUTF(env,override);
+            (*env)->CallVoidMethod(env,conn,set_override,ok,ov); JNI_CHECK();
+        }
+    }
     {
         int tmo = net_fast ? 1200 : TIMEOUT;
         (*env)->CallVoidMethod(env,conn,(*env)->GetMethodID(env,connc,"setConnectTimeout","(I)V"),tmo); JNI_CHECK();
@@ -950,51 +982,194 @@ static void remove_ban_from_file(const char *nick) {
     }
 }
 
-double net_is_banned(const char *nick) {
+/* Кэш облачного списка банов: заменяется целиком при каждом ban_sync(). */
+static int ban_cache_has(const char *nick) {
+    int i, found = 0;
     if (!nick || !*nick) return 0;
-    if (is_banned_in_file(nick)) return 1;
+    ban_lock();
+    for (i = 0; i < banlist.count; i++) {
+        if (strcmp(banlist.nick[i], nick) == 0) { found = 1; break; }
+    }
+    ban_unlock();
+    return found;
+}
+static void ban_cache_put(const char *nick) {
+    if (!nick || !*nick) return;
+    ban_lock();
+    if (banlist.count < BAN_MAX) {
+        int i, dup = 0;
+        for (i = 0; i < banlist.count; i++) {
+            if (strcmp(banlist.nick[i], nick) == 0) { dup = 1; break; }
+        }
+        if (!dup) snprintf(banlist.nick[banlist.count++], LOGIN_NICK_MAX + 1, "%s", nick);
+    }
+    ban_unlock();
+}
+static void ban_cache_drop(const char *nick) {
+    int i, j;
+    if (!nick || !*nick) return;
+    ban_lock();
+    for (i = 0, j = 0; i < banlist.count; i++) {
+        if (strcmp(banlist.nick[i], nick) == 0) continue;
+        if (j != i) snprintf(banlist.nick[j], LOGIN_NICK_MAX + 1, "%s", banlist.nick[i]);
+        j++;
+    }
+    banlist.count = j;
+    ban_unlock();
+}
+static int ban_synced(void) { int v; ban_lock(); v = banlist.synced; ban_unlock(); return v; }
+static void ban_invalidate(void) { ban_lock(); banlist.synced = 0; ban_unlock(); }
+
+/* Читает /bans.json целиком. Возвращает 1, если список удалось обновить. */
+static int ban_sync(void) {
+    char url[URL], resp[RESP], keys[BAN_MAX][LOGIN_NICK_MAX + 1];
+    const char *p;
+    int code, n = 0;
     if (!net.base[0]) return 0;
+    snprintf(url, sizeof(url), "%s/bans.json", net.base);
+    code = http("GET", url, NULL, resp, sizeof(resp));
+    if (code != 200) {
+        if (net_log_ok()) LOGERR("ban list: HTTP %d", code);
+        return 0;
+    }
+    p = skip_ws(resp);
+    if (!p || !*p || !strncmp(p, "null", 4)) {
+        ban_lock();
+        banlist.count = 0; banlist.synced = 1; banlist.synced_at = now_ms();
+        ban_unlock();
+        return 1;
+    }
+    if (*p != '{') return 0;
+    for (p = skip_ws(p + 1); p && *p && *p != '}' && n < BAN_MAX; ) {
+        const char *kend;
+        size_t kl;
+        if (*p != '"') break;
+        kend = skip_str(p);
+        if (!kend) break;
+        kl = (size_t)(kend - p - 2);
+        if (kl > LOGIN_NICK_MAX) kl = LOGIN_NICK_MAX;
+        memcpy(keys[n], p + 1, kl);
+        keys[n][kl] = 0;
+        n++;
+        p = skip_ws(kend);
+        if (*p != ':') break;
+        p = skip_val(skip_ws(p + 1));
+        if (!p) break;
+        p = skip_ws(p);
+        if (*p == ',') p = skip_ws(p + 1);
+    }
+    ban_lock();
+    banlist.count = 0;
+    for (int i = 0; i < n; i++) snprintf(banlist.nick[i], LOGIN_NICK_MAX + 1, "%s", keys[i]);
+    banlist.count = n; banlist.synced = 1; banlist.synced_at = now_ms();
+    ban_unlock();
+    LOG("ban list: %d entry(ies)", n);
+    return 1;
+}
+
+/* Забанен ли ник по данным этого клиента: облачный список или локальный bans.dat. */
+static int nick_banned_locally(const char *nick) {
+    if (!nick || !*nick) return 0;
+    return ban_cache_has(nick) || is_banned_in_file(nick);
+}
+
+double net_is_banned(const char *nick) {
     char url[URL], resp[RESP];
+    const char *p;
+    int code;
+    if (!nick || !*nick) return 0;
+    if (nick_banned_locally(nick)) return 1;
+    if (!net.base[0]) return 0;
     snprintf(url, sizeof(url), "%s/bans/%s.json", net.base, nick);
-    int code = http("GET", url, NULL, resp, sizeof(resp));
-    if (code==200) {
-        const char *p = skip_ws(resp);
-        if (p && *p && strncmp(p,"null",4)!=0) {
-            // if true or object, consider banned
-            add_ban_to_file(nick);
+    code = http("GET", url, NULL, resp, sizeof(resp));
+    if (code == 200) {
+        p = skip_ws(resp);
+        if (p && *p && strncmp(p, "null", 4) != 0) {
+            // true или объект — считаем забаненным
+            ban_cache_put(nick);
             return 1;
         }
+    } else if (net_log_ok()) {
+        LOGERR("ban check '%s': HTTP %d", nick, code);
     }
     return 0;
 }
 
+double net_banned(void) {
+    double v;
+    lock(); v = net.self_banned ? 1 : 0; unlock();
+    return v;
+}
+
+/* Пишет бан в облако отдельным потоком и проверяет, что запись прошла. */
+typedef struct { char url[URL]; char nick[LOGIN_NICK_MAX + 1]; int banned; } BanJob;
+static void *ban_write_job(void *arg) {
+    BanJob *j = (BanJob *)arg;
+    int code;
+    if (!j) return NULL;
+    if (j->banned) {
+        code = http("PUT", j->url, "true", NULL, 0);
+        if (code == 200) {
+            LOG("ban %s: saved to cloud", j->nick);
+            ban_sync();
+        } else {
+            LOGERR("ban %s: cloud write FAILED (HTTP %d), ban is local only", j->nick, code);
+        }
+    } else {
+        code = http("DELETE", j->url, NULL, NULL, 0);
+        if (code == 200) {
+            LOG("unban %s: removed from cloud", j->nick);
+            ban_sync();
+        } else {
+            LOGERR("unban %s: cloud delete FAILED (HTTP %d)", j->nick, code);
+        }
+    }
+    free(j);
+    return NULL;
+}
+#ifdef _WIN32
+static unsigned __stdcall win_ban_write(void *arg) { ban_write_job(arg); return 0; }
+#endif
+static void ban_write_async(const char *url, const char *nick, int banned) {
+    BanJob *j = (BanJob *)malloc(sizeof(*j));
+    DSThread t;
+    if (!j) return;
+    snprintf(j->url, sizeof(j->url), "%s", url);
+    snprintf(j->nick, sizeof(j->nick), "%s", nick);
+    j->banned = banned;
+#ifdef _WIN32
+    t = ds_thread_start(win_ban_write, j);
+#else
+    t = ds_thread_start(ban_write_job, j);
+#endif
+    if (t) { ds_thread_detach(t); return; }
+    free(j);
+}
+
 void net_ban_set(const char *nick, double banned) {
     if (!nick || !*nick) return;
-    if (!nick_valid(nick) && strcmp(nick,"Dimasi4ek229")!=0) {
-        // allow any nick for ban, but validate simple
-        // if not valid, still allow if alphanumeric
+    if (!nick_valid(nick)) {
+        LOGERR("ban: invalid nick '%s'", nick);
+        return;
     }
-    if (banned>=0.5) {
+    if (banned >= 0.5) {
         add_ban_to_file(nick);
+        ban_cache_put(nick);
         if (net.base[0]) {
             char url[URL];
             snprintf(url, sizeof(url), "%s/bans/%s.json", net.base, nick);
-            http_patch_async(url, "true");
+            ban_write_async(url, nick, 1);
+        } else {
+            LOGERR("ban %s: no server, ban is local only", nick);
         }
         LOG("ban %s", nick);
     } else {
         remove_ban_from_file(nick);
+        ban_cache_drop(nick);
         if (net.base[0]) {
-            char *del_url = (char*)malloc(URL);
-            if (!del_url) return;
-            snprintf(del_url, URL, "%s/bans/%s.json", net.base, nick);
-#ifdef _WIN32
-            DSThread t = ds_thread_start(win_http_delete, del_url);
-#else
-            DSThread t = ds_thread_start(http_delete_job, del_url);
-#endif
-            if (t) ds_thread_detach(t);
-            else free(del_url);
+            char url[URL];
+            snprintf(url, sizeof(url), "%s/bans/%s.json", net.base, nick);
+            ban_write_async(url, nick, 0);
         }
         LOG("unban %s", nick);
     }
@@ -1317,6 +1492,18 @@ static void read_players(const char *resp) {
         if(sq!=lseq[slot]){ lseq[slot]=sq; lch[slot]=t; } else if(!lch[slot]) lch[slot]=t;
         online=t-lch[slot]<TIMEOUT; if(!online)continue;
         snprintf(p,sizeof(p),"%s/nick",bp); strv(resp,p,ps[slot].nick,sizeof(ps[slot].nick));
+        if(ban_cache_has(ps[slot].nick)) {
+            /* Забаненный игрок не показывается и выкидывается из комнаты:
+             * так бан действует и на тех, кто зашёл со старой версией. */
+            static long long kicked[NET_SLOTS];
+            if(t-kicked[slot]>=BAN_KICK_TICK) {
+                kicked[slot]=t;
+                LOG("slot %d: '%s' is banned, kicking", slot, ps[slot].nick);
+                room_slot_delete_async(slot);
+            }
+            lseq[slot]=0; lch[slot]=0;
+            continue;
+        }
         snprintf(p,sizeof(p),"%s/x",bp); ps[slot].x=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/y",bp); ps[slot].y=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/angle",bp); ps[slot].a=num(resp,p,0);
@@ -1434,13 +1621,48 @@ static void *reader_thread(void *arg);
 static unsigned __stdcall win_thread_main(void *arg){ thread_main(arg); return 0; }
 static unsigned __stdcall win_reader_thread(void *arg){ reader_thread(arg); return 0; }
 #endif
+/* Ждём первую загрузку списка банов, но не дольше BAN_WAIT мс. */
+static void wait_ban_list(void) {
+    long long deadline = now_ms() + BAN_WAIT;
+    while (net.run && !ban_synced() && now_ms() < deadline) sleep_ms(50);
+}
+static void mark_self_banned(const char *nick) {
+    int fresh;
+    lock(); fresh = !net.self_banned; net.self_banned = 1; unlock();
+    if (fresh) LOGERR("'%s' is banned: online closed", nick);
+}
+/* Выкидываем слот забаненного игрока, чтобы он не мешал бою у остальных. */
+static void room_slot_delete_async(int slot) {
+    char *url = (char*)malloc(URL);
+    DSThread t;
+    if (!url || !net.base[0]) { free(url); return; }
+    snprintf(url, URL, "%s/rooms/%s/players/%d.json", net.base, net.room, slot);
+#ifdef _WIN32
+    t = ds_thread_start(win_http_delete, url);
+#else
+    t = ds_thread_start(http_delete_job, url);
+#endif
+    if (t) { ds_thread_detach(t); return; }
+    free(url);
+}
 static void *thread_main(void *arg) {
     int fails=0; (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
         lock(); slot=net.slot; unlock();
         if(slot<0) {
-            status(NET_CONNECTING); slot=claim_slot();
+            char nick[24];
+            status(NET_CONNECTING);
+            /* В комнату не пускаем, пока не проверили свой ник по списку банов.
+             * Ждём недолго: если сеть лежит, слот всё равно не достанется. */
+            wait_ban_list();
+            lock(); snprintf(nick,sizeof(nick),"%s",net.me.nick); unlock();
+            if(nick[0] && net_is_banned(nick)) {
+                mark_self_banned(nick);
+                sleep_ms(500);
+                continue;
+            }
+            slot=claim_slot();
             if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot");} sleep_ms(500); continue; }
             lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.players[slot].online=1; unlock(); fails=0;
             LOG("slot %d claimed", (int)net.slot);
@@ -1453,10 +1675,24 @@ static void *thread_main(void *arg) {
 }
 static void *reader_thread(void *arg) {
     char resp[RESP], chat_resp[CHAT_RESP], event_resp[RESP];
-    long long next_chat=0, next_event=0;
+    long long next_chat=0, next_event=0, next_ban=0;
     (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
+        /* Список банов тянем и пока подключаемся, и во время боя: забаненный
+         * игрок не должен ни зайти, ни остаться в комнате. */
+        if(start>=next_ban) {
+            if(ban_sync()) {
+                char nick[24];
+                lock(); snprintf(nick,sizeof(nick),"%s",net.me.nick); unlock();
+                if(nick[0] && ban_cache_has(nick)) {
+                    mark_self_banned(nick);
+                    net.run=0;
+                    break;
+                }
+            }
+            next_ban=now_ms()+BAN_TICK;
+        }
         lock(); slot=net.slot; unlock();
         if(slot<0){ sleep_ms(50); continue; }
         if(pull_state(resp,sizeof(resp))) read_players(resp);
@@ -1507,6 +1743,9 @@ void net_connect(const char *url, const char *room) {
     }
     net.me.cls = (double)pending_cls;
     net.me.level = (double)pending_level;
+    lock(); net.self_banned = 0; unlock();
+    /* Список банов нужно перечитать: вдруг бан поставили, пока мы сидели в меню. */
+    ban_invalidate();
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
     LOG("connect %s/%s", net.base, net.room);

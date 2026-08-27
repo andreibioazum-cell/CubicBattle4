@@ -89,6 +89,7 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double santa_level, double santa_levels_unlocked);
 
 /* Бан система */
+double net_banned(void);
 double net_is_banned(const char *nick);
 void net_ban_set(const char *nick, double banned);
 double net_chat_is_ban(const char *msg);

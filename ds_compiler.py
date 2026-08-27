@@ -39,9 +39,13 @@ BUILTINS = frozenset({
     'net_player_punch', 'net_player_snow_x', 'net_player_snow_y',
     'net_player_snow_dx', 'net_player_snow_dy', 'net_player_snow',
     'net_player_class', 'net_player_level', 'net_player_prime_level',
-    'net_set_level', 'net_set_prime_level', 'net_event', 'net_chat_send',
+    'net_set_level', 'net_set_prime_level', 'net_event', 'net_event_set',
+    'net_chat_send',
     'net_chat_trim', 'net_chat_count', 'net_chat_text', 'net_chat_uid',
+    'net_is_banned', 'net_banned', 'net_ban_set', 'net_chat_is_ban',
+    'net_chat_is_unban', 'net_chat_ban_target', 'net_chat_unban_target',
     'net_autologin', 'net_set_nick', 'net_login_status', 'net_login_nick',
+    'net_login_pass',
     'net_auth', 'net_logout', 'net_leaderboard_fetch', 'net_leaderboard_status',
     'net_leaderboard_count', 'net_leaderboard_nick', 'net_leaderboard_cups',
     'net_load_cups', 'net_load_candies', 'net_load_primes', 'net_load_class',
@@ -73,7 +77,10 @@ STR_BUILTINS = frozenset({
     'keyboard_get_raw',
     'net_chat_text',
     'net_chat_uid',
+    'net_chat_ban_target',
+    'net_chat_unban_target',
     'net_login_nick',
+    'net_login_pass',
     'net_player_nick',
     'net_leaderboard_nick',
 })
@@ -201,6 +208,8 @@ class DimScriptCompiler:
         self.top = []
         self.lines = []
         self.errors = 0
+        self.warnings = 0
+        self.warned = set()
         self.output = []
         self.indent = 0
         self.scope = {}
@@ -209,6 +218,18 @@ class DimScriptCompiler:
     def _error(self, msg):
         self.errors += 1
         print(f"DimScript error: {msg}", file=sys.stderr)
+
+    def _warn(self, msg):
+        """Сообщить о подозрительной строке, не роняя сборку.
+
+        Без этого вызов несуществующей нативной функции молча исчезал из
+        game.c, и в собранной игре команда просто ничего не делала.
+        """
+        if msg in self.warned:
+            return
+        self.warned.add(msg)
+        self.warnings += 1
+        print(f"DimScript warning: {msg}", file=sys.stderr)
 
     def _load(self, paths):
         for p in paths:
@@ -549,11 +570,21 @@ class DimScriptCompiler:
         args = split_top(rest, ',') if rest else []
         if name in self.functions:
             if len(args) != len(self.functions[name][0]):
+                self._warn(
+                    f"call '{name}' expects {len(self.functions[name][0])} "
+                    f"arg(s), got {len(args)} — statement dropped: {line}"
+                )
                 return
             fn = f'ds_fn_{name}'
         elif name in BUILTINS:
             fn = name
         else:
+            # Ни функция скрипта, ни нативная функция: в C такой вызов
+            # перенести некуда. Раньше строка просто исчезала из game.c.
+            self._warn(
+                f"unknown call '{name}', statement dropped "
+                f"(add it to BUILTINS in ds_compiler.py if it is native): {line}"
+            )
             return
         self._out(f'{fn}({", ".join(self.expr(a) for a in args)});')
 
