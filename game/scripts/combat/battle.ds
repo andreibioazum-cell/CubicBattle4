@@ -1750,19 +1750,6 @@ function draw_enemy_body()
     tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
 end
 
-// Снизу два бара выбранного бойца: текущее HP красное, сила голубая.
-function draw_live_stats()
-    number bar_w=380, bar_h=18
-    number bx=(screen_w-bar_w)/2
-    number hp_y=screen_h-78, st_y=screen_h-36
-    draw_stat_row(tr_hp(),bx,hp_y,bar_w,bar_h,player.hp,player.max_hp,0xE94560)
-    number str=class_str_of(player_class)
-    if str>1
-        str=1
-    end
-    draw_stat_row(tr_strength(),bx,st_y,bar_w,bar_h,str,1,0x4FC3F7)
-end
-
 function draw_controls()
     ring(joy.x,joy.y,joy.r,4,0x000000)
     circle(joy.x+joy.ox,joy.y+joy.oy,34,0x000000)
@@ -1813,7 +1800,6 @@ function draw_game()
     number w=screen_w/4
     hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
     hud_bar(screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1)
-    draw_live_stats()
     draw_controls()
     if finished==1
         draw_result(tr_victory(),tr_opponent_defeated())
