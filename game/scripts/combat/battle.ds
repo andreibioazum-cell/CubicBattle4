@@ -584,13 +584,32 @@ function start_enemy_attack()
         err = err + (rand()%100-50)/100.0 * 0.35
     end
     enemy.aim_err = err
-    if fabs(da)<1.6
-        enemy.angle=ta+err*0.5
+    // Раньше здесь угол мгновенно выставлялся на игрока — враг дёргался.
+    // Теперь он доворачивается плавно во время замаха (enemy_turn_prediction),
+    // поэтому атаку начинаем только если успеем довернуться за замах.
+    number turn_budget = enemy_attack_turn_speed * (enemy_windup - enemy_lock_time)
+    if fabs(da) > turn_budget
+        return 0
     end
     enemy.state=1
     enemy.state_time=enemy_windup
     enemy.hit=0
     enemy.react=enemy_human_react_min + (rand()%100)/100.0*(enemy_human_react_max-enemy_human_react_min)
+    return 1
+end
+
+// Плавный доворот на игрока: тот же лимит скорости, что и у доворота в замахе.
+function enemy_face_player()
+    enemy_predict(enemy_lead)
+    number ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x), da=ta-enemy.angle
+    if da>pi
+        da=da-2*pi
+    end
+    if da<0-pi
+        da=da+2*pi
+    end
+    number step=enemy_attack_turn_speed*dt
+    enemy.angle=enemy.angle+clamp(da,0-step,step)
 end
 
 function enemy_engage(number desired)
@@ -806,7 +825,9 @@ function update_enemy()
             enemy_predict(0)
             enemy_engage(reach*0.95)
         end
-        enemy_face_motion()
+        // После удара не отворачиваемся в сторону движения: враг остаётся
+        // лицом к игроку и сразу готов бить снова.
+        enemy_face_player()
         if enemy.state_time<=0
             enemy.state=0
             if enemy.flank<=0
@@ -872,20 +893,33 @@ function update_enemy()
                 enemy_face_motion()
                 return
             end
-            start_enemy_attack()
+            if start_enemy_attack()==1
+                return
+            end
+            // Ещё не довернулся: плавно разворачиваемся, не замирая на месте.
+            enemy_predict(enemy_lead)
+            enemy_engage(reach*0.55)
+            enemy_face_player()
             return
         end
         enemy_predict(enemy_lead)
         enemy_engage(reach*0.55)
-        enemy_face_motion()
+        // Вплотную смотрим на игрока (иначе он крутится спиной перед ударом),
+        // издалека — в сторону движения.
+        if d<=reach
+            enemy_face_player()
+        else
+            enemy_face_motion()
+        end
         return
     end
 
     if enemy.cooldown<=0&&enemy.think<=0&&(d<=reach*0.95||enemy_would_hit()==1)
         // человечная задержка — не мгновенно
         if enemy.react<=0
-            start_enemy_attack()
-            return
+            if start_enemy_attack()==1
+                return
+            end
         end
     end
 
@@ -903,7 +937,11 @@ function update_enemy()
     end
     enemy_predict(enemy_lead)
     enemy_engage(desired)
-    enemy_face_motion()
+    if d<=reach
+        enemy_face_player()
+    else
+        enemy_face_motion()
+    end
 end
 
 function tick_freeze()
@@ -1200,6 +1238,12 @@ function push_self()
 end
 
 function update_online()
+    // Бан мог прилететь уже во время боя: сразу выкидываем в меню с сообщением.
+    if net_banned() == 1
+        banned_msg = tr_banned()
+        start_transition(0)
+        return
+    end
     tick_revive()
     tick_freeze()
     tick_player_poison()
@@ -1773,7 +1817,7 @@ function disco_color(number phase)
 end
 
 function draw_disco()
-    if event_mode!=1||disco_safe==1
+    if event_mode!=1
         return
     end
     number col=disco_color(disco_t*18)
@@ -1789,7 +1833,7 @@ function update_event()
     if event_t>100000
         event_t=0
     end
-    if event_mode==1&&disco_safe==0
+    if event_mode==1
         disco_t=disco_t+dt
     else
         disco_t=0

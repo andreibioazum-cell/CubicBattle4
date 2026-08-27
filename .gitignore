@@ -9,6 +9,7 @@ debug.keystore
 # Session file created by the game (saved nick)
 auth.dat
 progress.dat
+bans.dat
 # Headless test harness build artifacts
 test/net_test.c
 test/game_test

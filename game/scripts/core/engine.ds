@@ -167,6 +167,10 @@ function draw()
     else
         draw_online()
     end
+    // Предупреждение о вспышках рисуется поверх всего и только до первого нажатия.
+    if warn_open == 1
+        draw_warning()
+    end
     if t_fade > 0
         rect(0, 0, screen_w, screen_h, (1 + floor(t_fade * 254)) * 0x1000000)
     end
@@ -174,6 +178,13 @@ end
 
 function touch(number x, number y, number action, number id)
     if t_dir != 0
+        return
+    end
+    // Пока висит предупреждение, нажатия в меню не проходят.
+    if warn_open == 1
+        if action == 1
+            warn_open = 0
+        end
         return
     end
     if game_state == 0

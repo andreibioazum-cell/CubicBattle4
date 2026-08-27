@@ -280,22 +280,47 @@ function tr_no_data()
     return "No data"
 end
 
-function tr_disco_epilepsy()
-    return "Epilepsy safe"
+// Предупреждение о вспышках света — показывается один раз при запуске игры.
+function tr_warn_title()
+    if language == 1
+        return "Внимание"
+    end
+    return "Warning"
 end
 
-function tr_mode_on()
+function tr_warn_line1()
     if language == 1
-        return "вкл"
+        return "В игре есть яркие вспышки и быстрая"
     end
-    return "on"
+    return "This game contains bright flashes and"
 end
 
-function tr_mode_off()
+function tr_warn_line2()
     if language == 1
-        return "выкл"
+        return "смена цветов (диско-режим в онлайне)."
     end
-    return "off"
+    return "fast color changes (disco mode online)."
+end
+
+function tr_warn_line3()
+    if language == 1
+        return "При эпилепсии или чувствительности"
+    end
+    return "If you have epilepsy or are sensitive"
+end
+
+function tr_warn_line4()
+    if language == 1
+        return "к свету играйте осторожно."
+    end
+    return "to light, please play with caution."
+end
+
+function tr_warn_ok()
+    if language == 1
+        return "Понятно"
+    end
+    return "OK"
 end
 
 function tr_shop()
