@@ -2,10 +2,6 @@ cmake_minimum_required(VERSION 3.16)
 project(CubicBattle C)
 set(CMAKE_C_STANDARD 99)
 
-if(MSVC)
-    add_compile_options(/utf-8)
-endif()
-
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(GAME_C "${CMAKE_CURRENT_SOURCE_DIR}/game/game.c")
 # Скрипты лежат модулями в game/scripts/ (core/ui/combat/fx) — порядок
@@ -20,34 +16,21 @@ add_custom_command(
     COMMENT "Generating game/game.c from DimScript"
 )
 
-if(ANDROID)
-    add_library(ds_game SHARED "${GAME_C}" runtime.c main.c ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
-    target_include_directories(ds_game PRIVATE . game ${ANDROID_NDK}/sources/android/native_app_glue)
-    target_link_libraries(ds_game PRIVATE android log m)
-elseif(WIN32 OR MINGW)
-    # Картинки, шрифт и звуки зашиваются прямо в Game.exe как RCDATA-ресурсы
-    # (embed_assets.py -> embedded_assets.rc; файлы из game/sounds получают
-    # имя "sounds/<файл>"), поэтому рядом с exe в релизном пакете никаких
-    # файлов assets/ и sounds/ больше не лежит.
-    set(EMBED_RC "${CMAKE_CURRENT_BINARY_DIR}/embedded_assets.rc")
-    file(GLOB_RECURSE ASSET_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/assets/*")
-    file(GLOB_RECURSE SOUND_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/game/sounds/*")
-    add_custom_command(
-        OUTPUT "${EMBED_RC}"
-        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "${CMAKE_CURRENT_SOURCE_DIR}/game/sounds" "${EMBED_RC}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/embed_assets.py" ${ASSET_FILES} ${SOUND_FILES}
-        COMMENT "Embedding game assets and sounds into Game.exe resources"
-    )
-    add_executable(Game WIN32 "${GAME_C}" runtime.c main_win32.c "${EMBED_RC}")
-    target_include_directories(Game PRIVATE . game)
-    target_link_libraries(Game PRIVATE gdi32 winmm wininet user32 kernel32 shell32)
-    if(NOT MSVC)
-        target_link_libraries(Game PRIVATE m)
-    endif()
-else()
-    add_executable(Game "${GAME_C}" runtime.c main_win32.c)
-    target_include_directories(Game PRIVATE . game)
-    target_link_libraries(Game PRIVATE m pthread)
-    add_custom_command(TARGET Game POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/game/assets" "$<TARGET_FILE_DIR:Game>/assets")
-    add_custom_command(TARGET Game POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/game/sounds" "$<TARGET_FILE_DIR:Game>/sounds")
+# Единственная целевая платформа — Android: библиотека libds_game.so, которую
+# забирает APK из game/AndroidManifest.xml. Windows-сборка (Game.exe с
+# RCDATA-ассетами) из репозитория удалена: вместе с ней убраны main_win32.c,
+# embed_assets.py и job build-windows в CI.
+#
+# Локальные проверки (headless-тест со своей точкой входа) идут не через CMake,
+# а через ./test/build_test.sh.
+if(NOT ANDROID)
+    message(FATAL_ERROR
+        "Cubic Battle собирается только под Android. Запусти CMake через инструментальный "
+        "файл NDK, например: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake "
+        "-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared. "
+        "Готовый APK проще собрать workflow в GitHub Actions.")
 endif()
+
+add_library(ds_game SHARED "${GAME_C}" runtime.c main.c ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
+target_include_directories(ds_game PRIVATE . game ${ANDROID_NDK}/sources/android/native_app_glue)
+target_link_libraries(ds_game PRIVATE android log m)

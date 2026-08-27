@@ -45,9 +45,58 @@ number event_mode=0, disco_t=0, event_t=0, event_flakes=44
 // закрывается любым нажатием (вместо отдельного режима в настройках).
 number warn_open=1
 
-// Админ
+// Админка. Админов двое: у каждого свой ник, свой пароль и свой цвет ника.
+// ADMIN_* — главный админ (красный ник), ADMIN2_* — второй (голубой ник).
+// Право на команды даёт именно пара «ник + пароль»: совпала пара — команды
+// твои, и только в онлайне после входа (net_login_status()==2).
 string ADMIN_NICK="Dimasi4ek229", ADMIN_PASS="18200"
-number admin_color=0xFFFF4444
+string ADMIN2_NICK="qwertyuiopaj1234", ADMIN2_PASS="1234"
+number admin_color=0xFFFF4444, admin2_color=0xFF4FC3F7
+// Тот же админский цвет, но для ника над персонажем в бою: там фон — арена,
+// а не тёмная панель чата, поэтому оттенки чуть контрастнее.
+number admin_head_color=0xFFFF3333, admin2_head_color=0xFF33A8FF
+
+// Номер админа по нику: 1 — главный, 2 — второй, 0 — обычный игрок.
+function admin_slot(string nick)
+    if str_eq(nick, ADMIN_NICK) == 1
+        return 1
+    end
+    if str_eq(nick, ADMIN2_NICK) == 1
+        return 2
+    end
+    return 0
+end
+
+// Ник админа по его номеру — нужен, чтобы ответ в чате подписывался
+// тем, кто ввёл команду, а не всегда главным админом.
+function admin_nick_of(number slot)
+    if slot == 2
+        return ADMIN2_NICK
+    end
+    return ADMIN_NICK
+end
+
+// Цвет ника админа: чат, лобби и таблица лидеров; для обычного игрока — base.
+function admin_color_of(string nick, number base)
+    if str_eq(nick, ADMIN_NICK) == 1
+        return admin_color
+    end
+    if str_eq(nick, ADMIN2_NICK) == 1
+        return admin2_color
+    end
+    return base
+end
+
+// То же для ника над персонажем в бою.
+function admin_head_color_of(string nick, number base)
+    if str_eq(nick, ADMIN_NICK) == 1
+        return admin_head_color
+    end
+    if str_eq(nick, ADMIN2_NICK) == 1
+        return admin2_head_color
+    end
+    return base
+end
 
 // Классы
 number player_class=0, azum_revived=0, revive_prot=0

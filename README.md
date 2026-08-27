@@ -4,10 +4,12 @@
 онлайн на четыре человека. Игра написана на C и DimScript — маленьком скриптовом
 языке из этого же репозитория.
 
-Сейчас собираются две версии:
+Сейчас собирается одна версия — для телефона:
 
-- Android 10–14, `arm64-v8a` и `armeabi-v7a`;
-- Windows, один `Game.exe` с картинками и шрифтом внутри.
+- Android 10–14, `arm64-v8a` и `armeabi-v7a`.
+
+Сборки под Windows (`Game.exe` с зашитыми ассетами) в репозитории больше нет:
+вместе с джобом CI удалены `main_win32.c` и `embed_assets.py`.
 
 ## Как играть
 
@@ -121,11 +123,9 @@
 моно или стерео, любая частота — движок сам пересчитает её в 44100 Гц. Если
 файла нет, игра просто молчит и не падает.
 
-В сборку папка попадает сама: в APK — как `assets/sounds/...`, в Windows —
-звуки зашиваются прямо в `Game.exe` (RCDATA-ресурс `sounds/<файл>`), поэтому
-рядом с exe ничего лежать не должно. Вывод звука: Android — системный
-`AudioTrack` через JNI (без лишних библиотек), Windows — waveOut (отдельный
-поток с кольцом буферов).
+В сборку папка попадает сама: в APK — как `assets/sounds/...`, рядом с файлом
+APK ничего лежать не должно. Вывод звука — системный `AudioTrack` через JNI
+(без лишних библиотек).
 
 В DimScript для этого есть встроенные функции:
 
@@ -203,40 +203,32 @@ game/scripts/
 порядок важен только для глобальных объявлений, поэтому он зафиксирован в
 `find_ds_files()` в `gen.py`.
 
-### Windows
-
-Нужны Python 3, CMake и компилятор Visual Studio или MinGW:
-
-```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-```
-
-Готовый файл будет в `build/Release/Game.exe` для Visual Studio или в
-`build/Game.exe` для одноконфигурационного генератора.
-
 ### Android
 
 Проще всего запустить workflow **Build DS Game** в GitHub Actions. Точные
 команды NDK и упаковки APK находятся в `.github/workflows/main.yml`. Сборка
 использует API 29 для нативных библиотек и target API 34 для APK.
 
-### Готовые сборки в CI
-
-Каждый push собирает две версии (job `build-windows` и `build-android`):
-артефакт **Game-Windows-x64** — это `Game.exe`, собранный MinGW-w64
-(`-mwindows -static`, картинки/шрифт/звуки внутри как RCDATA), и
-**Game-APK-Android10-14-arm64-arm32**. Обе можно скачать во вкладке Actions
-у соответствующего запуска.
-
-Job `build-windows` описан в `ci/main.yml`. GitHub App, которым работает
-автоматизация, не имеет права `workflows`, поэтому сам файл
-`.github/workflows/main.yml` она изменить не может — примени копию вручную:
+Локально через CMake собирается только нативная библиотека `libds_game.so` —
+нужны Python 3, CMake и NDK (его инструментальный файл). Под другие платформы
+CMake сообщает об ошибке: десктопной точки входа больше нет, а проверки
+играются headless-тестом из `test/`:
 
 ```sh
-cp ci/main.yml .github/workflows/main.yml
-git commit -am "CI: собирать Game.exe (MinGW-w64)" && git push
+cmake -B build \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29
+cmake --build build
 ```
+
+### Готовые сборки в CI
+
+Каждый push собирает только APK для телефона (job `build-android`) — артефакт
+**Game-APK-Android10-14-arm64-arm32** лежит во вкладке Actions у запуска.
+
+Workflow описан в единственном месте — `.github/workflows/main.yml`. Копия
+`ci/main.yml` (в ней жил job `build-windows`) удалена, поэтому дублировать
+файл и применять его вручную больше не нужно.
 
 ## Проверки
 
