@@ -32,6 +32,8 @@ extern double super_cd, player_freeze, pfreeze_a, poison_a, punch_left, aim_a, s
 extern DSArray *candy_x, *candy_y;
 extern const char *login_nick, *login_pass, *chat_input;
 extern const char *ADMIN_NICK, *ADMIN_PASS, *banned_msg;
+extern const char *ADMIN2_NICK, *ADMIN2_PASS;
+extern double admin2_color;
 extern void *player, *enemy, *punch, *gift;
 extern DSArray *remotes, *remote_punches, *remote_snow;
 extern double enemy_cooldown_min, enemy_cooldown_max;
@@ -335,6 +337,14 @@ static void bump_rival(int slot, const char *rnick) {
     seed_rival(slot, rnick, g_rival_seq);
 }
 
+/* Цвет из DimScript (0xAARRGGBB) лежит в буфере кадров в 0xAABBGGRR — как в
+ * pack_c() в graphics.c. Нужно, чтобы пиксельно проверять подсветку ника. */
+static uint32_t ds_px(double c) {
+    uint32_t v = (uint32_t)c;
+    uint32_t a = (v >> 24) & 0xff, r = (v >> 16) & 0xff, g = (v >> 8) & 0xff, b = v & 0xff;
+    if (!a) a = 255;
+    return r | (g << 8) | (b << 16) | (a << 24);
+}
 int main(void) {
     setbuf(stdout, NULL);
     screen_w = g_w; screen_h = g_h;
@@ -1153,6 +1163,109 @@ int main(void) {
         printf("=== unbanned nick is back online (slot=%g, frame %ld)\n", net_slot(), g_frame);
         tap_back();
         if (!wait_state(0, 60)) { printf("!! did not return to the lobby after the ban test\n"); return 3; }
+    }
+
+    /* --- 18. Второй админ: те же команды, но подпись — его ник --- */
+    {
+        char url[160], buf[512], chat[8192], want[64];
+        int i;
+
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/event.json", TEST_PORT);
+
+        /* Вход по второй паре «ник + пароль» из config.ds. */
+        net_logout();
+        run_frames(5);
+        tap_account();
+        if (!wait_state(7, 40)) { printf("!! account screen did not open for the second admin\n"); return 3; }
+        fill_field(tap_nick, ADMIN2_NICK);
+        fill_field(tap_pass, ADMIN2_PASS);
+        tap_login_btn();
+        if (!wait_state(0, 60)) { printf("!! second admin login failed: state=%g status=%g\n", game_state, login_status); return 3; }
+        if (strcmp(net_login_nick(), ADMIN2_NICK) != 0) { printf("!! second admin nick not applied: '%s'\n", net_login_nick()); return 3; }
+        tap_play();
+        if (!wait_state(2, 40)) { printf("!! modes screen did not open for the second admin\n"); return 3; }
+        tap_online();
+        if (!wait_state(5, 60)) { printf("!! second admin did not enter online, state=%g\n", game_state); return 3; }
+        if (!wait_slot(80)) { printf("!! second admin could not get a slot: status=%g\n", net_status()); return 3; }
+        printf("=== second admin online as '%s' (slot=%g)\n", net_login_nick(), net_slot());
+
+        /* Команда админа из чата доходит до сервера. */
+        test_http_impl("PUT", url, "0", NULL, 0, NULL, NULL, NULL, 0);
+        run_frames(2);
+        do_tap(86, 174);
+        run_frames(10);
+        if (chat_open != 1) { printf("!! chat did not open for the second admin\n"); return 3; }
+        chat_command("event 2");
+        buf[0] = 0;
+        for (i = 0; i < 200; i++) {
+            if (server_get("/event.json", buf, sizeof(buf)) == 200 && strcmp(buf, "2") == 0) break;
+            run_frames(2);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (strcmp(buf, "2") != 0) { printf("!! 'event 2' by the second admin never reached /event: '%s'\n", buf); return 3; }
+        printf("=== 'event 2' worked for the second admin (/event=2)\n");
+
+        /* Ответ в чате подписан ником того, кто ввёл команду. */
+        snprintf(want, sizeof(want), "SNOW EVENT by %s", ADMIN2_NICK);
+        chat[0] = 0;
+        for (i = 0; i < 100; i++) {
+            server_get("/rooms/main/chat.json", chat, sizeof(chat));
+            if (strstr(chat, want)) break;
+            run_frames(2);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        if (!strstr(chat, want)) { printf("!! admin reply is not signed by the acting admin, chat: %s\n", chat); return 3; }
+        printf("=== chat reply signed by the acting admin ('%s')\n", want);
+
+        /* Голубой ник: строка второго админа в списке чата рисуется его цветом
+         * (admin2_color из config.ds). Кадры ниже дают чату успеть приехать с
+         * сервера, затем ищем в области строк пиксели ровно этого цвета. */
+        for (i = 0; i < 60; i++) {
+            run_frames(2);
+            { struct timespec ts = { 0, 20 * 1000 * 1000 }; nanosleep(&ts, NULL); }
+        }
+        {
+            uint32_t want_px = ds_px(admin2_color);
+            int blue = 0, x, y;
+            for (y = 108; y < 640; y++)
+                for (x = 16; x < 1142; x++)
+                    if (g_pixels[y * g_w + x] == want_px) blue++;
+            if (blue < 40) {
+                printf("!! admin2 nick is not highlighted with its color in chat (%d px of %08x)\n", blue, want_px);
+                return 3;
+            }
+            printf("=== admin2 nick is highlighted in chat (%d px of %08x)\n", blue, want_px);
+        }
+
+        /* Обычный игрок те же команды провести не может: они остаются текстом. */
+        tap_back();
+        if (!wait_state(0, 60)) { printf("!! second admin did not leave the room\n"); return 3; }
+        net_logout();
+        run_frames(5);
+        tap_account();
+        if (!wait_state(7, 40)) { printf("!! account screen did not open for a regular player\n"); return 3; }
+        fill_field(tap_nick, "RegPlayer");
+        fill_field(tap_pass, "pw");
+        tap_login_btn();
+        if (!wait_state(0, 60)) { printf("!! regular login failed: state=%g status=%g\n", game_state, login_status); return 3; }
+        tap_play();
+        if (!wait_state(2, 40)) { printf("!! modes screen did not open for a regular player\n"); return 3; }
+        tap_online();
+        if (!wait_state(5, 60)) { printf("!! regular player did not enter online, state=%g\n", game_state); return 3; }
+        if (!wait_slot(80)) { printf("!! regular player could not get a slot: status=%g\n", net_status()); return 3; }
+        test_http_impl("PUT", url, "0", NULL, 0, NULL, NULL, NULL, 0);
+        run_frames(2);
+        do_tap(86, 174);
+        run_frames(10);
+        if (chat_open != 1) { printf("!! chat did not open for a regular player\n"); return 3; }
+        chat_command("event 2");
+        chat_command("ban RegTarget");
+        run_frames(40);
+        buf[0] = 0;
+        server_get("/event.json", buf, sizeof(buf));
+        if (strcmp(buf, "0") != 0) { printf("!! a regular player switched the event: /event='%s'\n", buf); return 3; }
+        if (!server_is_null("/bans/RegTarget.json")) { printf("!! a regular player wrote a ban to /bans\n"); return 3; }
+        printf("=== regular player's 'event 2' and 'ban' stayed plain chat\n");
     }
 
     script_active = 1;

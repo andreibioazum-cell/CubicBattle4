@@ -1175,6 +1175,39 @@ void net_ban_set(const char *nick, double banned) {
     }
 }
 
+/* event — скаляр, поэтому PUT, а не PATCH: Firebase принимает PATCH только с
+ * объектом в теле («Patch requires a JSON object ...»), и запись с телом "2"
+ * сервер отклонял — ивент загорался лишь у того, кто ввёл команду, и пропадал
+ * после следующего опроса базы. Пишем асинхронно и проверяем код ответа, как в
+ * банах: молчаливый «успех» здесь так же не нужен. */
+static void *event_write_job(void *arg) {
+    HttpJob *j = (HttpJob *)arg;
+    int code;
+    if (!j) return NULL;
+    code = http("PUT", j->url, j->body, NULL, 0);
+    if (code == 200) LOG("event saved to cloud (%s)", j->body);
+    else LOGERR("event write FAILED (HTTP %d), event is local only", code);
+    free(j);
+    return NULL;
+}
+#ifdef _WIN32
+static unsigned __stdcall win_event_write(void *arg) { event_write_job(arg); return 0; }
+#endif
+static void event_write_async(const char *url, const char *body) {
+    HttpJob *j = (HttpJob*)malloc(sizeof(*j));
+    DSThread t;
+    if (!j) return;
+    snprintf(j->url, sizeof(j->url), "%s", url);
+    snprintf(j->body, sizeof(j->body), "%s", body);
+#ifdef _WIN32
+    t = ds_thread_start(win_event_write, j);
+#else
+    t = ds_thread_start(event_write_job, j);
+#endif
+    if (t) { ds_thread_detach(t); return; }
+    free(j);
+}
+
 void net_event_set(double mode) {
     int m = (int)mode;
     if (m<0) m=0;
@@ -1183,7 +1216,7 @@ void net_event_set(double mode) {
     char url[URL], body[32];
     snprintf(url, sizeof(url), "%s/event.json", net.base);
     snprintf(body, sizeof(body), "%d", m);
-    http_patch_async(url, body);
+    event_write_async(url, body);
     lock(); net.event=m; unlock();
     LOG("event set %d", m);
 }

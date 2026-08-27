@@ -1945,10 +1945,8 @@ function draw_online()
     string myn=net_player_nick(net_slot())
     if str_len(myn)>0
         number mnw=text_ink_width(myn)*0.5
-        color ncol=0xFFFFFF
-        if str_eq(myn, ADMIN_NICK)==1
-            ncol=0xFFFF3333
-        end
+        // Ник над своим персонажем: красный у главного админа, голубой у второго.
+        color ncol=admin_head_color_of(myn,0xFFFFFF)
         text_scaled(myn,player.x-mnw/2,player.y-hw-26,ncol,0.5)
     end
     i=0
@@ -1969,10 +1967,7 @@ function draw_online()
             string rn=net_player_nick(i)
             if str_len(rn)>0
                 number rnw=text_ink_width(rn)*0.5
-                color rncol=0xFFFFFF
-                if str_eq(rn, ADMIN_NICK)==1
-                    rncol=0xFFFF3333
-                end
+                color rncol=admin_head_color_of(rn,0xFFFFFF)
                 text_scaled(rn,rx-rnw/2,ry-hw-26,rncol,0.5)
             end
         end

@@ -171,12 +171,9 @@ function draw_lobby_money(number y)
     text_scaled(cd_s, x + cw + gap, y, 0xFFFFFF, 0.5)
 end
 
-function is_admin_nick(string nick)
-    if str_eq(nick, ADMIN_NICK) == 1
-        return 1
-    end
-    return 0
-end
+// Цвет ника админа (красный у ADMIN_NICK, голубой у ADMIN2_NICK) задан
+// функцией admin_color_of() в core/config.ds — лобби, лидерборд и бой
+// пользуются ею, чтобы цвет не разъезжался по трём местам.
 
 function draw_lobby()
     number mx = (screen_w - btn_w) / 2, my = menu_top()
@@ -194,10 +191,7 @@ function draw_lobby()
                 greet = "Привет, \"" + ln + "\""
             end
             number lw = text_ink_width(greet) * 0.5
-            color col = 0xFFFFFF
-            if is_admin_nick(ln) == 1
-                col = 0xFFFF4444
-            end
+            color col = admin_color_of(ln, 0xFFFFFF)
             text_scaled(greet, (screen_w - lw) / 2, 18, col, 0.5)
         end
     end
@@ -585,10 +579,7 @@ function draw_leaderboard()
                 end
                 number rth = text_ink_height(rk) * 0.6, rtt = text_ink_top(rk) * 0.6
                 text_scaled(rk, x + 16, y + (row_h - rth) / 2 - rtt + 1, rank_c, 0.6)
-                color nick_c = 0xE0E0FF
-                if is_admin_nick(nk) == 1
-                    nick_c = 0xFFFF4444
-                end
+                color nick_c = admin_color_of(nk, 0xE0E0FF)
                 number nth = text_ink_height(nk) * 0.6, ntt = text_ink_top(nk) * 0.6
                 text_scaled(nk, x + 70, y + (row_h - nth) / 2 - ntt + 1, nick_c, 0.6)
                 number cps = net_leaderboard_cups(i)

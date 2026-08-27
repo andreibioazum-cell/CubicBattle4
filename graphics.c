@@ -244,11 +244,12 @@ static int open_asset(const char *n, uint8_t **out, size_t *sz) {
 }
 #else
 #ifdef _WIN32
-/* Картинки и шрифт встроены прямо в Game.exe как RCDATA-ресурсы
- * (embed_assets.py генерирует embedded_assets.rc в CMake). Имена ресурсов
- * совпадают с путями относительно game/assets и используют прямые слэши,
- * например "grass.png" или "fonts/ChillRoundGothic_Heavy.ttf".
- * Рядом с exe никаких файлов больше не нужно. */
+/* Путь для старой Windows-сборки: картинки и шрифт брались из RCDATA-ресурсов
+ * прямо внутри Game.exe (имена ресурсов совпадают с путями относительно
+ * game/assets и используют прямые слэши, например "grass.png" или
+ * "fonts/ChillRoundGothic_Heavy.ttf"). Сборка .exe из репозитория удалена
+ * вместе с embed_assets.py, так что этот код остался только на случай
+ * ручного переноса. */
 static int open_asset_resource(const char *n, uint8_t **out, size_t *sz) {
     HRSRC r = FindResourceA(NULL, n, RT_RCDATA);
     if (!r) return 0;
