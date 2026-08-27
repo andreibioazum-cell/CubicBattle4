@@ -282,7 +282,12 @@ function draw_classes()
 end
 
 // Два бара выбранного класса: здоровье красное, сила голубая.
+// Здоровье — живучесть в бою (у Азума с возрождением жизней вдвое больше),
+// сила — реальный урон удара в бою.
 function class_hp_of(number cls)
+    if cls == 1
+        return 20
+    end
     return 10
 end
 
@@ -290,24 +295,31 @@ function class_str_of(number cls)
     return class_punch_damage_for(cls, class_level_for(cls))
 end
 
+// Девиз класса — показывается над барами вместо названия.
+function class_desc_of(number cls)
+    if cls == 1
+        return tr_class_azum_desc()
+    end
+    if cls == 2
+        return tr_class_santa_desc()
+    end
+    return tr_class_ordinary_desc()
+end
+
 function draw_stat_row(string label, number x, number y, number w, number h, number cur, number maxv, color col)
-    text_scaled(label, x, y - 16, 0xC8C8E0, 0.38)
+    text_scaled(label, x, y - 26, 0xE8E8FF, 0.5)
     hud_bar(x, y, w, h, cur, maxv, col, 0)
 end
 
 function draw_class_stats()
-    number bar_w = 380, bar_h = 18
+    number bar_w = 520, bar_h = 26
     number bx = (screen_w - bar_w) / 2
-    number hp_y = screen_h - 78, st_y = screen_h - 36
+    number hp_y = screen_h - 110, st_y = screen_h - 46
     number hp = class_hp_of(player_class), str = class_str_of(player_class)
-    string who = class_name()
-    ctext_scaled(who, hp_y - 40, 0xFFFFFF, 0.45)
-    draw_stat_row(tr_hp(), bx, hp_y, bar_w, bar_h, hp, 10, 0xE94560)
-    number str_max = 1
-    if str > str_max
-        str = str_max
-    end
-    draw_stat_row(tr_strength(), bx, st_y, bar_w, bar_h, str, str_max, 0x4FC3F7)
+    string motto = class_desc_of(player_class)
+    ctext_scaled(motto, hp_y - 72, 0xFFFFFF, 0.8)
+    draw_stat_row(tr_hp() + ": " + hp, bx, hp_y, bar_w, bar_h, hp, 20, 0xE94560)
+    draw_stat_row(tr_strength() + ": " + str, bx, st_y, bar_w, bar_h, str, 2, 0x4FC3F7)
 end
 
 function pick_class(number cls)
