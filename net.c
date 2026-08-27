@@ -32,6 +32,11 @@
 #define READ_TICK 60
 #define CHAT_TICK 1000
 #define EVENT_TICK 500
+/* Анти-дудос со своей стороны: если состояние игрока не меняется, слот всё
+ * равно «тикать» должен чаще, чем TIMEOUT других клиентов. */
+#define HEARTBEAT_TICK 2500
+/* Чистку старых сообщений чата не нужно гонять каждую секунду. */
+#define CHAT_PRUNE_TICK 5000
 #define TIMEOUT 4000
 #define STALE 6000
 #define CHAT_MAX 32
@@ -44,6 +49,11 @@
 #define BAN_TICK 2000
 #define BAN_WAIT 2500
 #define BAN_KICK_TICK 2000
+
+/* Firebase Auth: буферы под подписанные токеном URL (URL + ?auth=<idToken>). */
+#define FB_URL_MAX 2048
+#define FB_ID_MAX 1100
+#define FB_REFRESH_MAX 512
 #ifdef _WIN32
 typedef SRWLOCK DSMutex;
 #define DS_MUTEX_INIT SRWLOCK_INIT
@@ -256,7 +266,9 @@ double net_load_azum_levels_unlocked(void) { double v; progress_read(); pg_lock(
 double net_load_santa_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa_level; pg_unlock(); return v; }
 double net_load_santa_levels_unlocked(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa_levels_unlocked; pg_unlock(); return v; }
 
-typedef struct { char url[URL]; char body[BODY*2]; } HttpJob;
+typedef struct { char url[FB_URL_MAX]; char body[BODY*2]; } HttpJob;
+static int fb_enabled(void);
+static void fb_url(char *dst, size_t cap, const char *url);
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap);
 static void *http_delete_job(void *arg);
 #ifdef _WIN32
@@ -275,7 +287,7 @@ static void http_patch_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
-    snprintf(j->url, sizeof(j->url), "%s", url);
+    fb_url(j->url, sizeof(j->url), url);
     snprintf(j->body, sizeof(j->body), "%s", body);
 #ifdef _WIN32
     t = ds_thread_start(win_http_patch, j);
@@ -713,6 +725,335 @@ static void json_escape(const char *src, char *dst, size_t cap){
     dst[o]='\0';
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Firebase Auth: базу могут читать и писать только запросы с ?auth=<idToken>.
+ *
+ * Раньше правила базы были открыты («users: .read true»), а URL лежал в
+ * открытом репозитории — любой мог выкачать чужие пароли (они хранились в
+ * открытом виде), затереть чат, слоты или баны и просто завалить базу
+ * запросами. Теперь клиент логинится в Firebase Auth по e-mail/паролю
+ * <ник>@cb4.game (пароль = игровой пароль + суффикс), получает idToken и
+ * подписывает им каждый запрос. API-ключ ограничен нашим Android-пакетом
+ * com.cb4 в Google Cloud Console, поэтому токен можно получить только из
+ * нашего приложения, а правила firebase.rules.json пускают одних лишь
+ * authenticated-запросов. Пароли из базы исчезают совсем.
+ *
+ * Если FB-ключ не задан (config.ds: FB_KEY=""), клиент работает по-старому —
+ * это переходный режим для уже собранных версий.
+ * ──────────────────────────────────────────────────────────────────────────── */
+#define FB_EMAIL_DOMAIN "@cb4.game"
+/* Пароль Firebase = игровой + суффикс: у Firebase минимум 6 символов, а игра
+ * разрешает короткие пароли; суффикс добивает длину и не даёт использовать
+ * базу паролей Firebase как самостоятельный вход. */
+#define FB_PASS_SUFFIX "|cb4v1"
+typedef struct {
+    DSMutex lock;
+    char key[128];
+    char id_token[FB_ID_MAX];
+    char refresh_token[FB_REFRESH_MAX];
+    long long expires_at;   /* мс; обновляем за минуту до истечения */
+} FirebaseAuth;
+static FirebaseAuth fb = { .lock = DS_MUTEX_INIT };
+
+void net_set_firebase_key(const char *key) {
+    size_t n;
+    if (!key) key = "";
+    while (*key == ' ' || *key == '\t') key++;
+    ds_mutex_lock(fb.lock);
+    snprintf(fb.key, sizeof(fb.key), "%s", key);
+    n = strlen(fb.key);
+    while (n && (fb.key[n-1]==' ' || fb.key[n-1]=='\t' || fb.key[n-1]=='\r' || fb.key[n-1]=='\n'))
+        fb.key[--n] = 0;
+    ds_mutex_unlock(fb.lock);
+    if (fb.key[0]) LOG("firebase auth enabled (key set)");
+}
+static int fb_enabled(void) { return fb.key[0] != 0; }
+
+static void fb_store_tokens(const char *id_token, const char *refresh_token, double expires_in_sec) {
+    ds_mutex_lock(fb.lock);
+    snprintf(fb.id_token, sizeof(fb.id_token), "%s", id_token ? id_token : "");
+    snprintf(fb.refresh_token, sizeof(fb.refresh_token), "%s", refresh_token ? refresh_token : "");
+    if (expires_in_sec < 60) expires_in_sec = 60;
+    fb.expires_at = now_ms() + (long long)(expires_in_sec * 1000.0) - 60000;
+    ds_mutex_unlock(fb.lock);
+}
+
+/* URL auth-эндпоинтов. Боевой путь — googleapis.com; если же базой указан
+ * локальный http:// тестовый сервер, auth-эндпоинты тоже ищутся на нём —
+ * так тестовый прогон проходит ровно тот же код, что и бой. */
+static void fb_auth_endpoint(char *dst, size_t cap, const char *path) {
+    if (net.base[0] && !strncmp(net.base, "http://", 7)) {
+        snprintf(dst, cap, "%s%s?key=%s", net.base, path, fb.key);
+        return;
+    }
+    if (!strcmp(path, "/v1/token"))
+        snprintf(dst, cap, "https://securetoken.googleapis.com/v1/token?key=%s", fb.key);
+    else
+        snprintf(dst, cap, "https://identitytoolkit.googleapis.com/v1%s?key=%s", path, fb.key);
+}
+
+/* Обновление idToken по refreshToken (живёт ~1 час). 1 = ок. */
+static int fb_refresh_token_now(void) {
+    char url[FB_URL_MAX], body[768], resp[2048], rt[FB_REFRESH_MAX];
+    int code;
+    if (!fb_enabled()) return 0;
+    ds_mutex_lock(fb.lock);
+    snprintf(rt, sizeof(rt), "%s", fb.refresh_token);
+    ds_mutex_unlock(fb.lock);
+    if (!rt[0]) return 0;
+    fb_auth_endpoint(url, sizeof(url), "/v1/token");
+    snprintf(body, sizeof(body),
+             "{\"grant_type\":\"refresh_token\",\"refresh_token\":\"%s\"}", rt);
+    code = http("POST", url, body, resp, sizeof(resp));
+    if (code == 200 && strstr(resp, "id_token")) {
+        char idt[FB_ID_MAX], nrt[FB_REFRESH_MAX];
+        strv(resp, "id_token", idt, sizeof(idt));
+        strv(resp, "refresh_token", nrt, sizeof(nrt));
+        if (idt[0]) {
+            fb_store_tokens(idt, nrt[0] ? nrt : rt, num(resp, "expires_in", 3600));
+            return 1;
+        }
+    }
+    if (net_log_ok()) LOGERR("firebase token refresh failed: HTTP %d %.120s", code, resp);
+    return 0;
+}
+
+/* Есть ли живой idToken (по необходимости обновляем). */
+static int fb_ensure_token(void) {
+    int ok = 0;
+    long long now = now_ms();
+    ds_mutex_lock(fb.lock);
+    ok = fb.id_token[0] != 0 && now < fb.expires_at;
+    ds_mutex_unlock(fb.lock);
+    if (ok) return 1;
+    return fb_refresh_token_now();
+}
+
+/* Копия url с приписанным ?auth=<idToken> (если токен есть). */
+static void fb_url(char *dst, size_t cap, const char *url) {
+    char tok[FB_ID_MAX];
+    size_t n;
+    if (!url) url = "";
+    tok[0] = 0;
+    if (fb_enabled()) {
+        ds_mutex_lock(fb.lock);
+        snprintf(tok, sizeof(tok), "%s", fb.id_token);
+        ds_mutex_unlock(fb.lock);
+    }
+    if (!tok[0]) { snprintf(dst, cap, "%s", url); return; }
+    n = (size_t)snprintf(dst, cap, "%s%sauth=%s", url, strchr(url, '?') ? "&" : "?", tok);
+    if (n >= cap && net_log_ok()) LOGERR("firebase: auth URL truncated");
+}
+
+/* Все обращения к данным базы идут через fb_http*: без ключа это просто http,
+ * с ключом — подписанный запрос плюс один повтор после обновления протухшего
+ * токена. 403 — это отказ правил: ретраить такой ответ бессмысленно. */
+static int fb_http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
+                      const char *header,const char *value,char *etag,size_t etag_cap) {
+    char authed[FB_URL_MAX];
+    int code;
+    if (!fb_enabled()) return http_ex(method,url,body,out,cap,header,value,etag,etag_cap);
+    fb_ensure_token();
+    fb_url(authed, sizeof(authed), url);
+    code = http_ex(method, authed, body, out, cap, header, value, etag, etag_cap);
+    if (code == 401 && fb_refresh_token_now()) {
+        fb_url(authed, sizeof(authed), url);
+        code = http_ex(method, authed, body, out, cap, header, value, etag, etag_cap);
+    }
+    if (code == 403 && net_log_ok())
+        LOGERR("firebase: HTTP 403 (permission denied) — проверь firebase.rules.json и FB_KEY");
+    return code;
+}
+static int fb_http(const char *method,const char *url,const char *body,char *out,size_t cap) {
+    return fb_http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
+}
+
+/* E-mail аккаунта игры: <ник>@cb4.game, всегда в нижнем регистре — правила
+ * базы сверяют токен с ником в нижнем регистре, а Firebase может
+ * нормализовать регистр e-mail по-своему. Ник в /users сохраняет регистр. */
+static void fb_email_of(const char *nick, char *dst, size_t cap) {
+    static const char domain[] = FB_EMAIL_DOMAIN;
+    size_t i = 0;
+    if (!nick) nick = "";
+    for (; nick[i] && i + sizeof(domain) < cap; i++) {
+        char c = nick[i];
+        dst[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+    }
+    memcpy(dst + i, domain, sizeof(domain));
+}
+
+static int fb_err_is(const char *resp, const char *code_name) {
+    return resp && strstr(resp, code_name) != NULL;
+}
+
+/* Вход/регистрация в Firebase Auth.
+ * 0 = ок (*registered=1, если аккаунт создан сейчас), 1 = неверный пароль,
+ * 2 = ошибка сети/сервера. Ник уже проверен nick_valid(): в защищённом
+ * режиме допустимы только латиница/цифры/«_» — из них собирается e-mail. */
+static int fb_sign_in(const char *nick, const char *pass, int *registered) {
+    char url[FB_URL_MAX], body[512], resp[2048];
+    char email[96], epass[192], idt[FB_ID_MAX], rt[FB_REFRESH_MAX];
+    int code;
+    if (registered) *registered = 0;
+    fb_email_of(nick, email, sizeof(email));
+    snprintf(epass, sizeof(epass), "%s%s", pass, FB_PASS_SUFFIX);
+
+    fb_auth_endpoint(url, sizeof(url), "/v1/accounts:signInWithPassword");
+    snprintf(body, sizeof(body),
+             "{\"email\":\"%s\",\"password\":\"%s\",\"returnSecureToken\":true}", email, epass);
+    code = http("POST", url, body, resp, sizeof(resp));
+    idt[0] = 0; rt[0] = 0;
+    if (code == 200) strv(resp, "idToken", idt, sizeof(idt));
+    if (code == 200 && idt[0]) {
+        strv(resp, "refreshToken", rt, sizeof(rt));
+        fb_store_tokens(idt, rt, num(resp, "expiresIn", 3600));
+        return 0;
+    }
+    if (code == 0) {
+        if (net_log_ok()) LOGERR("firebase auth: network error");
+        return 2;
+    }
+    /* EMAIL_NOT_FOUND — игрока ещё нет, регистрируем. С включённой защитой от
+     * перебора e-mail тот же ответ приходит и на неверный пароль, поэтому
+     * пробуем signUp в обоих случаях: EMAIL_EXISTS означает «аккаунт есть,
+     * значит пароль не подошёл». */
+    if (!fb_err_is(resp, "EMAIL_NOT_FOUND") &&
+        !fb_err_is(resp, "INVALID_PASSWORD") &&
+        !fb_err_is(resp, "INVALID_LOGIN_CREDENTIALS")) {
+        if (net_log_ok()) LOGERR("firebase signIn: HTTP %d %.160s", code, resp);
+        return 2;
+    }
+
+    fb_auth_endpoint(url, sizeof(url), "/v1/accounts:signUp");
+    snprintf(body, sizeof(body),
+             "{\"email\":\"%s\",\"password\":\"%s\",\"returnSecureToken\":true}", email, epass);
+    code = http("POST", url, body, resp, sizeof(resp));
+    idt[0] = 0; rt[0] = 0;
+    if (code == 200) strv(resp, "idToken", idt, sizeof(idt));
+    if (code == 200 && idt[0]) {
+        strv(resp, "refreshToken", rt, sizeof(rt));
+        fb_store_tokens(idt, rt, num(resp, "expiresIn", 3600));
+        if (registered) *registered = 1;
+        return 0;
+    }
+    if (fb_err_is(resp, "EMAIL_EXISTS") || fb_err_is(resp, "WEAK_PASSWORD")) {
+        /* Аккаунт существует, но пароль не подошёл (или гонка регистраций). */
+        if (net_log_ok()) LOG("firebase auth: wrong password for '%s'", nick);
+        return 1;
+    }
+    if (net_log_ok()) LOGERR("firebase signUp: HTTP %d %.160s", code, resp);
+    return 2;
+}
+
+/* Разбор записи /users/<ник> в локальный прогресс (без пароля: в защищённом
+ * режиме пароль проверяет Firebase Auth, а не база). */
+static void apply_user_json(const char *resp) {
+    int cups = (int)num(resp, "cups", 0);
+    int candies = (int)num(resp, "candies", 0);
+    int cls = (int)num(resp, "cls", 0);
+    int azum = (int)num(resp, "azum", 0);
+    int santa = (int)num(resp, "santa", 0);
+    int level = (int)num(resp, "level", 0);
+    int levels_unlocked = (int)num(resp, "levels", -1);
+    int ordinary_level = (int)num(resp, "ordinary_level", -1);
+    int ordinary_levels_unlocked = (int)num(resp, "ordinary_levels", -1);
+    int azum_level = (int)num(resp, "azum_level", -1);
+    int azum_levels_unlocked = (int)num(resp, "azum_levels", -1);
+    int santa_level = (int)num(resp, "santa_level", -1);
+    int santa_levels_unlocked = (int)num(resp, "santa_levels", -1);
+    if (levels_unlocked < 0) levels_unlocked = level;
+    if (cups < 0) cups = 0;
+    if (candies < 0) candies = 0;
+    if (cls != 1 && cls != 2) cls = 0;
+    azum = azum ? 1 : 0;
+    santa = santa ? 1 : 0;
+    if (cls == 1 && !azum) cls = 0;
+    if (cls == 2 && !santa) cls = 0;
+    if (ordinary_level < 0 && ordinary_levels_unlocked < 0 &&
+        azum_level < 0 && azum_levels_unlocked < 0 &&
+        santa_level < 0 && santa_levels_unlocked < 0) {
+        ordinary_level=ordinary_levels_unlocked=0;
+        azum_level=azum_levels_unlocked=0;
+        santa_level=santa_levels_unlocked=0;
+        if (cls==1 && azum) { azum_level=level; azum_levels_unlocked=levels_unlocked; }
+        else if (cls==2 && santa) { santa_level=level; santa_levels_unlocked=levels_unlocked; }
+        else { ordinary_level=level; ordinary_levels_unlocked=levels_unlocked; }
+    } else {
+        if (ordinary_level < 0) ordinary_level = 0;
+        if (ordinary_levels_unlocked < 0) ordinary_levels_unlocked = ordinary_level;
+        if (azum_level < 0) azum_level = 0;
+        if (azum_levels_unlocked < 0) azum_levels_unlocked = azum_level;
+        if (santa_level < 0) santa_level = 0;
+        if (santa_levels_unlocked < 0) santa_levels_unlocked = santa_level;
+    }
+    normalize_level_pair(&level, &levels_unlocked);
+    normalize_level_pair(&ordinary_level, &ordinary_levels_unlocked);
+    normalize_level_pair(&azum_level, &azum_levels_unlocked);
+    normalize_level_pair(&santa_level, &santa_levels_unlocked);
+    if (cls == 0) { level=ordinary_level; levels_unlocked=ordinary_levels_unlocked; }
+    else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
+    else { level=santa_level; levels_unlocked=santa_levels_unlocked; }
+    pg_lock();
+    pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
+    pg.level = level; pg.levels_unlocked = levels_unlocked;
+    pg.ordinary_level = ordinary_level; pg.ordinary_levels_unlocked = ordinary_levels_unlocked;
+    pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
+    pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
+    pg.loaded = 1;
+    pg_unlock();
+    pending_cls = cls;
+    pending_level = level;
+    progress_write(cups, candies, cls, azum, santa, level, levels_unlocked,
+                   ordinary_level, ordinary_levels_unlocked,
+                   azum_level, azum_levels_unlocked,
+                   santa_level, santa_levels_unlocked);
+}
+
+/* Создание записи нового игрока. with_pass — только для старого режима без
+ * Firebase Auth: там пароль хранится в базе (и это плохо). */
+static int put_default_user(const char *req_url, const char *nick, const char *pass) {
+    char body[BODY], epass[128], enick[64];
+    json_escape(pass ? pass : "", epass, sizeof(epass));
+    json_escape(nick, enick, sizeof(enick));
+    snprintf(body, sizeof(body),
+             "{\"nick\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,"
+             "\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,"
+             "\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0%s%s}",
+             enick, fb_enabled() ? "" : ",\"pass\":\"", fb_enabled() ? "" : epass);
+    return fb_http("PUT", req_url, body, NULL, 0);
+}
+
+static void net_auth_session_ok(const char *nick, const char *pass) {
+    pg_lock();
+    pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0;
+    pg.level = 0; pg.levels_unlocked = 0;
+    pg.ordinary_level = 0; pg.ordinary_levels_unlocked = 0;
+    pg.azum_level = 0; pg.azum_levels_unlocked = 0;
+    pg.santa_level = 0; pg.santa_levels_unlocked = 0;
+    pg.loaded = 1;
+    pg_unlock();
+    pending_cls = 0; pending_level = 0;
+    progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    lg_lock();
+    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+    snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
+    lg.status = NET_LOGIN_OK;
+    lg_unlock();
+    session_save(nick, pass);
+}
+
+/* В защищённом режиме ник обязан быть ASCII (латиница/цифры/«_»): из него
+ * собирается e-mail аккаунта Firebase Auth. */
+static int nick_ascii_ok(const char *nick) {
+    for (const char *p = nick; p && *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_'))
+            return 0;
+    }
+    return 1;
+}
+
 double net_auth(const char *url, const char *nick, const char *pass) {
     if (!nick || !nick_valid(nick)) return (double)NET_LOGIN_BAD_NICK;
     if (!pass || !pass_valid(pass)) return (double)NET_LOGIN_BAD_PASS;
@@ -726,6 +1067,55 @@ double net_auth(const char *url, const char *nick, const char *pass) {
 
     char req_url[URL], resp[RESP];
     snprintf(req_url, sizeof(req_url), "%s/users/%s.json", net.base, nick);
+
+    /* ── Защищённый режим: пароль проверяет Firebase Auth, база пароли не
+     * хранит. Токен подписывает и все остальные запросы (fb_http). ── */
+    if (fb_enabled()) {
+        int registered = 0;
+        int r;
+        if (!nick_ascii_ok(nick)) {
+            /* Из ника собирается e-mail аккаунта, поэтому в защищённом режиме
+             * допустимы только латиница, цифры и «_». */
+            LOGERR("'%s': in secured mode nick must be latin letters, digits or '_'", nick);
+            return (double)NET_LOGIN_BAD_NICK;
+        }
+        r = fb_sign_in(nick, pass, &registered);
+        if (r == 1) return (double)NET_LOGIN_WRONG_PASS;
+        if (r != 0) return (double)NET_ERROR;
+        int code = fb_http("GET", req_url, NULL, resp, sizeof(resp));
+        const char *p = skip_ws(resp);
+        if (code == 0) {
+            if (net_log_ok()) LOGERR("net_auth: network error connecting to %s", req_url);
+            return (double)NET_ERROR;
+        }
+        if (code != 200 || !p || !*p || !strncmp(p, "null", 4)) {
+            /* Записи ещё нет (новый аккаунт или старый без записи) — создаём
+             * дефолтную без пароля. */
+            int put_code = put_default_user(req_url, nick, NULL);
+            if (put_code != 200) {
+                if (net_log_ok()) LOGERR("net_auth: create user record failed HTTP %d", put_code);
+                return (double)NET_ERROR;
+            }
+            net_auth_session_ok(nick, pass);
+            LOG("%s and logged in: '%s'", registered ? "registered" : "account restored", nick);
+            return (double)NET_LOGIN_OK;
+        }
+        if (*p == '{') {
+            apply_user_json(resp);
+            lg_lock();
+            snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+            snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
+            lg.status = NET_LOGIN_OK;
+            lg_unlock();
+            session_save(nick, pass);
+            LOG("logged in: '%s' (cups=%d, candies=%d)", nick,
+                (int)num(resp, "cups", 0), (int)num(resp, "candies", 0));
+            return (double)NET_LOGIN_OK;
+        }
+        return (double)NET_ERROR;
+    }
+
+    /* ── Переходный режим без ключа Firebase: как раньше, пароль в базе. ── */
     int code = http("GET", req_url, NULL, resp, sizeof(resp));
     if (code == 0) {
         if (net_log_ok()) LOGERR("net_auth: network error connecting to %s", req_url);
@@ -734,33 +1124,12 @@ double net_auth(const char *url, const char *nick, const char *pass) {
 
     const char *p = skip_ws(resp);
     if (!p || !*p || !strncmp(p, "null", 4) || code == 404) {
-        char body[BODY], epass[128], enick[64];
-        json_escape(pass, epass, sizeof(epass));
-        json_escape(nick, enick, sizeof(enick));
-        snprintf(body, sizeof(body),
-                 "{\"nick\":\"%s\",\"pass\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0}",
-                 enick, epass);
-        int put_code = http("PUT", req_url, body, NULL, 0);
+        int put_code = put_default_user(req_url, nick, pass);
         if (put_code != 200) {
             if (net_log_ok()) LOGERR("net_auth: register failed HTTP %d", put_code);
             return (double)NET_ERROR;
         }
-        pg_lock();
-        pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0;
-        pg.level = 0; pg.levels_unlocked = 0;
-        pg.ordinary_level = 0; pg.ordinary_levels_unlocked = 0;
-        pg.azum_level = 0; pg.azum_levels_unlocked = 0;
-        pg.santa_level = 0; pg.santa_levels_unlocked = 0;
-        pg.loaded = 1;
-        pg_unlock();
-        pending_cls = 0; pending_level = 0;
-        progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-        lg_lock();
-        snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
-        snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
-        lg.status = NET_LOGIN_OK;
-        lg_unlock();
-        session_save(nick, pass);
+        net_auth_session_ok(nick, pass);
         LOG("registered and logged in: '%s'", nick);
         return (double)NET_LOGIN_OK;
     }
@@ -769,72 +1138,15 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         char got_pass[64] = "";
         strv(resp, "pass", got_pass, sizeof(got_pass));
         if (strcmp(got_pass, pass) == 0) {
-            int cups = (int)num(resp, "cups", 0);
-            int candies = (int)num(resp, "candies", 0);
-            int cls = (int)num(resp, "cls", 0);
-            int azum = (int)num(resp, "azum", 0);
-            int santa = (int)num(resp, "santa", 0);
-            int level = (int)num(resp, "level", 0);
-            int levels_unlocked = (int)num(resp, "levels", -1);
-            int ordinary_level = (int)num(resp, "ordinary_level", -1);
-            int ordinary_levels_unlocked = (int)num(resp, "ordinary_levels", -1);
-            int azum_level = (int)num(resp, "azum_level", -1);
-            int azum_levels_unlocked = (int)num(resp, "azum_levels", -1);
-            int santa_level = (int)num(resp, "santa_level", -1);
-            int santa_levels_unlocked = (int)num(resp, "santa_levels", -1);
-            if (levels_unlocked < 0) levels_unlocked = level;
-            if (cups < 0) cups = 0;
-            if (candies < 0) candies = 0;
-            if (cls != 1 && cls != 2) cls = 0;
-            azum = azum ? 1 : 0;
-            santa = santa ? 1 : 0;
-            if (cls == 1 && !azum) cls = 0;
-            if (cls == 2 && !santa) cls = 0;
-            if (ordinary_level < 0 && ordinary_levels_unlocked < 0 &&
-                azum_level < 0 && azum_levels_unlocked < 0 &&
-                santa_level < 0 && santa_levels_unlocked < 0) {
-                ordinary_level=ordinary_levels_unlocked=0;
-                azum_level=azum_levels_unlocked=0;
-                santa_level=santa_levels_unlocked=0;
-                if (cls==1 && azum) { azum_level=level; azum_levels_unlocked=levels_unlocked; }
-                else if (cls==2 && santa) { santa_level=level; santa_levels_unlocked=levels_unlocked; }
-                else { ordinary_level=level; ordinary_levels_unlocked=levels_unlocked; }
-            } else {
-                if (ordinary_level < 0) ordinary_level = 0;
-                if (ordinary_levels_unlocked < 0) ordinary_levels_unlocked = ordinary_level;
-                if (azum_level < 0) azum_level = 0;
-                if (azum_levels_unlocked < 0) azum_levels_unlocked = azum_level;
-                if (santa_level < 0) santa_level = 0;
-                if (santa_levels_unlocked < 0) santa_levels_unlocked = santa_level;
-            }
-            normalize_level_pair(&level, &levels_unlocked);
-            normalize_level_pair(&ordinary_level, &ordinary_levels_unlocked);
-            normalize_level_pair(&azum_level, &azum_levels_unlocked);
-            normalize_level_pair(&santa_level, &santa_levels_unlocked);
-            if (cls == 0) { level=ordinary_level; levels_unlocked=ordinary_levels_unlocked; }
-            else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
-            else { level=santa_level; levels_unlocked=santa_levels_unlocked; }
-            pg_lock();
-            pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa;
-            pg.level = level; pg.levels_unlocked = levels_unlocked;
-            pg.ordinary_level = ordinary_level; pg.ordinary_levels_unlocked = ordinary_levels_unlocked;
-            pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
-            pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
-            pg.loaded = 1;
-            pg_unlock();
-            pending_cls = cls;
-            pending_level = level;
-            progress_write(cups, candies, cls, azum, santa, level, levels_unlocked,
-                           ordinary_level, ordinary_levels_unlocked,
-                           azum_level, azum_levels_unlocked,
-                           santa_level, santa_levels_unlocked);
+            apply_user_json(resp);
             lg_lock();
             snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
             snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
             lg.status = NET_LOGIN_OK;
             lg_unlock();
             session_save(nick, pass);
-            LOG("logged in: '%s' (cups=%d, candies=%d)", nick, cups, candies);
+            LOG("logged in: '%s' (cups=%d, candies=%d)", nick,
+                (int)num(resp, "cups", 0), (int)num(resp, "candies", 0));
             return (double)NET_LOGIN_OK;
         } else {
             if (net_log_ok()) LOG("wrong password for '%s'", nick);
@@ -847,6 +1159,10 @@ double net_auth(const char *url, const char *nick, const char *pass) {
 
 double net_set_nick(const char *nick) {
     if (!nick || !nick_valid(nick)) return 0.0;
+    /* В защищённом режиме «примерить» чужой ник с дефолтным паролем нельзя:
+     * это создало бы аккаунт Firebase Auth на чужое имя. Ник меняется только
+     * через полноценный net_auth со своим паролем. */
+    if (fb_enabled()) return 0.0;
     return net_auth(net.base, nick, "123456") == (double)NET_LOGIN_OK ? 1.0 : 0.0;
 }
 
@@ -1027,7 +1343,7 @@ static int ban_sync(void) {
     int code, n = 0;
     if (!net.base[0]) return 0;
     snprintf(url, sizeof(url), "%s/bans.json", net.base);
-    code = http("GET", url, NULL, resp, sizeof(resp));
+    code = fb_http("GET", url, NULL, resp, sizeof(resp));
     if (code != 200) {
         if (net_log_ok()) LOGERR("ban list: HTTP %d", code);
         return 0;
@@ -1081,7 +1397,7 @@ double net_is_banned(const char *nick) {
     if (nick_banned_locally(nick)) return 1;
     if (!net.base[0]) return 0;
     snprintf(url, sizeof(url), "%s/bans/%s.json", net.base, nick);
-    code = http("GET", url, NULL, resp, sizeof(resp));
+    code = fb_http("GET", url, NULL, resp, sizeof(resp));
     if (code == 200) {
         p = skip_ws(resp);
         if (p && *p && strncmp(p, "null", 4) != 0) {
@@ -1102,7 +1418,7 @@ double net_banned(void) {
 }
 
 /* Пишет бан в облако отдельным потоком и проверяет, что запись прошла. */
-typedef struct { char url[URL]; char nick[LOGIN_NICK_MAX + 1]; int banned; } BanJob;
+typedef struct { char url[FB_URL_MAX]; char nick[LOGIN_NICK_MAX + 1]; int banned; } BanJob;
 static void *ban_write_job(void *arg) {
     BanJob *j = (BanJob *)arg;
     int code;
@@ -1134,7 +1450,7 @@ static void ban_write_async(const char *url, const char *nick, int banned) {
     BanJob *j = (BanJob *)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
-    snprintf(j->url, sizeof(j->url), "%s", url);
+    fb_url(j->url, sizeof(j->url), url);
     snprintf(j->nick, sizeof(j->nick), "%s", nick);
     j->banned = banned;
 #ifdef _WIN32
@@ -1197,7 +1513,7 @@ static void event_write_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
-    snprintf(j->url, sizeof(j->url), "%s", url);
+    fb_url(j->url, sizeof(j->url), url);
     snprintf(j->body, sizeof(j->body), "%s", body);
 #ifdef _WIN32
     t = ds_thread_start(win_event_write, j);
@@ -1333,7 +1649,7 @@ static void *lb_fetch_job(void *arg) {
     char url[URL], resp[65536];
     snprintf(url, sizeof(url), "%s/users.json", base);
     free(base);
-    int code = http("GET", url, NULL, resp, sizeof(resp));
+    int code = fb_http("GET", url, NULL, resp, sizeof(resp));
     if (code != 200) {
         ds_mutex_lock(lb.lock);
         lb.status = 4;
@@ -1414,7 +1730,7 @@ static void http_post_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
-    snprintf(j->url, sizeof(j->url), "%s", url);
+    fb_url(j->url, sizeof(j->url), url);
     snprintf(j->body, sizeof(j->body), "%s", body);
 #ifdef _WIN32
     t = ds_thread_start(win_http_post, j);
@@ -1437,9 +1753,13 @@ static void chat_delete_key_async(const char *key) {
     DSThread t;
     if (!key || !*key) return;
     if (strchr(key, '/') || strchr(key, '.') || strchr(key, '#')) return;
-    url = (char*)malloc(URL);
+    url = (char*)malloc(FB_URL_MAX);
     if (!url) return;
-    snprintf(url, URL, "%s/rooms/%s/chat/%s.json", net.base, net.room, key);
+    {
+        char plain[URL];
+        snprintf(plain, sizeof(plain), "%s/rooms/%s/chat/%s.json", net.base, net.room, key);
+        fb_url(url, FB_URL_MAX, plain);
+    }
 #ifdef _WIN32
     t = ds_thread_start(win_http_delete, url);
 #else
@@ -1448,38 +1768,52 @@ static void chat_delete_key_async(const char *key) {
     if (t) { ds_thread_detach(t); return; }
     free(url);
 }
+/* Анти-флуд (меньше нагрузки на базу): сравнение полей актора — если игрок
+ * стоит на месте и ничего не меняет, PUT можно пропустить. */
+static int actor_same(const Actor *x, const Actor *y) {
+    return x->x==y->x && x->y==y->y && x->a==y->a && x->hp==y->hp && x->alive==y->alive
+        && x->punch_x==y->punch_x && x->punch_y==y->punch_y && x->punch_dx==y->punch_dx && x->punch_dy==y->punch_dy && x->punch==y->punch
+        && x->snow_x==y->snow_x && x->snow_y==y->snow_y && x->snow_dx==y->snow_dx && x->snow_dy==y->snow_dy && x->snow==y->snow
+        && x->cls==y->cls && x->level==y->level && !strcmp(x->nick,y->nick);
+}
 static int push_state(void) {
+    static Actor last; static long long last_put = 0; static int have_last = 0;
     Actor a; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
     lock(); a=net.me; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
+    /* Стоим на месте и свежий heartbeat уже был — базу не дёргаем. seq обязан
+     * обновляться хотя бы раз в HEARTBEAT_TICK: иначе другие игроки через
+     * TIMEOUT сочтут слот мёртвым и заберут его. */
+    if (have_last && actor_same(&a,&last) && now_ms()-last_put < HEARTBEAT_TICK) return 1;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
     snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"cls\":%.0f,\"level\":%.0f}",
         net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
         safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch),
         safe(a.snow_x),safe(a.snow_y),safe(a.snow_dx),safe(a.snow_dy),safe(a.snow),safe(a.cls),safe(a.level));
-    int c = http("PUT",url,body,NULL,0);
+    int c = fb_http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d", c);
+    if (c == 200) { last = a; last_put = now_ms(); have_last = 1; }
     return c == 200;
 }
 static int pull_state(char *resp,size_t cap) {
     char url[URL];
     snprintf(url,sizeof(url),"%s/rooms/%s/players.json",net.base,net.room);
-    int c = http("GET",url,NULL,resp,cap);
+    int c = fb_http("GET",url,NULL,resp,cap);
     if (c != 200 && net_log_ok()) LOGERR("pull state: HTTP %d", c);
     return c == 200;
 }
 static int pull_event(char *resp,size_t cap) {
     char url[URL];
     snprintf(url,sizeof(url),"%s/event.json",net.base);
-    int c = http("GET",url,NULL,resp,cap);
+    int c = fb_http("GET",url,NULL,resp,cap);
     if (c != 200 && net_log_ok()) LOGERR("pull event: HTTP %d", c);
     return c == 200;
 }
 
 static void release_slot(void) {
     int slot; char url[URL]; lock(); slot=net.slot; net.slot=-1; unlock(); if(slot<0)return;
-    snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); http("DELETE",url,NULL,NULL,0);
+    snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); fb_http("DELETE",url,NULL,NULL,0);
 }
 static int claim_slot(void) {
     static unsigned long seen_seq[NET_SLOTS]; static long long seen_at[NET_SLOTS]; static char seen_uid[NET_SLOTS][24];
@@ -1488,7 +1822,7 @@ static int claim_slot(void) {
         unsigned long seq; int claim=0,code;
         if (!net.run) return -1;
         snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
-        code=http_ex("GET",url,NULL,resp,sizeof(resp),"X-Firebase-ETag","true",etag,sizeof(etag));
+        code=fb_http_ex("GET",url,NULL,resp,sizeof(resp),"X-Firebase-ETag","true",etag,sizeof(etag));
         if(code!=200) { if(net_log_ok()) LOGERR("claim slot %d: HTTP %d", slot, code); continue; }
         strv(resp,"uid",uid,sizeof(uid));
         if(uid[0]&&!strcmp(uid,net.uid))return slot;
@@ -1505,9 +1839,8 @@ static int claim_slot(void) {
             json_escape(net.me.nick,enick,sizeof(enick));
             snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"cls\":%.0f,\"level\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level));
         }
-        code=http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
-        if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
-        if(net_log_ok()) LOGERR("claim slot %d: PUT failed, HTTP %d", slot, code);
+        code=fb_http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
+        if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }        if(net_log_ok()) LOGERR("claim slot %d: PUT failed, HTTP %d", slot, code);
     }
     return -1;
 }
@@ -1622,7 +1955,7 @@ static void parse_and_store_chat(const char *json){
 static int pull_chat(char *resp, size_t cap){
     char url[URL];
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=%d",net.base,net.room,CHAT_MAX);
-    return http("GET",url,NULL,resp,cap)==200;
+    return fb_http("GET",url,NULL,resp,cap)==200;
 }
 static void prune_old_chat(void){
     char url[URL], resp[CHAT_RESP];
@@ -1638,7 +1971,7 @@ static void prune_old_chat(void){
     unlock();
     if(count<keep || keep<1) return;
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToFirst=16",net.base,net.room);
-    if(http("GET",url,NULL,resp,sizeof(resp))!=200) return;
+    if(fb_http("GET",url,NULL,resp,sizeof(resp))!=200) return;
     n=parse_chat_list(resp, oldm, 16);
     for(i=0;i<n;i++){
         int kept=0;
@@ -1659,6 +1992,15 @@ static void wait_ban_list(void) {
     long long deadline = now_ms() + BAN_WAIT;
     while (net.run && !ban_synced() && now_ms() < deadline) sleep_ms(50);
 }
+/* Пауза после неудач: с каждой следующей ошибкой вдвое длиннее (300 мс …
+ * 8 с, плюс джиттер). Раньше потоки бились в базу каждые 300–500 мс даже
+ * когда она лежала, усиливая аварию. */
+static void net_fail_sleep(int fails) {
+    int ms = 300;
+    for (int i = 1; i < fails && ms < 8000; i++) ms *= 2;
+    if (ms > 8000) ms = 8000;
+    sleep_ms(ms + (int)(now_ms() % 250));
+}
 static void mark_self_banned(const char *nick) {
     int fresh;
     lock(); fresh = !net.self_banned; net.self_banned = 1; unlock();
@@ -1666,10 +2008,14 @@ static void mark_self_banned(const char *nick) {
 }
 /* Выкидываем слот забаненного игрока, чтобы он не мешал бою у остальных. */
 static void room_slot_delete_async(int slot) {
-    char *url = (char*)malloc(URL);
+    char *url = (char*)malloc(FB_URL_MAX);
     DSThread t;
     if (!url || !net.base[0]) { free(url); return; }
-    snprintf(url, URL, "%s/rooms/%s/players/%d.json", net.base, net.room, slot);
+    {
+        char plain[URL];
+        snprintf(plain, sizeof(plain), "%s/rooms/%s/players/%d.json", net.base, net.room, slot);
+        fb_url(url, FB_URL_MAX, plain);
+    }
 #ifdef _WIN32
     t = ds_thread_start(win_http_delete, url);
 #else
@@ -1696,11 +2042,11 @@ static void *thread_main(void *arg) {
                 continue;
             }
             slot=claim_slot();
-            if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot");} sleep_ms(500); continue; }
+            if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot");} net_fail_sleep(fails); continue; }
             lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.players[slot].online=1; unlock(); fails=0;
             LOG("slot %d claimed", (int)net.slot);
         }
-        if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push state");} sleep_ms(300); continue; }
+        if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push state");} net_fail_sleep(fails); continue; }
         fails=0; status(NET_PLAYING);
         long long spent=now_ms()-start; if(spent<WRITE_TICK)sleep_ms((int)(WRITE_TICK-spent));
     }
@@ -1708,7 +2054,8 @@ static void *thread_main(void *arg) {
 }
 static void *reader_thread(void *arg) {
     char resp[RESP], chat_resp[CHAT_RESP], event_resp[RESP];
-    long long next_chat=0, next_event=0, next_ban=0;
+    long long next_chat=0, next_event=0, next_ban=0, next_prune=0;
+    int fails=0;
     (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
@@ -1728,11 +2075,14 @@ static void *reader_thread(void *arg) {
         }
         lock(); slot=net.slot; unlock();
         if(slot<0){ sleep_ms(50); continue; }
-        if(pull_state(resp,sizeof(resp))) read_players(resp);
+        if(pull_state(resp,sizeof(resp))) { read_players(resp); fails=0; }
+        else { if(fails<20) fails++; net_fail_sleep(fails); }
         if(start>=next_chat) {
             if(pull_chat(chat_resp,sizeof(chat_resp))) {
                 parse_and_store_chat(chat_resp);
-                prune_old_chat();
+                /* Чистку старых сообщений гоняем редко: это отдельный GET,
+                 * который базе не нужен каждую секунду. */
+                if(start>=next_prune) { prune_old_chat(); next_prune=now_ms()+CHAT_PRUNE_TICK; }
             }
             next_chat=now_ms()+CHAT_TICK;
         }

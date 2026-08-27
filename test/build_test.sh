@@ -13,6 +13,9 @@ cp "$CONFIG" /tmp/config.ds.bak
 trap 'cp /tmp/config.ds.bak "$CONFIG"; python3 gen.py >/dev/null' EXIT
 
 sed -i "s|$REAL_URL|$TEST_URL|" "$CONFIG"
+# Включаем защищённый режим: логин через фейковый Firebase Auth и ?auth= на
+# каждом запросе к базе — как с настоящим ключом в бою.
+sed -i 's|^string FB_KEY=.*|string FB_KEY="fake-key"|' "$CONFIG"
 python3 gen.py >/dev/null
 
 # Regenerate the net.c copy with the test HTTP hook.

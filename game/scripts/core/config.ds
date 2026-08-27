@@ -34,6 +34,11 @@ string GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch
 string AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png"
 string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png"
 string FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main"
+// Web API key Firebase (ограничить пакетом com.cb4 в Google Cloud Console!).
+// Пусто — старый режим без Firebase Auth (переходный для собранных версий).
+// Заполни ключом — и база открывается только нашему приложению: все запросы
+// подписываются токеном Firebase Auth, см. FIREBASE.md.
+string FB_KEY=""
 string login_nick="", login_pass=""
 
 string LOBBY_MUSIC="lobbymusic.wav"
@@ -102,6 +107,10 @@ end
 number player_class=0, azum_revived=0, revive_prot=0
 number cups=0, candies=0, azum_owned=0, santa_owned=0, cup_win=5, candy_win=3
 number azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
+// Дебаунс победы в онлайне: соперник должен побыть в комнате столько секунд,
+// прежде чем его исчезновение засчитается как победа (защита от «фантомных»
+// сетевых снимков на гонках удаления слотов).
+number foes_seen_t=0, foes_seen_min=1.0
 
 // Уровни 1..3
 number player_level=0, levels_unlocked=0, max_level=3, level_base_cost=30, level_cost_step=10, level_msg_t=0
@@ -119,6 +128,8 @@ number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_o
 number shadow_off=10, shadow_alpha=0x60
 number santa_candy_cost=100
 number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
-number dust_max=28, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.06, dust_r_max=8, dust_spd=38
+// Пыль: пул общий на всех бегунов (игрок + враг-бот + до трёх соперников
+// в онлайне), поэтому слотов больше, а у каждого бегуна свой кулдаун спавна.
+number dust_max=48, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.06, dust_r_max=8, dust_spd=38
 number dust_back_off=34, dust_back_share=0.85, dust_side_share=0.4
-number dust_cd=0
+number dust_cd=0, enemy_dust_cd=0, dust_enemy_min_speed=40

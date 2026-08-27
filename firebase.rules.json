@@ -1,34 +1,93 @@
 {
   "rules": {
+    "functions": {
+      "gameUser": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
+      "adminUser": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')"
+    },
+
     ".read": false,
     ".write": false,
+
     "event": {
-      ".read": true,
-      ".write": true
+      ".read": "gameUser()",
+      ".write": "adminUser()",
+      ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2"
     },
+
     "bans": {
-      ".read": true,
-      ".write": true
-    },
-    "users": {
-      ".read": true,
+      ".read": "gameUser()",
       "$nick": {
-        ".write": "!data.exists() || newData.child('pass').val() == data.child('pass').val()"
+        ".write": "adminUser()",
+        ".validate": "$nick.matches(/^[A-Za-z0-9_]{1,16}$/) && newData.isBoolean()"
       }
     },
+
+    "users": {
+      ".read": "gameUser()",
+      "$nick": {
+        ".write": "gameUser() && auth.token.email.toLowerCase() == $nick.toLowerCase() + '@cb4.game'",
+        ".validate": "$nick.matches(/^[A-Za-z0-9_]{1,16}$/) && newData.hasChildren(['nick','cups','candies','cls','azum','santa','level','levels'])",
+        "nick": { ".validate": "newData.isString() && newData.val().length <= 16" },
+        "pass": { ".validate": false },
+        "cups": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "candies": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2" },
+        "azum": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+        "santa": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+        "level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "ordinary_level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "ordinary_levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "azum_level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "azum_levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "santa_level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "santa_levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "$other": { ".validate": false }
+      }
+    },
+
     "rooms": {
+      ".read": "gameUser()",
       "$room": {
         "players": {
-          ".read": true,
+          ".read": "gameUser()",
           "$slot": {
-            ".write": true,
-            ".validate": "$slot.matches(/^[0-3]$/)"
+            ".write": "gameUser()",
+            ".validate": "$slot.matches(/^[0-3]$/) && newData.hasChildren(['uid','nick','x','y','angle','hp','alive','seq'])",
+            "uid": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 24" },
+            "nick": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+            "x": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "angle": { ".validate": "newData.isNumber() && newData.val() >= -7 && newData.val() <= 7" },
+            "hp": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "alive": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "seq": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+            "px": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "py": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "pdx": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
+            "pdy": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
+            "punch": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+            "sx": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "sy": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "sdx": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
+            "sdy": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
+            "snow": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+            "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2" },
+            "level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+            "$other": { ".validate": false }
           }
         },
         "chat": {
-          ".read": true,
-          ".write": true,
-          ".indexOn": ".key"
+          ".read": "gameUser()",
+          ".indexOn": ".key",
+          "$msg": {
+            ".write": "gameUser()",
+            ".validate": "newData.hasChildren(['uid','nick','text'])",
+            "uid": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 24" },
+            "nick": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+            "text": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 96" },
+            "$other": { ".validate": false }
+          }
         }
       }
     }

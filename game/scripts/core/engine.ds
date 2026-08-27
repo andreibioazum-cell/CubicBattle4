@@ -65,6 +65,7 @@ function init()
     png_load(SANTA_PUNCH_TEX)
     png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
+    net_set_firebase_key(FB_KEY)
     net_autologin(FIREBASE)
     music_ok = snd_load(LOBBY_MUSIC)
     if music_ok == 1

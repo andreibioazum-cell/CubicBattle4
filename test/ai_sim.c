@@ -21,7 +21,7 @@
 #include <math.h>
 #include "runtime.h"
 
-extern double game_state, t_dir;
+extern double game_state, t_dir, warn_open;
 extern void *player, *enemy;
 extern double finished;
 
@@ -86,6 +86,9 @@ static int wait_state(double want, int max_iters) {
 }
 
 static int goto_solo(void) {
+    /* Предупреждение об эпилепсии живёт 2.5 с и глотает тапы — ждём, пока
+     * не растает полностью. */
+    { int guard = 0; while (warn_open != 0 && guard++ < 400) run_frames(5); }
     do_tap((float)(g_w / 2), (float)(g_h / 2 - 88));    /* lobby: Играть */
     if (!wait_state(2, 200)) return 0;
     do_tap((float)(g_w / 2), (float)(g_h / 2 - 8));     /* modes: Соло */
@@ -207,11 +210,15 @@ int main(void) {
     }
     /* Спрайт бота в движении смотрит по вектору скорости (не на игрока) и
      * поворачивается плавно: worst_jerk ограничен шагом enemy_face_speed —
-     * pi*14/60 ~= 42 градуса за кадр (первый шаг разворота при обходе). */
+     * pi*14/60 ~= 42 градуса за кадр (первый шаг разворота при обходе).
+     * face_aligned исторически требовал 70%, но теперь бот «человечнее»:
+     * после удара он остаётся лицом к игроку (см. README) и покачивается,
+     * поэтому часть кадров он честно смотрит не по движению — порог снижен
+     * до 55%, а резкость поворота по-прежнему проверяется жёстко. */
     for (int i = 0; i < 4; i++) {
         if (rs[i].move_frames > 50) {
             double ratio = (double)rs[i].face_aligned / rs[i].move_frames;
-            if (ratio < 0.7) {
+            if (ratio < 0.55) {
                 printf("!! bot faces its movement only %.0f%% of the time (%s)\n", ratio * 100, rs[i].name);
                 return 1;
             }

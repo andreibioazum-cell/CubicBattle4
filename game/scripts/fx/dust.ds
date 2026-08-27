@@ -71,6 +71,15 @@ function draw_dust()
     end
 end
 
+// Общий спавн следа: px,py — точка позади бегуна, jdx,jdy — направление
+// движения (нормализовано). Ставим 1-2 частицы для пышности.
+function dust_trail(number px, number py, number jdx, number jdy)
+    dust_spawn(px, py, jdx, jdy)
+    if rand() % 2 == 0
+        dust_spawn(px - jdx * dust_back_off * 0.4, py - jdy * dust_back_off * 0.4, jdx, jdy)
+    end
+end
+
 // ── Тик спавна пыли (вызывается из move_player) ────────────────────────────
 function tick_dust(number jdx, number jdy, number jmag)
     if finished != 0
@@ -84,11 +93,49 @@ function tick_dust(number jdx, number jdy, number jmag)
         return
     end
     dust_cd = dust_spawn_cd
-    // Спавним 1-2 частицы сразу для пышности — позади кубика, чтобы след
-    // тянулся сзади, а не под самим персонажем.
-    number bx = player.x - jdx * dust_back_off, by = player.y - jdy * dust_back_off
-    dust_spawn(bx, by, jdx, jdy)
-    if rand() % 2 == 0
-        dust_spawn(player.x - jdx * dust_back_off * 1.4, player.y - jdy * dust_back_off * 1.4, jdx, jdy)
+    // Спавним позади кубика, чтобы след тянулся сзади, а не под ногами.
+    dust_trail(player.x - jdx * dust_back_off, player.y - jdy * dust_back_off, jdx, jdy)
+end
+
+// ── След врага-бота (соло): тот же шлейф, что и у игрока ───────────────────
+// Вызывается из enemy_move с фактической скоростью (с учётом заморозки):
+// стоит на месте или заморожен — пыли нет, побежал — потянулся след.
+function tick_enemy_dust(number vx, number vy)
+    if finished != 0 || enemy.hp <= 0
+        return
     end
+    number mag = sqrt(vx*vx + vy*vy)
+    if mag < dust_enemy_min_speed
+        return
+    end
+    if enemy_dust_cd > 0
+        enemy_dust_cd = enemy_dust_cd - dt
+        return
+    end
+    enemy_dust_cd = dust_spawn_cd
+    number dx = vx / mag, dy = vy / mag
+    dust_trail(enemy.x - dx * dust_back_off, enemy.y - dy * dust_back_off, dx, dy)
+end
+
+// ── След соперников в онлайне ───────────────────────────────────────────────
+// Сетевые позиции приходят скачками и сглаживаются в smooth_remotes, поэтому
+// скорость оцениваем по остаточному расстоянию до цели: dist*remote_smooth —
+// это примерно пиксели в секунду. Идёт — пыль тянется, замер — тает.
+function tick_remote_dust(number s, number x, number y, number tx, number ty)
+    if finished != 0
+        return
+    end
+    number vdx = tx - x, vdy = ty - y
+    number est = sqrt(vdx*vdx + vdy*vdy) * remote_smooth
+    if est < dust_enemy_min_speed || est > 900
+        return
+    end
+    if arr_get(remote_dust_cd, s) > 0
+        arr_set(remote_dust_cd, s, arr_get(remote_dust_cd, s) - dt)
+        return
+    end
+    arr_set(remote_dust_cd, s, dust_spawn_cd)
+    number dl = sqrt(vdx*vdx + vdy*vdy)
+    number dx = vdx / dl, dy = vdy / dl
+    dust_trail(x - dx * dust_back_off, y - dy * dust_back_off, dx, dy)
 end

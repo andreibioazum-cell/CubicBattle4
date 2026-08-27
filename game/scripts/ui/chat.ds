@@ -148,12 +148,30 @@ function chat_update()
     end
 end
 
+// Кнопка «Чат» — того же размера, что и «Назад» (btn_w × btn_h): в старой
+// версии она была маленькой (140×48) и в неё приходилось целиться.
+function chat_btn_x()
+    return 16
+end
+
+function chat_btn_y()
+    return 150
+end
+
+function chat_btn_w()
+    return btn_w
+end
+
+function chat_btn_h()
+    return btn_h
+end
+
 function draw_chat()
     if game_state != 5
         return
     end
     if chat_open == 0
-        button(tr_chat(), 16, 150, 140, 48)
+        button(tr_chat(), chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h())
         return
     end
     rect(0, 0, screen_w, screen_h, 0xFF1E1E2F)
@@ -213,7 +231,7 @@ function touch_chat(number x, number y, number action)
         return 0
     end
     if chat_open == 0
-        if chat_hit(x, y, 16, 150, 140, 48) == 1
+        if chat_hit(x, y, chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h()) == 1
             chat_open = 1
             keyboard_hide()
             return 1
