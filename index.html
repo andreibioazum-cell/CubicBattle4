@@ -67,17 +67,28 @@
      Чистить базу могут только админские аккаунты — правила пропускают запись только им.</p>
   <div class="row">
     <input id="nick" placeholder="ник" value="Dimasi4ek229" size="18">
-    <input id="pass" placeholder="пароль" type="password" size="18">
+    <input id="pass" placeholder="пароль" type="password" size="18" autocomplete="current-password">
     <button id="login" class="primary">Войти</button>
+    <label class="chk"><input type="checkbox" id="showPass"> показать пароль</label>
   </div>
+  <p class="muted" id="emailHint" style="margin:8px 0 0"></p>
   <details style="margin-top:10px">
     <summary class="muted">Настройки проекта (URL базы / API-ключ)</summary>
     <div class="row" style="margin-top:8px">
       <input id="dbUrl" size="52" value="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com">
       <input id="apiKey" size="42" value="AIzaSyDJEqopxP5EqEoxP_ehO3jFXbNztu3DgVs">
-      <label class="chk"><input type="checkbox" id="passSuffix" checked> добавлять внутренний суффикс к паролю</label>
-      <input id="suffix" size="14" value="#cb4" title="суффикс пароля Firebase">
+      <button id="checkKey">Проверить ключ</button>
     </div>
+    <div class="row" style="margin-top:8px">
+      <label class="chk"><input type="checkbox" id="passSuffix" checked> добавлять внутренний суффикс к паролю</label>
+      <input id="suffix" size="14" value="|cb4v1" title="суффикс пароля Firebase">
+    </div>
+    <p class="muted" style="margin:8px 0 0">
+      Пароль для Firebase = игровой пароль + суффикс. Суффикс <b>обязан</b> совпадать с
+      <code>FB_PASS_SUFFIX</code> в <code>net.c</code> (сейчас <code>|cb4v1</code>), иначе Firebase
+      отвечает <code>INVALID_LOGIN_CREDENTIALS</code>. Панель на всякий случай сама перебирает
+      известные варианты суффикса, так что вход обычно проходит и с чужим значением в поле.
+    </p>
   </details>
 </section>
 
@@ -174,7 +185,7 @@ const CHAT_OK   = ["uid","nick","text"];
 const NICK_RE   = /^[A-Za-z0-9_]{1,16}$/;
 const SLOT_STALE_MS = 60000;
 
-let TOKEN = null, REFRESH = null, EMAIL = "", SNAP = null, FOUND = [];
+let TOKEN = null, REFRESH = null, EMAIL = "", EXP = 0, SNAP = null, FOUND = [];
 
 function log(msg, cls){
   const d = document.createElement("div");
@@ -184,56 +195,215 @@ function log(msg, cls){
   $("#log").scrollTop = 1e9;
   $("#logBox").classList.remove("hide");
 }
-const dbUrl = () => $("#dbUrl").value.replace(/\/+$/,"");
+const dbUrl = () => $("#dbUrl").value.trim().replace(/\/+$/,"");
 const key   = () => $("#apiKey").value.trim();
+/* Тестовый прогон (http://localhost с test/fake_firebase.py) ходит за auth туда же,
+ * куда и за данными — ровно как fb_auth_endpoint() в net.c. */
+const authHost  = () => /^http:\/\//.test(dbUrl()) ? dbUrl() : "https://identitytoolkit.googleapis.com";
+const tokenHost = () => /^http:\/\//.test(dbUrl()) ? dbUrl() : "https://securetoken.googleapis.com";
+
+/* ---------- настройки: помним между визитами ---------- */
+const LS = "cb4.admin.v1";
+function cfg(){ try{ return JSON.parse(localStorage.getItem(LS) || "{}") || {}; }catch(e){ return {}; } }
+function saveCfg(p){ try{ localStorage.setItem(LS, JSON.stringify({...cfg(), ...p})); }catch(e){} }
+function loadCfg(){
+  const c = cfg();
+  if(typeof c.nick   === "string") $("#nick").value   = c.nick;
+  if(typeof c.dbUrl  === "string") $("#dbUrl").value  = c.dbUrl;
+  if(typeof c.apiKey === "string") $("#apiKey").value = c.apiKey;
+  if(typeof c.suffix === "string") $("#suffix").value = c.suffix;
+  $("#passSuffix").checked = c.suffixOn !== false;
+}
+function saveAll(){
+  saveCfg({nick: $("#nick").value.trim(), dbUrl: $("#dbUrl").value.trim(),
+           apiKey: $("#apiKey").value.trim(), suffix: $("#suffix").value,
+           suffixOn: $("#passSuffix").checked});
+}
+function emailHint(){
+  const nick = $("#nick").value.trim() || "<ник>";
+  const sfx = $("#passSuffix").checked ? $("#suffix").value : "";
+  $("#emailHint").innerHTML =
+    "Вход как <code>" + esc(nick.toLowerCase() + "@cb4.game") + "</code>, пароль = «пароль» + «" +
+    esc(sfx) + "»" + (sfx ? "" : " (суффикс выключен)");
+}
 
 /* ---------- auth ---------- */
+const ADMINS = ["dimasi4ek229@cb4.game", "qwertyuiopaj1234@cb4.game"];
+/* Сюда — все суффиксы, с которыми игра когда-либо создавала аккаунты.
+ * Первый = актуальный FB_PASS_SUFFIX из net.c. */
+const KNOWN_SUFFIXES = ["|cb4v1", "#cb4", ""];
+
+const AUTH_ERR = {
+  EMAIL_NOT_FOUND:
+    "аккаунта с таким e-mail нет в Firebase Auth. Один раз зайди в игру под этим ником — игра сама его создаст (accounts:signUp) — и возвращайся сюда.",
+  INVALID_PASSWORD: "неверный пароль",
+  INVALID_LOGIN_CREDENTIALS:
+    "неверный пароль или такого аккаунта нет (Firebase намеренно не говорит, что именно). " +
+    "Чаще всего дело в суффиксе: пароль для Firebase = игровой пароль + «|cb4v1» (FB_PASS_SUFFIX в net.c). " +
+    "Панель сама перебирает известные варианты, так что если и это не помогло — проверь, что ник и пароль те же, что в игре.",
+  USER_DISABLED: "аккаунт отключён — Firebase Console → Authentication → Users",
+  TOO_MANY_ATTEMPTS_TRY_LATER: "слишком много попыток входа, подожди пару минут и попробуй снова",
+  OPERATION_NOT_ALLOWED: "вход по e-mail/паролю выключен — Firebase Console → Authentication → Sign-in method → Email/Password",
+  WEAK_PASSWORD: "пароль короче 6 символов — Firebase не принимает, как раз поэтому игра и добавляет суффикс",
+  API_KEY_INVALID: "API-ключ не подходит к этому проекту (или набран с опечаткой)",
+  PERMISSION_DENIED:
+    "API-ключ ограничен и из браузера не работает. В Google Cloud Console ограничения " +
+    "ставятся по HTTP-referrer / IP / Android-пакету (com.cb4); для этой панели нужен ключ " +
+    "с разрешённым referrer этой страницы либо вовсе без ограничений.",
+  REFERER_BLOCKED: "API-ключ ограничен по HTTP-referrer — добавь адрес этой страницы в список разрешённых"
+};
+function explain(msg){
+  const m = String(msg || "");
+  if(/referrer|referer/i.test(m)) return AUTH_ERR.REFERER_BLOCKED;
+  const code = (m.match(/\b([A-Z][A-Z0-9_]{3,})\b/) || [])[1];
+  const text = AUTH_ERR[code];
+  return text ? text + (text.endsWith(".") ? "" : ".") + "  [ответ Firebase: " + m + "]" : m;
+}
+function jwt(tok){
+  try{
+    const p = tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(p))));
+  }catch(e){ return null; }
+}
 async function idp(method, body){
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:${method}?key=${key()}`,
+  const r = await fetch(`${authHost()}/v1/accounts:${method}?key=${encodeURIComponent(key())}`,
     {method:"POST",headers:{"Content-Type":"application/json"},
      body:JSON.stringify({...body, returnSecureToken:true})});
-  const j = await r.json();
-  if(!r.ok) throw new Error(j.error?.message || ("HTTP "+r.status));
+  let j = {};
+  try{ j = await r.json(); }catch(e){}
+  if(!r.ok){
+    const e = new Error((j && j.error && j.error.message) || ("HTTP " + r.status));
+    e.status = r.status;
+    throw e;
+  }
   return j;
 }
+/* idToken живёт час: обновляем его по refreshToken, чтобы панель не отваливалась. */
+async function refreshToken(){
+  if(!REFRESH) throw new Error("нет refresh-токена — нужно войти заново");
+  const r = await fetch(`${tokenHost()}/v1/token?key=${encodeURIComponent(key())}`,
+    {method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({grant_type:"refresh_token", refresh_token:REFRESH})});
+  let j = {};
+  try{ j = await r.json(); }catch(e){}
+  if(!r.ok || !j.id_token) throw new Error((j && j.error && j.error.message) || ("HTTP " + r.status));
+  TOKEN = j.id_token;
+  if(j.refresh_token) REFRESH = j.refresh_token;
+  EXP = Date.now() + (parseInt(j.expires_in || "3600", 10) * 1000) - 60000;
+  return TOKEN;
+}
+function suffixVariants(){
+  const out = [], push = s => { if(s != null && !out.includes(s)) out.push(s); };
+  const c = cfg();
+  if(typeof c.lastSuffix === "string") push(c.lastSuffix);          // то, на что пустило в прошлый раз
+  push($("#passSuffix").checked ? $("#suffix").value : "");          // то, что стоит в настройках
+  for(const s of KNOWN_SUFFIXES) push(s);
+  return out;
+}
+const RETRYABLE = /INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND|WEAK_PASSWORD/;
+
 async function doLogin(){
   const nick = $("#nick").value.trim(), pass = $("#pass").value;
   if(!nick || !pass) return alert("Введите ник и пароль");
   const email = nick.toLowerCase() + "@cb4.game";
-  const pw = pass + ($("#passSuffix").checked ? $("#suffix").value : "");
+  saveAll();
   $("#login").disabled = true;
+  const tried = [];
   try{
-    let j;
-    try { j = await idp("signInWithPassword", {email, password: pw}); }
-    catch(e){
-      if(/EMAIL_NOT_FOUND|INVALID_LOGIN/.test(e.message) && !$("#passSuffix").checked) throw e;
-      throw e;
+    let ok = null, last = null;
+    for(const sfx of suffixVariants()){
+      try{
+        const j = await idp("signInWithPassword", {email, password: pass + sfx});
+        ok = {j, sfx};
+        break;
+      }catch(e){
+        last = e;
+        tried.push((sfx ? "«" + sfx + "»" : "без суффикса") + " → " + e.message);
+        if(!RETRYABLE.test(e.message)) break;   // ключ заблокирован, лимит попыток и т.п. — дальше пробовать бессмысленно
+      }
     }
+    if(!ok){
+      /* Ни один вариант не подошёл. При включённой защите от перебора Firebase
+       * отвечает одинаково на «нет аккаунта» и «неверный пароль», поэтому
+       * разницу узнаём так же, как fb_sign_in() в net.c: пробуем signUp.
+       * Аккаунта нет → он создаётся (это ровно то, что делает игра при первом
+       * входе); аккаунт есть → Firebase ответит EMAIL_EXISTS, то есть дело
+       * в пароле. Только с явного согласия: это пишет в Firebase Auth. */
+      if(confirm("Войти как " + email + " не удалось.\n\n" +
+                 "Попробовать создать этот аккаунт с текущим паролем (signUp)?\n\n" +
+                 "• аккаунта нет — он создастся, как при первом входе в игру;\n" +
+                 "• аккаунт есть — Firebase ответит EMAIL_EXISTS, значит пароль не подошёл.")){
+        const sfx = $("#passSuffix").checked ? $("#suffix").value : "";
+        try{
+          const j = await idp("signUp", {email, password: pass + sfx});
+          ok = {j, sfx, created: true};
+          log("аккаунт создан: " + email, "good");
+        }catch(e){
+          if(/EMAIL_EXISTS/.test(e.message))
+            throw new Error("аккаунт " + email + " существует, значит пароль (или суффикс) не подошёл");
+          throw e;
+        }
+      }
+      if(!ok) throw last || new Error("вход не удался");
+    }
+
+    const j = ok.j;
     TOKEN = j.idToken; REFRESH = j.refreshToken; EMAIL = email;
-    $("#who").textContent = email;
-    $("#who").className = "tag good";
+    EXP = Date.now() + (parseInt(j.expiresIn || "3600", 10) * 1000) - 60000;
+    saveCfg({lastSuffix: ok.sfx});
+
+    const p = jwt(TOKEN) || {};
+    const isAdmin = ADMINS.includes(String(p.email || email).toLowerCase());
+    $("#who").textContent = email + (isAdmin ? " · админ" : " · не админ");
+    $("#who").className = "tag " + (isAdmin ? "good" : "warn");
     $("#authBox").classList.add("hide");
     $("#app").classList.remove("hide");
     $("#tools").classList.remove("hide");
     $("#logout").classList.remove("hide");
-    log("вход выполнен: " + email, "good");
+    log("вход выполнен: " + email + (ok.sfx ? " (суффикс «" + ok.sfx + "»)" : " (без суффикса)"), "good");
+    log("токен: провайдер " + ((p.firebase || {}).sign_in_provider || "?") +
+        ", годен до " + new Date((p.exp || 0) * 1000).toLocaleTimeString(), "");
+    if(isAdmin) log("права админа есть — правила пустят запись в event и bans", "good");
+    else{
+      log("это не админский аккаунт: чистить чат и слоты можно, а event/bans и чужие users — нет", "warn");
+      alert("Вход прошёл, но " + email + " нет в списке админов firebase.rules.json.\n\n" +
+            "Чат и слоты чистить можно, а /event, /bans и чужие /users — нет.");
+    }
     scan();
   }catch(e){
     log("вход не удался: " + e.message, "err");
-    alert("Не вышло войти: " + e.message +
-      "\n\nЕсли пароль верный — сними галочку «внутренний суффикс» или поправь его.");
+    log("что это значит: " + explain(e.message), "warn");
+    alert("Не вышло войти как " + email + "\n\n" + e.message + "\n\n" + explain(e.message) +
+          (tried.length > 1 ? "\n\nПеребраны варианты суффикса:\n" + tried.join("\n") : ""));
   }finally{ $("#login").disabled = false; }
 }
 
 /* ---------- REST к базе ---------- */
-async function rtdb(path, method = "GET", body){
-  const url = `${dbUrl()}/${path}.json?auth=${encodeURIComponent(TOKEN)}`;
+async function rtdb(path, method = "GET", body, retried){
+  if(REFRESH && Date.now() > EXP){
+    try{ await refreshToken(); }
+    catch(e){ log("не удалось обновить токен: " + e.message + " — " + explain(e.message), "warn"); }
+  }
+  const url = `${dbUrl()}/${path}.json?auth=${encodeURIComponent(TOKEN || "")}`;
   const opt = {method};
   if(body !== undefined){ opt.headers = {"Content-Type":"application/json"};
                           opt.body = JSON.stringify(body); }
   const r = await fetch(url, opt);
   const txt = await r.text();
-  if(!r.ok) throw new Error(`${method} /${path} → ${r.status} ${txt.slice(0,140)}`);
+  if(!r.ok){
+    const stale = r.status === 401 || /auth token|token expired|invalid_token|EXPIRED/i.test(txt);
+    if(stale && !retried && REFRESH){
+      try{
+        await refreshToken();
+        return rtdb(path, method, body, true);
+      }catch(e){ log("обновление токена не помогло: " + e.message, "err"); }
+    }
+    let msg = `${method} /${path} → ${r.status} ${txt.slice(0,140)}`;
+    if(r.status === 401 || r.status === 403)
+      msg += "  (401/403 = правила базы или протухший токен; если это удаление мусора — " +
+             "такой узел правилам firebase.rules.json не по зубам никому, кроме админа)";
+    throw new Error(msg);
+  }
   return txt ? JSON.parse(txt) : null;
 }
 
@@ -422,8 +592,29 @@ async function safe(fn, name){
 
 /* ---------- события ---------- */
 $("#words").value = DEFAULT_WORDS;
+loadCfg();
+emailHint();
 $("#login").onclick = doLogin;
 $("#pass").onkeydown = e => { if(e.key === "Enter") doLogin(); };
+$("#nick").onkeydown = e => { if(e.key === "Enter") $("#pass").focus(); };
+$("#nick").oninput = $("#suffix").oninput = emailHint;
+$("#passSuffix").onchange = () => { emailHint(); saveAll(); };
+$("#nick").onchange = $("#dbUrl").onchange = $("#apiKey").onchange = $("#suffix").onchange = saveAll;
+$("#showPass").onchange = e => { $("#pass").type = e.target.checked ? "text" : "password"; };
+$("#checkKey").onclick = async () => {
+  const b = $("#checkKey"); b.disabled = true;
+  try{
+    await idp("signInWithPassword",
+              {email: "cb4-probe-" + Date.now() + "@cb4.game", password: "probe-probe-1"});
+    log("проверка ключа: ответ без ошибки — странно, но ключ точно живой", "warn");
+  }catch(e){
+    if(RETRYABLE.test(e.message))
+      log("проверка ключа: ключ работает — Firebase ответил " + e.message +
+          " (значит запрос дошёл и не заблокирован); дело в паре «ник + пароль + суффикс»", "good");
+    else
+      log("проверка ключа: " + e.message + " — " + explain(e.message), "err");
+  }finally{ b.disabled = false; }
+};
 $("#logout").onclick = () => location.reload();
 $("#scan").onclick = scan;
 $$(".flt").forEach(c => c.onchange = render);
