@@ -25,7 +25,7 @@
     "users": {
       ".read": "gameUser()",
       "$nick": {
-        ".write": "gameUser() && auth.token.email.toLowerCase() == $nick.toLowerCase() + '@cb4.game'",
+        ".write": "(gameUser() && auth.token.email.toLowerCase() == $nick.toLowerCase() + '@cb4.game') || adminUser()",
         ".validate": "$nick.matches(/^[A-Za-z0-9_]{1,16}$/) && newData.hasChildren(['nick','cups','candies','cls','azum','santa','level','levels'])",
         "nick": { ".validate": "newData.isString() && newData.val().length <= 16" },
         "pass": { ".validate": false },
@@ -90,6 +90,11 @@
           }
         }
       }
+    },
+
+    "$other": {
+      ".read": "adminUser()",
+      ".write": "adminUser()"
     }
   }
 }
