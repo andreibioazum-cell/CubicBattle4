@@ -606,7 +606,12 @@ function draw_leaderboard()
     ctext(tr_leaderboard_title(), back_y + btn_h + 12, 0xFFFFFF)
     number st = net_leaderboard_status()
     if st == 1
-        ctext(tr_loading(), screen_h / 2, 0xFFD54A)
+        lb_wait = lb_wait + dt
+        if lb_wait > lb_wait_max
+            ctext(tr_no_connection(), screen_h / 2, 0xFF8A80)
+        else
+            ctext(tr_loading(), screen_h / 2, 0xFFD54A)
+        end
     else if st == 4
         ctext(tr_no_connection(), screen_h / 2, 0xFF8A80)
     else
@@ -885,6 +890,7 @@ function touch_menu(number x, number y, number action)
             return
         end
         if y >= sy + 232 && y <= sy + btn_h + 248
+            lb_wait = 0
             net_leaderboard_fetch(FIREBASE)
             start_transition(10)
             return

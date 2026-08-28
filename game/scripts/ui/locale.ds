@@ -378,7 +378,7 @@ function tr_class_azum()
 end
 
 function tr_class_ordinary_desc()
-    return "You were the best."
+    return "I was the first"
 end
 
 function tr_class_azum_desc()

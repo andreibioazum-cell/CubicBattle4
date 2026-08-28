@@ -140,9 +140,9 @@ function reset_battle()
     player.hp=player.max_hp
     player.size=25*player_scale
     enemy.size=25*enemy_scale
-    enemy.state=5
+    enemy.state=0
     enemy.state_time=0
-    enemy.spawn_t=enemy_spawn_delay
+    enemy.spawn_t=0
     enemy.cooldown=enemy_first_delay
     enemy.hit=0
     enemy.dodge_cd=0
@@ -273,8 +273,8 @@ function spawn_enemy()
             i=i+1
         end
     end
-    enemy.state=5
-    enemy.spawn_t=enemy_spawn_delay
+    enemy.state=0
+    enemy.spawn_t=0
     enemy.state_time=0
     enemy.cooldown=enemy_first_delay
     enemy.hit=0
@@ -294,7 +294,7 @@ function spawn_enemy()
     else
         enemy.strafe=1
     end
-    ds_log("enemy will spawn in %g sec", enemy.spawn_t)
+    ds_log("enemy spawned instantly")
 end
 
 function candy_rand_pos(number i)
@@ -674,20 +674,6 @@ function update_enemy()
     enemy.mvx=0
     enemy.mvy=0
     enemy.wobble_t = enemy.wobble_t + dt
-
-    // спавн — дольше появляется
-    if enemy.state==5
-        enemy.spawn_t = enemy.spawn_t - dt
-        if enemy.spawn_t<=0
-            enemy.spawn_t=0
-            enemy.state=0
-            enemy.think=0.15
-            ds_log("enemy spawned")
-        else
-            // во время спавна не двигается
-            return
-        end
-    end
 
     if enemy.freeze>0
         enemy.freeze=enemy.freeze-dt
@@ -1734,36 +1720,17 @@ function enemy_battle_tex()
 end
 
 function draw_enemy_shadow()
-    if enemy.state==5
-        return
-    end
     number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
     tex_tint(enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,enemy_battle_tex(),sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24))
 end
 
 function draw_enemy_hitbox()
-    if enemy.state==5
-        return
-    end
     if (enemy.state==1||enemy.state==2)&&finished==0
         draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1)
     end
 end
 
 function draw_enemy_body()
-    if enemy.state==5
-        // эффект появления
-        number p = 1 - enemy.spawn_t/enemy_spawn_delay
-        if p<0
-            p=0
-        end
-        if p>1
-            p=1
-        end
-        number r = (1-p)*40
-        ring(enemy.x,enemy.y, r, 3, 0xAAFFFFFF)
-        return
-    end
     number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
     tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
 end
@@ -1867,56 +1834,32 @@ function frac01(number v)
     return v-floor(v)
 end
 
-function draw_flake(number cx, number cy, number r, number rot, number alpha)
-    number a=alpha
-    if a<0
-        a=0
-    end
-    if a>255
-        a=255
-    end
-    number c=((((unsigned)(int)a)<<24)|0x00EAF6FF)
-    if r<4.2
-        circle(cx,cy,r*0.85,c)
-        return
-    end
-    number step=pi/3, th=1+r*0.13
-    number i=0
-    loop i<3
-        number a1=rot+i*step, dx=cos(a1)*r, dy=sin(a1)*r
-        line(cx-dx,cy-dy,cx+dx,cy+dy,th,c)
-        i=i+1
-    end
-    i=0
-    loop i<6
-        number aa=rot+i*step, ux=cos(aa), uy=sin(aa)
-        number bx=cx+ux*r*0.54, by=cy+uy*r*0.54, bl=r*0.36
-        line(bx,by,bx+cos(aa+step)*bl,by+sin(aa+step)*bl,th*0.8,c)
-        line(bx,by,bx+cos(aa-step)*bl,by+sin(aa-step)*bl,th*0.8,c)
-        number tx=cx+ux*r*0.82, ty=cy+uy*r*0.82, tl=r*0.2
-        line(tx,ty,tx+cos(aa+step)*tl,ty+sin(aa+step)*tl,th*0.7,c)
-        line(tx,ty,tx+cos(aa-step)*tl,ty+sin(aa-step)*tl,th*0.7,c)
-        i=i+1
-    end
-    circle(cx,cy,r*0.2,c)
-end
-
 function draw_snow()
     if event_mode!=2
         return
     end
-    number span_y=screen_h+140, span_x=screen_w+120
     number i=0
     loop i<event_flakes
-        number h1=hash01(i), h2=hash01(i+91), h3=hash01(i+37), h4=hash01(i+153)
-        number depth=0.3+0.7*h3
-        number r=3+11*depth
-        number yy=h2*span_y+event_t*(46+92*depth)
-        yy=frac01(yy/span_y)*span_y-70
-        number sway=(14+26*h4)*sin(event_t*(0.55+0.9*h1)+h1*2*pi)
-        number xx=h1*span_x+sway+event_t*22*depth
-        xx=frac01(xx/span_x)*span_x-60
-        draw_flake(xx,yy,r,h4*2*pi+event_t*(0.3+0.55*h1),85+165*depth)
+        // Каждая снежинка живёт свой цикл: появляется в случайной точке,
+        // со случайным размером (не больше самой png-снежинки, 64px = scale 1)
+        // и, не двигаясь, постепенно уменьшается до нуля. Потом рождается
+        // заново в новом месте с новым размером.
+        number h1=hash01(i), h2=hash01(i+91)
+        number life=2.2+2.6*h1
+        number ph=frac01(event_t/life+h2)
+        number cyc=floor(event_t/life+h2)
+        number hx=hash01(i*7+cyc*131+1)
+        number hy=hash01(i*13+cyc*197+2)
+        number hs=hash01(i*29+cyc*57+3)
+        number hr=hash01(i*17+cyc*83+4)
+        number s0=0.3+0.7*hs
+        number s=s0*(1-ph)
+        if s>0.02
+            number xx=36+hx*(screen_w-72)
+            number yy=36+hy*(screen_h-72)
+            number hw=32*s
+            tex(xx-hw,yy-hw,SNOWFLAKE_TEX,hr*2*pi,s)
+        end
         i=i+1
     end
 end
