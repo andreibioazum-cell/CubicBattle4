@@ -379,9 +379,18 @@ async function doLogin(){
 }
 
 /* ---------- REST к базе ---------- */
+/* Удаление идёт параллельным пулом запросов, и несколько из них могут
+ * одновременно обнаружить протухший токен — держим одно общее обновление,
+ * а не десяток одинаковых. */
+let tokenBusy = null;
+function ensureToken(){
+  if(!REFRESH || Date.now() <= EXP) return Promise.resolve();
+  if(!tokenBusy) tokenBusy = refreshToken().finally(() => { tokenBusy = null; });
+  return tokenBusy;
+}
 async function rtdb(path, method = "GET", body, retried){
   if(REFRESH && Date.now() > EXP){
-    try{ await refreshToken(); }
+    try{ await ensureToken(); }
     catch(e){ log("не удалось обновить токен: " + e.message + " — " + explain(e.message), "warn"); }
   }
   const url = `${dbUrl()}/${path}.json?auth=${encodeURIComponent(TOKEN || "")}`;
@@ -394,7 +403,7 @@ async function rtdb(path, method = "GET", body, retried){
     const stale = r.status === 401 || /auth token|token expired|invalid_token|EXPIRED/i.test(txt);
     if(stale && !retried && REFRESH){
       try{
-        await refreshToken();
+        await ensureToken();
         return rtdb(path, method, body, true);
       }catch(e){ log("обновление токена не помогло: " + e.message, "err"); }
     }
@@ -567,19 +576,73 @@ function selInfo(){
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 /* ---------- удаление ---------- */
+/* Минимальный набор DELETE для выбранных узлов. REST Firebase не умеет
+ * батч-удаление, поэтому схлопываем: если ВСЕ дети узла (по снимку SNAP)
+ * выбраны, вылетает целиком родителем одним запросом. Считаем именно по
+ * снимку, поэтому лишнего задеть невозможно. Корень целиком удалить нельзя
+ * (RTDB это запрещает) — его расширяем до детей. */
+function wipePlan(paths){
+  if(!SNAP) return [...new Set(paths)];
+  const sel = new Set(paths);
+  const nodeAt = p => p ? p.split("/").reduce((n,k) =>
+        (n && typeof n === "object") ? n[k] : undefined, SNAP) : SNAP;
+  const keysAt = p => { const n = nodeAt(p);
+        return (n && typeof n === "object") ? Object.keys(n) : null; };
+  const memo = new Map();
+  const fully = p => {
+    if(sel.has(p)) return true;
+    if(memo.has(p)) return memo.get(p);
+    memo.set(p, false);
+    const ks = keysAt(p);
+    const r = !!ks && ks.length > 0 && ks.every(k => fully(p ? p + "/" + k : k));
+    memo.set(p, r);
+    return r;
+  };
+  const cand = new Set();
+  for(const p of paths){
+    let cur = p;
+    while(cur){ cand.add(cur); cur = cur.slice(0, cur.lastIndexOf("/")) || null; }
+  }
+  if(!cand.size) return [];
+  const plan = [];
+  for(const p of cand){
+    if(!fully(p)) continue;
+    const par = p ? p.slice(0, p.lastIndexOf("/")) : "";
+    if(!par || !fully(par)) plan.push(p);
+  }
+  if(plan.length === 1 && plan[0] === "")
+    return Object.keys(SNAP);
+  return plan;
+}
+
+/* Firebase REST не умеет батч-удаление — поэтому ускоряем двумя приёмами:
+ * схлопыванием (wipePlan) и параллельным пулом запросов. 10 одновременно —
+ * компромисс между скоростью и лимитами Firebase. */
+const WIPE_CONC = 10;
 async function wipe(){
   const on = new Set($$(".flt").filter(c=>c.checked).map(c=>c.dataset.k));
-  const targets = FOUND.filter(f => on.has(f.kind) && f.sel).map(f => f.path);
-  if(!targets.length) return;
-  if(!confirm(`Удалить ${targets.length} узлов?\n\nПервые:\n` +
-              targets.slice(0,12).join("\n") + (targets.length>12?"\n…":""))) return;
-  $("#wipe").disabled = true;
-  let ok = 0, fail = 0;
-  for(const p of targets){
-    try{ await rtdb(p, "DELETE"); ok++; log("удалено: " + p); }
-    catch(e){ fail++; log("НЕ удалено " + p + " — " + e.message, "err"); }
-  }
-  log(`готово: удалено ${ok}, ошибок ${fail}`, fail ? "warn" : "good");
+  const selected = FOUND.filter(f => on.has(f.kind) && f.sel);
+  if(!selected.length) return;
+  const plan = wipePlan(selected.map(f => f.path));
+  if(!plan.length) return;
+  if(!confirm(`Удалить ${selected.length} узлов?\nПакетом: ${plan.length} запрос(ов) к базе.\n\nПервые:\n` +
+              plan.slice(0,12).join("\n") + (plan.length>12?"\n…":""))) return;
+  const btn = $("#wipe"); btn.disabled = true;
+  let ok = 0, fail = 0, done = 0;
+  const total = plan.length, queue = [...plan];
+  const tick = () => { btn.textContent = `удаляю ${done}/${total}…`; };
+  const worker = async () => {
+    while(queue.length){
+      const p = queue.shift();
+      try{ await rtdb(p, "DELETE"); ok++; log("удалено: " + p); }
+      catch(e){ fail++; log("НЕ удалено " + p + " — " + e.message, "err"); }
+      done++; tick();
+    }
+  };
+  tick();
+  await Promise.all(Array.from({length: Math.min(WIPE_CONC, total)}, worker));
+  btn.textContent = "Удалить выбранное"; btn.disabled = false;
+  log(`готово: удалено ${ok}, ошибок ${fail} (из ${total} запросов)`, fail ? "warn" : "good");
   alert(`Удалено: ${ok}\nОшибок: ${fail}` + (fail ? "\n\nОшибки обычно = правила базы запрещают запись в этот узел (см. журнал)." : ""));
   scan();
 }
