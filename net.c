@@ -789,7 +789,11 @@ static void fb_auth_endpoint(char *dst, size_t cap, const char *path) {
     if (!strcmp(path, "/v1/token"))
         snprintf(dst, cap, "https://securetoken.googleapis.com/v1/token?key=%s", fb.key);
     else
-        snprintf(dst, cap, "https://identitytoolkit.googleapis.com/v1%s?key=%s", path, fb.key);
+        /* path уже содержит /v1/... (например /v1/accounts:signInWithPassword),
+         * поэтому второй раз «v1» подставлять нельзя — иначе получится
+         * /v1/v1/... и Firebase Auth ответит ошибкой, а клиент покажет
+         * «No connection». */
+        snprintf(dst, cap, "https://identitytoolkit.googleapis.com%s?key=%s", path, fb.key);
 }
 
 /* Обновление idToken по refreshToken (живёт ~1 час). 1 = ок. */
