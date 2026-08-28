@@ -1393,7 +1393,9 @@ static int nick_banned_locally(const char *nick) {
     return ban_cache_has(nick) || is_banned_in_file(nick);
 }
 
-double net_is_banned(const char *nick) {
+/* Синхронная облачная проверка бана: только для фоновых потоков сети
+ * (thread_main), из игрового потока её звать нельзя — блокирует кадр. */
+static int ban_check_cloud_sync(const char *nick) {
     char url[URL], resp[RESP];
     const char *p;
     int code;
@@ -1411,6 +1413,49 @@ double net_is_banned(const char *nick) {
         }
     } else if (net_log_ok()) {
         LOGERR("ban check '%s': HTTP %d", nick, code);
+    }
+    return 0;
+}
+
+/* Фоновая проверка бана: результат оседает в кеше, игровой поток не ждёт. */
+typedef struct { char nick[LOGIN_NICK_MAX + 1]; } BanCheckJob;
+static void *ban_check_job(void *arg) {
+    BanCheckJob *j = (BanCheckJob *)arg;
+    if (j) { ban_check_cloud_sync(j->nick); free(j); }
+    return NULL;
+}
+#ifdef _WIN32
+static unsigned __stdcall win_ban_check(void *arg) { ban_check_job(arg); return 0; }
+#endif
+
+/* Забанен ли ник с точки зрения игрового потока. Раньше здесь был
+ * синхронный HTTP-запрос: при отсутствии соединения он держал игровой
+ * поток до таймаута сети, кадры и ввод замирали, и система показывала
+ * «Приложение не отвечает». Теперь ответ даётся мгновенно по локальному
+ * кешу, а облачная проверка уходит в отдельный поток и пополняет кеш. */
+double net_is_banned(const char *nick) {
+    static long long s_last_check;
+    long long t;
+    if (!nick || !*nick) return 0;
+    if (nick_banned_locally(nick)) return 1;
+    if (!net.base[0]) return 0;
+    t = now_ms();
+    ban_lock();
+    if (t - s_last_check < 1500) { ban_unlock(); return 0; }
+    s_last_check = t;
+    ban_unlock();
+    {
+        BanCheckJob *j = (BanCheckJob *)malloc(sizeof(*j));
+        DSThread th;
+        if (!j) return 0;
+        snprintf(j->nick, sizeof(j->nick), "%s", nick);
+#ifdef _WIN32
+        th = ds_thread_start(win_ban_check, j);
+#else
+        th = ds_thread_start(ban_check_job, j);
+#endif
+        if (th) ds_thread_detach(th);
+        else free(j);
     }
     return 0;
 }
@@ -2040,7 +2085,7 @@ static void *thread_main(void *arg) {
              * Ждём недолго: если сеть лежит, слот всё равно не достанется. */
             wait_ban_list();
             lock(); snprintf(nick,sizeof(nick),"%s",net.me.nick); unlock();
-            if(nick[0] && net_is_banned(nick)) {
+            if(nick[0] && ban_check_cloud_sync(nick)) {
                 mark_self_banned(nick);
                 sleep_ms(500);
                 continue;
