@@ -1,7 +1,6 @@
 /* sound.c — звуки и музыка для DimScript.
  *
- * Файлы лежат в game/sounds (в APK — assets/sounds; в удалённой теперь
- * Windows-сборке они же были RCDATA-ресурсами с именем "sounds/<файл>").
+ * Файлы лежат в game/sounds (в APK — assets/sounds).
  * Поддерживается несжатый PCM WAV
  * (8/16/24/32-бит, моно или стерео, любая частота — микшер сам пересчитает
  * линейной интерполяцией в 44100 Гц стерео).
@@ -15,22 +14,13 @@
  *   snd_volume name, v — громкость этого звука (0..1);
  *   snd_stop_all       — остановить всё.
  *
- * Вывод звука: Android — AudioTrack через JNI (никаких лишних библиотек),
- * Windows — waveOut с двойной буферизацией в отдельном потоке, прочие сборки
- * (головные тесты) — заглушка без устройства: всё работает, только не слышно.
+ * Вывод звука: Android — AudioTrack через JNI (никаких лишних библиотек).
  */
 #include "runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-
-#ifdef _WIN32
-/* runtime.h включает windows.h с WIN32_LEAN_AND_MEAN, а тот выкидывает
- * mmsystem.h — без явного include нет ни HWAVEOUT/WAVEHDR/WAVEFORMATEX, ни
- * функций waveOut* (на MSVC это ошибки компиляции). */
-#include <mmsystem.h>
-#endif
 
 #define SND_RATE 44100
 #define SND_MAX_SOUNDS 16
@@ -59,21 +49,10 @@ static int snd_sounds_loaded = 0;
 /* ------------------------------------------------------------------ */
 /* блокировка: громкость/запуск меняет поток игры, микширует поток аудио */
 /* ------------------------------------------------------------------ */
-#ifdef _WIN32
-static CRITICAL_SECTION snd_lock;
-static int snd_lock_ready = 0;
-/* Вызывается из ds_sound_init ДО запуска аудиопотока, чтобы оба потока
- * видели один и тот же замок (ленивая инициализация из snd_lock_take —
- * только запасной путь для однопоточных вызовов, например в тестах). */
-static void snd_lock_init(void) { if (!snd_lock_ready) { InitializeCriticalSection(&snd_lock); snd_lock_ready = 1; } }
-static void snd_lock_take(void) { snd_lock_init(); EnterCriticalSection(&snd_lock); }
-static void snd_lock_drop(void) { LeaveCriticalSection(&snd_lock); }
-#else
 #include <pthread.h>
 static pthread_mutex_t snd_lock = PTHREAD_MUTEX_INITIALIZER;
 static void snd_lock_take(void) { pthread_mutex_lock(&snd_lock); }
 static void snd_lock_drop(void) { pthread_mutex_unlock(&snd_lock); }
-#endif
 
 #ifdef __ANDROID__
 static AAssetManager *snd_amgr = NULL;
@@ -88,88 +67,26 @@ static char *snd_strdup(const char *s) {
 }
 
 /* ------------------------------------------------------------------ */
-/* чтение файла звука: Android — ассеты, легаси-Windows — RCDATA-ресурс,  */
-/* затем файловая система (папка sounds рядом с бинарником или в репо)      */
+/* чтение файла звука: Android — ассеты из APK */
 /* ------------------------------------------------------------------ */
-static int snd_read_file(const char *path, uint8_t **out, size_t *sz) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return 0;
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (len <= 0 || (unsigned long)len > SND_MAX_BYTES) { fclose(f); return 0; }
-    uint8_t *buf = (uint8_t *)malloc((size_t)len);
-    if (!buf) { fclose(f); return 0; }
-    size_t rd = fread(buf, 1, (size_t)len, f);
-    fclose(f);
-    if (rd != (size_t)len) { free(buf); return 0; }
-    *out = buf; *sz = rd;
-    return 1;
-}
-
 static int snd_open_candidate(const char *path, uint8_t **out, size_t *sz) {
-#ifdef __ANDROID__
-    if (snd_amgr) {
-        AAsset *a = AAssetManager_open(snd_amgr, path, AASSET_MODE_BUFFER);
-        if (a) {
-            off_t len = AAsset_getLength(a);
-            if (len > 0 && (unsigned long)len <= SND_MAX_BYTES) {
-                uint8_t *buf = (uint8_t *)malloc((size_t)len);
-                if (buf) {
-                    size_t off = 0;
-                    while (off < (size_t)len) {
-                        int nr = AAsset_read(a, buf + off, (size_t)len - off);
-                        if (nr <= 0) break;
-                        off += (size_t)nr;
-                    }
-                    if (off == (size_t)len) { AAsset_close(a); *out = buf; *sz = off; return 1; }
-                    free(buf);
-                }
-            }
-            AAsset_close(a);
-        }
+    if (!snd_amgr || !path || !out || !sz) return 0;
+    AAsset *a = AAssetManager_open(snd_amgr, path, AASSET_MODE_BUFFER);
+    if (!a) return 0;
+    off_t len = AAsset_getLength(a);
+    if (len <= 0 || (unsigned long)len > SND_MAX_BYTES) { AAsset_close(a); return 0; }
+    uint8_t *buf = (uint8_t *)malloc((size_t)len);
+    if (!buf) { AAsset_close(a); return 0; }
+    size_t off = 0;
+    while (off < (size_t)len) {
+        int nr = AAsset_read(a, buf + off, (size_t)len - off);
+        if (nr <= 0) break;
+        off += (size_t)nr;
     }
-    return snd_read_file(path, out, sz);
-#else
-#ifdef _WIN32
-    /* Звуки зашиты в exe так же, как картинки: имя ресурса — путь
-     * относительно корня assets с прямыми слэшами ("sounds/x.wav"). */
-    HRSRC r = FindResourceA(NULL, path, RT_RCDATA);
-    if (r) {
-        DWORD len = SizeofResource(NULL, r);
-        if (len && (uint64_t)len <= (uint64_t)SND_MAX_BYTES) {
-            HGLOBAL g = LoadResource(NULL, r);
-            if (g) {
-                const uint8_t *data = (const uint8_t *)LockResource(g);
-                if (data) {
-                    uint8_t *buf = (uint8_t *)malloc((size_t)len);
-                    if (buf) { memcpy(buf, data, (size_t)len); *out = buf; *sz = (size_t)len; return 1; }
-                }
-            }
-        }
-    }
-    {
-        char disk[1200];
-        snprintf(disk, sizeof(disk), "%s", path);
-        for (char *c = disk; *c; c++) if (*c == '/') *c = '\\';
-        if (snd_read_file(disk, out, sz)) return 1;
-        char exe[1024];
-        DWORD el = GetModuleFileNameA(NULL, exe, (DWORD)(sizeof(exe) - 64));
-        if (el > 0 && el < sizeof(exe) - 64) {
-            char *slash = strrchr(exe, '\\');
-            if (slash) *slash = 0; else exe[0] = 0;
-            if (exe[0]) {
-                snprintf(disk, sizeof(disk), "%s\\%s", exe, path);
-                for (char *c = disk; *c; c++) if (*c == '/') *c = '\\';
-                if (snd_read_file(disk, out, sz)) return 1;
-            }
-        }
-    }
-    return 0;
-#else
-    return snd_read_file(path, out, sz);
-#endif
-#endif
+    AAsset_close(a);
+    if (off != (size_t)len) { free(buf); return 0; }
+    *out = buf; *sz = off;
+    return 1;
 }
 
 /* Имя звука может прийти как "lobbymusic.wav", "sounds/lobbymusic.wav" или
@@ -600,107 +517,17 @@ static void snd_backend_resume(void) {
     snd_jni_detach(attached);
 }
 
-/* ------------------------------------------------------------------ */
-/* Windows: waveOut с кольцом блоков в отдельном потоке                */
-/* ------------------------------------------------------------------ */
-#elif defined(_WIN32)
-#define WO_BLOCKS 4
-#define WO_FRAMES 1024
-static HWAVEOUT snd_wo = NULL;
-static WAVEHDR snd_wo_hdr[WO_BLOCKS];
-static int16_t snd_wo_buf[WO_BLOCKS][WO_FRAMES * 2];
-static HANDLE snd_wo_thread = NULL;
-static volatile int snd_wo_run = 0;
-
-static DWORD WINAPI snd_wo_thread_fn(LPVOID arg) {
-    (void)arg;
-    int prepared[WO_BLOCKS];
-    memset(prepared, 0, sizeof(prepared));
-    while (snd_wo_run) {
-        for (int i = 0; i < WO_BLOCKS && snd_wo_run; i++) {
-            if (snd_wo_hdr[i].dwFlags & WHDR_INQUEUE) continue;
-            if (prepared[i]) { waveOutUnprepareHeader(snd_wo, &snd_wo_hdr[i], sizeof(WAVEHDR)); prepared[i] = 0; }
-            snd_frame(snd_wo_buf[i], WO_FRAMES);
-            waveOutPrepareHeader(snd_wo, &snd_wo_hdr[i], sizeof(WAVEHDR));
-            prepared[i] = 1;
-            waveOutWrite(snd_wo, &snd_wo_hdr[i], sizeof(WAVEHDR));
-        }
-        Sleep(4);
-    }
-    for (int i = 0; i < WO_BLOCKS; i++) {
-        if (prepared[i]) { waveOutUnprepareHeader(snd_wo, &snd_wo_hdr[i], sizeof(WAVEHDR)); prepared[i] = 0; }
-    }
-    return 0;
-}
-
-static int snd_backend_start(void) {
-    if (snd_wo) return 1;
-    WAVEFORMATEX wfx;
-    memset(&wfx, 0, sizeof(wfx));
-    wfx.wFormatTag = WAVE_FORMAT_PCM;
-    wfx.nChannels = 2;
-    wfx.nSamplesPerSec = SND_RATE;
-    wfx.wBitsPerSample = 16;
-    wfx.nBlockAlign = 4;
-    wfx.nAvgBytesPerSec = SND_RATE * 4;
-    memset(snd_wo_hdr, 0, sizeof(snd_wo_hdr));
-    for (int i = 0; i < WO_BLOCKS; i++) {
-        snd_wo_hdr[i].lpData = (LPSTR)snd_wo_buf[i];
-        snd_wo_hdr[i].dwBufferLength = sizeof(snd_wo_buf[i]);
-    }
-    MMRESULT mr = waveOutOpen(&snd_wo, WAVE_MAPPER, &wfx, 0, 0, CALLBACK_NULL);
-    if (mr != MMSYSERR_NOERROR) { snd_wo = NULL; ds_log_err("audio: waveOutOpen failed %u", (unsigned)mr); return 0; }
-    snd_wo_run = 1;
-    snd_wo_thread = CreateThread(NULL, 0, snd_wo_thread_fn, NULL, 0, NULL);
-    if (!snd_wo_thread) { snd_wo_run = 0; waveOutClose(snd_wo); snd_wo = NULL; ds_log_err("audio: no audio thread"); return 0; }
-    ds_log("audio: waveOut started");
-    return 1;
-}
-
-static void snd_backend_stop(void) {
-    if (!snd_wo) return;
-    snd_wo_run = 0;
-    if (snd_wo_thread) { WaitForSingleObject(snd_wo_thread, 2000); CloseHandle(snd_wo_thread); snd_wo_thread = NULL; }
-    waveOutReset(snd_wo);
-    for (int i = 0; i < WO_BLOCKS; i++) if (snd_wo_hdr[i].dwFlags & (WHDR_DONE | WHDR_PREPARED)) waveOutUnprepareHeader(snd_wo, &snd_wo_hdr[i], sizeof(WAVEHDR));
-    waveOutClose(snd_wo);
-    snd_wo = NULL;
-}
-
-static void snd_backend_pause(void) { if (snd_wo) waveOutPause(snd_wo); }
-static void snd_backend_resume(void) { if (snd_wo) waveOutRestart(snd_wo); }
-
-/* ------------------------------------------------------------------ */
-/* прочие платформы (головные тесты): устройства нет, но API работает  */
-/* ------------------------------------------------------------------ */
-#else
-static int snd_backend_start(void) { (void)snd_frame; return 1; }
-static void snd_backend_stop(void) {}
-static void snd_backend_pause(void) {}
-static void snd_backend_resume(void) {}
 #endif
 
 /* ------------------------------------------------------------------ */
-/* жизненный цикл: вызывается из main.c (Android) или тестового хара     */
-/* ниса test/main_linux.c                                                 */
+/* жизненный цикл: вызывается из main.c (Android)                       */
 /* ------------------------------------------------------------------ */
 void ds_sound_set_java_vm(void *vm) {
-#ifdef __ANDROID__
     snd_vm = (JavaVM *)vm;
-#else
-    (void)vm;
-#endif
 }
 
 int ds_sound_init(AAssetManager *assets) {
-#ifdef _WIN32
-    snd_lock_init(); /* замок должен существовать до старта аудиопотока */
-#endif
-#ifdef __ANDROID__
     snd_amgr = assets;
-#else
-    (void)assets;
-#endif
     return snd_backend_start();
 }
 

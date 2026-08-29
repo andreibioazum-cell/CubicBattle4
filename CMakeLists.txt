@@ -17,12 +17,8 @@ add_custom_command(
 )
 
 # Единственная целевая платформа — Android: библиотека libds_game.so, которую
-# забирает APK из game/AndroidManifest.xml. Windows-сборка (Game.exe с
-# RCDATA-ассетами) из репозитория удалена: вместе с ней убраны main_win32.c,
-# embed_assets.py и job build-windows в CI.
-#
-# Локальные проверки (headless-тест со своей точкой входа) идут не через CMake,
-# а через ./test/build_test.sh.
+# забирает APK из game/AndroidManifest.xml. Поддержка ПК (Windows и Linux-тестовый
+# стенд) из репозитория удалена.
 if(NOT ANDROID)
     message(FATAL_ERROR
         "Cubic Battle собирается только под Android. Запусти CMake через инструментальный "

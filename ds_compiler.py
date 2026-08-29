@@ -27,8 +27,7 @@ def canon_type(t):
 BUILTINS = frozenset({
     'rect', 'roundrect', 'circle', 'ring', 'line', 'tex', 'tex_tint', 'text',
     'text_scaled', 'text_ink_width', 'text_ink_height', 'text_ink_top',
-    'png_load', 'clear_screen', 'text_width', 'text_height', 'window_create',
-    'game_run', 'mouse_x', 'mouse_y', 'particles_spawn', 'sqrt', 'sin', 'cos',
+    'png_load', 'clear_screen', 'text_width', 'text_height', 'sqrt', 'sin', 'cos',
     'atan2', 'floor', 'rand', 'snd_load', 'snd_play', 'snd_loop', 'snd_stop',
     'snd_playing', 'snd_volume', 'snd_stop_all', 'sound_play', 'net_connect',
     'net_disconnect', 'net_publish', 'net_publish_punch', 'net_publish_snow',

@@ -6,27 +6,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef _WIN32
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#ifdef __ANDROID__
 #include <android/asset_manager.h>
 #include <android/log.h>
 #include <android/native_window.h>
-#endif
-#endif
-#ifndef __ANDROID__
-typedef struct AAssetManager AAssetManager;
-#endif
 typedef struct {
     uint32_t *pixels;
     int width;
@@ -90,15 +72,6 @@ void circle(float x, float y, float r, uint32_t color);
 void ring(float x, float y, float r, float t, uint32_t color);
 void line(float x1, float y1, float x2, float y2, float thickness, uint32_t color);
 void clear_screen(uint32_t color);
-/* Простой хост-API для скриптов в стиле примера "Кликер". В существующей игре
- * главный цикл ведёт C-хост (init/update/draw/touch), поэтому window_create и
- * game_run остаются тонкими обёртками/заглушками: window_create запоминает окно,
- * game_run выполняет один кадр update+draw и возвращается. */
-void window_create(const char *title, int width, int height);
-void game_run(void (*update_cb)(void), void (*draw_cb)(Buffer *buffer), void (*touch_cb)(float x, float y, int action, int pointer_id));
-double mouse_x(void);
-double mouse_y(void);
-void particles_spawn(double x, double y);
 void ds_set_asset_manager(AAssetManager *assets);
 void ds_release_assets(void);
 int png_load(const char *name);

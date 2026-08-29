@@ -224,9 +224,8 @@ static const char *norm_name(const char *n) {
     }
     return n;
 }
-#ifdef __ANDROID__
 static int open_asset(const char *n, uint8_t **out, size_t *sz) {
-    if (!amgr || !out || !sz) return 0;
+    if (!n || !out || !sz || !amgr) return 0;
     AAsset *a = AAssetManager_open(amgr, n, AASSET_MODE_BUFFER);
     if (!a) return 0;
     off_t len = AAsset_getLength(a);
@@ -242,61 +241,6 @@ static int open_asset(const char *n, uint8_t **out, size_t *sz) {
     if (off != (size_t)len) { free(buf); return 0; }
     *out = buf; *sz = (size_t)len; return 1;
 }
-#else
-#ifdef _WIN32
-/* Путь для старой Windows-сборки: картинки и шрифт брались из RCDATA-ресурсов
- * прямо внутри Game.exe (имена ресурсов совпадают с путями относительно
- * game/assets и используют прямые слэши, например "grass.png" или
- * "fonts/ChillRoundGothic_Heavy.ttf"). Сборка .exe из репозитория удалена
- * вместе с embed_assets.py, так что этот код остался только на случай
- * ручного переноса. */
-static int open_asset_resource(const char *n, uint8_t **out, size_t *sz) {
-    HRSRC r = FindResourceA(NULL, n, RT_RCDATA);
-    if (!r) return 0;
-    DWORD len = SizeofResource(NULL, r);
-    if (!len || (uint64_t)len > (uint64_t)SIZE_MAX) return 0;
-    HGLOBAL g = LoadResource(NULL, r);
-    if (!g) return 0;
-    const uint8_t *data = (const uint8_t *)LockResource(g);
-    if (!data) return 0;
-    uint8_t *buf = (uint8_t *)malloc((size_t)len);
-    if (!buf) return 0;
-    memcpy(buf, data, (size_t)len);
-    *out = buf; *sz = (size_t)len; return 1;
-}
-#endif
-static int open_asset(const char *n, uint8_t **out, size_t *sz) {
-    if (!n || !out || !sz) return 0;
-#ifdef _WIN32
-    if (open_asset_resource(n, out, sz)) return 1;
-#endif
-    char paths[4][1024]; int np = 0;
-    snprintf(paths[np], sizeof(paths[np]), "%s", n); np++;
-    snprintf(paths[np], sizeof(paths[np]), "game/assets/%s", n); np++;
-    snprintf(paths[np], sizeof(paths[np]), "assets/%s", n); np++;
-#ifdef _WIN32
-    {
-        char exe[1024]; DWORD el = GetModuleFileNameA(NULL, exe, (DWORD)(sizeof(exe) - 32));
-        if (el > 0 && el < sizeof(exe) - 32) {
-            char *slash = strrchr(exe, '\\');
-            if (slash) *slash = 0; else exe[0] = 0;
-            if (exe[0]) { snprintf(paths[np], sizeof(paths[np]), "%s\\assets\\%s", exe, n); np++; }
-        }
-    }
-#endif
-    FILE *f = NULL;
-    for (int i = 0; i < np; i++) { f = fopen(paths[i], "rb"); if (f) break; }
-    if (!f) return 0;
-    fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
-    if (len <= 0 || len > (16L << 20)) { fclose(f); return 0; }
-    uint8_t *buf = (uint8_t *)malloc((size_t)len);
-    if (!buf) { fclose(f); return 0; }
-    size_t rd = fread(buf, 1, (size_t)len, f);
-    fclose(f);
-    if (rd != (size_t)len) { free(buf); return 0; }
-    *out = buf; *sz = (size_t)len; return 1;
-}
-#endif
 static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
@@ -547,18 +491,12 @@ void ds_release_assets(void) {
     while (t) { Texture *n = t->next; free(t->pixels); free(t->name); free(t); t = n; }
     textures = NULL;
     ds_font_destroy(font); font = NULL; font_tried = 0;
-#ifdef __ANDROID__
     amgr = NULL;
-#endif
 }
-#ifdef __ANDROID__
 void ds_set_asset_manager(AAssetManager *a) {
     if (amgr != a) { ds_release_assets(); amgr = a; }
     if (!amgr) ds_runtime_error("Android asset manager is unavailable");
 }
-#else
-void ds_set_asset_manager(AAssetManager *a) { (void)a; }
-#endif
 int png_load(const char *n) { return load_png(n) != NULL; }
 void rect(float x, float y, float w, float h, uint32_t c) {
     DSCmd *p = push(DS_CMD_RECT); if (!p) return;
@@ -660,11 +598,7 @@ int text_ink_top(const char *s) {
     }
     return first ? 0 : (int)floorf(minT);
 }
-#ifdef __ANDROID__
 int ds_graphics_init(AAssetManager *a) { if (amgr != a) { ds_release_assets(); amgr = a; } return 1; }
-#else
-int ds_graphics_init(AAssetManager *a) { (void)a; return 1; }
-#endif
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || !b->pixels || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;
     discard_commands(); cur_buf = b; frame_open = 1;
