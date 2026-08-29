@@ -393,7 +393,7 @@ function tr_class_santa()
 end
 
 function tr_class_santa_desc()
-    return "It's 00:00!"
+    return "It's 12:00 AM!"
 end
 
 function tr_super()
@@ -566,11 +566,11 @@ function tr_class_need_cups()
     return "Not enough cups"
 end
 
-function tr_cups_reward()
+function tr_cups_reward(number amount)
     if language == 1
-        return "+5 кубков · +3 леденца"
+        return "+" + amount + " кубков"
     end
-    return "+5 cups · +3 candies"
+    return "+" + amount + " Cups"
 end
 
 function tr_banned()

@@ -7,23 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#ifdef _WIN32
-#include <process.h>
-#include <wininet.h>
-#else
 #include <pthread.h>
 #include <unistd.h>
-#ifdef __ANDROID__
 #include <android/log.h>
-#endif
-#endif
-#ifdef __ANDROID__
 #define LOG(...) do { __android_log_print(ANDROID_LOG_INFO, "DimScriptNet", __VA_ARGS__); ds_console_log(0, __VA_ARGS__); } while (0)
 #define LOGERR(...) do { __android_log_print(ANDROID_LOG_ERROR, "DimScriptNet", __VA_ARGS__); ds_console_log(1, __VA_ARGS__); } while (0)
-#else
-#define LOG(...) do { ds_console_log(0, __VA_ARGS__); } while (0)
-#define LOGERR(...) do { ds_console_log(1, __VA_ARGS__); } while (0)
-#endif
 #define URL 512
 #define BODY 1024
 #define RESP 4096
@@ -54,18 +42,6 @@
 #define FB_URL_MAX 2048
 #define FB_ID_MAX 1100
 #define FB_REFRESH_MAX 512
-#ifdef _WIN32
-typedef SRWLOCK DSMutex;
-#define DS_MUTEX_INIT SRWLOCK_INIT
-#define ds_mutex_lock(m) AcquireSRWLockExclusive(&(m))
-#define ds_mutex_unlock(m) ReleaseSRWLockExclusive(&(m))
-typedef HANDLE DSThread;
-static DSThread ds_thread_start(unsigned (__stdcall *fn)(void *), void *arg) {
-    return (DSThread)_beginthreadex(NULL, 0, fn, arg, 0, NULL);
-}
-static void ds_thread_join(DSThread t) { if (t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); } }
-static void ds_thread_detach(DSThread t) { if (t) CloseHandle(t); }
-#else
 typedef pthread_mutex_t DSMutex;
 #define DS_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
 #define ds_mutex_lock(m) pthread_mutex_lock(&(m))
@@ -78,7 +54,6 @@ static DSThread ds_thread_start(void *(*fn)(void *), void *arg) {
 }
 static void ds_thread_join(DSThread t) { if (t) pthread_join(t, NULL); }
 static void ds_thread_detach(DSThread t) { if (t) pthread_detach(t); }
-#endif
 
 typedef struct {
     double x,y,a,hp,alive;
@@ -92,9 +67,7 @@ typedef struct { char key[28]; char uid[24]; char nick[24]; char text[CHAT_TEXT_
 static int chat_keep = 20;
 static struct {
     DSThread thread, rthread; DSMutex lock;
-#ifdef __ANDROID__
     JavaVM *vm;
-#endif
     int run, started, slot, status;
     int self_banned;
     char base[256], room[48], uid[24];
@@ -271,29 +244,19 @@ static int fb_enabled(void);
 static void fb_url(char *dst, size_t cap, const char *url);
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap);
 static void *http_delete_job(void *arg);
-#ifdef _WIN32
-static unsigned __stdcall win_http_delete(void *arg);
-#endif
 static void room_slot_delete_async(int slot);
 static void *http_patch_job(void *arg) {
     HttpJob *j = (HttpJob*)arg;
     if (j) { http("PATCH", j->url, j->body, NULL, 0); free(j); }
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_http_patch(void *arg) { http_patch_job(arg); return 0; }
-#endif
 static void http_patch_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
     fb_url(j->url, sizeof(j->url), url);
     snprintf(j->body, sizeof(j->body), "%s", body);
-#ifdef _WIN32
-    t = ds_thread_start(win_http_patch, j);
-#else
     t = ds_thread_start(http_patch_job, j);
-#endif
     if (t) { ds_thread_detach(t); return; }
     free(j);
 }
@@ -424,21 +387,13 @@ static void session_save(const char *nick, const char *pass) {
     }
 }
 static long long now_ms(void) {
-#ifdef _WIN32
-    return (long long)GetTickCount64();
-#else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (long long)t.tv_sec*1000+t.tv_nsec/1000000;
-#endif
 }
 static void sleep_ms(int ms) {
-#ifdef _WIN32
-    Sleep((DWORD)ms);
-#else
     struct timespec t = { ms/1000, (long)(ms%1000)*1000000L };
     nanosleep(&t, NULL);
-#endif
 }
 static double safe(double v) { if (v != v) return 0; if (v > 1e300 || v < -1e300) return 0; return v; }
 static void lock(void) { ds_mutex_lock(net.lock); }
@@ -455,111 +410,7 @@ static int net_log_ok(void) {
     ds_mutex_unlock(net_log_lock);
     return ok;
 }
-#ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm) { net.vm=vm; }
-#endif
-#ifdef _WIN32
-static int parse_http_url(const char *url, char *host, size_t host_cap, int *port, const char **path, int *secure) {
-    const char *p = url;
-    *secure = 0; *port = 80;
-    if (strncmp(p, "https://", 8) == 0) { *secure = 1; *port = 443; p += 8; }
-    else if (strncmp(p, "http://", 7) == 0) p += 7;
-    else return 0;
-    const char *slash = strchr(p, '/');
-    size_t hl = slash ? (size_t)(slash - p) : strlen(p);
-    if (!hl || hl >= host_cap) return 0;
-    memcpy(host, p, hl); host[hl] = 0;
-    char *colon = strchr(host, ':');
-    if (colon) { *colon = 0; *port = atoi(colon + 1); if (*port <= 0) *port = *secure ? 443 : 80; }
-    *path = slash ? slash : "/";
-    return 1;
-}
-static void log_win32_net_error(const char *what, int code, int stage) {
-    if (!net_log_ok()) return;
-    DWORD err = GetLastError();
-    char msg[256] = "";
-    if (err) {
-        FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                       NULL, err, 0, msg, sizeof(msg) - 1, NULL);
-        size_t mlen = strlen(msg);
-        while (mlen && (msg[mlen-1]=='\r'||msg[mlen-1]=='\n'||msg[mlen-1]==' '||msg[mlen-1]=='.')) msg[--mlen] = '\0';
-    }
-    if (stage == 2) {
-        char srv[512] = "";
-        DWORD slen = sizeof(srv) - 1, sidx = 0;
-        if (InternetGetLastResponseInfoA(&sidx, srv, &slen) && slen > 0) {
-            srv[slen] = '\0';
-            LOGERR("http %s: HTTP %d, wininet err %lu (%s); server: %s",
-                   what, code, err, msg[0] ? msg : "unknown", srv);
-            return;
-        }
-    }
-    LOGERR("http %s: HTTP %d, wininet err %lu (%s)", what, code, err, msg[0] ? msg : "unknown");
-}
-static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
-                   const char *header,const char *value,char *etag,size_t etag_cap) {
-    char host[256]; int port = 80, secure = 0; const char *path = NULL;
-    if (out && cap) out[0] = '\0';
-    if (etag && etag_cap) etag[0] = '\0';
-    if (!url || !parse_http_url(url, host, sizeof(host), &port, &path, &secure)) return 0;
-    int modes[2] = { INTERNET_OPEN_TYPE_PRECONFIG, INTERNET_OPEN_TYPE_DIRECT };
-    int last_code = 0, last_stage = 1;
-    for (int mi = 0; mi < 2; mi++) {
-        HINTERNET inet = InternetOpenA("CubicBattle/1.0", (DWORD)modes[mi], NULL, NULL, 0);
-        if (!inet) continue;
-        HINTERNET conn = InternetConnectA(inet, host, (INTERNET_PORT)port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-        if (!conn) { InternetCloseHandle(inet); continue; }
-        {
-            DWORD tmo = (DWORD)(net_fast ? 1200 : TIMEOUT);
-            InternetSetOptionA(conn, INTERNET_OPTION_CONNECT_TIMEOUT, &tmo, sizeof(tmo));
-            InternetSetOptionA(conn, INTERNET_OPTION_SEND_TIMEOUT, &tmo, sizeof(tmo));
-            InternetSetOptionA(conn, INTERNET_OPTION_RECEIVE_TIMEOUT, &tmo, sizeof(tmo));
-        }
-        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI;
-        if (secure) flags |= INTERNET_FLAG_SECURE;
-        HINTERNET req = HttpOpenRequestA(conn, method, path, NULL, NULL, NULL, flags, 0);
-        if (!req) { InternetCloseHandle(conn); InternetCloseHandle(inet); continue; }
-        char hdrs[512]; int hl = 0;
-        hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "Content-Type: application/json\r\n");
-        if (header && value) hl += snprintf(hdrs + hl, sizeof(hdrs) - (size_t)hl, "%s: %s\r\n", header, value);
-        if (hl < 0 || (size_t)hl >= sizeof(hdrs)) hl = (int)sizeof(hdrs) - 1;
-        hdrs[hl] = '\0';
-        BOOL ok = HttpSendRequestA(req, hl ? hdrs : NULL, (DWORD)hl, (LPVOID)body, (DWORD)(body ? strlen(body) : 0));
-        int code = 0;
-        if (ok) {
-            DWORD len = sizeof(code), idx = 0;
-            if (HttpQueryInfoA(req, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &len, &idx)) last_code = code;
-        }
-        if (etag && etag_cap) {
-            DWORD len = 0, idx = 0;
-            if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, NULL, &len, &idx) || GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-                if (len && len < etag_cap) {
-                    DWORD got = len;
-                    if (HttpQueryInfoA(req, HTTP_QUERY_ETAG, etag, &got, &idx) && got < etag_cap) etag[got] = '\0';
-                }
-            }
-        }
-        if (ok && out && cap) {
-            size_t total = 0;
-            for (;;) {
-                DWORD rd = 0;
-                if (!InternetReadFile(req, out + total, (DWORD)(cap - 1 - total), &rd) || rd == 0) break;
-                total += (size_t)rd;
-                out[total] = '\0';
-                if (total + 1 >= cap) break;
-            }
-        }
-        InternetCloseHandle(req);
-        InternetCloseHandle(conn);
-        InternetCloseHandle(inet);
-        if (ok) return code;
-        if (code) { last_code = code; last_stage = 2; break; }
-        last_code = 0; last_stage = 1;
-    }
-    log_win32_net_error(method, last_code, last_stage);
-    return 0;
-}
-#elif defined(__ANDROID__)
 static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
                    const char *header,const char *value,char *etag,size_t etag_cap) {
     JNIEnv *env=NULL; jobject conn=NULL, stream=NULL, urlobj=NULL;
@@ -658,15 +509,6 @@ done:
     return ok ? code : 0;
 #undef JNI_CHECK
 }
-#else
-static int http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
-                   const char *header,const char *value,char *etag,size_t etag_cap) {
-    (void)method; (void)url; (void)body; (void)header; (void)value;
-    if (out && cap) out[0] = '\0';
-    if (etag && etag_cap) etag[0] = '\0';
-    return 0;
-}
-#endif
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap) {
     return http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
 }
@@ -1424,9 +1266,6 @@ static void *ban_check_job(void *arg) {
     if (j) { ban_check_cloud_sync(j->nick); free(j); }
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_ban_check(void *arg) { ban_check_job(arg); return 0; }
-#endif
 
 /* Забанен ли ник с точки зрения игрового потока. Раньше здесь был
  * синхронный HTTP-запрос: при отсутствии соединения он держал игровой
@@ -1449,11 +1288,7 @@ double net_is_banned(const char *nick) {
         DSThread th;
         if (!j) return 0;
         snprintf(j->nick, sizeof(j->nick), "%s", nick);
-#ifdef _WIN32
-        th = ds_thread_start(win_ban_check, j);
-#else
         th = ds_thread_start(ban_check_job, j);
-#endif
         if (th) ds_thread_detach(th);
         else free(j);
     }
@@ -1492,9 +1327,6 @@ static void *ban_write_job(void *arg) {
     free(j);
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_ban_write(void *arg) { ban_write_job(arg); return 0; }
-#endif
 static void ban_write_async(const char *url, const char *nick, int banned) {
     BanJob *j = (BanJob *)malloc(sizeof(*j));
     DSThread t;
@@ -1502,11 +1334,7 @@ static void ban_write_async(const char *url, const char *nick, int banned) {
     fb_url(j->url, sizeof(j->url), url);
     snprintf(j->nick, sizeof(j->nick), "%s", nick);
     j->banned = banned;
-#ifdef _WIN32
-    t = ds_thread_start(win_ban_write, j);
-#else
     t = ds_thread_start(ban_write_job, j);
-#endif
     if (t) { ds_thread_detach(t); return; }
     free(j);
 }
@@ -1555,20 +1383,13 @@ static void *event_write_job(void *arg) {
     free(j);
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_event_write(void *arg) { event_write_job(arg); return 0; }
-#endif
 static void event_write_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
     fb_url(j->url, sizeof(j->url), url);
     snprintf(j->body, sizeof(j->body), "%s", body);
-#ifdef _WIN32
-    t = ds_thread_start(win_event_write, j);
-#else
     t = ds_thread_start(event_write_job, j);
-#endif
     if (t) { ds_thread_detach(t); return; }
     free(j);
 }
@@ -1714,9 +1535,6 @@ static void *lb_fetch_job(void *arg) {
     ds_mutex_unlock(lb.lock);
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_lb_fetch(void *arg) { lb_fetch_job(arg); return 0; }
-#endif
 void net_leaderboard_fetch(const char *url) {
     const char *base = (url && *url) ? url : net.base;
     if (!base || !*base) return;
@@ -1728,11 +1546,7 @@ void net_leaderboard_fetch(const char *url) {
     if (!arg) return;
     snprintf(arg, URL, "%s", base);
     DSThread t;
-#ifdef _WIN32
-    t = ds_thread_start(win_lb_fetch, arg);
-#else
     t = ds_thread_start(lb_fetch_job, arg);
-#endif
     if (t) ds_thread_detach(t);
     else {
         ds_mutex_lock(lb.lock); lb.status = 4; ds_mutex_unlock(lb.lock);
@@ -1772,20 +1586,13 @@ static void *http_post_job(void *arg) {
     if (j) { http("POST", j->url, j->body, NULL, 0); free(j); }
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_http_post(void *arg) { http_post_job(arg); return 0; }
-#endif
 static void http_post_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
     fb_url(j->url, sizeof(j->url), url);
     snprintf(j->body, sizeof(j->body), "%s", body);
-#ifdef _WIN32
-    t = ds_thread_start(win_http_post, j);
-#else
     t = ds_thread_start(http_post_job, j);
-#endif
     if (t) { ds_thread_detach(t); return; }
     free(j);
 }
@@ -1794,9 +1601,6 @@ static void *http_delete_job(void *arg) {
     if (url) { http("DELETE", url, NULL, NULL, 0); free(url); }
     return NULL;
 }
-#ifdef _WIN32
-static unsigned __stdcall win_http_delete(void *arg) { http_delete_job(arg); return 0; }
-#endif
 static void chat_delete_key_async(const char *key) {
     char *url;
     DSThread t;
@@ -1809,11 +1613,7 @@ static void chat_delete_key_async(const char *key) {
         snprintf(plain, sizeof(plain), "%s/rooms/%s/chat/%s.json", net.base, net.room, key);
         fb_url(url, FB_URL_MAX, plain);
     }
-#ifdef _WIN32
-    t = ds_thread_start(win_http_delete, url);
-#else
     t = ds_thread_start(http_delete_job, url);
-#endif
     if (t) { ds_thread_detach(t); return; }
     free(url);
 }
@@ -2030,12 +1830,6 @@ static void prune_old_chat(void){
     }
 }
 
-#ifdef _WIN32
-static void *thread_main(void *arg);
-static void *reader_thread(void *arg);
-static unsigned __stdcall win_thread_main(void *arg){ thread_main(arg); return 0; }
-static unsigned __stdcall win_reader_thread(void *arg){ reader_thread(arg); return 0; }
-#endif
 /* Ждём первую загрузку списка банов, но не дольше BAN_WAIT мс. */
 static void wait_ban_list(void) {
     long long deadline = now_ms() + BAN_WAIT;
@@ -2065,11 +1859,7 @@ static void room_slot_delete_async(int slot) {
         snprintf(plain, sizeof(plain), "%s/rooms/%s/players/%d.json", net.base, net.room, slot);
         fb_url(url, FB_URL_MAX, plain);
     }
-#ifdef _WIN32
-    t = ds_thread_start(win_http_delete, url);
-#else
     t = ds_thread_start(http_delete_job, url);
-#endif
     if (t) { ds_thread_detach(t); return; }
     free(url);
 }
@@ -2149,15 +1939,10 @@ static void *reader_thread(void *arg) {
 }
 static void make_uid(void) {
     unsigned long a,b; int local=0;
-#ifdef _WIN32
-    a=(unsigned long)time(NULL)^((unsigned long)GetTickCount64()<<8);
-    b=(unsigned long)_getpid()^(unsigned long)(uintptr_t)&local;
-#else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC,&t);
     a=(unsigned long)time(NULL)^((unsigned long)t.tv_nsec<<8);
     b=(unsigned long)getpid()^(unsigned long)(uintptr_t)&local;
-#endif
     snprintf(net.uid,sizeof(net.uid),"%08lx%08lx",a&0xfffffffful,b&0xfffffffful);
 }
 void net_connect(const char *url, const char *room) {
@@ -2181,13 +1966,8 @@ void net_connect(const char *url, const char *room) {
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
     LOG("connect %s/%s", net.base, net.room);
-#ifdef _WIN32
-    net.thread = ds_thread_start(win_thread_main, NULL);
-    net.rthread = ds_thread_start(win_reader_thread, NULL);
-#else
     net.thread = ds_thread_start(thread_main, NULL);
     net.rthread = ds_thread_start(reader_thread, NULL);
-#endif
 }
 void net_disconnect(void) {
     if(!net.started)return;

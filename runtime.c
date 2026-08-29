@@ -1,9 +1,7 @@
 #include "runtime.h"
 #include <stdarg.h>
 #include <stdio.h>
-#ifndef _WIN32
 #include <pthread.h>
-#endif
 #define DS_ERROR_MESSAGE_SIZE 1024
 #define DS_CONSOLE_MAX 256
 #define DS_CONSOLE_LINE_MAX 192
@@ -11,15 +9,9 @@ static char ds_console_buf[DS_CONSOLE_MAX][DS_CONSOLE_LINE_MAX];
 static int ds_console_type_buf[DS_CONSOLE_MAX];
 static int ds_console_head = 0;
 static int ds_console_count = 0;
-#ifdef _WIN32
-static SRWLOCK ds_console_lock = SRWLOCK_INIT;
-static void console_lock(void) { AcquireSRWLockExclusive(&ds_console_lock); }
-static void console_unlock(void) { ReleaseSRWLockExclusive(&ds_console_lock); }
-#else
 static pthread_mutex_t ds_console_lock = PTHREAD_MUTEX_INITIALIZER;
 static void console_lock(void) { pthread_mutex_lock(&ds_console_lock); }
 static void console_unlock(void) { pthread_mutex_unlock(&ds_console_lock); }
-#endif
 #define DS_CONSOLE_READ_SLOTS 8
 static char ds_console_read[DS_CONSOLE_READ_SLOTS][DS_CONSOLE_LINE_MAX];
 static int ds_console_read_pos = 0;
@@ -87,17 +79,7 @@ typedef struct DSStringNode DSStringNode;
 struct DSStringNode { DSStringNode *next; char *string; };
 static DSStringNode *ds_strings = NULL;
 static void platform_log(int is_error, const char *format, va_list args) {
-#ifdef _WIN32
-    char tmp[DS_CONSOLE_LINE_MAX]; (void)is_error;
-    vsnprintf(tmp, sizeof(tmp), format, args);
-    OutputDebugStringA(tmp); OutputDebugStringA("\n");
-#elif defined(__ANDROID__)
     __android_log_vprint(is_error ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "DimScript", format, args);
-#else
-    char tmp[DS_CONSOLE_LINE_MAX]; (void)is_error;
-    vsnprintf(tmp, sizeof(tmp), format, args);
-    fprintf(stderr, "%s\n", tmp);
-#endif
 }
 void ds_log(const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];
@@ -568,67 +550,4 @@ Java_com_cb4_GameActivity_nativeKeyboardHidden(JNIEnv *env, jobject self) {
     pthread_mutex_lock(&kb_mutex); kb_show=0; pthread_mutex_unlock(&kb_mutex);
 }
 
-#else
-/* Десктоп/тесты: простой текстовый буфер без JNI. */
-#define KB_BUF 256
-static char kb_text[KB_BUF] = {0};
-static int kb_len = 0;
-static int kb_show = 0;
-static int kb_enter = 0;
-const char* keyboard_get_text(void){ return ds_track_string(ds_strdup(kb_text)); }
-const char* keyboard_get_raw(void){ return kb_text; }
-void keyboard_clear(void){ kb_text[0]='\0'; kb_len=0; kb_enter=0; }
-int keyboard_visible(void){ return kb_show; }
-int keyboard_enter_pressed(void){ int e=kb_enter; kb_enter=0; return e; }
-static void kb_append(const char *text){
-    if(!text) return;
-    for(size_t i=0;text[i] && kb_len+1<KB_BUF-1;i++){
-        char c=text[i];
-        if(c=='\n'||c=='\r'){ kb_enter=1; continue; }
-        kb_text[kb_len++]=c;
-    }
-    kb_text[kb_len]='\0';
-}
-void keyboard_type(const char *text){ kb_append(text); }
-void keyboard_commit_utf8(const char *utf8){ kb_append(utf8); }
-void keyboard_backspace(void){
-    while(kb_len>0){
-        unsigned char c=(unsigned char)kb_text[--kb_len];
-        kb_text[kb_len]='\0';
-        if((c & 0xC0) != 0x80) break;
-    }
-}
-int keyboard_handle_key(int keycode, int action, int meta){ (void)keycode; (void)action; (void)meta; return 0; }
-int keyboard_uses_editor(void){ return 0; }
-void ds_set_activity(void *act){ (void)act; }
-void keyboard_show(void){ kb_show=1; }
-void keyboard_hide(void){ kb_show=0; }
 #endif
-
-/* Хост-API в стиле примера "Кликер". Основной цикл в этой игре ведёт C-хост
- * (init/update/draw/touch), поэтому window_create только запоминает размер окна,
- * а game_run выполняет один кадр и возвращается — скрипт при этом остаётся
- * совместимым с существующим циклом. */
-double mouse_x(void) { return ds_mouse_x; }
-double mouse_y(void) { return ds_mouse_y; }
-
-void window_create(const char *title, int width, int height) {
-    (void)title;
-    if (width > 0) screen_w = width;
-    if (height > 0) screen_h = height;
-}
-
-void game_run(void (*update_cb)(void), void (*draw_cb)(Buffer *buffer),
-              void (*touch_cb)(float x, float y, int action, int pointer_id)) {
-    (void)touch_cb;
-    ds_log("game_run: single-frame stub (host drives the loop via init/update/draw/touch)");
-    if (update_cb) update_cb();
-    if (draw_cb) draw_cb(NULL);
-}
-
-void particles_spawn(double x, double y) {
-    (void)x; (void)y;
-    /* В текущей игре частицы рисуются самим скриптом (fx/dust.ds). Здесь
-     * оставлен нейтральный хук, чтобы скрипты в стиле "Кликер" могли вызывать
-     * particles_spawn() без привязки к конкретной системе частиц. */
-}

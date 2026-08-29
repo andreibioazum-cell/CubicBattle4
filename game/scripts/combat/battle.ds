@@ -1755,16 +1755,18 @@ function draw_controls()
     draw_back()
 end
 
-function draw_result(string title, string note)
+function draw_result(string title)
     rect(0,0,screen_w,screen_h,0x99000000)
-    number y=screen_h/2-85
-    roundrect(screen_w/2-165,y,330,180,24,0x5F10A0)
-    ctext(title,y+28,0xFFFFFF)
-    ctext(note,y+68,0xFFFFFF)
-    if cups_awarded==1
-        ctext(tr_cups_reward(),y+100,0xFFD54A)
+    number w=430, h=250
+    number x=(screen_w-w)/2, y=screen_h/2-h/2
+    roundrect(x,y,w,h,30,0x5F10A0)
+    number reward=0
+    if finished==1
+        reward=cup_win
     end
-    ctext(tr_tap_to_return(),y+132,0xFFCDD2)
+    ctext_scaled(title,y+36,0xFFFFFF,1.12)
+    ctext_scaled(tr_cups_reward(reward),y+126,0xFFD54A,0.9)
+    ctext_scaled(tr_tap_to_return(),y+188,0xFFCDD2,0.62)
 end
 
 function draw_game()
@@ -1787,9 +1789,9 @@ function draw_game()
     hud_bar(screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1)
     draw_controls()
     if finished==1
-        draw_result(tr_victory(),tr_opponent_defeated())
+        draw_result(tr_victory())
     else if finished==2
-        draw_result(tr_defeat(),tr_opponent_won())
+        draw_result(tr_defeat())
     end
 end
 
@@ -1949,7 +1951,7 @@ function draw_online()
         ctext(tr_connecting(),sy,0xFFF176)
     end
     if finished==2
-        draw_result(tr_defeat(),tr_you_were_defeated())
+        draw_result(tr_defeat())
     end
 end
 
