@@ -579,6 +579,42 @@ function draw_warning()
     ctext_scaled(tr_warn_ru4(), y + 318, body, 0.52)
 end
 
+// Подиум лидерборда: 1 — золото, 2 — монохромное серебро, 3 — бронза.
+// Один набор цветов на всю строку (место, ник, кубки, фон), чтобы топ-3
+// выглядел одинаково в любом месте, где рисуется таблица.
+function lb_place_bg(number i)
+    if i == 0
+        return 0xFF3D3215
+    end
+    if i == 1
+        return 0xFF2E2E30
+    end
+    if i == 2
+        return 0xFF3A2414
+    end
+    return 0xFF2A2A40
+end
+
+function lb_place_color(number i)
+    if i == 0
+        return 0xFFFFD700
+    end
+    if i == 1
+        return 0xFFC0C0C0
+    end
+    if i == 2
+        return 0xFFCD7F32
+    end
+    return 0xFF9E9E9E
+end
+
+function lb_place_nick(number i, string nick)
+    if i <= 2
+        return lb_place_color(i)
+    end
+    return admin_color_of(nick, 0xFFB8B8B8)
+end
+
 function draw_leaderboard()
     rect(0, 0, screen_w, screen_h, 0x1a1a2e)
     ctext(tr_leaderboard_title(), back_y + btn_h + 12, 0xFFFFFF)
@@ -601,33 +637,16 @@ function draw_leaderboard()
             number i = 0
             loop i < count
                 string rk = "#" + (i + 1), nk = net_leaderboard_nick(i)
-                if i == 0
-                    roundrect(x, y, w, row_h, 12, 0xFF3D3215)
-                else if i == 1
-                    roundrect(x, y, w, row_h, 12, 0xFF2C3238)
-                else
-                    roundrect(x, y, w, row_h, 12, 0xFF2A2A40)
-                end
-                color rank_c = 0xFF9E9E9E
-                if i == 0
-                    rank_c = 0xFFFFD700
-                else if i == 1
-                    rank_c = 0xFFC0C0C0
-                end
+                roundrect(x, y, w, row_h, 12, lb_place_bg(i))
+                color rank_c = lb_place_color(i)
                 number rth = text_ink_height(rk) * 0.6, rtt = text_ink_top(rk) * 0.6
                 text_scaled(rk, x + 16, y + (row_h - rth) / 2 - rtt + 1, rank_c, 0.6)
-                color nick_c = admin_color_of(nk, 0xE0E0FF)
-                if i >= 2
-                    nick_c = 0xFFB8B8B8
-                end
+                color nick_c = lb_place_nick(i, nk)
                 number nth = text_ink_height(nk) * 0.6, ntt = text_ink_top(nk) * 0.6
                 text_scaled(nk, x + 70, y + (row_h - nth) / 2 - ntt + 1, nick_c, 0.6)
                 number cps = net_leaderboard_cups(i)
                 string cs = "" + floor(cps + 0.5)
-                color cup_c = 0xFFD54A
-                if i >= 2
-                    cup_c = 0xFF9E9E9E
-                end
+                color cup_c = lb_place_color(i)
                 number cnw = text_ink_width(cs) * 0.6, cth = text_ink_height(cs) * 0.6, ctt = text_ink_top(cs) * 0.6
                 text_scaled(cs, x + w - 20 - cnw, y + (row_h - cth) / 2 - ctt + 1, cup_c, 0.6)
                 i = i + 1
