@@ -14,6 +14,16 @@
       ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2"
     },
 
+    "banner": {
+      ".read": "gameUser()",
+      ".write": "adminUser()",
+      ".validate": "newData.hasChildren(['ts','text','color'])",
+      "ts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9000000000000" },
+      "text": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 96" },
+      "color": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+      "$other": { ".validate": false }
+    },
+
     "bans": {
       ".read": "gameUser()",
       "$nick": {

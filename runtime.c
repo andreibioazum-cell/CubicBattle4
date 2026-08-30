@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <time.h>
 #define DS_ERROR_MESSAGE_SIZE 1024
 #define DS_CONSOLE_MAX 256
 #define DS_CONSOLE_LINE_MAX 192
@@ -439,13 +440,33 @@ void keyboard_type(const char *text) {
     kb_sync_editor();
 }
 
-/* Стираем целый UTF-8 символ, а не один байт. */
+/* Стираем целый UTF-8 символ, а не один байт.
+ * Зажатый Backspace: подряд идущие вызовы с малым интервалом — это автоповтор
+ * клавиши; после шести таких подряд стираем всё разом (см. тот же приём в
+ * GameActivity.java для экранной клавиатуры). */
+#define KB_DEL_STREAK_GAP_MS 150
+#define KB_DEL_STREAK_CLEAR 6
+static long long kb_del_last_ms = 0;
+static int kb_del_streak = 0;
 void keyboard_backspace(void) {
+    struct timespec now;
+    long long now_ms;
     pthread_mutex_lock(&kb_mutex);
-    while (kb_len > 0) {
-        unsigned char c = (unsigned char)kb_text[--kb_len];
-        kb_text[kb_len] = '\0';
-        if ((c & 0xC0) != 0x80) break;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
+        now_ms = (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+    else
+        now_ms = kb_del_last_ms + KB_DEL_STREAK_GAP_MS + 1;
+    if (now_ms - kb_del_last_ms <= KB_DEL_STREAK_GAP_MS) kb_del_streak++;
+    else kb_del_streak = 1;
+    kb_del_last_ms = now_ms;
+    if (kb_del_streak >= KB_DEL_STREAK_CLEAR) {
+        kb_text[0] = '\0'; kb_len = 0;
+    } else {
+        while (kb_len > 0) {
+            unsigned char c = (unsigned char)kb_text[--kb_len];
+            kb_text[kb_len] = '\0';
+            if ((c & 0xC0) != 0x80) break;
+        }
     }
     pthread_mutex_unlock(&kb_mutex);
     kb_sync_editor();

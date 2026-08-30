@@ -37,6 +37,18 @@ function ctext_scaled(string s, number y, color color, number scale)
     text_scaled(s, (screen_w - text_ink_width(s) * scale) / 2, y, color, scale)
 end
 
+// Плавное исчезновение подписей («Не хватает кубков» и т.п.): пока у таймера
+// остаётся меньше msg_fade секунд, альфа цвета пропорционально падает, поэтому
+// надпись тает, а не пропадает в один кадр.
+function fade_color(number rgb, number t, number fade)
+    number a = clamp(t / fade, 0, 1)
+    return (1 + floor(a * 254)) * 0x1000000 + rgb
+end
+
+function ctext_fade(string s, number y, color rgb, number t, number fade)
+    ctext(s, y, fade_color(rgb, t, fade))
+end
+
 // Ник админа своим цветом, остальной текст — обычный. Нужно и в лобби
 // («Hi, "nick"»), и в чате, чтобы краснела/голубела только подпись, а не
 // вся строка.

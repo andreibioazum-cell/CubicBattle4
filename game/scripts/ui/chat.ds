@@ -104,6 +104,20 @@ function admin_handle(string msg)
             return 1
         end
     end
+    // text сообщение цвет — баннер сверху экрана у ВСЕХ игроков в комнате.
+    // Примеры: "text hello, world! green", "text Go! rainbow".
+    // Цвет — последнее слово (white/red/green/blue/yellow/orange/purple/
+    // pink/cyan/black/rainbow); если последнее слово не цвет, оно остаётся
+    // частью текста, а баннер будет белым.
+    if net_chat_is_text_cmd(msg) == 1
+        string btxt = net_chat_text_cmd_text(msg)
+        string bcol = net_chat_text_cmd_color(msg)
+        if str_len(btxt) > 0
+            net_banner_send(btxt, bcol)
+            ds_log("admin text: %s (%s)", btxt, bcol)
+            return 1
+        end
+    end
     return 0
 end
 
@@ -120,6 +134,13 @@ function chat_send()
             return
         end
         if net_chat_is_ban(chat_input) == 1 || net_chat_is_unban(chat_input) == 1
+            admin_handle(chat_input)
+            chat_input = ""
+            keyboard_clear()
+            return
+        end
+        // Команда "text ..." не должна уезжать в общий чат как обычное сообщение.
+        if net_chat_is_text_cmd(chat_input) == 1
             admin_handle(chat_input)
             chat_input = ""
             keyboard_clear()
