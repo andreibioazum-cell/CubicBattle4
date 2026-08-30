@@ -6,6 +6,14 @@ number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, pun
 number joy_speed=192, bot_speed=190, bot_strafe_speed=96, bot_dodge_speed=330
 number btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535
 number console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_out=0.1, aim_max_alpha=102
+// Плавное исчезновение подписей «не хватает кубков»: сколько секунд строка
+// ещё видна (msg_time) и сколько из них она тает (msg_fade).
+number msg_time=2.5, msg_fade=0.6
+// Алерт победы/поражения: нельзя выйти тапом в первые alert_hold секунд.
+number alert_hold=0.5, finish_t=0
+// Баннер админа (команда "text ..."): сколько секунд висит сверху экрана,
+// сколько тает, и локальное состояние показа (ts присылает облако).
+number banner_show_time=6, banner_fade=0.5, banner_seen_ts=0, banner_t=0, banner_skip=1, banner_clock=0
 // Сторожок загрузки лидерборда: если ответа нет дольше lb_wait_max секунд,
 // показываем «Нет соединения», а не вечную «Загрузку».
 number lb_wait=0, lb_wait_max=8

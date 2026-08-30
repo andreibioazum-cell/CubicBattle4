@@ -69,6 +69,11 @@ public final class GameActivity extends NativeActivity {
     /* Видна ли IME прямо сейчас (по реальному размеру экрана в onGlobalLayout). */
     private volatile boolean imeLooksVisible;
     private int showAttempts;
+    /* Зажатый Backspace: подряд идущие удаления с малым интервалом — это
+     * автоповтор зажатой клавиши; после нескольких подряд стираем всё сразу. */
+    private long lastDeleteAt;
+    private int deleteStreak;
+    private boolean pendingDelete;
 
     private native void nativeReplaceText(String text);
     private native void nativeSubmitText();
@@ -132,13 +137,15 @@ public final class GameActivity extends NativeActivity {
                 return true;
             }
         });
-        // VISIBLE_PASSWORD отключает composing у Gboard: каждая латинская буква
-        // сразу коммитится в поле. Без этого IME держит «a» как composing, а
-        // restartInput/setText с нативной стороны его съедает — клавиатура
-        // открыта, буквы нажимаются, в поле Ник ничего не появляется.
+        // Раньше здесь был VISIBLE_PASSWORD: он отключает composing у Gboard,
+        // каждая латинская буква сразу коммитится в поле. Но заодно включает
+        // «парольную» раскладку — Gboard показывает цифровую строку, которой
+        // у пользователя в других приложениях нет. FILTER (textFilter) даёт
+        // то же прямое коммитирование без composing, но с обычной раскладкой
+        // без цифровой строки.
         chatEditor.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+                | InputType.TYPE_TEXT_VARIATION_FILTER);
         chatEditor.setImeOptions(EditorInfo.IME_ACTION_DONE
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_FLAG_NO_FULLSCREEN);
@@ -154,10 +161,34 @@ public final class GameActivity extends NativeActivity {
         addContentView(chatEditor, params);
 
         chatEditor.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                // Реальное удаление с клавиатуры: текст сократился, а не был
+                // заменён целиком синхронизацией с нативной стороной.
+                pendingDelete = !syncingFromNative && count > 0 && after == 0;
+            }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
             @Override public void afterTextChanged(Editable value) {
-                if (!syncingFromNative) replaceTextNative(value.toString());
+                if (syncingFromNative) return;
+                replaceTextNative(value.toString());
+                if (pendingDelete) {
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    deleteStreak = (now - lastDeleteAt <= 200) ? deleteStreak + 1 : 1;
+                    lastDeleteAt = now;
+                    pendingDelete = false;
+                    /* Зажатый Backspace: после шести удалений подряд с интервалом
+                     * не больше 200 мс стираем всё остаток разом. Обычный быстрый
+                     * тап по одному символу этот порог не достигает. */
+                    if (deleteStreak >= 6 && chatEditor.length() > 0) {
+                        deleteStreak = 0;
+                        chatEditor.post(new Runnable() {
+                            @Override public void run() {
+                                if (chatEditor.length() > 0) chatEditor.setText("");
+                            }
+                        });
+                    }
+                } else {
+                    deleteStreak = 0;
+                }
             }
         });
         chatEditor.setOnFocusChangeListener(new View.OnFocusChangeListener() {

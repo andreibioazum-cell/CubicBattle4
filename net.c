@@ -20,6 +20,10 @@
 #define READ_TICK 60
 #define CHAT_TICK 1000
 #define EVENT_TICK 500
+/* Баннер админа ("text ..."): опрос banner.json раз в секунду — команда не
+ * претендует на мгновенную доставку, как позиция игрока. */
+#define BANNER_TICK 1000
+#define BANNER_COLOR_MAX 16
 /* Анти-дудос со своей стороны: если состояние игрока не меняется, слот всё
  * равно «тикать» должен чаще, чем TIMEOUT других клиентов. */
 #define HEARTBEAT_TICK 2500
@@ -75,6 +79,9 @@ static struct {
     Actor players[NET_SLOTS];
     ChatMsg chats[CHAT_MAX]; int chat_count;
     int event;
+    char banner_text[CHAT_TEXT_MAX];
+    char banner_color[BANNER_COLOR_MAX];
+    long long banner_ts;
 } net = { .lock = DS_MUTEX_INIT };
 
 /* Список банов, прочитанный из облака. Это общий для всех клиентов источник
@@ -97,6 +104,10 @@ static char s_nick_ret[24];
 static char s_lg_nick_ret[24];
 static char s_lg_pass_ret[64];
 static char s_ban_target_ret[32];
+static char s_banner_text_ret[CHAT_TEXT_MAX];
+static char s_banner_color_ret[BANNER_COLOR_MAX];
+static char s_text_cmd_text_ret[CHAT_TEXT_MAX];
+static char s_text_cmd_color_ret[BANNER_COLOR_MAX];
 static long long now_ms(void);
 static void lock(void);
 static void unlock(void);
@@ -1407,6 +1418,86 @@ void net_event_set(double mode) {
     LOG("event set %d", m);
 }
 
+/* ── Команда админа "text <сообщение> <цвет>" и баннер ──────────────────────
+ * Разбор команды живёт в C, а не в скрипте: из DimScript нет подстрок, только
+ * str_eq/str_len. Формат: "text hello, world! green" — сообщение всё между
+ * "text " и последним словом; последнее слово, если это известное имя цвета,
+ * становится цветом баннера, иначе остаётся частью сообщения (цвет — белый).
+ */
+static const char *banner_color_names[] = {
+    "white", "red", "green", "blue", "yellow", "orange", "purple", "pink",
+    "cyan", "black", "rainbow"
+};
+static int banner_color_known(const char *word) {
+    size_t i;
+    if (!word || !*word) return 0;
+    for (i = 0; i < sizeof(banner_color_names)/sizeof(banner_color_names[0]); i++)
+        if (!strcmp(word, banner_color_names[i])) return 1;
+    return 0;
+}
+double net_chat_is_text_cmd(const char *msg) {
+    if (!msg) return 0;
+    if (strlen(msg) >= 5 && strncmp(msg, "text ", 5) == 0) {
+        const char *t = msg + 5;
+        while (*t==' '||*t=='\t') t++;
+        if (*t) return 1;
+    }
+    return 0;
+}
+static void banner_split_cmd(const char *msg, char *text_out, size_t tcap, char *color_out, size_t ccap) {
+    const char *t, *c, *last_space = NULL;
+    char word[BANNER_COLOR_MAX];
+    size_t n;
+    if (tcap) text_out[0] = 0;
+    snprintf(color_out, ccap, "white");
+    if (!msg || strncmp(msg, "text ", 5) != 0) return;
+    t = msg + 5;
+    while (*t==' '||*t=='\t') t++;
+    /* Последняя граница слова: пробел, после которого идёт не-пробел. */
+    for (c = t; *c; c++)
+        if ((*c==' '||*c=='\t') && c[1] && c[1]!=' ' && c[1]!='\t') last_space = c;
+    if (last_space) {
+        /* Хвост слова чистим от концевых пробелов: "green  " — тот же цвет. */
+        snprintf(word, sizeof(word), "%s", last_space + 1);
+        n = strlen(word);
+        while (n > 0 && (word[n-1]==' '||word[n-1]=='\t')) word[--n] = 0;
+        if (banner_color_known(word)) {
+            n = (size_t)(last_space - t);
+            while (n > 0 && (t[n-1]==' '||t[n-1]=='\t')) n--;
+            if (n >= tcap) n = tcap - 1;
+            memcpy(text_out, t, n);
+            text_out[n] = 0;
+            snprintf(color_out, ccap, "%s", word);
+            return;
+        }
+    }
+    snprintf(text_out, tcap, "%s", t);
+}
+const char* net_chat_text_cmd_text(const char *msg) {
+    banner_split_cmd(msg, s_text_cmd_text_ret, sizeof(s_text_cmd_text_ret),
+                     s_text_cmd_color_ret, sizeof(s_text_cmd_color_ret));
+    return s_text_cmd_text_ret;
+}
+const char* net_chat_text_cmd_color(const char *msg) {
+    banner_split_cmd(msg, s_text_cmd_text_ret, sizeof(s_text_cmd_text_ret),
+                     s_text_cmd_color_ret, sizeof(s_text_cmd_color_ret));
+    return s_text_cmd_color_ret;
+}
+/* Пишем banner.json в базу (правило — только для админов, как event.json).
+ * PUT целиком: старый текст баннера заменяется новым. */
+void net_banner_send(const char *text, const char *color) {
+    char url[URL], body[BODY], esc[CHAT_TEXT_MAX * 2], ecol[BANNER_COLOR_MAX * 2];
+    if (!net.started || !net.run) return;
+    if (!text || !*text) return;
+    if (!color || !*color) color = "white";
+    json_escape(text, esc, sizeof(esc));
+    json_escape(color, ecol, sizeof(ecol));
+    snprintf(url, sizeof(url), "%s/banner.json", net.base);
+    snprintf(body, sizeof(body), "{\"ts\":%lld,\"text\":\"%s\",\"color\":\"%s\"}", now_ms(), esc, ecol);
+    event_write_async(url, body);
+    LOG("banner send: %s (%s)", text, color);
+}
+
 /* Чат парсеры для админ команд */
 double net_chat_is_ban(const char *msg) {
     if (!msg) return 0;
@@ -1659,6 +1750,26 @@ static int pull_event(char *resp,size_t cap) {
     if (c != 200 && net_log_ok()) LOGERR("pull event: HTTP %d", c);
     return c == 200;
 }
+static void parse_and_store_banner(const char *json) {
+    char text[CHAT_TEXT_MAX], color[BANNER_COLOR_MAX];
+    long long ts;
+    if (!json || !*json || !strncmp(json,"null",4)) return;
+    ts = (long long)num(json,"ts",0);
+    if (ts <= 0) return;
+    strv(json,"text",text,sizeof(text));
+    strv(json,"color",color,sizeof(color));
+    if (!text[0]) return;
+    lock();
+    snprintf(net.banner_text,sizeof(net.banner_text),"%s",text);
+    snprintf(net.banner_color,sizeof(net.banner_color),"%s",color[0] ? color : "white");
+    net.banner_ts = ts;
+    unlock();
+}
+static int pull_banner(char *resp,size_t cap) {
+    char url[URL];
+    snprintf(url,sizeof(url),"%s/banner.json",net.base);
+    return fb_http("GET",url,NULL,resp,cap)==200;
+}
 
 static void release_slot(void) {
     int slot; char url[URL]; lock(); slot=net.slot; net.slot=-1; unlock(); if(slot<0)return;
@@ -1892,8 +2003,8 @@ static void *thread_main(void *arg) {
     release_slot(); status(NET_OFFLINE); return NULL;
 }
 static void *reader_thread(void *arg) {
-    char resp[RESP], chat_resp[CHAT_RESP], event_resp[RESP];
-    long long next_chat=0, next_event=0, next_ban=0, next_prune=0;
+    char resp[RESP], chat_resp[CHAT_RESP], event_resp[RESP], banner_resp[512];
+    long long next_chat=0, next_event=0, next_ban=0, next_prune=0, next_banner=0;
     int fails=0;
     (void)arg;
     while(net.run) {
@@ -1932,6 +2043,11 @@ static void *reader_thread(void *arg) {
                 lock(); net.event=ev; unlock();
             }
             next_event=now_ms()+EVENT_TICK;
+        }
+        if(start>=next_banner) {
+            if(pull_banner(banner_resp,sizeof(banner_resp)))
+                parse_and_store_banner(banner_resp);
+            next_banner=now_ms()+BANNER_TICK;
         }
         long long spent=now_ms()-start; if(spent<READ_TICK)sleep_ms((int)(READ_TICK-spent));
     }
@@ -2064,6 +2180,22 @@ static int sidx(double slot){ int i=(int)slot; return i>=0&&i<NET_SLOTS?i:-1; }
 double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
 double net_event(void){ double v; lock(); v=net.event; unlock(); return v; }
+
+/* Баннер админа: последний баннер, прочитанный из облака. Скрипт сравнивает
+ * ts с тем, что уже показывал, и решает, показывать ли текст заново. */
+double net_banner_ts(void){ double v; lock(); v=(double)net.banner_ts; unlock(); return v; }
+const char *net_banner_text(void){
+    lock();
+    snprintf(s_banner_text_ret,sizeof(s_banner_text_ret),"%s",net.banner_text);
+    unlock();
+    return s_banner_text_ret;
+}
+const char *net_banner_color(void){
+    lock();
+    snprintf(s_banner_color_ret,sizeof(s_banner_color_ret),"%s",net.banner_color);
+    unlock();
+    return s_banner_color_ret;
+}
 double net_count(void){ double v; lock(); v=net.count; unlock(); return v; }
 const char* net_player_nick(double slot){
     int i=sidx(slot);

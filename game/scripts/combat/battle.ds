@@ -133,6 +133,17 @@ function tick_revive()
     end
 end
 
+// Алерт победы/поражения нельзя закрыть в первые alert_hold секунд: таймер
+// finish_t тикает, пока бой закончен, и разблокирует тап «на выход».
+function tick_alert_hold()
+    if finished!=0&&finish_t<alert_hold
+        finish_t=finish_t+dt
+        if finish_t>alert_hold
+            finish_t=alert_hold
+        end
+    end
+end
+
 function reset_battle()
     player.x=screen_w/2
     player.y=screen_h/2
@@ -164,6 +175,7 @@ function reset_battle()
     enemy.hesit=0
     enemy.feint=0
     finished=0
+    finish_t=0
     punch.active=0
     punch.hit=0
     punch_left=0
@@ -250,6 +262,9 @@ function init_online()
     chat_open=0
     keyboard_hide()
     online_ready=0
+    // Баннер: не показываем баннер, который висел до нашего входа в комнату.
+    banner_skip=1
+    banner_t=0
     net_set_class(player_class)
     net_set_level(player_level)
     net_connect(FIREBASE,ROOM)
@@ -993,6 +1008,7 @@ function tick_player_poison()
 end
 
 function update_game()
+    tick_alert_hold()
     tick_revive()
     tick_freeze()
     tick_player_poison()
@@ -1248,6 +1264,8 @@ function update_online()
         start_transition(0)
         return
     end
+    tick_alert_hold()
+    update_banner()
     tick_revive()
     tick_freeze()
     tick_player_poison()
@@ -1764,9 +1782,10 @@ function draw_result(string title)
     if finished==1
         reward=cup_win
     end
+    // Весь текст алерта — белый (в т.ч. «+N кубков» и приглашение выйти).
     ctext_scaled(title,y+36,0xFFFFFF,1.12)
-    ctext_scaled(tr_cups_reward(reward),y+126,0xFFD54A,0.9)
-    ctext_scaled(tr_tap_to_return(),y+188,0xFFCDD2,0.62)
+    ctext_scaled(tr_cups_reward(reward),y+126,0xFFFFFF,0.9)
+    ctext_scaled(tr_tap_to_return(),y+188,0xFFFFFF,0.62)
 end
 
 function draw_game()
@@ -1825,6 +1844,110 @@ function update_event()
     else
         disco_t=0
     end
+end
+
+// ── Баннер админа (команда "text сообщение цвет") ─────────────────────────
+// Облако хранит последний баннер (ts/text/color) в banner.json; каждый клиент
+// сам, увидев новый ts, показывает текст banner_show_time секунд сверху
+// экрана. Только что вошедшие в комнату старый баннер не повторяют.
+
+// RGB по имени цвета; неизвестное имя — белый.
+function banner_named_color(string name)
+    if str_eq(name,"red")==1
+        return 0x00FF5252
+    end
+    if str_eq(name,"green")==1
+        return 0x0000E676
+    end
+    if str_eq(name,"blue")==1
+        return 0x004FC3F7
+    end
+    if str_eq(name,"yellow")==1
+        return 0x00FFD54A
+    end
+    if str_eq(name,"orange")==1
+        return 0x00FF9800
+    end
+    if str_eq(name,"purple")==1
+        return 0x00AB47BC
+    end
+    if str_eq(name,"pink")==1
+        return 0x00FF80AB
+    end
+    if str_eq(name,"cyan")==1
+        return 0x0000E5FF
+    end
+    if str_eq(name,"black")==1
+        return 0x00222222
+    end
+    return 0x00FFFFFF
+end
+
+// Цвет баннера на текущем кадре: rainbow переливается, остальные — статичные.
+function banner_color_now(string name)
+    if str_eq(name,"rainbow")==1
+        number ph=banner_clock*3.4
+        number r=127+127*sin(ph)
+        number g=127+127*sin(ph+2.094)
+        number b=127+127*sin(ph+4.188)
+        return ((((unsigned)(int)r)<<16)|(((unsigned)(int)g)<<8)|((unsigned)(int)b))
+    end
+    return banner_named_color(name)
+end
+
+function update_banner()
+    if game_state!=5
+        return
+    end
+    banner_clock=banner_clock+dt
+    number ts=net_banner_ts()
+    if ts>0
+        if banner_skip==1
+            // Первый ответ после входа в онлайн — не показываем старый баннер.
+            banner_seen_ts=ts
+            banner_skip=0
+        else if ts!=banner_seen_ts
+            banner_seen_ts=ts
+            banner_t=banner_show_time
+        end
+    end
+    if banner_t>0
+        banner_t=banner_t-dt
+        if banner_t<0
+            banner_t=0
+        end
+    end
+end
+
+function draw_banner()
+    if banner_t<=0
+        return
+    end
+    string txt=net_banner_text()
+    if str_len(txt)==0
+        return
+    end
+    // Плавные вход и выход: альфа из расстояния до обоих краёв показа.
+    number elapsed=banner_show_time-banner_t
+    number a=elapsed
+    if a>banner_t
+        a=banner_t
+    end
+    number alpha=floor(clamp(a/banner_fade,0,1)*230)
+    if alpha<=0
+        return
+    end
+    number sc=0.9
+    number w=text_ink_width(txt)*sc
+    if w>screen_w-40
+        sc=(screen_w-40)/w
+        w=text_ink_width(txt)*sc
+    end
+    number x=(screen_w-w)/2
+    number y=78
+    color col=banner_color_now(net_banner_color())
+    roundrect(x-22,y-14,w+44,46,14,(((unsigned)(int)alpha)<<24))
+    text_scaled(txt,x,y,((((unsigned)(int)alpha)<<24)|col),sc)
 end
 
 function hash01(number i)
@@ -1953,6 +2076,7 @@ function draw_online()
     if finished==2
         draw_result(tr_defeat())
     end
+    draw_banner()
 end
 
 function drop_joy()
@@ -1998,7 +2122,9 @@ end
 
 function touch_game(number x, number y, number action, number id)
     if finished!=0
-        if action==0
+        // Скипнуть алерт можно только спустя alert_hold секунд после конца
+        // боя — случайный тап в первые мгновения не выбрасывает из матча.
+        if action==0&&finish_t>=alert_hold
             start_transition(0)
         end
         return

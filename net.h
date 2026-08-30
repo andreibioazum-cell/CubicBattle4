@@ -100,6 +100,15 @@ double net_chat_is_unban(const char *msg);
 const char* net_chat_ban_target(const char *msg);
 const char* net_chat_unban_target(const char *msg);
 
+/* Команда админа "text <сообщение> <цвет>" — баннер сверху экрана у всех. */
+double net_chat_is_text_cmd(const char *msg);
+const char* net_chat_text_cmd_text(const char *msg);
+const char* net_chat_text_cmd_color(const char *msg);
+void net_banner_send(const char *text, const char *color);
+double net_banner_ts(void);
+const char *net_banner_text(void);
+const char *net_banner_color(void);
+
 /* Чат */
 void net_chat_send(const char *text);
 void net_chat_trim(double keep);
