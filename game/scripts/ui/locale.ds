@@ -524,9 +524,9 @@ function tr_class_level_effect(number cls, number n)
     end
     if cls == 3 && n == 3
         if language == 1
-            return "Вселенная +3 урона"
+            return "Станция +2 HP + консоль"
         end
-        return "Universe +3 damage"
+        return "Station +2 HP + console"
     end
     if cls == 0 && n == 1
         if language == 1

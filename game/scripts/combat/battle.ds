@@ -64,6 +64,9 @@ function ebuc_station_hp_for(number lv)
     if lv>=2
         h=h+ebuc_station_hp_bonus
     end
+    if lv>=3
+        h=h+ebuc_station_hp_bonus*2
+    end
     return h
 end
 
@@ -110,9 +113,49 @@ function destroy_station()
     station.hp=0
     station.max_hp=0
     station_boom_t=station_boom_time
+    station_hit_t=0
+    // Если есть запасные станции в стеке, достаём последнюю (LIFO)
+    number stack_len=arr_len(ebuc_station_stack_x)
+    if stack_len>0
+        number last=stack_len-1
+        station.x=arr_get(ebuc_station_stack_x,last)
+        station.y=arr_get(ebuc_station_stack_y,last)
+        station.hp=arr_get(ebuc_station_stack_hp,last)
+        station.max_hp=arr_get(ebuc_station_stack_max,last)
+        station.active=1
+        // убираем из стека
+        number new_len=last
+        // truncate arrays by rebuilding? arr_clear and push back up to new_len
+        // simpler: pop via reducing len – we don't have pop, so recreate
+        array nx=arr_new()
+        array ny=arr_new()
+        array nh=arr_new()
+        array nm=arr_new()
+        number i=0
+        loop i<new_len
+            arr_push(nx,arr_get(ebuc_station_stack_x,i))
+            arr_push(ny,arr_get(ebuc_station_stack_y,i))
+            arr_push(nh,arr_get(ebuc_station_stack_hp,i))
+            arr_push(nm,arr_get(ebuc_station_stack_max,i))
+            i=i+1
+        end
+        ebuc_station_stack_x=nx
+        ebuc_station_stack_y=ny
+        ebuc_station_stack_hp=nh
+        ebuc_station_stack_max=nm
+        station_boom_t=0
+        ds_log("station restored from stack %g left",new_len)
+    end
 end
 
 function place_station()
+    // Стек станций: новая ставится последней и впитывает первой.
+    if station.active==1
+        arr_push(ebuc_station_stack_x,station.x)
+        arr_push(ebuc_station_stack_y,station.y)
+        arr_push(ebuc_station_stack_hp,station.hp)
+        arr_push(ebuc_station_stack_max,station.max_hp)
+    end
     station.x=player.x
     station.y=player.y
     station.max_hp=ebuc_station_hp_for(player_level)
@@ -120,6 +163,7 @@ function place_station()
     station.active=1
     station.shot=station.shot+1
     station_boom_t=0
+    station_hit_t=0
 end
 
 function tick_station_boom()
@@ -127,6 +171,15 @@ function tick_station_boom()
         station_boom_t=station_boom_t-dt
         if station_boom_t<0
             station_boom_t=0
+        end
+    end
+end
+
+function tick_station_hit()
+    if station_hit_t>0
+        station_hit_t=station_hit_t-dt
+        if station_hit_t<0
+            station_hit_t=0
         end
     end
 end
@@ -151,6 +204,8 @@ function take_damage(number dmg)
         end
         station.hp=station.hp-absorbed
         real=real-absorbed
+        // эффект урона: станция сжимается
+        station_hit_t=station_hit_time
         if station.hp<=0
             destroy_station()
         end
@@ -280,6 +335,11 @@ function reset_battle()
     station.hp=0
     station.max_hp=0
     station_boom_t=0
+    station_hit_t=0
+    arr_clear(ebuc_station_stack_x)
+    arr_clear(ebuc_station_stack_y)
+    arr_clear(ebuc_station_stack_hp)
+    arr_clear(ebuc_station_stack_max)
     universe_active=0
     universe_t=0
     universe_x=0
@@ -295,6 +355,16 @@ function reset_battle()
     player_poison_damage=0
     ppoison_a=0
     poison_a=0
+    ebuc_console_open=0
+    ebuc_console_paused=0
+    ebuc_console_msg_t=0
+    ebuc_console_field=0
+    ebuc_console_input=""
+    ebuc_console_msg=""
+    arr_clear(ebuc_console_objects)
+    arr_clear(ebuc_console_obj_x)
+    arr_clear(ebuc_console_obj_y)
+    arr_clear(ebuc_console_obj_a)
     joy.x=130
     joy.y=screen_h-150
     joy.r=70
@@ -1120,6 +1190,7 @@ end
 
 // Прямой урон от вселенной: он бьёт самого бука, врага и станцию отдельно,
 // поэтому станция не «спасает» бука от собственной вселенной.
+// Вторая ульта отключена, но функция оставлена для совместимости со старыми клиентами.
 function universe_collapse(number dmg)
     if finished!=0
         return
@@ -1133,6 +1204,7 @@ function universe_collapse(number dmg)
     // Станция бука тоже ломается вселенной.
     if player_class==3&&station.active==1
         station.hp=station.hp-dmg
+        station_hit_t=station_hit_time
         if station.hp<=0
             destroy_station()
         end
@@ -1160,6 +1232,7 @@ function universe_collapse_remote(number dmg)
     end
     if player_class==3&&station.active==1
         station.hp=station.hp-dmg
+        station_hit_t=station_hit_time
         if station.hp<=0
             destroy_station()
         end
@@ -1191,6 +1264,7 @@ end
 function tick_station()
     // Станция стоит на месте и не развеивается сама, пока её не сломают.
     tick_station_boom()
+    tick_station_hit()
 end
 
 function update_remote_station()
@@ -1269,8 +1343,12 @@ function update_game()
     tick_player_poison()
     tick_station()
     tick_universe()
+    ebuc_console_tick()
     update_aim()
     if finished!=0
+        return
+    end
+    if ebuc_console_paused==1
         return
     end
     if player.hp<=0
@@ -1684,20 +1762,10 @@ function tick_super_windup()
         return
     end
     if player_class==3
-        // Ульта бука случайная: половина — станция, половина — схлопывание вселенной.
-        if rand()%2==0
-            place_station()
-            if game_state==5
-                net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot)
-            end
-        else
-            universe_id=universe_id+1
-            universe_x=player.x
-            universe_y=player.y
-            start_universe(player.x,player.y,universe_id)
-            if game_state==5
-                net_publish_universe(universe_x/screen_w,universe_y/screen_h,universe_id)
-            end
+        // Вторая ульта (вселенная) отключена — теперь всегда только станция.
+        place_station()
+        if game_state==5
+            net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot)
         end
     end
 end
@@ -1770,21 +1838,43 @@ function draw_boom()
 end
 
 function draw_station_at(number x, number y, number hp, number max_hp)
-    number hw=22
-    tex(x-hw,y-hw,STATION_TEX,0,1.0)
+    number scale=1.0
+    // Эффект урона: когда станцию бьют, она сжимается и плавно возвращается.
+    if station.active==1&&station_hit_t>0&&x==station.x&&y==station.y
+        number ratio=clamp(station_hit_t/station_hit_time,0,1)
+        // ratio 1 -> только ударили, scale 0.6; ratio 0 -> scale 1
+        scale=1.0-0.4*ratio
+        // лёгкая упругость на отскоке
+        if ratio<0.5
+            scale=scale+0.08*sin((1-ratio)*pi*2.5)
+        end
+    end
+    number hw=22*scale
+    tex(x-hw,y-hw,STATION_TEX,0,scale)
     if hp>0&&max_hp>0
         number frac=clamp(hp/max_hp,0,1)
         number a=floor(220*frac)
         number col=(((unsigned)(int)a)<<24)|0x0000E676
-        ring(x,y,27,4,col)
+        ring(x,y,27*scale,4*scale,col)
         if a>30
             number inner=(((unsigned)(int)floor(90*frac))<<24)|0x0000B265
-            circle(x,y,17,inner)
+            circle(x,y,17*scale,inner)
         end
     end
 end
 
 function draw_station()
+    // Рисуем запасные станции из стека (старые)
+    number si=0
+    loop si<arr_len(ebuc_station_stack_x)
+        number sx=arr_get(ebuc_station_stack_x,si)
+        number sy=arr_get(ebuc_station_stack_y,si)
+        number sh=arr_get(ebuc_station_stack_hp,si)
+        number sm=arr_get(ebuc_station_stack_max,si)
+        // чуть темнее/прозрачнее чтобы отличать
+        draw_station_at(sx,sy,sh,sm)
+        si=si+1
+    end
     if station.active==0&&station_boom_t<=0
         return
     end
@@ -1895,6 +1985,434 @@ function draw_candies()
         tex(arr_get(candy_x,i)-hw,arr_get(candy_y,i)-hw,CANDY_TEX,0,candy_scale)
         i=i+1
     end
+end
+
+// ── Консоль DimScript для бука (оффлайн) ────────────────────────────────────
+function ebuc_console_input_x()
+    return (screen_w-400)/2
+end
+
+function ebuc_console_input_y()
+    return screen_h-56
+end
+
+function ebuc_console_input_w()
+    return 300
+end
+
+function ebuc_console_input_h()
+    return 42
+end
+
+function ebuc_console_run_x()
+    return ebuc_console_input_x()+ebuc_console_input_w()+10
+end
+
+function ebuc_console_run_y()
+    return ebuc_console_input_y()
+end
+
+function ebuc_console_sync()
+    ebuc_console_input=keyboard_get_text()
+end
+
+function ebuc_console_show_message(string msg)
+    ebuc_console_msg=msg
+    ebuc_console_msg_t=3.0
+end
+
+function tick_ebuc_console_msg()
+    if ebuc_console_msg_t>0
+        ebuc_console_msg_t=ebuc_console_msg_t-dt
+        if ebuc_console_msg_t<0
+            ebuc_console_msg_t=0
+        end
+    end
+end
+
+function ebuc_console_create_object_at(number x, number y)
+    arr_push(ebuc_console_objects,1)
+    arr_push(ebuc_console_obj_x,x)
+    arr_push(ebuc_console_obj_y,y)
+    arr_push(ebuc_console_obj_a,rand()%360)
+    ds_log("ebuc console obj %g %g",x,y)
+end
+
+
+
+function ebuc_console_exec_line(string raw)
+    string line=str_trim(raw)
+    if str_len(line)==0
+        return 0
+    end
+    string low=str_lower(line)
+    ds_log("ebuc exec: %s",line)
+    if str_contains(low,"place")==1&&str_contains(low,"station")==1
+        place_station()
+        ebuc_console_show_message("station placed")
+        return 1
+    end
+    if str_eq(low,"station")==1||str_contains(low,"station.new")==1||str_contains(low,"new station")==1
+        place_station()
+        ebuc_console_show_message("station placed")
+        return 1
+    end
+    if str_contains(low,"destroy")==1&&str_contains(low,"station")==1
+        destroy_station()
+        ebuc_console_show_message("station destroyed")
+        return 1
+    end
+    if str_eq(low,"heal")==1||str_contains(low,"heal")==1
+        player.hp=player.max_hp
+        if station.active==1
+            station.hp=station.max_hp
+        end
+        ebuc_console_show_message("healed")
+        return 1
+    end
+    if str_contains(low,"clear")==1&&str_contains(low,"obj")==1
+        arr_clear(ebuc_console_objects)
+        arr_clear(ebuc_console_obj_x)
+        arr_clear(ebuc_console_obj_y)
+        arr_clear(ebuc_console_obj_a)
+        ebuc_console_show_message("objects cleared")
+        return 1
+    end
+    if str_contains(low,"obj")==1||str_contains(low,"object")==1||str_contains(low,"create")==1||str_contains(low,"spawn")==1
+        number oc_x=player.x
+        number oc_y=player.y
+        number oc_found=0
+        array oc_nums=arr_new()
+        number oc_p=0
+        number oc_nlen=str_len(line)
+        string oc_cur=""
+        loop oc_p<oc_nlen
+            string oc_ch=str_sub(line,oc_p,1)
+            if str_contains("0123456789.-",oc_ch)==1
+                oc_cur=oc_cur+oc_ch
+            else
+                if str_len(oc_cur)>0
+                    number oc_v=str_to_num(oc_cur)
+                    arr_push(oc_nums,oc_v)
+                    oc_cur=""
+                end
+            end
+            oc_p=oc_p+1
+        end
+        if str_len(oc_cur)>0
+            arr_push(oc_nums,str_to_num(oc_cur))
+        end
+        if arr_len(oc_nums)>=2
+            oc_x=arr_get(oc_nums,0)
+            oc_y=arr_get(oc_nums,1)
+            if oc_x<0||oc_x>screen_w
+                oc_x=player.x
+            end
+            if oc_y<0||oc_y>screen_h
+                oc_y=player.y
+            end
+            oc_found=1
+        else if arr_len(oc_nums)==1
+            oc_x=player.x+arr_get(oc_nums,0)
+            oc_y=player.y
+            oc_found=1
+        end
+        if oc_found==0
+            oc_x=player.x+(rand()%100-50)
+            oc_y=player.y+(rand()%100-50)
+        end
+        oc_x=clamp(oc_x,20,screen_w-20)
+        oc_y=clamp(oc_y,20,screen_h-20)
+        ebuc_console_create_object_at(oc_x,oc_y)
+        ebuc_console_show_message("object created")
+        return 1
+    end
+    if str_contains(low,"player.x")==1
+        number eq1=str_index_of(line,"=")
+        if eq1>=0
+            string after1=str_sub(line,eq1+1,str_len(line)-eq1-1)
+            number v1=str_to_num(str_trim(after1))
+            player.x=clamp(v1,player.size,screen_w-player.size)
+            ebuc_console_show_message("player.x="+v1)
+            return 1
+        end
+    end
+    if str_contains(low,"player.y")==1
+        number eq2=str_index_of(line,"=")
+        if eq2>=0
+            string after2=str_sub(line,eq2+1,str_len(line)-eq2-1)
+            number v2=str_to_num(str_trim(after2))
+            player.y=clamp(v2,player.size,screen_h-player.size)
+            ebuc_console_show_message("player.y="+v2)
+            return 1
+        end
+    end
+    if str_contains(low,"player.hp")==1
+        number eq3=str_index_of(line,"=")
+        if eq3>=0
+            string after3=str_sub(line,eq3+1,str_len(line)-eq3-1)
+            number v3=str_to_num(str_trim(after3))
+            if v3>player.max_hp
+                player.max_hp=v3
+            end
+            if v3<0
+                v3=0
+            end
+            if v3>player.max_hp
+                v3=player.max_hp
+            end
+            player.hp=v3
+            ebuc_console_show_message("player.hp="+v3)
+            return 1
+        end
+    end
+    if str_contains(low,"station.x")==1
+        number eq4=str_index_of(line,"=")
+        if eq4>=0&&station.active==1
+            string after4=str_sub(line,eq4+1,str_len(line)-eq4-1)
+            number v4=str_to_num(str_trim(after4))
+            station.x=clamp(v4,0,screen_w)
+            ebuc_console_show_message("station.x="+v4)
+            return 1
+        end
+    end
+    if str_contains(low,"station.y")==1
+        number eq5=str_index_of(line,"=")
+        if eq5>=0&&station.active==1
+            string after5=str_sub(line,eq5+1,str_len(line)-eq5-1)
+            number v5=str_to_num(str_trim(after5))
+            station.y=clamp(v5,0,screen_h)
+            ebuc_console_show_message("station.y="+v5)
+            return 1
+        end
+    end
+    if str_contains(low,"station.hp")==1
+        number eq6=str_index_of(line,"=")
+        if eq6>=0&&station.active==1
+            string after6=str_sub(line,eq6+1,str_len(line)-eq6-1)
+            number v6=str_to_num(str_trim(after6))
+            if v6>station.max_hp
+                station.max_hp=v6
+            end
+            if v6<0
+                v6=0
+            end
+            if v6>station.max_hp
+                v6=station.max_hp
+            end
+            station.hp=v6
+            ebuc_console_show_message("station.hp="+v6)
+            return 1
+        end
+    end
+    if str_contains(low,"enemy.x")==1
+        number eq7=str_index_of(line,"=")
+        if eq7>=0
+            string after7=str_sub(line,eq7+1,str_len(line)-eq7-1)
+            number v7=str_to_num(str_trim(after7))
+            enemy.x=clamp(v7,enemy.size,screen_w-enemy.size)
+            ebuc_console_show_message("enemy.x="+v7)
+            return 1
+        end
+    end
+    if str_contains(low,"enemy.y")==1
+        number eq8=str_index_of(line,"=")
+        if eq8>=0
+            string after8=str_sub(line,eq8+1,str_len(line)-eq8-1)
+            number v8=str_to_num(str_trim(after8))
+            enemy.y=clamp(v8,enemy.size,screen_h-enemy.size)
+            ebuc_console_show_message("enemy.y="+v8)
+            return 1
+        end
+    end
+    if str_contains(low,"enemy.hp")==1||str_contains(low,"boss.hp")==1||str_contains(low,"boss")==1
+        number eq9=str_index_of(line,"=")
+        if eq9>=0
+            string after9=str_sub(line,eq9+1,str_len(line)-eq9-1)
+            number v9=str_to_num(str_trim(after9))
+            if v9<0
+                v9=0
+            end
+            if v9>0
+                enemy.max_hp=v9
+            end
+            enemy.hp=v9
+            ebuc_console_show_message("enemy.hp="+v9)
+            return 1
+        end
+    end
+    number only_num=str_to_num(line)
+    if only_num!=0||str_eq(str_trim(line),"0")==1
+        ebuc_console_create_object_at(player.x+only_num,player.y)
+        ebuc_console_show_message("object "+only_num)
+        return 1
+    end
+    ebuc_console_show_message("unknown: "+line)
+    return 0
+end
+
+
+function ebuc_console_execute()
+    ebuc_console_sync()
+    string code=ebuc_console_input
+    if str_len(code)==0
+        return
+    end
+    number start=0
+    number len=str_len(code)
+    number i=0
+    loop i<len
+        string ch=str_sub(code,i,1)
+        if str_eq(ch,";")==1
+            string part=str_sub(code,start,i-start)
+            ebuc_console_exec_line(part)
+            start=i+1
+        end
+        i=i+1
+    end
+    if start<len
+        string part2=str_sub(code,start,len-start)
+        ebuc_console_exec_line(part2)
+    end
+    ebuc_console_input=""
+    keyboard_clear()
+    keyboard_hide()
+    ebuc_console_paused=0
+    ebuc_console_field=0
+end
+
+
+function ebuc_console_tick()
+    tick_ebuc_console_msg()
+    if game_state!=1||player_class!=3
+        if keyboard_visible()==1&&ebuc_console_field==1
+            keyboard_hide()
+            ebuc_console_paused=0
+            ebuc_console_field=0
+        end
+        return
+    end
+    if ebuc_console_open==0
+        ebuc_console_open=1
+    end
+    if keyboard_visible()==1&&ebuc_console_field==1
+        ebuc_console_paused=1
+        ebuc_console_sync()
+        if keyboard_enter_pressed()==1
+            ebuc_console_execute()
+        end
+    else
+        if ebuc_console_paused==1&&keyboard_visible()==0
+            ebuc_console_paused=0
+        end
+    end
+    number j=0
+    loop j<arr_len(ebuc_console_objects)
+        number a=arr_get(ebuc_console_obj_a,j)+dt*1.2
+        arr_set(ebuc_console_obj_a,j,a)
+        j=j+1
+    end
+end
+
+function draw_ebuc_console_objects()
+    number i=0
+    loop i<arr_len(ebuc_console_objects)
+        number x=arr_get(ebuc_console_obj_x,i), y=arr_get(ebuc_console_obj_y,i), a=arr_get(ebuc_console_obj_a,i)
+        number hw=18
+        tex(x-hw,y-hw,STATION_TEX,a,0.8)
+        ring(x,y,22,3,0xFFBBBBBB)
+        i=i+1
+    end
+end
+
+
+function draw_ebuc_console()
+    if game_state!=1||player_class!=3
+        return
+    end
+    if finished!=0
+        return
+    end
+    number ix=ebuc_console_input_x()
+    number iy=ebuc_console_input_y()
+    number iw=ebuc_console_input_w()
+    number ih=ebuc_console_input_h()
+    number rx=ebuc_console_run_x()
+    number ry=ebuc_console_run_y()
+    number rw=72
+    number rh=ih
+    // монохром: тёмно-серый фон, белый текст
+    roundrect(ix,iy,iw,ih,10,0xFF222222)
+    string shown=ebuc_console_input
+    if ebuc_console_field==1&&keyboard_visible()==1
+        shown=shown+"|"
+    end
+    if str_len(shown)==0
+        text_in_field("DimScript...",ix+10,iy,ih,0xFF777777,0.48)
+    else
+        if text_ink_width(shown)*0.48>iw-20
+            number l=str_len(shown)
+            if l>24
+                shown="..."+str_sub(shown,l-21,21)
+            end
+        end
+        text_in_field(shown,ix+10,iy,ih,0xFFFFFFFF,0.48)
+    end
+    roundrect(rx,ry,rw,rh,10,0xFFE0E0E0)
+    text_in_box("Run",rx,ry,rw,rh,0xFF111111,0.55)
+    if ebuc_console_msg_t>0&&str_len(ebuc_console_msg)>0
+        text_scaled(ebuc_console_msg,ix,iy-22,0xFFCCCCCC,0.45)
+    end
+    if ebuc_console_paused==1
+        rect(0,0,screen_w,screen_h,0xAA000000)
+        ctext_scaled("PAUSED - DimScript",screen_h/2-20,0xFFFFFFFF,0.9)
+        ctext_scaled("typing...",screen_h/2+12,0xFFAAAAAA,0.6)
+        roundrect(ix,iy,iw,ih,10,0xFF333333)
+        if str_len(ebuc_console_input)==0
+            text_in_field("|",ix+10,iy,ih,0xFFFFFFFF,0.48)
+        else
+            text_in_field(ebuc_console_input+"|",ix+10,iy,ih,0xFFFFFFFF,0.48)
+        end
+    end
+end
+
+
+function touch_ebuc_console(number x, number y, number action)
+    if game_state!=1||player_class!=3
+        return 0
+    end
+    if finished!=0
+        return 0
+    end
+    number ix=ebuc_console_input_x(), iy=ebuc_console_input_y(), iw=ebuc_console_input_w(), ih=ebuc_console_input_h()
+    number rx=ebuc_console_run_x(), ry=ebuc_console_run_y(), rw=72, rh=ih
+    if action!=0
+        return 0
+    end
+    if x>=ix&&x<=ix+iw&&y>=iy&&y<=iy+ih
+        ebuc_console_field=1
+        ebuc_console_open=1
+        keyboard_clear()
+        if str_len(ebuc_console_input)>0
+            keyboard_type(ebuc_console_input)
+        end
+        keyboard_show()
+        ebuc_console_paused=1
+        return 1
+    end
+    if x>=rx&&x<=rx+rw&&y>=ry&&y<=ry+rh
+        ebuc_console_execute()
+        return 1
+    end
+    if keyboard_visible()==1&&ebuc_console_field==1
+        if y<iy-60
+            keyboard_hide()
+            ebuc_console_paused=0
+            ebuc_console_field=0
+            return 0
+        end
+    end
+    return 0
 end
 
 function draw_freeze()
@@ -2057,9 +2575,17 @@ function finish_game(number result)
     boom_t=0
     station.active=0
     station_boom_t=0
+    station_hit_t=0
+    arr_clear(ebuc_station_stack_x)
+    arr_clear(ebuc_station_stack_y)
+    arr_clear(ebuc_station_stack_hp)
+    arr_clear(ebuc_station_stack_max)
     universe_active=0
     universe_t=0
     universe_a=0
+    ebuc_console_paused=0
+    ebuc_console_field=0
+    keyboard_hide()
     number i=0
     loop i<max_players*snow_fields
         arr_set(remote_snow,i,0)
@@ -2233,6 +2759,7 @@ function draw_game()
     draw_player_shadow_layer()
     draw_enemy_shadow()
     draw_candies()
+    draw_ebuc_console_objects()
     draw_player_hitbox_layer()
     draw_enemy_hitbox()
     draw_gift()
@@ -2247,6 +2774,7 @@ function draw_game()
     hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
     hud_bar(screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1)
     draw_controls()
+    draw_ebuc_console()
     if finished==1
         draw_result(tr_victory())
     else if finished==2
@@ -2579,6 +3107,9 @@ function touch_game(number x, number y, number action, number id)
         drop_joy()
         return
     end
+    if game_state==1&&player_class==3&&touch_ebuc_console(x,y,action)==1
+        return
+    end
     if game_state==5&&touch_chat(x,y,action)==1
         return
     end
@@ -2587,6 +3118,10 @@ function touch_game(number x, number y, number action, number id)
         return
     end
     if chat_open==1
+        return
+    end
+    if ebuc_console_paused==1
+        // во время набора DimScript игра на паузе — только консоль
         return
     end
     if (player_class==2||player_class==3)&&(game_state==1||game_state==5)
