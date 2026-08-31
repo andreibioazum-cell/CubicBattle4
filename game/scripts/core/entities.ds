@@ -43,6 +43,7 @@ number player_poison=0, player_poison_tick=0, player_poison_damage=0, ppoison_a=
 number poison_a=0
 // Станция бука и вселенная.
 number station_boom_t=0
+number station_boom_x=0, station_boom_y=0
 number station_hit_t=0
 array ebuc_station_stack_x=arr_new()
 array ebuc_station_stack_y=arr_new()

@@ -109,6 +109,10 @@ function destroy_station()
     if station.active==0
         return
     end
+    // Запоминаем место поломки: зелёный взрыв рисуется именно там,
+    // даже если из стека тут же поднимется запасная станция.
+    station_boom_x=station.x
+    station_boom_y=station.y
     station.active=0
     station.hp=0
     station.max_hp=0
@@ -143,7 +147,8 @@ function destroy_station()
         ebuc_station_stack_y=ny
         ebuc_station_stack_hp=nh
         ebuc_station_stack_max=nm
-        station_boom_t=0
+        // Взрыв от сломанной турели всё равно показываем на её месте,
+        // а не на месте только что поднятой запасной.
         ds_log("station restored from stack %g left",new_len)
     end
 end
@@ -339,6 +344,8 @@ function reset_battle()
     station.hp=0
     station.max_hp=0
     station_boom_t=0
+    station_boom_x=0
+    station_boom_y=0
     station_hit_t=0
     arr_clear(ebuc_station_stack_x)
     arr_clear(ebuc_station_stack_y)
@@ -1839,10 +1846,10 @@ function draw_boom()
     draw_boom_at(boom_x,boom_y,boom_t)
 end
 
-// ── Луч станции бука ────────────────────────────────────────────────────────
-// Живая станция непрерывно излучает луч от себя до своего хозяина: тонкое
-// яркое ядро внутри мягкого зелёного свечения, по лучу к игроку бежит
-// сгусток энергии, у игрока луч кольцом «цепляется» за кубик.
+// ── Луч турели бука ────────────────────────────────────────────────────────
+// Живая турель непрерывно излучает луч от себя до своего хозяина: плотное,
+// почти непрозрачное яркое ядро внутри зелёного свечения. Без бегущих
+// кружков и колец на концах — только чистый луч.
 function draw_station_beam(number sx, number sy, number px, number py)
     number dx=px-sx, dy=py-sy
     number d=sqrt(dx*dx+dy*dy)
@@ -1850,30 +1857,24 @@ function draw_station_beam(number sx, number sy, number px, number py)
         return
     end
     number nx=dx/d, ny=dy/d
-    // не заходить внутрь спрайтов станции и игрока
+    // не заходить внутрь спрайтов турели и игрока
     number x1=sx+nx*24, y1=sy+ny*24
     number x2=px-nx*32, y2=py-ny*32
     number pulse=0.5+0.5*sin(station_beam_t*5)
-    number a=floor(100+60*pulse)
-    if a>230
-        a=230
+    // ядро почти непрозрачное: не «просвечивает», как раньше.
+    number a=floor(225+30*pulse)
+    if a>255
+        a=255
     end
-    // внешнее свечение
-    line(x1,y1,x2,y2,10+4*pulse,(((unsigned)(int)floor(a*0.45))<<24)|0x0000E676)
-    // ядро луча
-    line(x1,y1,x2,y2,3,(((unsigned)(int)a)<<24)|0x00C8FAD6)
-    // бегущий сгусток энергии от станции к игроку
-    number ph=frac01(station_beam_t*0.8)
-    number ex=x1+(x2-x1)*ph, ey=y1+(y2-y1)*ph
-    circle(ex,ey,5,(((unsigned)(int)a)<<24)|0x00E676)
-    ring(ex,ey,8,2,(((unsigned)(int)floor(a*0.7))<<24)|0x00B9F6CA)
-    // точка контакта у игрока
-    ring(x2,y2,6+2*pulse,2,(((unsigned)(int)floor(a*0.8))<<24)|0x00E676)
+    // внешнее свечение — плотное, чуть пульсирует по ширине
+    line(x1,y1,x2,y2,13+4*pulse,(((unsigned)(int)floor(170+50*pulse))<<24)|0x0000E676)
+    // ядро луча — сплошное и яркое
+    line(x1,y1,x2,y2,6,(((unsigned)(int)a)<<24)|0x00C8FAD6)
 end
 
 function draw_station_at(number x, number y, number hp, number max_hp)
     number scale=1.0
-    // Эффект урона: когда станцию бьют, она сжимается и плавно возвращается.
+    // Эффект урона: когда турель бьют, она сжимается и плавно возвращается.
     if station.active==1&&station_hit_t>0&&x==station.x&&y==station.y
         number ratio=clamp(station_hit_t/station_hit_time,0,1)
         // ratio 1 -> только ударили, scale 0.6; ratio 0 -> scale 1
@@ -1884,7 +1885,7 @@ function draw_station_at(number x, number y, number hp, number max_hp)
         end
     end
     number hw=22*scale
-    tex(x-hw,y-hw,STATION_TEX,0,scale)
+    tex(x-hw,y-hw,DESPENSER_TEX,0,scale)
     if hp>0&&max_hp>0
         number frac=clamp(hp/max_hp,0,1)
         number a=floor(220*frac)
@@ -1897,8 +1898,50 @@ function draw_station_at(number x, number y, number hp, number max_hp)
     end
 end
 
+// Взрыв турели при полном разрушении: тот же характер, что у взрыва
+// снежинки Деда Мороза, но в зелёных тонах бука.
+function draw_turret_boom(number x, number y, number bt)
+    if bt<=0
+        return
+    end
+    number p=1-bt/station_boom_time
+    if p<0
+        p=0
+    end
+    if p>1
+        p=1
+    end
+    number fade_in=clamp(p/boom_fade_in,0,1)
+    number fade_out=clamp(bt/(station_boom_time*boom_fade_out),0,1)
+    number a=floor(fade_in*fade_out*240)
+    if a<=0
+        return
+    end
+    number r=30+95*p
+    // зелёные кольца (вместо голубых у снежинки)
+    ring(x,y,r,9,(((unsigned)(int)a)<<24)|0x0000E676)
+    ring(x,y,r*0.66,6,(((unsigned)(int)floor(a*0.85))<<24)|0x00B9F6CA)
+    ring(x,y,r*0.36,5,(((unsigned)(int)floor(a*0.65))<<24)|0x0076FF03)
+    // яркая вспышка в центре
+    circle(x,y,r*0.22+6*(1-p),(((unsigned)(int)floor(a*0.7))<<24)|0x0000E676)
+    // разлетающиеся зелёные осколки-частицы
+    number i=0
+    loop i<18
+        number h1=hash01(i*37+11)
+        number h2=hash01(i*61+7)
+        number ang=h1*2*pi
+        number rr=r*(0.5+0.5*h2)
+        number px=x+cos(ang)*rr
+        number py=y+sin(ang)*rr
+        number sz=2+4*(1-p)
+        number aa=floor(a*(0.7+0.3*h2))
+        circle(px,py,sz,(((unsigned)(int)aa)<<24)|0x0000E676)
+        i=i+1
+    end
+end
+
 function draw_station()
-    // Рисуем запасные станции из стека (старые)
+    // Рисуем запасные турели из стека (старые)
     number si=0
     loop si<arr_len(ebuc_station_stack_x)
         number sx=arr_get(ebuc_station_stack_x,si)
@@ -1914,14 +1957,11 @@ function draw_station()
     end
     if station.active==1
         draw_station_at(station.x,station.y,station.hp,station.max_hp)
-        // Активная станция излучает луч до самого бука.
+        // Активная турель излучает луч до самого бука.
         draw_station_beam(station.x,station.y,player.x,player.y)
     end
     if station_boom_t>0
-        number p=1-station_boom_t/station_boom_time
-        number r=30+60*p
-        number a=floor(220*(1-p))
-        ring(station.x,station.y,r,7,(((unsigned)(int)a)<<24)|0x0000E676)
+        draw_turret_boom(station_boom_x,station_boom_y,station_boom_t)
     end
 end
 
@@ -2528,6 +2568,8 @@ function finish_game(number result)
     boom_t=0
     station.active=0
     station_boom_t=0
+    station_boom_x=0
+    station_boom_y=0
     station_hit_t=0
     arr_clear(ebuc_station_stack_x)
     arr_clear(ebuc_station_stack_y)
