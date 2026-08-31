@@ -396,11 +396,32 @@ function tr_class_santa_desc()
     return "It's 12:00 AM!"
 end
 
+function tr_class_ebuc()
+    if language == 1
+        return "буК"
+    end
+    return "ebuC"
+end
+
+function tr_class_ebuc_desc()
+    if language == 1
+        return "Хаос вселенной!"
+    end
+    return "The universe's chaos!"
+end
+
 function tr_super()
     if language == 1
         return "Снежинка"
     end
     return "Snowflake"
+end
+
+function tr_super_ebuc()
+    if language == 1
+        return "Ульта"
+    end
+    return "Ult"
 end
 
 function tr_class_selected()
@@ -488,6 +509,24 @@ function tr_class_level_effect(number cls, number n)
             return "Яд стакается, снежинка наносит урон"
         end
         return "Poison stacks, snowflake deals damage"
+    end
+    if cls == 3 && n == 1
+        if language == 1
+            return "Станция +1 HP"
+        end
+        return "Station +1 HP"
+    end
+    if cls == 3 && n == 2
+        if language == 1
+            return "Станция ещё +1 HP"
+        end
+        return "Station +1 more HP"
+    end
+    if cls == 3 && n == 3
+        if language == 1
+            return "Вселенная +3 урона"
+        end
+        return "Universe +3 damage"
     end
     if cls == 0 && n == 1
         if language == 1

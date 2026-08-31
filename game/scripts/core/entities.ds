@@ -22,10 +22,15 @@ object Gift
     number x=0, y=0, dx=0, dy=0, active=0, t=0, shot=0
 end
 
+object Station
+    number x=0, y=0, hp=0, max_hp=0, active=0, shot=0
+end
+
 Player player=new Player()
 Enemy enemy=new Enemy()
 Punch punch=new Punch()
 Gift gift=new Gift()
+Station station=new Station()
 
 number aim_tx=0, aim_ty=0
 number finished=0, atk_x=0, atk_y=0, atk2_x=0, atk2_y=0, joy_id=-1, aim_id=-1, super_id=-1
@@ -36,6 +41,11 @@ number freeze_a=0
 number player_freeze=0, player_freeze_slow=1, pfreeze_a=0
 number player_poison=0, player_poison_tick=0, player_poison_damage=0, ppoison_a=0
 number poison_a=0
+// Станция бука и вселенная.
+number station_boom_t=0
+number universe_active=0, universe_t=0, universe_x=0, universe_y=0, universe_hit=0, universe_id=0, universe_a=0
+array remote_station=arr_new()
+array remote_universe=arr_new()
 array remotes=arr_new(), remote_punches=arr_new()
 array remote_snow=arr_new()
 array candy_x=arr_new(), candy_y=arr_new()

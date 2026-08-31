@@ -9,6 +9,9 @@ function class_idle_tex(number cls)
     if cls==2
         return SANTA_TEX
     end
+    if cls==3
+        return EBUC_TEX
+    end
     return ORDINARY_TEX
 end
 
@@ -18,6 +21,9 @@ function class_punch_tex(number cls)
     end
     if cls==2
         return SANTA_PUNCH_TEX
+    end
+    if cls==3
+        return EBUC_PUNCH_TEX
     end
     return PUNCH_TEX
 end
@@ -34,10 +40,39 @@ function class_punch_damage_for(number cls, number lv)
     if cls==2
         return santa_damage
     end
+    if cls==3
+        return ebuc_damage
+    end
     if cls==0&&lv>=1
         return punch_damage*(1+ordinary_damage_bonus)
     end
     return punch_damage
+end
+
+function player_max_hp_for(number cls)
+    if cls==3
+        return ebuc_hp
+    end
+    return 10
+end
+
+function ebuc_station_hp_for(number lv)
+    number h=ebuc_station_hp
+    if lv>=1
+        h=h+ebuc_station_hp_bonus
+    end
+    if lv>=2
+        h=h+ebuc_station_hp_bonus
+    end
+    return h
+end
+
+function ebuc_universe_damage_for(number lv)
+    number d=ebuc_universe_damage
+    if lv>=3
+        d=d+ebuc_universe_damage_bonus
+    end
+    return d
 end
 
 function class_punch_damage(number cls)
@@ -67,6 +102,35 @@ function santa_freeze_time_for(number lv)
     return t
 end
 
+function destroy_station()
+    if station.active==0
+        return
+    end
+    station.active=0
+    station.hp=0
+    station.max_hp=0
+    station_boom_t=station_boom_time
+end
+
+function place_station()
+    station.x=player.x
+    station.y=player.y
+    station.max_hp=ebuc_station_hp_for(player_level)
+    station.hp=station.max_hp
+    station.active=1
+    station.shot=station.shot+1
+    station_boom_t=0
+end
+
+function tick_station_boom()
+    if station_boom_t>0
+        station_boom_t=station_boom_t-dt
+        if station_boom_t<0
+            station_boom_t=0
+        end
+    end
+end
+
 function take_damage(number dmg)
     number reduction=0
     if player_class==1&&azum_revived==1&&player_level>=1
@@ -78,7 +142,20 @@ function take_damage(number dmg)
     if reduction>0.9
         reduction=0.9
     end
-    player.hp=player.hp-dmg*(1-reduction)
+    number real=dmg*(1-reduction)
+    // Станция бука впитывает урон, пока жива; лишний урон идёт в самого бука.
+    if player_class==3&&station.active==1&&real>0
+        number absorbed=real
+        if absorbed>station.hp
+            absorbed=station.hp
+        end
+        station.hp=station.hp-absorbed
+        real=real-absorbed
+        if station.hp<=0
+            destroy_station()
+        end
+    end
+    player.hp=player.hp-real
     if player.hp<0
         player.hp=0
     end
@@ -148,6 +225,7 @@ function reset_battle()
     player.x=screen_w/2
     player.y=screen_h/2
     player.angle=0
+    player.max_hp=player_max_hp_for(player_class)
     player.hp=player.max_hp
     player.size=25*player_scale
     enemy.size=25*enemy_scale
@@ -198,6 +276,17 @@ function reset_battle()
     boom_y=0
     freeze_a=0
     super_windup=0
+    station.active=0
+    station.hp=0
+    station.max_hp=0
+    station_boom_t=0
+    universe_active=0
+    universe_t=0
+    universe_x=0
+    universe_y=0
+    universe_hit=0
+    universe_id=0
+    universe_a=0
     player_freeze=0
     player_freeze_slow=1
     pfreeze_a=0
@@ -219,6 +308,8 @@ function reset_battle()
     arr_clear(candy_x)
     arr_clear(candy_y)
     arr_clear(remote_snow)
+    arr_clear(remote_station)
+    arr_clear(remote_universe)
     number i=0
     loop i<max_players*remote_fields
         arr_push(remotes,0)
@@ -232,6 +323,16 @@ function reset_battle()
     i=0
     loop i<max_players*snow_fields
         arr_push(remote_snow,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players*station_fields
+        arr_push(remote_station,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players*universe_fields
+        arr_push(remote_universe,0)
         i=i+1
     end
     arr_clear(dust)
@@ -1007,11 +1108,167 @@ function tick_player_poison()
     end
 end
 
+// ── Ульта бука: вселенная ──────────────────────────────────────────────────
+function start_universe(number x, number y, number id)
+    universe_active=1
+    universe_t=0
+    universe_hit=0
+    universe_x=x
+    universe_y=y
+    universe_id=id
+end
+
+// Прямой урон от вселенной: он бьёт самого бука, врага и станцию отдельно,
+// поэтому станция не «спасает» бука от собственной вселенной.
+function universe_collapse(number dmg)
+    if finished!=0
+        return
+    end
+    if game_state!=5
+        enemy.hp=enemy.hp-dmg
+        if enemy.hp<0
+            enemy.hp=0
+        end
+    end
+    // Станция бука тоже ломается вселенной.
+    if player_class==3&&station.active==1
+        station.hp=station.hp-dmg
+        if station.hp<=0
+            destroy_station()
+        end
+    end
+    // Сам бук тоже может погибнуть от своей ульты.
+    player.hp=player.hp-dmg
+    if player.hp<0
+        player.hp=0
+    end
+    if player.hp<=0
+        if try_revive()==0
+            finish_game(2)
+            return
+        end
+    end
+    if finished==0&&game_state!=5&&enemy.hp<=0
+        finish_game(1)
+    end
+end
+
+// Чужая вселенная в онлайне: ломает только самого получателя и его станцию.
+function universe_collapse_remote(number dmg)
+    if finished!=0
+        return
+    end
+    if player_class==3&&station.active==1
+        station.hp=station.hp-dmg
+        if station.hp<=0
+            destroy_station()
+        end
+    end
+    player.hp=player.hp-dmg
+    if player.hp<0
+        player.hp=0
+    end
+    if player.hp<=0
+        if try_revive()==0
+            finish_game(2)
+        end
+    end
+end
+
+function tick_universe()
+    if universe_active==0
+        return
+    end
+    universe_t=universe_t+dt
+    universe_a=clamp(universe_t/ebuc_universe_collapse_time,0,1)
+    if universe_t>=ebuc_universe_collapse_time
+        universe_active=0
+        universe_hit=1
+        universe_collapse(ebuc_universe_damage_for(player_level))
+    end
+end
+
+function tick_station()
+    // Станция стоит на месте и не развеивается сама, пока её не сломают.
+    tick_station_boom()
+end
+
+function update_remote_station()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*station_fields
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_station,b,0)
+            arr_set(remote_station,b+1,0)
+            arr_set(remote_station,b+2,0)
+            arr_set(remote_station,b+3,0)
+        else
+            number cnt=net_player_station(s)
+            if cnt>0
+                arr_set(remote_station,b,1)
+                arr_set(remote_station,b+1,net_player_station_x(s)*screen_w)
+                arr_set(remote_station,b+2,net_player_station_y(s)*screen_h)
+                arr_set(remote_station,b+3,net_player_station_hp(s))
+            else
+                arr_set(remote_station,b,0)
+                arr_set(remote_station,b+1,0)
+                arr_set(remote_station,b+2,0)
+                arr_set(remote_station,b+3,0)
+            end
+        end
+        s=s+1
+    end
+end
+
+function update_remote_universe()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*universe_fields
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_universe,b,0)
+            arr_set(remote_universe,b+1,0)
+        else
+            number ucnt=net_player_universe(s)
+            number prev=arr_get(remote_universe,b)
+            if ucnt!=prev&&ucnt>0
+                arr_set(remote_universe,b,ucnt)
+                arr_set(remote_universe,b+1,1)
+                arr_set(remote_universe,b+2,net_player_universe_x(s)*screen_w)
+                arr_set(remote_universe,b+3,net_player_universe_y(s)*screen_h)
+                arr_set(remote_universe,b+4,0)
+            end
+            if arr_get(remote_universe,b+1)==1
+                number t=arr_get(remote_universe,b+4)+dt
+                arr_set(remote_universe,b+4,t)
+                if t>=ebuc_universe_collapse_time
+                    arr_set(remote_universe,b+1,0)
+                    arr_set(remote_universe,b,0)
+                    // Чужая вселенная тоже бьёт локального игрока и его станцию.
+                    number rlevel=net_player_level(s)
+                    universe_collapse_remote(ebuc_universe_damage_for(rlevel))
+                    if finished!=0
+                        return
+                    end
+                end
+            end
+        end
+        s=s+1
+    end
+end
+
 function update_game()
     tick_alert_hold()
     tick_revive()
     tick_freeze()
     tick_player_poison()
+    tick_station()
+    tick_universe()
     update_aim()
     if finished!=0
         return
@@ -1255,6 +1512,18 @@ function push_self()
     net_set_level(player_level)
     net_publish(player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive)
     net_publish_punch(punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot)
+    if player_class==3
+        if station.active==1
+            net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot+1)
+        else
+            net_publish_station(0,0,0,0)
+        end
+        if universe_active==1
+            net_publish_universe(universe_x/screen_w,universe_y/screen_h,universe_id)
+        else
+            net_publish_universe(0,0,0)
+        end
+    end
 end
 
 function update_online()
@@ -1269,6 +1538,8 @@ function update_online()
     tick_revive()
     tick_freeze()
     tick_player_poison()
+    tick_station()
+    tick_universe()
     update_aim()
     if finished!=0
         return
@@ -1314,6 +1585,8 @@ function update_online()
         smooth_remotes()
         update_remote_punches()
         update_remote_snow()
+        update_remote_station()
+        update_remote_universe()
         check_online_finish()
         push_self()
     end
@@ -1365,7 +1638,10 @@ function tick_santa_follow()
 end
 
 function fire_super()
-    if player_class!=2||super_cd>0
+    if player_class!=2&&player_class!=3
+        return
+    end
+    if super_cd>0
         return
     end
     if super_windup>0
@@ -1375,7 +1651,11 @@ function fire_super()
     punch_left=punch_time
     punch.active=0
     punch.hit=0
-    super_cd=super_cd_time
+    if player_class==3
+        super_cd=ebuc_super_cd_time
+    else
+        super_cd=super_cd_time
+    end
 end
 
 function tick_super_windup()
@@ -1390,15 +1670,35 @@ function tick_super_windup()
     if finished!=0
         return
     end
-    gift.x=player.x
-    gift.y=player.y
-    gift.dx=cos(player.angle)
-    gift.dy=sin(player.angle)
-    gift.active=1
-    gift.t=0
-    gift.shot=gift.shot+1
-    if game_state==5
-        net_publish_snow(gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot)
+    if player_class==2
+        gift.x=player.x
+        gift.y=player.y
+        gift.dx=cos(player.angle)
+        gift.dy=sin(player.angle)
+        gift.active=1
+        gift.t=0
+        gift.shot=gift.shot+1
+        if game_state==5
+            net_publish_snow(gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot)
+        end
+        return
+    end
+    if player_class==3
+        // Ульта бука случайная: половина — станция, половина — схлопывание вселенной.
+        if rand()%2==0
+            place_station()
+            if game_state==5
+                net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot)
+            end
+        else
+            universe_id=universe_id+1
+            universe_x=player.x
+            universe_y=player.y
+            start_universe(player.x,player.y,universe_id)
+            if game_state==5
+                net_publish_universe(universe_x/screen_w,universe_y/screen_h,universe_id)
+            end
+        end
     end
 end
 
@@ -1467,6 +1767,126 @@ end
 
 function draw_boom()
     draw_boom_at(boom_x,boom_y,boom_t)
+end
+
+function draw_station_at(number x, number y, number hp, number max_hp)
+    number hw=22
+    tex(x-hw,y-hw,STATION_TEX,0,1.0)
+    if hp>0&&max_hp>0
+        number frac=clamp(hp/max_hp,0,1)
+        number a=floor(220*frac)
+        number col=(((unsigned)(int)a)<<24)|0x0000E676
+        ring(x,y,27,4,col)
+        if a>30
+            number inner=(((unsigned)(int)floor(90*frac))<<24)|0x0000B265
+            circle(x,y,17,inner)
+        end
+    end
+end
+
+function draw_station()
+    if station.active==0&&station_boom_t<=0
+        return
+    end
+    if station.active==1
+        draw_station_at(station.x,station.y,station.hp,station.max_hp)
+    end
+    if station_boom_t>0
+        number p=1-station_boom_t/station_boom_time
+        number r=30+60*p
+        number a=floor(220*(1-p))
+        ring(station.x,station.y,r,7,(((unsigned)(int)a)<<24)|0x0000E676)
+    end
+end
+
+function universe_particle_color(number i, number a)
+    number m=(int)i%4
+    if m==0
+        return (((unsigned)(int)a)<<24)|0x0000E676
+    end
+    if m==1
+        return (((unsigned)(int)a)<<24)|0x0000E5FF
+    end
+    if m==2
+        return (((unsigned)(int)a)<<24)|0x00FFFFFF
+    end
+    return (((unsigned)(int)a)<<24)|0x0076FF03
+end
+
+function draw_universe_at(number cx, number cy, number seed, number t)
+    if t<=0
+        return
+    end
+    number p=clamp(t/ebuc_universe_collapse_time,0,1)
+    if p>=1
+        return
+    end
+    number i=0
+    loop i<ebuc_universe_particles
+        number h1=hash01(seed*13+i*91+7)
+        number h2=hash01(seed*17+i*131+19)
+        number h3=hash01(seed*23+i*173+31)
+        number h4=hash01(seed*29+i*211+47)
+        number sx=40+h1*(screen_w-80)
+        number sy=40+h2*(screen_h-80)
+        number k=p*p
+        number px=lerp(sx,cx,k)
+        number py=lerp(sy,cy,k)
+        number size=2+6*h3*(1-p)
+        number a=floor(120+120*p)
+        circle(px,py,size,universe_particle_color(i,a))
+        if h4>0.86
+            number trail=floor(a*0.55)
+            circle(px,py,size*2.1,universe_particle_color(i+1,trail))
+        end
+        i=i+1
+    end
+    if p>0.78
+        number ep=(p-0.78)/0.22
+        number r=(80+120*ep)*1.0
+        number af=floor(240*ep)
+        ring(cx,cy,r,10,(((unsigned)(int)af)<<24)|0x0000E676)
+        if ep>0.45
+            number a2=floor(160*(ep-0.45)/0.55)
+            ring(cx,cy,r*0.62,8,(((unsigned)(int)a2)<<24)|0x0076FF03)
+        end
+    end
+end
+
+function draw_universe()
+    if universe_active==0
+        return
+    end
+    draw_universe_at(universe_x,universe_y,universe_id,universe_t)
+end
+
+function draw_remote_station()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*station_fields
+        if s!=net_slot()&&arr_get(remote_station,b)==1
+            number rl=net_player_level(s)
+            draw_station_at(arr_get(remote_station,b+1),arr_get(remote_station,b+2),arr_get(remote_station,b+3),ebuc_station_hp_for(rl))
+        end
+        s=s+1
+    end
+end
+
+function draw_remote_universe()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*universe_fields
+        if s!=net_slot()&&arr_get(remote_universe,b+1)==1
+            draw_universe_at(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),arr_get(remote_universe,b),arr_get(remote_universe,b+4))
+        end
+        s=s+1
+    end
 end
 
 function draw_candies()
@@ -1635,9 +2055,24 @@ function finish_game(number result)
     drop_joy()
     gift.active=0
     boom_t=0
+    station.active=0
+    station_boom_t=0
+    universe_active=0
+    universe_t=0
+    universe_a=0
     number i=0
     loop i<max_players*snow_fields
         arr_set(remote_snow,i,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players*station_fields
+        arr_set(remote_station,i,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players*universe_fields
+        arr_set(remote_universe,i,0)
         i=i+1
     end
     if result==1&&cups_awarded==0
@@ -1759,10 +2194,13 @@ function draw_controls()
     circle(atk_x,atk_y,70,0xE94560)
     ring(atk_x,atk_y,70,4,0x000000)
     text_in_box(tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55)
-    if player_class==2&&(game_state==1||game_state==5)
+    if (player_class==2||player_class==3)&&(game_state==1||game_state==5)
         circle(atk2_x,atk2_y,70,0x5F10A0)
         ring(atk2_x,atk2_y,70,4,0x000000)
         string sl=tr_super()
+        if player_class==3
+            sl=tr_super_ebuc()
+        end
         number sls=0.55
         if super_cd>0
             sl=floor(super_cd+0.999)+""
@@ -1799,6 +2237,8 @@ function draw_game()
     draw_enemy_hitbox()
     draw_gift()
     draw_boom()
+    draw_universe()
+    draw_station()
     draw_player_body_layer()
     draw_enemy_body()
     draw_freeze()
@@ -2026,6 +2466,10 @@ function draw_online()
     draw_gift()
     draw_boom()
     draw_remote_snow()
+    draw_universe()
+    draw_remote_universe()
+    draw_station()
+    draw_remote_station()
     draw_player_body_layer()
     number hw=25*cube_scale*player_scale
     string myn=net_player_nick(net_slot())
@@ -2145,7 +2589,7 @@ function touch_game(number x, number y, number action, number id)
     if chat_open==1
         return
     end
-    if player_class==2&&(game_state==1||game_state==5)
+    if (player_class==2||player_class==3)&&(game_state==1||game_state==5)
         if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=96
             super_id=id
             return

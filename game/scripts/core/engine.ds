@@ -63,6 +63,9 @@ function init()
     png_load(AZUM_PUNCH_TEX)
     png_load(SANTA_TEX)
     png_load(SANTA_PUNCH_TEX)
+    png_load(EBUC_TEX)
+    png_load(EBUC_PUNCH_TEX)
+    png_load(STATION_TEX)
     png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
     net_set_firebase_key(FB_KEY)
@@ -81,6 +84,7 @@ function init()
     player_class = net_load_class()
     azum_owned = net_load_azum()
     santa_owned = net_load_santa()
+    ebuc_owned = net_load_ebuc()
     player_level = net_load_level()
     levels_unlocked = net_load_levels_unlocked()
     ordinary_level = net_load_ordinary_level()
@@ -89,6 +93,8 @@ function init()
     azum_levels_unlocked = net_load_azum_levels_unlocked()
     santa_level = net_load_santa_level()
     santa_levels_unlocked = net_load_santa_levels_unlocked()
+    ebuc_level = net_load_ebuc_level()
+    ebuc_levels_unlocked = net_load_ebuc_levels_unlocked()
     if levels_unlocked < 0
         levels_unlocked = 0
     end
@@ -102,6 +108,9 @@ function init()
         player_class = 0
     end
     if santa_owned == 0 && player_class == 2
+        player_class = 0
+    end
+    if ebuc_owned == 0 && player_class == 3
         player_class = 0
     end
     load_selected_level()

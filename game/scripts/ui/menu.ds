@@ -7,6 +7,9 @@ function class_name()
     if player_class == 2
         return tr_class_santa()
     end
+    if player_class == 3
+        return tr_class_ebuc()
+    end
     return tr_class_ordinary()
 end
 
@@ -17,6 +20,9 @@ function class_level_for(number cls)
     if cls == 2
         return santa_level
     end
+    if cls == 3
+        return ebuc_level
+    end
     return ordinary_level
 end
 
@@ -26,6 +32,9 @@ function class_levels_unlocked_for(number cls)
     end
     if cls == 2
         return santa_levels_unlocked
+    end
+    if cls == 3
+        return ebuc_levels_unlocked
     end
     return ordinary_levels_unlocked
 end
@@ -40,6 +49,9 @@ function class_owned(number cls)
     if cls == 2
         return santa_owned
     end
+    if cls == 3
+        return ebuc_owned
+    end
     return 0
 end
 
@@ -50,6 +62,9 @@ function load_selected_level()
     else if player_class == 2
         player_level = santa_level
         levels_unlocked = santa_levels_unlocked
+    else if player_class == 3
+        player_level = ebuc_level
+        levels_unlocked = ebuc_levels_unlocked
     else
         player_level = ordinary_level
         levels_unlocked = ordinary_levels_unlocked
@@ -63,11 +78,14 @@ function save_progress()
     else if player_class == 2
         santa_level = player_level
         santa_levels_unlocked = levels_unlocked
+    else if player_class == 3
+        ebuc_level = player_level
+        ebuc_levels_unlocked = levels_unlocked
     else
         ordinary_level = player_level
         ordinary_levels_unlocked = levels_unlocked
     end
-    net_save_progress_all(cups, candies, player_class, azum_owned, santa_owned, player_level, levels_unlocked, ordinary_level, ordinary_levels_unlocked, azum_level, azum_levels_unlocked, santa_level, santa_levels_unlocked)
+    net_save_progress_all(cups, candies, player_class, azum_owned, santa_owned, ebuc_owned, player_level, levels_unlocked, ordinary_level, ordinary_levels_unlocked, azum_level, azum_levels_unlocked, santa_level, santa_levels_unlocked, ebuc_level, ebuc_levels_unlocked)
     net_set_class(player_class)
     net_set_level(player_level)
 end
@@ -83,6 +101,9 @@ function set_class_level(number cls, number lv, number un)
     else if cls == 2
         santa_level = lv
         santa_levels_unlocked = un
+    else if cls == 3
+        ebuc_level = lv
+        ebuc_levels_unlocked = un
     else
         ordinary_level = lv
         ordinary_levels_unlocked = un
@@ -250,7 +271,7 @@ function draw_class_card(number x, number y, number w, number h, number cls, num
     number lw = text_ink_width(lv_text) * 0.5
     text_scaled(lv_text, x + (w - lw) / 2, y + 176, 0xDDE5FF, 0.45)
     string cur = tr_cups()
-    if cls == 2
+    if cls == 2 || cls == 3
         cur = tr_candies()
     end
     if sel == 1
@@ -264,12 +285,23 @@ end
 
 function draw_classes()
     rect(0, 0, screen_w, screen_h, 0x1a1a2e)
-    number cw = 260, ch = 300, gap = 26
-    number total = cw * 3 + gap * 2, x0 = (screen_w - total) / 2
-    number x1 = x0, x2 = x0 + cw + gap, x3 = x0 + 2 * (cw + gap), y = back_y + btn_h + 16
+    number gap = 18
+    number available = screen_w - 40
+    number cw = (available - gap * 3) / 4
+    if cw > 260
+        cw = 260
+    end
+    if cw < 150
+        cw = 150
+    end
+    number ch = 300
+    number total = cw * 4 + gap * 3, x0 = (screen_w - total) / 2
+    number y = back_y + btn_h + 16
+    number x1 = x0, x2 = x0 + cw + gap, x3 = x0 + 2 * (cw + gap), x4 = x0 + 3 * (cw + gap)
     draw_class_card(x1, y, cw, ch, 0, 1, 0, tr_class_ordinary(), tr_class_ordinary_desc(), ORDINARY_TEX)
     draw_class_card(x2, y, cw, ch, 1, azum_owned, azum_cost, tr_class_azum(), tr_class_azum_desc(), AZUM_TEX)
     draw_class_card(x3, y, cw, ch, 2, santa_owned, santa_candy_cost, tr_class_santa(), tr_class_santa_desc(), SANTA_TEX)
+    draw_class_card(x4, y, cw, ch, 3, ebuc_owned, ebuc_candy_cost, tr_class_ebuc(), tr_class_ebuc_desc(), EBUC_TEX)
     number by = y + ch + gap
     button_scaled(tr_levels(), (screen_w - btn_w) / 2, by, btn_w, btn_h, 0.9)
     number sy = by + btn_h + 12
@@ -293,6 +325,9 @@ function class_hp_of(number cls)
     if cls == 1
         return 20
     end
+    if cls == 3
+        return ebuc_hp
+    end
     return 10
 end
 
@@ -307,6 +342,9 @@ function class_desc_of(number cls)
     end
     if cls == 2
         return tr_class_santa_desc()
+    end
+    if cls == 3
+        return tr_class_ebuc_desc()
     end
     return tr_class_ordinary_desc()
 end
@@ -341,6 +379,9 @@ function pick_class(number cls)
     if cls == 2
         owned = santa_owned
     end
+    if cls == 3
+        owned = ebuc_owned
+    end
     if owned == 1
         player_class = cls
         load_selected_level()
@@ -354,10 +395,16 @@ function pick_class(number cls)
             azum_owned = 1
             bought = 1
         end
-    else
+    else if cls == 2
         if candies >= santa_candy_cost
             candies = candies - santa_candy_cost
             santa_owned = 1
+            bought = 1
+        end
+    else
+        if candies >= ebuc_candy_cost
+            candies = candies - ebuc_candy_cost
+            ebuc_owned = 1
             bought = 1
         end
     end
@@ -379,9 +426,18 @@ function touch_classes(number x, number y, number action)
         start_transition(0)
         return
     end
-    number cw = 260, ch = 300, gap = 26
-    number total = cw * 3 + gap * 2, x0 = (screen_w - total) / 2
-    number x1 = x0, x2 = x0 + cw + gap, x3 = x0 + 2 * (cw + gap), cy = back_y + btn_h + 16
+    number gap = 18
+    number available = screen_w - 40
+    number cw = (available - gap * 3) / 4
+    if cw > 260
+        cw = 260
+    end
+    if cw < 150
+        cw = 150
+    end
+    number ch = 300
+    number total = cw * 4 + gap * 3, x0 = (screen_w - total) / 2
+    number x1 = x0, x2 = x0 + cw + gap, x3 = x0 + 2 * (cw + gap), x4 = x0 + 3 * (cw + gap), cy = back_y + btn_h + 16
     if y >= cy && y <= cy + ch
         if x >= x1 && x <= x1 + cw
             pick_class(0)
@@ -393,6 +449,10 @@ function touch_classes(number x, number y, number action)
         end
         if x >= x3 && x <= x3 + cw
             pick_class(2)
+            return
+        end
+        if x >= x4 && x <= x4 + cw
+            pick_class(3)
             return
         end
     end
@@ -763,6 +823,7 @@ function login_do()
         player_class = net_load_class()
         azum_owned = net_load_azum()
         santa_owned = net_load_santa()
+        ebuc_owned = net_load_ebuc()
         player_level = net_load_level()
         levels_unlocked = net_load_levels_unlocked()
         ordinary_level = net_load_ordinary_level()
@@ -771,6 +832,8 @@ function login_do()
         azum_levels_unlocked = net_load_azum_levels_unlocked()
         santa_level = net_load_santa_level()
         santa_levels_unlocked = net_load_santa_levels_unlocked()
+        ebuc_level = net_load_ebuc_level()
+        ebuc_levels_unlocked = net_load_ebuc_levels_unlocked()
         if levels_unlocked < 0
             levels_unlocked = 0
         end
@@ -784,6 +847,9 @@ function login_do()
             player_class = 0
         end
         if santa_owned == 0 && player_class == 2
+            player_class = 0
+        end
+        if ebuc_owned == 0 && player_class == 3
             player_class = 0
         end
         load_selected_level()
