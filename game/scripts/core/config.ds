@@ -145,7 +145,7 @@ number ebuc_hp=12, ebuc_station_hp=9, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
 number ebuc_universe_particles=140, ebuc_candy_cost=150
-number station_boom_time=0.5, universe_fields=5, station_fields=4
+number station_boom_time=0.5, station_hit_time=0.22, universe_fields=5, station_fields=4
 // Частицы вселенной разлетаются в радиусе экрана и схлопываются в точку бука.
 number ebuc_universe_ring=26, ebuc_universe_flash=0.8
 number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1

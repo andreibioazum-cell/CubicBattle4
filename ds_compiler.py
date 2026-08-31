@@ -65,7 +65,9 @@ BUILTINS = frozenset({
     'net_save_progress', 'net_save_progress_all', 'keyboard_show',
     'keyboard_hide', 'keyboard_get_text', 'keyboard_get_raw', 'keyboard_clear',
     'keyboard_enter_pressed', 'keyboard_type', 'keyboard_visible', 'str_len',
-    'str_eq', 'ds_log', 'console_count', 'console_line', 'console_type',
+    'str_eq', 'str_contains', 'str_index_of', 'str_sub', 'str_to_num', 'str_trim',
+    'str_starts_with', 'str_ends_with', 'str_lower', 'str_upper',
+    'ds_log', 'console_count', 'console_line', 'console_type',
     'console_clear', 'arr_new', 'arr_push', 'arr_get', 'arr_set', 'arr_len',
     'arr_clear', 'clamp', 'lerp', 'dist',
 })
@@ -94,6 +96,10 @@ STR_BUILTINS = frozenset({
     'net_login_pass',
     'net_player_nick',
     'net_leaderboard_nick',
+    'str_sub',
+    'str_trim',
+    'str_lower',
+    'str_upper',
 })
 
 _NAME = r'[A-Za-z_]\w*'
