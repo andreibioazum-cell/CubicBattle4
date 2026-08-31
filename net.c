@@ -1471,7 +1471,7 @@ void net_event_set(double mode) {
  */
 static const char *banner_color_names[] = {
     "white", "red", "green", "blue", "yellow", "orange", "purple", "pink",
-    "cyan", "black", "rainbow"
+    "cyan", "black"
 };
 static int banner_color_known(const char *word) {
     size_t i;

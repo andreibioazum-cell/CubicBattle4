@@ -403,10 +403,8 @@ function tr_class_ebuc()
     return "ebuC"
 end
 
+// Описание бука не переводится — как и девизы остальных классов.
 function tr_class_ebuc_desc()
-    if language == 1
-        return "Хаос вселенной!"
-    end
     return "The universe's chaos!"
 end
 

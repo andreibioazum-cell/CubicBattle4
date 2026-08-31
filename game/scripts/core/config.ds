@@ -27,6 +27,9 @@ number enemy_min_distance=55, enemy_punch_reach=104, enemy_punch_width=104
 // плавно (enemy_attack_turn_speed), а не мгновенным рывком.
 number enemy_windup=0.10, enemy_lock_time=0.04, enemy_punch_time=0.10, enemy_recovery=0.04
 number enemy_cooldown_min=0.05, enemy_cooldown_max=0.12, enemy_damage=1
+// Стандартное здоровье врага: каждый новый бой начинается с него, чтобы
+// консольная команда enemy.hp=... не оставляла свой max_hp следующим боям.
+number enemy_base_hp=10
 number enemy_first_delay=0.45, enemy_spawn_delay=1.6
 number enemy_dodge_time=0.22, enemy_dodge_cooldown=0.65, enemy_reaction=0.10
 number enemy_think_min=0.01, enemy_think_max=0.05
@@ -146,6 +149,8 @@ number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
 number ebuc_universe_particles=140, ebuc_candy_cost=150
 number station_boom_time=0.5, station_hit_time=0.22, universe_fields=5, station_fields=4
+// Фаза пульсации луча от станции бука к игроку.
+number station_beam_t=0
 // Частицы вселенной разлетаются в радиусе экрана и схлопываются в точку бука.
 number ebuc_universe_ring=26, ebuc_universe_flash=0.8
 number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
