@@ -105,10 +105,10 @@ function admin_handle(string msg)
         end
     end
     // text сообщение цвет — баннер сверху экрана у ВСЕХ игроков в комнате.
-    // Примеры: "text hello, world! green", "text Go! rainbow".
+    // Примеры: "text hello, world! green", "text Go! blue".
     // Цвет — последнее слово (white/red/green/blue/yellow/orange/purple/
-    // pink/cyan/black/rainbow); если последнее слово не цвет, оно остаётся
-    // частью текста, а баннер будет белым.
+    // pink/cyan/black); если последнее слово не цвет, оно остаётся
+    // частью текста, а баннер будет белым. Rainbow убран.
     if net_chat_is_text_cmd(msg) == 1
         string btxt = net_chat_text_cmd_text(msg)
         string bcol = net_chat_text_cmd_color(msg)
