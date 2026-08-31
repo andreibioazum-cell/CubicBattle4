@@ -44,6 +44,10 @@ number poison_a=0
 // Станция бука и вселенная.
 number station_boom_t=0
 number station_hit_t=0
+array ebuc_station_stack_x=arr_new()
+array ebuc_station_stack_y=arr_new()
+array ebuc_station_stack_hp=arr_new()
+array ebuc_station_stack_max=arr_new()
 number universe_active=0, universe_t=0, universe_x=0, universe_y=0, universe_hit=0, universe_id=0, universe_a=0
 // Консоль DimScript для бука (оффлайн).
 number ebuc_console_open=0, ebuc_console_paused=0, ebuc_console_msg_t=0, ebuc_console_field=0

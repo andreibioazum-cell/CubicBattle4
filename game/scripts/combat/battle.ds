@@ -114,9 +114,48 @@ function destroy_station()
     station.max_hp=0
     station_boom_t=station_boom_time
     station_hit_t=0
+    // Если есть запасные станции в стеке, достаём последнюю (LIFO)
+    number stack_len=arr_len(ebuc_station_stack_x)
+    if stack_len>0
+        number last=stack_len-1
+        station.x=arr_get(ebuc_station_stack_x,last)
+        station.y=arr_get(ebuc_station_stack_y,last)
+        station.hp=arr_get(ebuc_station_stack_hp,last)
+        station.max_hp=arr_get(ebuc_station_stack_max,last)
+        station.active=1
+        // убираем из стека
+        number new_len=last
+        // truncate arrays by rebuilding? arr_clear and push back up to new_len
+        // simpler: pop via reducing len – we don't have pop, so recreate
+        array nx=arr_new()
+        array ny=arr_new()
+        array nh=arr_new()
+        array nm=arr_new()
+        number i=0
+        loop i<new_len
+            arr_push(nx,arr_get(ebuc_station_stack_x,i))
+            arr_push(ny,arr_get(ebuc_station_stack_y,i))
+            arr_push(nh,arr_get(ebuc_station_stack_hp,i))
+            arr_push(nm,arr_get(ebuc_station_stack_max,i))
+            i=i+1
+        end
+        ebuc_station_stack_x=nx
+        ebuc_station_stack_y=ny
+        ebuc_station_stack_hp=nh
+        ebuc_station_stack_max=nm
+        station_boom_t=0
+        ds_log("station restored from stack %g left",new_len)
+    end
 end
 
 function place_station()
+    // Стек станций: новая ставится последней и впитывает первой.
+    if station.active==1
+        arr_push(ebuc_station_stack_x,station.x)
+        arr_push(ebuc_station_stack_y,station.y)
+        arr_push(ebuc_station_stack_hp,station.hp)
+        arr_push(ebuc_station_stack_max,station.max_hp)
+    end
     station.x=player.x
     station.y=player.y
     station.max_hp=ebuc_station_hp_for(player_level)
@@ -297,6 +336,10 @@ function reset_battle()
     station.max_hp=0
     station_boom_t=0
     station_hit_t=0
+    arr_clear(ebuc_station_stack_x)
+    arr_clear(ebuc_station_stack_y)
+    arr_clear(ebuc_station_stack_hp)
+    arr_clear(ebuc_station_stack_max)
     universe_active=0
     universe_t=0
     universe_x=0
@@ -1821,6 +1864,17 @@ function draw_station_at(number x, number y, number hp, number max_hp)
 end
 
 function draw_station()
+    // Рисуем запасные станции из стека (старые)
+    number si=0
+    loop si<arr_len(ebuc_station_stack_x)
+        number sx=arr_get(ebuc_station_stack_x,si)
+        number sy=arr_get(ebuc_station_stack_y,si)
+        number sh=arr_get(ebuc_station_stack_hp,si)
+        number sm=arr_get(ebuc_station_stack_max,si)
+        // чуть темнее/прозрачнее чтобы отличать
+        draw_station_at(sx,sy,sh,sm)
+        si=si+1
+    end
     if station.active==0&&station_boom_t<=0
         return
     end
@@ -1985,6 +2039,7 @@ function ebuc_console_create_object_at(number x, number y)
 end
 
 
+
 function ebuc_console_exec_line(string raw)
     string line=str_trim(raw)
     if str_len(line)==0
@@ -2097,7 +2152,16 @@ function ebuc_console_exec_line(string raw)
         if eq3>=0
             string after3=str_sub(line,eq3+1,str_len(line)-eq3-1)
             number v3=str_to_num(str_trim(after3))
-            player.hp=clamp(v3,0,player.max_hp)
+            if v3>player.max_hp
+                player.max_hp=v3
+            end
+            if v3<0
+                v3=0
+            end
+            if v3>player.max_hp
+                v3=player.max_hp
+            end
+            player.hp=v3
             ebuc_console_show_message("player.hp="+v3)
             return 1
         end
@@ -2127,7 +2191,16 @@ function ebuc_console_exec_line(string raw)
         if eq6>=0&&station.active==1
             string after6=str_sub(line,eq6+1,str_len(line)-eq6-1)
             number v6=str_to_num(str_trim(after6))
-            station.hp=clamp(v6,0,station.max_hp)
+            if v6>station.max_hp
+                station.max_hp=v6
+            end
+            if v6<0
+                v6=0
+            end
+            if v6>station.max_hp
+                v6=station.max_hp
+            end
+            station.hp=v6
             ebuc_console_show_message("station.hp="+v6)
             return 1
         end
@@ -2152,12 +2225,18 @@ function ebuc_console_exec_line(string raw)
             return 1
         end
     end
-    if str_contains(low,"enemy.hp")==1
+    if str_contains(low,"enemy.hp")==1||str_contains(low,"boss.hp")==1||str_contains(low,"boss")==1
         number eq9=str_index_of(line,"=")
         if eq9>=0
             string after9=str_sub(line,eq9+1,str_len(line)-eq9-1)
             number v9=str_to_num(str_trim(after9))
-            enemy.hp=clamp(v9,0,enemy.max_hp)
+            if v9<0
+                v9=0
+            end
+            if v9>0
+                enemy.max_hp=v9
+            end
+            enemy.hp=v9
             ebuc_console_show_message("enemy.hp="+v9)
             return 1
         end
@@ -2171,7 +2250,6 @@ function ebuc_console_exec_line(string raw)
     ebuc_console_show_message("unknown: "+line)
     return 0
 end
-
 
 
 function ebuc_console_execute()
@@ -2242,7 +2320,7 @@ function draw_ebuc_console_objects()
         number x=arr_get(ebuc_console_obj_x,i), y=arr_get(ebuc_console_obj_y,i), a=arr_get(ebuc_console_obj_a,i)
         number hw=18
         tex(x-hw,y-hw,STATION_TEX,a,0.8)
-        ring(x,y,22,3,0xFF00E676)
+        ring(x,y,22,3,0xFFBBBBBB)
         i=i+1
     end
 end
@@ -2263,13 +2341,14 @@ function draw_ebuc_console()
     number ry=ebuc_console_run_y()
     number rw=72
     number rh=ih
-    roundrect(ix,iy,iw,ih,10,0xFF2A2A40)
+    // монохром: тёмно-серый фон, белый текст
+    roundrect(ix,iy,iw,ih,10,0xFF222222)
     string shown=ebuc_console_input
     if ebuc_console_field==1&&keyboard_visible()==1
         shown=shown+"|"
     end
     if str_len(shown)==0
-        text_in_field("DimScript...",ix+10,iy,ih,0x666688,0.48)
+        text_in_field("DimScript...",ix+10,iy,ih,0xFF777777,0.48)
     else
         if text_ink_width(shown)*0.48>iw-20
             number l=str_len(shown)
@@ -2277,22 +2356,22 @@ function draw_ebuc_console()
                 shown="..."+str_sub(shown,l-21,21)
             end
         end
-        text_in_field(shown,ix+10,iy,ih,0xFFFFFF,0.48)
+        text_in_field(shown,ix+10,iy,ih,0xFFFFFFFF,0.48)
     end
-    roundrect(rx,ry,rw,rh,10,0xFF00C853)
-    text_in_box("Run",rx,ry,rw,rh,0xFFFFFF,0.55)
+    roundrect(rx,ry,rw,rh,10,0xFFE0E0E0)
+    text_in_box("Run",rx,ry,rw,rh,0xFF111111,0.55)
     if ebuc_console_msg_t>0&&str_len(ebuc_console_msg)>0
-        text_scaled(ebuc_console_msg,ix,iy-22,0xFF00E676,0.45)
+        text_scaled(ebuc_console_msg,ix,iy-22,0xFFCCCCCC,0.45)
     end
     if ebuc_console_paused==1
-        rect(0,0,screen_w,screen_h,0x88000000)
-        ctext_scaled("PAUSED - DimScript",screen_h/2-20,0xFFFFFF,0.9)
-        ctext_scaled("typing...",screen_h/2+12,0xAAAAAA,0.6)
-        roundrect(ix,iy,iw,ih,10,0xFF3A3A60)
+        rect(0,0,screen_w,screen_h,0xAA000000)
+        ctext_scaled("PAUSED - DimScript",screen_h/2-20,0xFFFFFFFF,0.9)
+        ctext_scaled("typing...",screen_h/2+12,0xFFAAAAAA,0.6)
+        roundrect(ix,iy,iw,ih,10,0xFF333333)
         if str_len(ebuc_console_input)==0
-            text_in_field("|",ix+10,iy,ih,0xFFFFFF,0.48)
+            text_in_field("|",ix+10,iy,ih,0xFFFFFFFF,0.48)
         else
-            text_in_field(ebuc_console_input+"|",ix+10,iy,ih,0xFFFFFF,0.48)
+            text_in_field(ebuc_console_input+"|",ix+10,iy,ih,0xFFFFFFFF,0.48)
         end
     end
 end
@@ -2497,6 +2576,10 @@ function finish_game(number result)
     station.active=0
     station_boom_t=0
     station_hit_t=0
+    arr_clear(ebuc_station_stack_x)
+    arr_clear(ebuc_station_stack_y)
+    arr_clear(ebuc_station_stack_hp)
+    arr_clear(ebuc_station_stack_max)
     universe_active=0
     universe_t=0
     universe_a=0
