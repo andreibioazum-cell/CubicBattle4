@@ -909,6 +909,58 @@ static void apply_user_json(const char *resp) {
                    ebuc_level, ebuc_levels_unlocked);
 }
 
+/* Протолкнуть текущий локальный прогресс в облако (только после того, как
+ * сессия логина уже установлена — иначе PATCH уйдёт без авторизации). */
+static void push_pg_to_cloud(void) {
+    int cups, candies, cls, azum, santa, ebuc, lv, lu;
+    int ol, ou, al, au, sl, su, el, eul;
+    pg_lock();
+    cups = pg.cups; candies = pg.candies; cls = pg.cls;
+    azum = pg.azum; santa = pg.santa; ebuc = pg.ebuc;
+    lv = pg.level; lu = pg.levels_unlocked;
+    ol = pg.ordinary_level; ou = pg.ordinary_levels_unlocked;
+    al = pg.azum_level; au = pg.azum_levels_unlocked;
+    sl = pg.santa_level; su = pg.santa_levels_unlocked;
+    el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
+    pg_unlock();
+    net_save_progress_all(cups, candies, cls, azum, santa, ebuc,
+                          lv, lu, ol, ou, al, au, sl, su, el, eul);
+}
+
+/* Раньше правила Firebase не пропускали поля ebuc / ebuc_level / ebuc_levels и
+ * cls=3, поэтому покупка бука не попадала в облако: после перезахода облачная
+ * запись «стирала» локально купленный класс. Теперь, если на устройстве бук
+ * уже куплен (progress.dat), а облачная запись его не знает, возвращаем
+ * локальную покупку. Возврат 1 — облако нужно обновить после логина. */
+static int apply_user_json_keep_local(const char *resp) {
+    int had = 0, local_ebuc = 0, local_cls = 0, local_el = 0, local_eu = 0;
+    progress_read();
+    pg_lock();
+    if (pg.loaded) { had = 1; local_ebuc = pg.ebuc; local_cls = pg.cls;
+                    local_el = pg.ebuc_level; local_eu = pg.ebuc_levels_unlocked; }
+    pg_unlock();
+    apply_user_json(resp);
+    if (!had || local_ebuc != 1) return 0;
+    pg_lock();
+    if (pg.ebuc != 0) { pg_unlock(); return 0; }
+    pg.ebuc = 1;
+    if (local_cls == 3) pg.cls = 3;
+    if (local_el > pg.ebuc_level) pg.ebuc_level = local_el;
+    if (local_eu > pg.ebuc_levels_unlocked) pg.ebuc_levels_unlocked = local_eu;
+    int cups = pg.cups, candies = pg.candies, cls = pg.cls;
+    int azum = pg.azum, santa = pg.santa, lv = pg.level, lu = pg.levels_unlocked;
+    int ol = pg.ordinary_level, ou = pg.ordinary_levels_unlocked;
+    int al = pg.azum_level, au = pg.azum_levels_unlocked;
+    int sl = pg.santa_level, su = pg.santa_levels_unlocked;
+    int el = pg.ebuc_level, eul = pg.ebuc_levels_unlocked;
+    pg_unlock();
+    pending_cls = cls; pending_level = lv;
+    progress_write(cups, candies, cls, azum, santa, 1, lv, lu,
+                   ol, ou, al, au, sl, su, el, eul);
+    LOG("restored locally bought ebuc (cloud sync after login)");
+    return 1;
+}
+
 /* Создание записи нового игрока. with_pass — только для старого режима без
  * Firebase Auth: там пароль хранится в базе (и это плохо). */
 static int put_default_user(const char *req_url, const char *nick, const char *pass) {
@@ -925,6 +977,37 @@ static int put_default_user(const char *req_url, const char *nick, const char *p
 }
 
 static void net_auth_session_ok(const char *nick, const char *pass) {
+    /* Если на устройстве уже есть оффлайн-прогресс (купленные классы,
+     * валюты, уровни), создание нового аккаунта не должно его стирать:
+     * переносим всё в облачную запись нового ника. */
+    int keep = 0;
+    int cups = 0, candies = 0, cls = 0, azum = 0, santa = 0, ebuc = 0;
+    int lv = 0, lu = 0, ol = 0, ou = 0, al = 0, au = 0, sl = 0, su = 0, el = 0, eul = 0;
+    progress_read();
+    pg_lock();
+    if (pg.loaded) {
+        cups = pg.cups; candies = pg.candies; cls = pg.cls;
+        azum = pg.azum; santa = pg.santa; ebuc = pg.ebuc;
+        lv = pg.level; lu = pg.levels_unlocked;
+        ol = pg.ordinary_level; ou = pg.ordinary_levels_unlocked;
+        al = pg.azum_level; au = pg.azum_levels_unlocked;
+        sl = pg.santa_level; su = pg.santa_levels_unlocked;
+        el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
+        if (cups > 0 || candies > 0 || azum || santa || ebuc || cls != 0) keep = 1;
+    }
+    pg_unlock();
+    if (keep) {
+        lg_lock();
+        snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+        snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
+        lg.status = NET_LOGIN_OK;
+        lg_unlock();
+        session_save(nick, pass);
+        net_save_progress_all(cups, candies, cls, azum, santa, ebuc,
+                              lv, lu, ol, ou, al, au, sl, su, el, eul);
+        LOG("moved local progress into new account '%s'", nick);
+        return;
+    }
     pg_lock();
     pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0; pg.ebuc = 0;
     pg.level = 0; pg.levels_unlocked = 0;
@@ -1003,13 +1086,14 @@ double net_auth(const char *url, const char *nick, const char *pass) {
             return (double)NET_LOGIN_OK;
         }
         if (*p == '{') {
-            apply_user_json(resp);
+            int restored = apply_user_json_keep_local(resp);
             lg_lock();
             snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
             snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
             lg.status = NET_LOGIN_OK;
             lg_unlock();
             session_save(nick, pass);
+            if (restored) push_pg_to_cloud();
             LOG("logged in: '%s' (cups=%d, candies=%d)", nick,
                 (int)num(resp, "cups", 0), (int)num(resp, "candies", 0));
             return (double)NET_LOGIN_OK;
@@ -1040,13 +1124,14 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         char got_pass[64] = "";
         strv(resp, "pass", got_pass, sizeof(got_pass));
         if (strcmp(got_pass, pass) == 0) {
-            apply_user_json(resp);
+            int restored = apply_user_json_keep_local(resp);
             lg_lock();
             snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
             snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
             lg.status = NET_LOGIN_OK;
             lg_unlock();
             session_save(nick, pass);
+            if (restored) push_pg_to_cloud();
             LOG("logged in: '%s' (cups=%d, candies=%d)", nick,
                 (int)num(resp, "cups", 0), (int)num(resp, "candies", 0));
             return (double)NET_LOGIN_OK;

@@ -36,9 +36,10 @@
         "pass": { ".validate": false },
         "cups": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
         "candies": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
-        "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2" },
+        "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
         "azum": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
         "santa": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+        "ebuc": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
         "level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
         "levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
         "ordinary_level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
@@ -47,6 +48,8 @@
         "azum_levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
         "santa_level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
         "santa_levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "ebuc_level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+        "ebuc_levels": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
         "$other": { ".validate": false }
       }
     },
@@ -77,7 +80,7 @@
             "sdx": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
             "sdy": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
             "snow": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
-            "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2" },
+            "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
             "level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
             "$other": { ".validate": false }
           }
