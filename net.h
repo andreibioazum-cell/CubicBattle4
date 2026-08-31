@@ -42,6 +42,8 @@ double net_leaderboard_cups(double idx);
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
 void net_publish_snow(double x, double y, double dx, double dy, double snow);
+void net_publish_station(double x, double y, double hp, double counter);
+void net_publish_universe(double x, double y, double counter);
 void net_set_class(double cls);
 double net_status(void);
 double net_slot(void);
@@ -65,6 +67,13 @@ double net_player_snow_y(double slot);
 double net_player_snow_dx(double slot);
 double net_player_snow_dy(double slot);
 double net_player_snow(double slot);
+double net_player_station_x(double slot);
+double net_player_station_y(double slot);
+double net_player_station_hp(double slot);
+double net_player_station(double slot);
+double net_player_universe_x(double slot);
+double net_player_universe_y(double slot);
+double net_player_universe(double slot);
 double net_player_class(double slot);
 double net_player_level(double slot);
 void net_set_level(double level);
@@ -75,6 +84,7 @@ double net_load_candies(void);
 double net_load_class(void);
 double net_load_azum(void);
 double net_load_santa(void);
+double net_load_ebuc(void);
 double net_load_level(void);
 double net_load_levels_unlocked(void);
 double net_load_ordinary_level(void);
@@ -83,13 +93,16 @@ double net_load_azum_level(void);
 double net_load_azum_levels_unlocked(void);
 double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
-void net_save_progress(double cups, double candies, double cls, double azum, double santa,
+double net_load_ebuc_level(void);
+double net_load_ebuc_levels_unlocked(void);
+void net_save_progress(double cups, double candies, double cls, double azum, double santa, double ebuc,
                        double level, double levels_unlocked);
-void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
+void net_save_progress_all(double cups, double candies, double cls, double azum, double santa, double ebuc,
                            double level, double levels_unlocked,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
-                           double santa_level, double santa_levels_unlocked);
+                           double santa_level, double santa_levels_unlocked,
+                           double ebuc_level, double ebuc_levels_unlocked);
 
 /* Бан система */
 double net_banned(void);
