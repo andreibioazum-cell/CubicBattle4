@@ -510,21 +510,21 @@ function tr_class_level_effect(number cls, number n)
     end
     if cls == 3 && n == 1
         if language == 1
-            return "Станция +1 HP"
+            return "Турель +2 HP"
         end
-        return "Station +1 HP"
+        return "Turret +2 HP"
     end
     if cls == 3 && n == 2
         if language == 1
-            return "Станция ещё +1 HP"
+            return "Спавн турели лечит +0.5 HP"
         end
-        return "Station +1 more HP"
+        return "Placing a turret heals +0.5 HP"
     end
     if cls == 3 && n == 3
         if language == 1
-            return "Станция +2 HP + консоль"
+            return "Луч турели лечит +0.1 HP/сек"
         end
-        return "Station +2 HP + console"
+        return "Turret beam heals +0.1 HP/sec"
     end
     if cls == 0 && n == 1
         if language == 1

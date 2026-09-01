@@ -472,7 +472,9 @@ function draw_levels()
     string title = tr_levels_for_class() + " · " + class_name()
     // Заголовок ниже кнопки «Назад»: раньше налезал на неё нижней частью букв.
     ctext(title, back_y + btn_h + 32, 0xFFFFFF)
-    number n = 1, row_h = 78, y = back_y + btn_h + 52, w = 520, x = (screen_w - w) / 2
+    // Ряды уровней опущены ниже, чтобы надпись «Уровни класса» не
+    // застревала в карточке первого уровня.
+    number n = 1, row_h = 78, y = back_y + btn_h + 100, w = 520, x = (screen_w - w) / 2
     loop n <= max_level
         number unlocked = 0, next = 0
         if n <= levels_unlocked
@@ -526,7 +528,7 @@ function draw_levels()
         if level_msg_t < 0
             level_msg_t = 0
         end
-        ctext_fade(tr_level_need_cups(), back_y + btn_h + 52 + max_level * (row_h + 10) + 8, 0xFF8A80, level_msg_t, msg_fade)
+        ctext_fade(tr_level_need_cups(), back_y + btn_h + 100 + max_level * (row_h + 10) + 8, 0xFF8A80, level_msg_t, msg_fade)
     end
     draw_money()
     draw_back()
@@ -540,7 +542,7 @@ function touch_levels(number x, number y, number action)
         start_transition(8)
         return
     end
-    number n = 1, row_h = 78, ry = back_y + btn_h + 52, w = 520, rx = (screen_w - w) / 2
+    number n = 1, row_h = 78, ry = back_y + btn_h + 100, w = 520, rx = (screen_w - w) / 2
     loop n <= max_level
         if x >= rx && x <= rx + w && y >= ry && y <= ry + row_h
             if n <= levels_unlocked
