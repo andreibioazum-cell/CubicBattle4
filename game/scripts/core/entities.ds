@@ -41,9 +41,10 @@ number freeze_a=0
 number player_freeze=0, player_freeze_slow=1, pfreeze_a=0
 number player_poison=0, player_poison_tick=0, player_poison_damage=0, ppoison_a=0
 number poison_a=0
-// Станция бука и вселенная.
-number station_boom_t=0
-number station_boom_x=0, station_boom_y=0
+// Взрывы разрушенных турелей: каждый хранится отдельно и доигрывает до конца,
+// даже если тут же поставили новую турель или сломали ещё одну запасную.
+number station_booms_max=8
+array station_boom_xs=arr_new(), station_boom_ys=arr_new(), station_boom_ts=arr_new()
 number station_hit_t=0
 array ebuc_station_stack_x=arr_new()
 array ebuc_station_stack_y=arr_new()

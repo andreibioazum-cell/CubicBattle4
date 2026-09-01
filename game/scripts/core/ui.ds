@@ -7,12 +7,25 @@ function hud_bar(number bx, number by, number w, number h, number cur, number ma
     if shown < 0
         shown = 0
     end
-    number fill_w = (w - 8) * shown / max
-    if fill_w > 0
-        if from_right == 1
-            roundrect(bx + w - 4 - fill_w, by + 4, fill_w, h - 8, (h - 8) / 2, color)
-        else
-            roundrect(bx + 4, by + 4, fill_w, h - 8, (h - 8) / 2, color)
+    // У тонких баров (полоса HP турели, 7 px) отступ 4 px со всех сторон не
+    // помещается: заливка получала высоту h-8 < 0, roundrect её не рисовал,
+    // и бар оставался тёмным. Для низких баров отступ уменьшаем.
+    number pad = 4
+    if h <= 12
+        pad = 1
+    end
+    number fh = h - 2 * pad
+    if fh < 1
+        fh = 1
+    end
+    if max > 0
+        number fill_w = (w - 2 * pad) * shown / max
+        if fill_w > 0
+            if from_right == 1
+                roundrect(bx + w - pad - fill_w, by + pad, fill_w, fh, fh / 2, color)
+            else
+                roundrect(bx + pad, by + pad, fill_w, fh, fh / 2, color)
+            end
         end
     end
 end
