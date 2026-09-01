@@ -1867,8 +1867,10 @@ function draw_station_beam(number sx, number sy, number px, number py)
         return
     end
     number nx=dx/d, ny=dy/d
-    // не заходить внутрь спрайтов турели и игрока (спрайт турели чуть крупнее)
-    number x1=sx+nx*28, y1=sy+ny*28
+    // Луч выходит прямо из центра турели (x1,y1 = центр), а спрайт рисуется
+    // поверх него, поэтому видно, что луч «растёт» из середины турели.
+    number x1=sx, y1=sy
+    // не заходить внутрь спрайта игрока
     number x2=px-nx*32, y2=py-ny*32
     number pulse=0.5+0.5*sin(station_beam_t*5)
     // ядро почти непрозрачное: не «просвечивает», как раньше.
@@ -1885,17 +1887,9 @@ end
 function draw_station_at(number x, number y, number hp, number max_hp)
     number scale=station_scale
     if station.active==1&&x==station.x&&y==station.y
-        // Эффект урона: когда турель бьют, она быстро сжимается и возвращается.
-        if station_hit_t>0
-            number ratio=clamp(station_hit_t/station_hit_time,0,1)
-            // ratio 1 -> только ударили, сжатие; ratio 0 -> обычный размер
-            scale=station_scale*(1.0-0.4*ratio)
-            // лёгкая упругость на отскоке
-            if ratio<0.5
-                scale=scale+0.08*sin((1-ratio)*pi*2.5)
-            end
-        else if station_spawn_t>0
-            // Появление: спрайт немного увеличен и быстро сжимается до нормы.
+        // Появление: спрайт немного увеличен и быстро сжимается до нормы.
+        // Эффект урона (сжатие при попадании) убран.
+        if station_spawn_t>0
             number sp=clamp(station_spawn_t/station_spawn_time,0,1)
             scale=station_scale*(1.0+0.25*sp)
         end
@@ -1904,6 +1898,9 @@ function draw_station_at(number x, number y, number hp, number max_hp)
     // раньше смещение считалось от 44px и спрайт уезжал вниз-влево.
     number hw=25*scale
     tex(x-hw,y-hw,DESPENSER_TEX,0,scale)
+    // Полоса здоровья турели — прямо над ней.
+    number bw=46*scale, bh=7
+    hud_bar(x-bw/2, y-hw-12, bw, bh, hp, max_hp, 0x7ED321, 0)
 end
 
 // Взрыв турели при полном разрушении: тот же характер, что у взрыва
@@ -1964,9 +1961,10 @@ function draw_station()
         return
     end
     if station.active==1
-        draw_station_at(station.x,station.y,station.hp,station.max_hp)
+        // Луч рисуем под спрайтом, чтобы он «выходил прямо из центра» турели.
         // Активная турель излучает луч до самого бука.
         draw_station_beam(station.x,station.y,player.x,player.y)
+        draw_station_at(station.x,station.y,station.hp,station.max_hp)
     end
     if station_boom_t>0
         draw_turret_boom(station_boom_x,station_boom_y,station_boom_t)
@@ -2042,13 +2040,13 @@ function draw_remote_station()
     loop s<max_players
         number b=s*station_fields
         if s!=net_slot()&&arr_get(remote_station,b)==1
-            number rl=net_player_level(s)
-            draw_station_at(arr_get(remote_station,b+1),arr_get(remote_station,b+2),arr_get(remote_station,b+3),ebuc_station_hp_for(rl))
-            // Чужая станция точно так же светит лучом своему хозяину.
+            // Луч рисуем под спрайтом, чтобы он «выходил прямо из центра» турели.
             number rb=s*remote_fields
             if arr_get(remotes,rb+5)==1
                 draw_station_beam(arr_get(remote_station,b+1),arr_get(remote_station,b+2),arr_get(remotes,rb+1),arr_get(remotes,rb+2))
             end
+            number rl=net_player_level(s)
+            draw_station_at(arr_get(remote_station,b+1),arr_get(remote_station,b+2),arr_get(remote_station,b+3),ebuc_station_hp_for(rl))
         end
         s=s+1
     end
