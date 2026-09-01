@@ -80,6 +80,13 @@
             "sdx": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
             "sdy": { ".validate": "newData.isNumber() && newData.val() >= -1.001 && newData.val() <= 1.001" },
             "snow": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+            "stx": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "sty": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "sthp": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "station": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+            "uzx": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "uzy": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "universe": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
             "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
             "level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
             "$other": { ".validate": false }

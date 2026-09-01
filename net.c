@@ -100,6 +100,17 @@ static void ban_lock(void) { ds_mutex_lock(banlist.lock); }
 static void ban_unlock(void) { ds_mutex_unlock(banlist.lock); }
 
 static volatile sig_atomic_t net_fast = 0;
+/* Статики наблюдения за слотами (claim_slot) и приёма игроков (read_players):
+ * живут на уровне файла, чтобы net_connect мог сбросить их при каждом новом
+ * подключении — иначе записи прошлой сессии «помнят» чужие uid/seq и старые
+ * метки времени, что путает захват слота и определение онлайна после
+ * переподключения. */
+static unsigned long claim_seen_seq[NET_SLOTS];
+static long long claim_seen_at[NET_SLOTS];
+static char claim_seen_uid[NET_SLOTS][24];
+static unsigned long rp_lseq[NET_SLOTS];
+static long long rp_lch[NET_SLOTS];
+static long long rp_kicked[NET_SLOTS];
 static char s_chat_text_ret[CHAT_TEXT_MAX];
 static char s_chat_uid_ret[24];
 static char s_nick_ret[24];
@@ -1848,24 +1859,36 @@ static int actor_same(const Actor *x, const Actor *y) {
         && x->universe_x==y->universe_x && x->universe_y==y->universe_y && x->universe==y->universe
         && x->cls==y->cls && x->level==y->level && !strcmp(x->nick,y->nick);
 }
+/* Поля позиции в базе валидируются правилами Firebase как 0..1 (снаряды —
+ * -1..1). Одно значение вне диапазона отклоняет PUT целиком, и клиент
+ * застревает в подключении. На всякий случай обрезаем всё прямо перед
+ * отправкой: нормализация в скрипте уже есть, но это последний рубеж. */
+static double clamp01(double v) { return v < 0 ? 0 : (v > 1 ? 1 : safe(v)); }
+static double clamp11(double v) { v = safe(v); return v < -1 ? -1 : (v > 1 ? 1 : v); }
+
+/* Последнее успешно отправленное состояние: анти-флуд (см. push_state).
+ * Сбрасывается в net_connect, чтобы первая отправка новой сессии не сравнивалась
+ * с состоянием прошлой. */
+static Actor ps_last;
+static long long ps_last_put = 0;
+static int ps_have_last = 0;
 static int push_state(void) {
-    static Actor last; static long long last_put = 0; static int have_last = 0;
     Actor a; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
     lock(); a=net.me; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
     /* Стоим на месте и свежий heartbeat уже был — базу не дёргаем. seq обязан
      * обновляться хотя бы раз в HEARTBEAT_TICK: иначе другие игроки через
      * TIMEOUT сочтут слот мёртвым и заберут его. */
-    if (have_last && actor_same(&a,&last) && now_ms()-last_put < HEARTBEAT_TICK) return 1;
+    if (ps_have_last && actor_same(&a,&ps_last) && now_ms()-ps_last_put < HEARTBEAT_TICK) return 1;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
     snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"stx\":%.5f,\"sty\":%.5f,\"sthp\":%.0f,\"station\":%.0f,\"uzx\":%.5f,\"uzy\":%.5f,\"universe\":%.0f,\"cls\":%.0f,\"level\":%.0f}",
-        net.uid,enick,safe(a.x),safe(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
-        safe(a.punch_x),safe(a.punch_y),safe(a.punch_dx),safe(a.punch_dy),safe(a.punch),
-        safe(a.snow_x),safe(a.snow_y),safe(a.snow_dx),safe(a.snow_dy),safe(a.snow),safe(a.station_x),safe(a.station_y),safe(a.station_hp),safe(a.station),safe(a.universe_x),safe(a.universe_y),safe(a.universe),safe(a.cls),safe(a.level));
+        net.uid,enick,clamp01(a.x),clamp01(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
+        clamp01(a.punch_x),clamp01(a.punch_y),clamp11(a.punch_dx),clamp11(a.punch_dy),safe(a.punch),
+        clamp01(a.snow_x),clamp01(a.snow_y),clamp11(a.snow_dx),clamp11(a.snow_dy),safe(a.snow),clamp01(a.station_x),clamp01(a.station_y),safe(a.station_hp),safe(a.station),clamp01(a.universe_x),clamp01(a.universe_y),safe(a.universe),safe(a.cls),safe(a.level));
     int c = fb_http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d", c);
-    if (c == 200) { last = a; last_put = now_ms(); have_last = 1; }
+    if (c == 200) { ps_last = a; ps_last_put = now_ms(); ps_have_last = 1; }
     return c == 200;
 }
 static int pull_state(char *resp,size_t cap) {
@@ -1908,7 +1931,6 @@ static void release_slot(void) {
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); fb_http("DELETE",url,NULL,NULL,0);
 }
 static int claim_slot(void) {
-    static unsigned long seen_seq[NET_SLOTS]; static long long seen_at[NET_SLOTS]; static char seen_uid[NET_SLOTS][24];
     char resp[RESP],url[URL],body[BODY],uid[24],etag[96]; long long t=now_ms(); int slot;
     for(slot=0;slot<NET_SLOTS;slot++) {
         unsigned long seq; int claim=0,code;
@@ -1920,8 +1942,8 @@ static int claim_slot(void) {
         if(uid[0]&&!strcmp(uid,net.uid))return slot;
         seq=(unsigned long)num(resp,"seq",0);
         if(!uid[0])claim=1;
-        else if(etag[0]&&(strcmp(uid,seen_uid[slot])||seq!=seen_seq[slot])) { snprintf(seen_uid[slot],sizeof(seen_uid[slot]),"%s",uid); seen_seq[slot]=seq; seen_at[slot]=t; }
-        else if(etag[0]&&t-seen_at[slot]>=STALE)claim=1;
+        else if(etag[0]&&(strcmp(uid,claim_seen_uid[slot])||seq!=claim_seen_seq[slot])) { snprintf(claim_seen_uid[slot],sizeof(claim_seen_uid[slot]),"%s",uid); claim_seen_seq[slot]=seq; claim_seen_at[slot]=t; }
+        else if(etag[0]&&t-claim_seen_at[slot]>=STALE)claim=1;
         if(!claim)continue;
         if(!etag[0]) {
             if(net_log_ok()) LOG("claim slot %d: no ETag", slot);
@@ -1932,12 +1954,12 @@ static int claim_slot(void) {
             snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"stx\":0,\"sty\":0,\"sthp\":0,\"station\":0,\"uzx\":0,\"uzy\":0,\"universe\":0,\"cls\":%.0f,\"level\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level));
         }
         code=fb_http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
-        if(code==200) { seen_uid[slot][0]=0; seen_seq[slot]=0; seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }        if(net_log_ok()) LOGERR("claim slot %d: PUT failed, HTTP %d", slot, code);
+        if(code==200) { claim_seen_uid[slot][0]=0; claim_seen_seq[slot]=0; claim_seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
+        if(net_log_ok()) LOGERR("claim slot %d: PUT failed, HTTP %d", slot, code);
     }
     return -1;
 }
 static void read_players(const char *resp) {
-    static unsigned long lseq[NET_SLOTS]; static long long lch[NET_SLOTS];
     Actor ps[NET_SLOTS]; long long t=now_ms(); int local,count=0,slot;
     memset(ps,0,sizeof(ps));
     lock(); local=net.slot; unlock();
@@ -1945,21 +1967,20 @@ static void read_players(const char *resp) {
         char bp[24],p[40],uid[24]; unsigned long sq; int online;
         if(slot==local) { lock(); ps[slot]=net.me; ps[slot].online=local>=0; unlock(); if(local>=0)count++; continue; }
         snprintf(bp,sizeof(bp),"%d",slot); snprintf(p,sizeof(p),"%s/uid",bp); strv(resp,p,uid,sizeof(uid));
-        if(!uid[0]||!strcmp(uid,net.uid)){ lseq[slot]=0; lch[slot]=0; continue; }
+        if(!uid[0]||!strcmp(uid,net.uid)){ rp_lseq[slot]=0; rp_lch[slot]=0; continue; }
         snprintf(p,sizeof(p),"%s/seq",bp); sq=(unsigned long)num(resp,p,0);
-        if(sq!=lseq[slot]){ lseq[slot]=sq; lch[slot]=t; } else if(!lch[slot]) lch[slot]=t;
-        online=t-lch[slot]<TIMEOUT; if(!online)continue;
+        if(sq!=rp_lseq[slot]){ rp_lseq[slot]=sq; rp_lch[slot]=t; } else if(!rp_lch[slot]) rp_lch[slot]=t;
+        online=t-rp_lch[slot]<TIMEOUT; if(!online)continue;
         snprintf(p,sizeof(p),"%s/nick",bp); strv(resp,p,ps[slot].nick,sizeof(ps[slot].nick));
         if(ban_cache_has(ps[slot].nick)) {
             /* Забаненный игрок не показывается и выкидывается из комнаты:
              * так бан действует и на тех, кто зашёл со старой версией. */
-            static long long kicked[NET_SLOTS];
-            if(t-kicked[slot]>=BAN_KICK_TICK) {
-                kicked[slot]=t;
+            if(t-rp_kicked[slot]>=BAN_KICK_TICK) {
+                rp_kicked[slot]=t;
                 LOG("slot %d: '%s' is banned, kicking", slot, ps[slot].nick);
                 room_slot_delete_async(slot);
             }
-            lseq[slot]=0; lch[slot]=0;
+            rp_lseq[slot]=0; rp_lch[slot]=0;
             continue;
         }
         snprintf(p,sizeof(p),"%s/x",bp); ps[slot].x=num(resp,p,0);
@@ -2218,6 +2239,31 @@ void net_connect(const char *url, const char *room) {
     lock(); net.self_banned = 0; unlock();
     /* Список банов нужно перечитать: вдруг бан поставили, пока мы сидели в меню. */
     ban_invalidate();
+    /* Сбрасываем всё состояние прошлой комнаты: чат, игроков, ивент/баннер и
+     * статики наблюдения за слотами. Без этого, пока новый клиент ещё не
+     * захватил слот (комната занята «призраками» убитых приложений), на
+     * экране висят сообщения и снимки игроков из прошлой сессии — выглядит
+     * как «чат прогрузился, а никто не двигается, висит подключение». */
+    memset(claim_seen_seq, 0, sizeof(claim_seen_seq));
+    memset(claim_seen_at, 0, sizeof(claim_seen_at));
+    memset(claim_seen_uid, 0, sizeof(claim_seen_uid));
+    memset(rp_lseq, 0, sizeof(rp_lseq));
+    memset(rp_lch, 0, sizeof(rp_lch));
+    memset(rp_kicked, 0, sizeof(rp_kicked));
+    memset(&ps_last, 0, sizeof(ps_last));
+    ps_last_put = 0; ps_have_last = 0;
+    lock();
+    memset(net.players, 0, sizeof(net.players));
+    memset(net.chats, 0, sizeof(net.chats));
+    net.chat_count = 0;
+    net.count = 0;
+    net.slot = -1;
+    net.seq = 0;
+    net.event = 0;
+    net.banner_text[0] = 0;
+    net.banner_color[0] = 0;
+    net.banner_ts = 0;
+    unlock();
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
     LOG("connect %s/%s", net.base, net.room);
