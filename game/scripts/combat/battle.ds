@@ -1305,8 +1305,6 @@ function tick_station()
             station_spawn_t=0
         end
     end
-    // Фаза луча станции бука тикает и в бою, и в онлайне.
-    station_beam_t=station_beam_t+dt
     // Уровень 3: каждую секунду луч живой турели лечит бука.
     if player_class==3&&player_level>=3&&station.active==1&&finished==0&&player.hp>0
         station_heal_t=station_heal_t+dt
@@ -1917,14 +1915,10 @@ function draw_station_beam(number sx, number sy, number px, number py)
     number x1=sx, y1=sy
     // не заходить внутрь спрайта игрока
     number x2=px-nx*32, y2=py-ny*32
-    number pulse=0.5+0.5*sin(station_beam_t*5)
-    // ядро почти непрозрачное: не «просвечивает», как раньше.
-    number a=floor(225+30*pulse)
-    if a>255
-        a=255
-    end
-    // внешнее свечение — плотное, чуть пульсирует по ширине
-    line(x1,y1,x2,y2,13+4*pulse,(((unsigned)(int)floor(170+50*pulse))<<24)|0x0000E676)
+    // Пульсация луча убрана: ширина и яркость постоянные.
+    number a=floor(250)
+    // внешнее свечение — плотное, без пульсации
+    line(x1,y1,x2,y2,15,(((unsigned)(int)200)<<24)|0x0000E676)
     // ядро луча — сплошное и яркое
     line(x1,y1,x2,y2,6,(((unsigned)(int)a)<<24)|0x00C8FAD6)
 end

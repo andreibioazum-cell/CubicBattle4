@@ -148,8 +148,6 @@ number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
 number ebuc_universe_particles=140, ebuc_candy_cost=150
 number station_boom_time=0.5, station_hit_time=0.1, universe_fields=5, station_fields=4
-// Фаза пульсации луча от станции бука к игроку.
-number station_beam_t=0
 // Базовый масштаб спрайта турели (увеличен в игре) и анимация появления:
 // при спавне спрайт чуть крупнее и быстро сжимается до обычного размера.
 number station_scale=1.6, station_spawn_time=0.2, station_spawn_t=0
