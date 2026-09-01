@@ -81,6 +81,13 @@ function init()
     end
     cups = net_load_cups()
     candies = net_load_candies()
+    achievement_welcome = net_load_achievement_welcome()
+    achievement_all_characters = net_load_achievement_all_characters()
+    // Первый запуск игры открывает достижение «Привет!».
+    if achievement_welcome == 0
+        achievement_welcome = 1
+        net_save_achievements(achievement_welcome, achievement_all_characters)
+    end
     player_class = net_load_class()
     azum_owned = net_load_azum()
     santa_owned = net_load_santa()
@@ -191,6 +198,8 @@ function draw()
         draw_levels()
     else if game_state == 10
         draw_leaderboard()
+    else if game_state == 11
+        draw_achievements()
     else
         draw_online()
     end

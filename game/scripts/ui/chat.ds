@@ -12,8 +12,16 @@ function chat_close_x()
     return screen_w - btn_w - 16
 end
 
+function chat_top_y()
+    // В полноэкранном чате верхняя панель компактнее обычного меню, поэтому
+    // история сообщений начинается существенно выше.
+    return 8
+end
+
 function chat_msg_top()
-    return back_y + btn_h + 12
+    // Заголовок «Онлайн чат» убран, а история поднята прямо под верхней
+    // панелью: сообщения больше не проваливаются в середину экрана.
+    return chat_top_y() + btn_h + 4
 end
 
 function chat_input_y()
@@ -176,7 +184,7 @@ function chat_btn_x()
 end
 
 function chat_btn_y()
-    return 150
+    return 108
 end
 
 function chat_btn_w()
@@ -197,8 +205,9 @@ function draw_chat()
     end
     rect(0, 0, screen_w, screen_h, 0xFF1E1E2F)
     number cx = chat_close_x()
-    text_in_box(tr_online_chat(), 16, back_y, cx - 32, btn_h, 0xFFFFFF, 1)
-    button(tr_close(), cx, back_y, btn_w, btn_h)
+    // В чате оставляем только кнопку закрытия; лишняя надпись «Онлайн чат»
+    // занимала место и визуально опускала историю сообщений.
+    button(tr_close(), cx, chat_top_y(), btn_w, btn_h)
     number lx = 16, lw = screen_w - 32, iy = chat_input_y(), ih = 52, ly = chat_msg_top(), line_h = 28
     number maxl = chat_visible_limit()
     if net_chat_count() > maxl
@@ -259,7 +268,7 @@ function touch_chat(number x, number y, number action)
         end
         return 0
     end
-    if chat_hit(x, y, chat_close_x(), back_y, btn_w, btn_h) == 1
+    if chat_hit(x, y, chat_close_x(), chat_top_y(), btn_w, btn_h) == 1
         chat_open = 0
         keyboard_hide()
         return 1

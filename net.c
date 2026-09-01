@@ -36,6 +36,7 @@
 #define LOGIN_NICK_MAX 16
 #define SESSION_FILE "auth.dat"
 #define PROGRESS_FILE "progress.dat"
+#define ACHIEVEMENTS_FILE "achievements.dat"
 #define BANS_FILE "bans.dat"
 #define BAN_MAX 64
 #define BAN_TICK 2000
@@ -377,6 +378,66 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
         http_patch_async(url, body);
     }
 }
+/* Достижения — отдельный маленький файл, чтобы добавление новых наград не
+ * ломало старый формат progress.dat. Путь тот же, что у аккаунта и прогресса. */
+static DSMutex ach_lock = DS_MUTEX_INIT;
+static int ach_loaded = 0, ach_welcome = 0, ach_all_characters = 0;
+
+static void achievements_read(void) {
+    char path[320];
+    FILE *f;
+    int welcome = 0, all_characters = 0;
+    ds_mutex_lock(ach_lock);
+    if (ach_loaded) { ds_mutex_unlock(ach_lock); return; }
+    ds_mutex_unlock(ach_lock);
+    data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
+    f = fopen(path, "r");
+    if (f) {
+        (void)fscanf(f, "%d %d", &welcome, &all_characters);
+        fclose(f);
+    }
+    ds_mutex_lock(ach_lock);
+    ach_welcome = welcome ? 1 : 0;
+    ach_all_characters = all_characters ? 1 : 0;
+    ach_loaded = 1;
+    ds_mutex_unlock(ach_lock);
+}
+
+static void achievements_write(int welcome, int all_characters) {
+    char path[320];
+    FILE *f;
+    data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
+    f = fopen(path, "w");
+    if (f) {
+        fprintf(f, "%d %d\n", welcome ? 1 : 0, all_characters ? 1 : 0);
+        fclose(f);
+    }
+}
+
+double net_load_achievement_welcome(void) {
+    double value;
+    achievements_read();
+    ds_mutex_lock(ach_lock); value = (double)ach_welcome; ds_mutex_unlock(ach_lock);
+    return value;
+}
+
+double net_load_achievement_all_characters(void) {
+    double value;
+    achievements_read();
+    ds_mutex_lock(ach_lock); value = (double)ach_all_characters; ds_mutex_unlock(ach_lock);
+    return value;
+}
+
+void net_save_achievements(double welcome, double all_characters) {
+    int w = welcome ? 1 : 0, a = all_characters ? 1 : 0;
+    ds_mutex_lock(ach_lock);
+    ach_welcome = w;
+    ach_all_characters = a;
+    ach_loaded = 1;
+    ds_mutex_unlock(ach_lock);
+    achievements_write(w, a);
+}
+
 void net_set_class(double cls) {
     int k = (int)cls;
     if (k != 1 && k != 2 && k != 3) k = 0;

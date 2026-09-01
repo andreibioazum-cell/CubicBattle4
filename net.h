@@ -104,6 +104,11 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double santa_level, double santa_levels_unlocked,
                            double ebuc_level, double ebuc_levels_unlocked);
 
+/* Достижения профиля (хранятся рядом с локальным прогрессом). */
+double net_load_achievement_welcome(void);
+double net_load_achievement_all_characters(void);
+void net_save_achievements(double welcome, double all_characters);
+
 /* Бан система */
 double net_banned(void);
 double net_is_banned(const char *nick);

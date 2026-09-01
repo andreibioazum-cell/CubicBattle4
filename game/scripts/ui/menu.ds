@@ -169,7 +169,9 @@ function pick_class_level(number cls, number n)
 end
 
 function menu_top()
-    return screen_h / 2 - 120
+    // Пять пунктов лобби (включая «Достижения») должны помещаться даже на
+    // небольших ландшафтных экранах.
+    return screen_h / 2 - 160
 end
 
 function draw_money()
@@ -196,7 +198,54 @@ end
 // функцией admin_color_of() в core/config.ds — лобби, лидерборд и бой
 // пользуются ею, чтобы цвет не разъезжался по трём местам.
 
+function check_achievements()
+    number changed = 0
+    if achievement_welcome == 0
+        achievement_welcome = 1
+        changed = 1
+    end
+    // Обычный доступен сразу, поэтому для полного набора нужны три
+    // открываемых класса: Азум, Дед Мороз и буК.
+    if achievement_all_characters == 0 && azum_owned == 1 && santa_owned == 1 && ebuc_owned == 1
+        achievement_all_characters = 1
+        changed = 1
+    end
+    if changed == 1
+        net_save_achievements(achievement_welcome, achievement_all_characters)
+    end
+end
+
+function draw_achievement_card(number y, string title, string desc, number unlocked)
+    number x = 48, w = screen_w - 96, h = 126
+    color bg = 0xFF2A2A40
+    color title_c = 0xFFFFFF
+    color status_c = 0xFF8A80
+    string status = tr_achievement_locked()
+    if unlocked == 1
+        bg = 0xFF34513F
+        title_c = 0xFFF4FFF7
+        status_c = 0xFF7ED321
+        status = tr_achievement_open()
+    end
+    roundrect(x, y, w, h, 22, bg)
+    circle(x + 38, y + 42, 18, status_c)
+    text_scaled(title, x + 72, y + 20, title_c, 0.68)
+    text_scaled(desc, x + 72, y + 62, 0xD4D4EA, 0.46)
+    text_scaled(status, x + 72, y + 94, status_c, 0.42)
+end
+
+function draw_achievements()
+    check_achievements()
+    rect(0, 0, screen_w, screen_h, 0x1a1a2e)
+    ctext(tr_achievements_title(), back_y + btn_h + 24, 0xFFFFFF)
+    draw_achievement_card(back_y + btn_h + 70, tr_achievement_welcome(), tr_achievement_welcome_desc(), achievement_welcome)
+    draw_achievement_card(back_y + btn_h + 214, tr_achievement_grass(), tr_achievement_grass_desc(), achievement_all_characters)
+    draw_money()
+    draw_back()
+end
+
 function draw_lobby()
+    check_achievements()
     number mx = (screen_w - btn_w) / 2, my = menu_top()
     rect(0, 0, screen_w, screen_h, 0x1a1a2e)
     ctext("Cubic Battle 4", my - 70, 0xFFFFFF)
@@ -204,6 +253,7 @@ function draw_lobby()
     button(tr_settings(), mx, my + 80, btn_w, btn_h)
     button(tr_shop(), mx, my + 160, btn_w, btn_h)
     button(tr_account(), mx, my + 240, btn_w, btn_h)
+    button(tr_achievements(), mx, my + 320, btn_w, btn_h)
     if net_login_status() == 2
         string ln = net_login_nick()
         if str_len(ln) > 0
@@ -222,9 +272,9 @@ function draw_lobby()
             text_scaled(post, gx + pw + nw, 18, 0xFFFFFF, 0.5)
         end
     end
-    draw_lobby_money(my + 240 + btn_h + 14)
+    draw_lobby_money(my + 320 + btn_h + 14)
     if str_len(banned_msg) > 0
-        ctext(banned_msg, my + 240 + btn_h + 44, 0xFF4444)
+        ctext(banned_msg, my + 320 + btn_h + 44, 0xFF4444)
     end
 end
 
@@ -763,6 +813,11 @@ function touch_lobby(number x, number y, number action)
     if y >= my + 232 && y <= my + btn_h + 248
         login_after = 0
         start_transition(7)
+        return
+    end
+    if y >= my + 312 && y <= my + btn_h + 328
+        start_transition(11)
+        return
     end
 end
 
@@ -911,6 +966,15 @@ function touch_login(number x, number y, number action)
     end
 end
 
+function touch_achievements(number x, number y, number action)
+    if action != 0
+        return
+    end
+    if back_hit(x, y) == 1
+        start_transition(0)
+    end
+end
+
 function touch_menu(number x, number y, number action)
     if action != 0
         return
@@ -929,6 +993,10 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == 10
         touch_leaderboard(x, y, action)
+        return
+    end
+    if game_state == 11
+        touch_achievements(x, y, action)
         return
     end
     number mx = (screen_w - btn_w) / 2, sy = menu_top()
