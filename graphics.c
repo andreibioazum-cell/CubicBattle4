@@ -534,6 +534,15 @@ void tex_tint(float x, float y, const char *name, float a, float s, uint32_t c) 
     DSCmd *p = push(DS_CMD_TEX_TINT); if (!p) return;
     p->v.tx2.x=x; p->v.tx2.y=y; p->v.tx2.a=a; p->v.tx2.sc=s; p->v.tx2.tx=t; p->v.tx2.c=pack_c(c);
 }
+/* Весь текст в игре рисуется чисто белым (255,255,255). Скрипты по-прежнему
+ * передают цвет, но из него остаётся только альфа — она нужна плавным
+ * затуханиям подписей (fade_color в core/ui.ds, админский баннер, экран
+ * предупреждения). RGB подменяется на белый, поэтому ни золотые/зелёные
+ * надписи достижений, ни красные/голубые ники админов на экране не
+ * появляются: одно правило на всю игру вместо правки каждого вызова. */
+static uint32_t text_force_white(uint32_t c) {
+    return (c & 0xff000000u) | 0x00ffffffu;
+}
 void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
     if (!frame_open || !s || !ensure_font()) return;
     DSCmd *p = push(DS_CMD_TEXT); if (!p) return;
@@ -541,7 +550,7 @@ void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
      * must own text until the frame is flushed or cancelled. */
     p->v.tt.s = strdup_safe(s);
     if (!p->v.tt.s) { ds_runtime_error("out of memory copying renderer text"); return; }
-    p->v.tt.x=x; p->v.tt.y=y; p->v.tt.sc=sc; p->v.tt.c=pack_c(c);
+    p->v.tt.x=x; p->v.tt.y=y; p->v.tt.sc=sc; p->v.tt.c=pack_c(text_force_white(c));
 }
 void text(const char *s, float x, float y, uint32_t c) { text_scaled(s, x, y, c, 1.0f); }
 int text_ink_width(const char *s) {
