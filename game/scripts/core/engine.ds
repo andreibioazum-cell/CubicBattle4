@@ -171,8 +171,18 @@ end
 
 // ── Всплывающее уведомление о новом достижении ──────────────────────────
 // Тост висит всегда в конце draw(): поверх любого экрана, но ПОД
-// предупреждением об эпилепсии. Появляется из верхнего края
-// (ACH_TOAST_FADE_IN), держится, затем уезжает вверх (ACH_TOAST_FADE_OUT).
+// предупреждением об эпилепсии. Выглядит как обычная кнопка — та же
+// фиолетовая плашка ui_purple и белый текст, без рамки, без кружка-медали
+// и без полупрозрачности.
+//
+// Движение строго вертикальное, тремя фазами:
+//   1. ACH_TOAST_FADE_IN — быстрый выезд сверху: плашка стартует целиком за
+//      верхним краем и с торможением встаёт на место (home_y);
+//   2. ACH_TOAST_HOLD — висит на месте ~1.5 секунды;
+//   3. ACH_TOAST_EXIT — уезжает с разгоном прямо вверх и исчезает только
+//      тогда, когда полностью ушла за верхний край экрана.
+// Альфа не анимируется вовсе: раньше тост «испарялся» почти у самого верха,
+// теперь он просто уходит вверх и пропадает там, где его уже не видно.
 function tick_achievement_toast()
     if ach_toast_t > 0
         ach_toast_t = ach_toast_t - dt
@@ -182,63 +192,68 @@ function tick_achievement_toast()
     end
 end
 
+// Название награды для тоста по её биту.
+function achievement_toast_text()
+    if ach_toast_bit == ACH_FIRST_WIN
+        return tr_achievement_first_win()
+    end
+    if ach_toast_bit == ACH_FIRST_BUY
+        return tr_achievement_first_buy()
+    end
+    if ach_toast_bit == ACH_ALL_CHARACTERS
+        return tr_achievement_grass()
+    end
+    return tr_achievement_welcome()
+end
+
 function draw_achievement_toast()
     if ach_toast_bit <= 0 || ach_toast_t <= 0
         return
     end
     number elapsed = ACH_TOAST_DURATION - ach_toast_t
-    number a_in = elapsed / ACH_TOAST_FADE_IN
-    if a_in > 1
-        a_in = 1
-    end
-    if a_in < 0
-        a_in = 0
-    end
-    number a_out = ach_toast_t / ACH_TOAST_FADE_OUT
-    if a_out > 1
-        a_out = 1
-    end
-    if a_out < 0
-        a_out = 0
-    end
-    number a = a_in
-    if a_out < a
-        a = a_out
-    end
-    if a <= 0
-        return
-    end
-    // Слайд сверху: в начале выезжает с -56 px, дальше висит на целевом месте.
     // Ширина подстраивается под экран, чтобы на узких ландшафтных
     // устройствах плашка не вылезала за края.
-    number slide = (1 - a) * 56
     number w = 460
     if w > screen_w - 32
         w = screen_w - 32
     end
     number h = 70
     number x = (screen_w - w) / 2
-    number y = 64 - slide
-    number bg_alpha = floor(170 + 60 * a)
-    number bg = (((unsigned)(int)bg_alpha)<<24) | 0x1a1a2e
-    number border_alpha = floor(220 * a)
-    number border_color = (((unsigned)(int)border_alpha)<<24) | 0xFFFFD54A
-    roundrect(x, y, w, h, 18, bg)
-    // Золотая тонкая рамка поверх плашки.
-    roundrect(x + 1, y + 1, w - 2, h - 2, 17, border_color)
-    number title_alpha = floor(255 * a)
-    number title_color = (((unsigned)(int)title_alpha)<<24) | 0xFFFFD54A
-    text_scaled(tr_achievement_toast_title(), x + 60, y + 8, title_color, 0.5)
-    circle(x + 28, y + 38, 18, title_color)
-    string ttext = tr_achievement_welcome()
-    if ach_toast_bit == ACH_FIRST_WIN
-        ttext = tr_achievement_first_win()
-    else if ach_toast_bit == ACH_FIRST_BUY
-        ttext = tr_achievement_first_buy()
-    else if ach_toast_bit == ACH_ALL_CHARACTERS
-        ttext = tr_achievement_grass()
+    number home_y = 64
+    // Сколько пикселей нужно пройти вверх, чтобы плашка целиком ушла за край.
+    number off = home_y + h + 8
+    number y = home_y
+    if elapsed < ACH_TOAST_FADE_IN
+        // Фаза 1: выезд сверху с торможением (ease-out).
+        number k = elapsed / ACH_TOAST_FADE_IN
+        number ease = 1 - (1 - k) * (1 - k)
+        y = home_y - off * (1 - ease)
+    else if elapsed > ACH_TOAST_FADE_IN + ACH_TOAST_HOLD
+        // Фаза 3: уход строго вверх с разгоном (ease-in), без затухания цвета.
+        number k2 = (elapsed - ACH_TOAST_FADE_IN - ACH_TOAST_HOLD) / ACH_TOAST_EXIT
+        if k2 > 1
+            k2 = 1
+        end
+        y = home_y - off * k2 * k2
     end
-    text_scaled(ttext, x + 60, y + 32, (((unsigned)(int)title_alpha)<<24) | 0xFFFFFFFF, 0.6)
+    // Плашку не рисуем, пока она полностью за верхним краем — ни на входе,
+    // ни на выходе: исчезновение выглядит как уход вверх, а не как испарение.
+    if y + h <= 0
+        return
+    end
+    roundrect(x, y, w, h, 20, ui_purple)
+    // Две строки белого текста: заголовок «ДОСТИЖЕНИЕ» и название награды.
+    // Центрируем их одним блоком по реальным границам глифов (как text_in_box
+    // в core/ui.ds), а не по базовой линии — иначе в английском и русском
+    // плашка выглядит по-разному.
+    string head = tr_achievement_toast_title()
+    string body = achievement_toast_text()
+    number hs = 0.42, bs = 0.62, gap = 6
+    number hh = text_ink_height(head) * hs, ht = text_ink_top(head) * hs
+    number bh = text_ink_height(body) * bs, bt = text_ink_top(body) * bs
+    number top = y + (h - hh - gap - bh) / 2
+    ctext_scaled(head, top - ht, 0xFFFFFF, hs)
+    ctext_scaled(body, top + hh + gap - bt, 0xFFFFFF, bs)
 end
 
 function update()

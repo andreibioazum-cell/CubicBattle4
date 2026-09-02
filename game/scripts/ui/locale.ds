@@ -189,20 +189,33 @@ function tr_achievements_title()
     return "Achievements"
 end
 
+// Все названия и описания достижений переведены на оба языка: RU и EN.
 function tr_achievement_welcome()
-    return "Привет!"
+    if language == 1
+        return "Привет!"
+    end
+    return "Hello!"
 end
 
 function tr_achievement_welcome_desc()
-    return "Зайти в игру впервые"
+    if language == 1
+        return "Зайти в игру впервые"
+    end
+    return "Enter the game for the first time"
 end
 
 function tr_achievement_grass()
-    return "Потрогай траву"
+    if language == 1
+        return "Потрогай траву"
+    end
+    return "Touch grass"
 end
 
 function tr_achievement_grass_desc()
-    return "Собери всех персонажей в игре"
+    if language == 1
+        return "Собери всех персонажей в игре"
+    end
+    return "Collect all the characters in the game"
 end
 
 function tr_achievement_open()
@@ -252,22 +265,6 @@ function tr_achievement_first_buy_desc()
         return "Купить первого персонажа"
     end
     return "Buy your first character"
-end
-
-function tr_achievements_progress(number unlocked, number total)
-    string out = "" + unlocked
-    if language == 1
-        out = out + " / " + total
-    else
-        out = out + " of " + total
-    end
-    return out
-end
-
-function tr_achievements_badge(number unlocked, number total)
-    string out = "" + unlocked
-    out = out + "/" + total
-    return out
 end
 
 function tr_login_title()

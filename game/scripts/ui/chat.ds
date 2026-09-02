@@ -218,7 +218,7 @@ function draw_chat()
         start = 0
     end
     if total == 0
-        text_scaled(tr_no_messages(), lx, ly, 0x8888AA, 0.5)
+        text_scaled(tr_no_messages(), lx, ly, 0xFFFFFF, 0.5)
     else
         number idx = start, yy = ly
         loop idx < total
@@ -226,8 +226,8 @@ function draw_chat()
                 idx = total
             else
                 string uid = net_chat_uid(idx)
-                // Цвет только у ника, текст сообщения всегда обычный.
-                draw_nick_msg(uid, ": " + net_chat_text(idx), lx, yy, 0xE0E0FF, 0.5)
+                // Весь текст в чате белый (ник и сообщение одним цветом).
+                draw_nick_msg(uid, ": " + net_chat_text(idx), lx, yy, 0xFFFFFF, 0.5)
                 yy = yy + line_h
                 idx = idx + 1
             end
@@ -240,7 +240,7 @@ function draw_chat()
         shown = chat_input + "|"
     end
     if str_len(chat_input) == 0 && keyboard_visible() == 0
-        text_in_field(tr_type_message(), lx + 10, iy, ih, 0x666688, 0.55)
+        text_in_field(tr_type_message(), lx + 10, iy, ih, 0xFFFFFF, 0.55)
     else if str_len(shown) == 0
         text_in_field("|", lx + 10, iy, ih, 0xFFFFFF, 0.55)
     else

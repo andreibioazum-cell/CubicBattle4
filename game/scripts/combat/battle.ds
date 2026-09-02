@@ -2683,6 +2683,9 @@ function draw_banner()
     number x=(screen_w-w)/2
     // Баннер ниже и крупнее, без фоновой плашки — только текст.
     number y=118
+    // Цвет баннера админ по-прежнему присылает командой «text ... <цвет>», но
+    // рендерер рисует весь текст белым (см. graphics.c), поэтому от цвета
+    // здесь остаётся только альфа плавного появления и исчезновения.
     color col=banner_color_now(net_banner_color())
     text_scaled(txt,x,y,((((unsigned)(int)alpha)<<24)|col),sc)
 end
@@ -2817,10 +2820,10 @@ function draw_online()
     draw_chat()
     number st=net_status(), sy=chat_btn_y()+btn_h+12
     if st==4
-        ctext(tr_no_connection(),sy,0xFF8A80)
-        ctext(tr_reconnecting(),sy+32,0xFFF176)
+        ctext(tr_no_connection(),sy,0xFFFFFF)
+        ctext(tr_reconnecting(),sy+32,0xFFFFFF)
     else if st==1
-        ctext(tr_connecting(),sy,0xFFF176)
+        ctext(tr_connecting(),sy,0xFFFFFF)
     end
     if finished==2
         draw_result(tr_defeat())

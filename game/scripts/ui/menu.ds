@@ -196,7 +196,8 @@ end
 
 // Цвет ника админа (красный у ADMIN_NICK, голубой у ADMIN2_NICK) задан
 // функцией admin_color_of() в core/config.ds — лобби, лидерборд и бой
-// пользуются ею, чтобы цвет не разъезжался по трём местам.
+// пользуются ею, чтобы цвет не разъезжался по трём местам. На экране он
+// сейчас не виден: рендерер рисует весь текст белым (см. graphics.c).
 
 // Достижения = единый битмаск в achievements.dat. Эта функция пересчитывает
 // права прямо сейчас по окружению (что куплено, что пройдено) и дотягивает
@@ -241,50 +242,42 @@ function check_achievements()
     end
 end
 
-// Карточка одного достижения. UNLOCKED — приглушённый зелёный фон, цветной
-// кружок-медаль, яркий заголовок и зелёная плашка «Получено»; LOCKED — тёмный
-// однотонный фон, серый кружок, тусклые текст и подпись «Не получено». Эффект
-// «тёмное/обычное» виден сразу при сравнении соседних карточек.
+// Карточка одного достижения: фиолетовая плашка БЕЗ кружка-индикатора слева.
+// Получена — яркий фиолетовый, ровно как у кнопок (ui_purple); не получена —
+// тот же фиолетовый, но тёмный (ui_purple_dark). Никакого зелёного: статус
+// отличается только яркостью плашки и подписью «Получено» / «Не получено».
+// Текст всегда белый — как и во всей остальной игре.
 // Высоту и шаг берём из параметров, чтобы и на низких экранах четыре карточки
 // умещались: 4 * (h + stride) должно быть меньше высоты экрана минус шапка.
 function draw_achievement_card(number y, string title, string desc, number unlocked)
     number x = 48, w = screen_w - 96, h = 112
-    number bg = 0xFF2A2A40
-    number title_c = 0xFFA8A8BC
-    number desc_c = 0xFF7C7C8F
-    number dot_c = 0xFF555566
-    number status_c = 0xFF8A8AA0
+    number bg = ui_purple_dark
     string status = tr_achievement_locked()
     if unlocked == 1
-        bg = 0xFF34513F
-        title_c = 0xFFE8FFEF
-        desc_c = 0xFFCDE8D4
-        dot_c = 0xFF7ED321
-        status_c = 0xFF7ED321
+        bg = ui_purple
         status = tr_achievement_open()
     end
     roundrect(x, y, w, h, 22, bg)
-    circle(x + 38, y + 38, 18, dot_c)
-    text_scaled(title, x + 72, y + 16, title_c, 0.68)
-    text_scaled(desc, x + 72, y + 56, desc_c, 0.46)
-    text_scaled(status, x + 72, y + 84, status_c, 0.42)
+    // Кружка-медали слева больше нет, поэтому текст начинается почти от края
+    // карточки (отступ 28 px).
+    text_scaled(title, x + 28, y + 16, 0xFFFFFF, 0.68)
+    text_scaled(desc, x + 28, y + 56, 0xFFFFFF, 0.46)
+    text_scaled(status, x + 28, y + 84, 0xFFFFFF, 0.42)
 end
 
 // Страница достижений: список ВСЕХ наград игры. Сейчас их четыре: «Привет!»,
-// «Первая победа», «Покупка» и «Потрогай траву». Под заголовком — счётчик
-// открытых N / M. Каждая карточка рисуется с видимым статусом (тёмная —
-// закрыта, обычная/цветная — открыта). Шаг 120: 4 карточки по 112 + зазоры
-// дают ~500 px — помещается даже на невысоких ландшафтных экранах.
+// «Первая победа», «Покупка» и «Потрогай траву» — названия и описания
+// переведены и на русский, и на английский (см. ui/locale.ds).
+// Надписи о числе выполненных достижений (N / M) здесь больше нет: прогресс
+// виден только по карточкам — тёмно-фиолетовая закрыта, ярко-фиолетовая
+// получена. Шаг 120: 4 карточки по 112 + зазоры дают ~500 px — помещается
+// даже на невысоких ландшафтных экранах.
 function draw_achievements()
     check_achievements()
     rect(0, 0, screen_w, screen_h, 0x1a1a2e)
     ctext(tr_achievements_title(), back_y + btn_h + 12, 0xFFFFFF)
-    number total = 4
-    number opened = achievement_welcome + achievement_first_win + achievement_first_buy + achievement_all_characters
-    string prog = tr_achievements_progress(opened, total)
-    number cw = text_ink_width(prog) * 0.55
-    text_scaled(prog, (screen_w - cw) / 2, back_y + btn_h + 36, 0xFFD54A, 0.55)
-    number y0 = back_y + btn_h + 62
+    // Строку со счётчиком убрали — карточки поднялись ближе к заголовку.
+    number y0 = back_y + btn_h + 56
     number stride = 120
     draw_achievement_card(y0 + stride * 0, tr_achievement_welcome(), tr_achievement_welcome_desc(), achievement_welcome)
     draw_achievement_card(y0 + stride * 1, tr_achievement_first_win(), tr_achievement_first_win_desc(), achievement_first_win)
@@ -302,20 +295,9 @@ function draw_lobby()
     button(tr_settings(), mx, my + 80, btn_w, btn_h)
     button(tr_shop(), mx, my + 160, btn_w, btn_h)
     button(tr_account(), mx, my + 240, btn_w, btn_h)
-    // На кнопке «Достижения» в лобби бейдж N/M: прогресс видно не открывая
-    // экран. Число открытых — зеркала из achievements.dat.
-    number lobby_opened = achievement_welcome + achievement_first_win + achievement_first_buy + achievement_all_characters
+    // Бейджа «N/M» на кнопке «Достижения» больше нет: сколько наград
+    // выполнено, в интерфейсе нигде не показывается.
     button(tr_achievements(), mx, my + 320, btn_w, btn_h)
-    number badge_w = 64, badge_h = 30
-    number badge_x = mx + btn_w + 12
-    number badge_y = my + 320 + 17
-    if badge_x + badge_w > screen_w - 8
-        badge_x = mx - badge_w - 12
-    end
-    roundrect(badge_x, badge_y, badge_w, badge_h, 14, 0xFF34513F)
-    string badge_text = tr_achievements_badge(lobby_opened, 4)
-    number btw = text_ink_width(badge_text) * 0.62
-    text_scaled(badge_text, badge_x + (badge_w - btw) / 2, badge_y + 6, 0xFFE8FFEF, 0.62)
     if net_login_status() == 2
         string ln = net_login_nick()
         if str_len(ln) > 0
@@ -336,24 +318,22 @@ function draw_lobby()
     end
     draw_lobby_money(my + 320 + btn_h + 14)
     if str_len(banned_msg) > 0
-        ctext(banned_msg, my + 320 + btn_h + 44, 0xFF4444)
+        ctext(banned_msg, my + 320 + btn_h + 44, 0xFFFFFF)
     end
 end
 
 function draw_class_level_rows(number x, number y, number w, number cls)
     number lv = class_level_for(cls), un = class_levels_unlocked_for(cls), n = 1
     string head = tr_levels_for_class() + ": " + lv + "/" + max_level
-    text_scaled(head, x + 10, y + 146, 0xA8B7D8, 0.30)
+    text_scaled(head, x + 10, y + 146, 0xFFFFFF, 0.30)
     loop n <= max_level
         string line = "" + n + "." + tr_class_level_effect(cls, n)
-        color level_c = 0x8888AA
-        if n <= un
-            level_c = 0xFFFFFF
-        else if n == un + 1
+        // Закрытые уровни больше не тусклее открытых — весь текст белый,
+        // цену открытия по-прежнему показываем строкой.
+        if n == un + 1
             line = line + " · " + level_cost(n) + " " + tr_cups_unit()
-            level_c = 0xFFFFFF
         end
-        text_scaled(line, x + 8, y + 166 + (n - 1) * 20, level_c, 0.27)
+        text_scaled(line, x + 8, y + 166 + (n - 1) * 20, 0xFFFFFF, 0.27)
         n = n + 1
     end
 end
@@ -379,11 +359,11 @@ function draw_class_card(number x, number y, number w, number h, number cls, num
     text(title, x + (w - tw) / 2, y + 114, 0xFFFFFF)
     number dw = text_ink_width(desc) * 0.5
     // Описание кубика чуть ниже, чтобы не липло к названию.
-    text_scaled(desc, x + (w - dw) / 2, y + 150, 0xC8C8E0, 0.5)
+    text_scaled(desc, x + (w - dw) / 2, y + 150, 0xFFFFFF, 0.5)
     number lv = class_level_for(cls)
     string lv_text = tr_level() + " " + lv
     number lw = text_ink_width(lv_text) * 0.5
-    text_scaled(lv_text, x + (w - lw) / 2, y + 176, 0xDDE5FF, 0.45)
+    text_scaled(lv_text, x + (w - lw) / 2, y + 176, 0xFFFFFF, 0.45)
     string cur = tr_cups()
     if cls == 2 || cls == 3
         cur = tr_candies()
@@ -426,7 +406,7 @@ function draw_classes()
             class_msg_t = 0
         end
         // Не хватает кубков — надпись тает плавно, а не пропадает резко.
-        ctext_fade(tr_class_need_cups(), sy, 0xFF8A80, class_msg_t, msg_fade)
+        ctext_fade(tr_class_need_cups(), sy, 0xFFFFFF, class_msg_t, msg_fade)
     end
     draw_class_stats()
     draw_back()
@@ -464,7 +444,7 @@ function class_desc_of(number cls)
 end
 
 function draw_stat_row(string label, number x, number y, number w, number h, number cur, number maxv, color col)
-    text_scaled(label, x, y - 26, 0xE8E8FF, 0.5)
+    text_scaled(label, x, y - 26, 0xFFFFFF, 0.5)
     hud_bar(x, y, w, h, cur, maxv, col, 0)
 end
 
@@ -614,11 +594,7 @@ function draw_levels()
         number tw = text_ink_width(level_title) * 0.7
         text_scaled(level_title, x + (w - tw) / 2, y + 18, 0xFFFFFF, 0.7)
         number dw = text_ink_width(desc) * 0.5
-        color desc_c = 0xC8C8E0
-        if unlocked == 1
-            desc_c = 0xFFFFFF
-        end
-        text_scaled(desc, x + (w - dw) / 2, y + 42, desc_c, 0.5)
+        text_scaled(desc, x + (w - dw) / 2, y + 42, 0xFFFFFF, 0.5)
         string status = ""
         if unlocked == 1
             status = "Opened"
@@ -646,7 +622,7 @@ function draw_levels()
         if level_msg_t < 0
             level_msg_t = 0
         end
-        ctext_fade(tr_level_need_cups(), back_y + btn_h + 100 + max_level * (row_h + 10) + 8, 0xFF8A80, level_msg_t, msg_fade)
+        ctext_fade(tr_level_need_cups(), back_y + btn_h + 100 + max_level * (row_h + 10) + 8, 0xFFFFFF, level_msg_t, msg_fade)
     end
     draw_money()
     draw_back()
@@ -695,7 +671,7 @@ function draw_login()
         if keyboard_visible() == 1 && login_field == 1
             text_in_field("|", bx + 16, fy, login_fh, 0xFFFFFF, 0.6)
         else
-            text_in_field(tr_nick_ph(), bx + 16, fy, login_fh, 0x666688, 0.6)
+            text_in_field(tr_nick_ph(), bx + 16, fy, login_fh, 0xFFFFFF, 0.6)
         end
     else
         if keyboard_visible() == 1 && login_field == 1
@@ -711,7 +687,7 @@ function draw_login()
         if keyboard_visible() == 1 && login_field == 2
             text_in_field("|", bx + 16, py, login_fh, 0xFFFFFF, 0.6)
         else
-            text_in_field(tr_pass_ph(), bx + 16, py, login_fh, 0x666688, 0.6)
+            text_in_field(tr_pass_ph(), bx + 16, py, login_fh, 0xFFFFFF, 0.6)
         end
     else
         if keyboard_visible() == 1 && login_field == 2
@@ -724,16 +700,16 @@ function draw_login()
     button_scaled(tr_login_btn(), (screen_w - 380) / 2, yb, 380, btn_h, 0.65)
     number sy = yb + btn_h + 20
     if login_status == 5
-        ctext(tr_bad_nick(), sy, 0xFF8A80)
+        ctext(tr_bad_nick(), sy, 0xFFFFFF)
     end
     if login_status == 6
-        ctext(tr_wrong_pass(), sy, 0xFF8A80)
+        ctext(tr_wrong_pass(), sy, 0xFFFFFF)
     end
     if login_status == 7
-        ctext(tr_bad_pass(), sy, 0xFF8A80)
+        ctext(tr_bad_pass(), sy, 0xFFFFFF)
     end
     if login_status == 4
-        ctext(tr_no_connection(), sy, 0xFF8A80)
+        ctext(tr_no_connection(), sy, 0xFFFFFF)
     end
     draw_back()
 end
@@ -747,23 +723,23 @@ function draw_settings()
 end
 
 // Полноэкранное предупреждение об эпилепсии: чёрный фон на весь экран,
-// оба языка, красный WARNING/ВНИМАНИЕ, без кнопки. Альфа из warn_a —
-// после 2.5 с надпись и фон плавно тают.
+// оба языка, белый WARNING/ВНИМАНИЕ (весь текст в игре белый), без кнопки.
+// Альфа из warn_a — после 2.5 с надпись и фон плавно тают.
 function warn_rgb(number rgb)
     return (1 + floor(warn_a * 254)) * 0x1000000 + rgb
 end
 
 function draw_warning()
     rect(0, 0, screen_w, screen_h, warn_rgb(0))
-    color red = warn_rgb(0xFF2A2A)
+    // Один цвет на заголовки и строки — отличаются только размером.
     color body = warn_rgb(0xFFFFFF)
     number y = screen_h / 2 - 196
-    ctext_scaled(tr_warn_title_en(), y, red, 1.15)
+    ctext_scaled(tr_warn_title_en(), y, body, 1.15)
     ctext_scaled(tr_warn_en1(), y + 48, body, 0.52)
     ctext_scaled(tr_warn_en2(), y + 76, body, 0.52)
     ctext_scaled(tr_warn_en3(), y + 104, body, 0.52)
     ctext_scaled(tr_warn_en4(), y + 132, body, 0.52)
-    ctext_scaled(tr_warn_title_ru(), y + 186, red, 1.15)
+    ctext_scaled(tr_warn_title_ru(), y + 186, body, 1.15)
     ctext_scaled(tr_warn_ru1(), y + 234, body, 0.52)
     ctext_scaled(tr_warn_ru2(), y + 262, body, 0.52)
     ctext_scaled(tr_warn_ru3(), y + 290, body, 0.52)
@@ -771,8 +747,8 @@ function draw_warning()
 end
 
 // Подиум лидерборда: 1 — золото, 2 — монохромное серебро, 3 — бронза.
-// Один набор цветов на всю строку (место, ник, кубки, фон), чтобы топ-3
-// выглядел одинаково в любом месте, где рисуется таблица.
+// Цветной осталась только подложка строки: сам текст (место, ник, кубки)
+// во всей игре белый, поэтому отдельных цветов для топ-3 больше нет.
 function lb_place_bg(number i)
     if i == 0
         return 0xFF3D3215
@@ -786,26 +762,6 @@ function lb_place_bg(number i)
     return 0xFF2A2A40
 end
 
-function lb_place_color(number i)
-    if i == 0
-        return 0xFFFFD700
-    end
-    if i == 1
-        return 0xFFC0C0C0
-    end
-    if i == 2
-        return 0xFFCD7F32
-    end
-    return 0xFF9E9E9E
-end
-
-function lb_place_nick(number i, string nick)
-    if i <= 2
-        return lb_place_color(i)
-    end
-    return admin_color_of(nick, 0xFFB8B8B8)
-end
-
 function draw_leaderboard()
     rect(0, 0, screen_w, screen_h, 0x1a1a2e)
     ctext(tr_leaderboard_title(), back_y + btn_h + 12, 0xFFFFFF)
@@ -813,33 +769,30 @@ function draw_leaderboard()
     if st == 1
         lb_wait = lb_wait + dt
         if lb_wait > lb_wait_max
-            ctext(tr_no_connection(), screen_h / 2, 0xFF8A80)
+            ctext(tr_no_connection(), screen_h / 2, 0xFFFFFF)
         else
-            ctext(tr_loading(), screen_h / 2, 0xFFD54A)
+            ctext(tr_loading(), screen_h / 2, 0xFFFFFF)
         end
     else if st == 4
-        ctext(tr_no_connection(), screen_h / 2, 0xFF8A80)
+        ctext(tr_no_connection(), screen_h / 2, 0xFFFFFF)
     else
         number count = net_leaderboard_count()
         if count == 0
-            ctext(tr_no_data(), screen_h / 2, 0x8888AA)
+            ctext(tr_no_data(), screen_h / 2, 0xFFFFFF)
         else
             number w = 560, x = (screen_w - w) / 2, y = back_y + btn_h + 78, row_h = 46, gap = 8
             number i = 0
             loop i < count
                 string rk = "#" + (i + 1), nk = net_leaderboard_nick(i)
                 roundrect(x, y, w, row_h, 12, lb_place_bg(i))
-                color rank_c = lb_place_color(i)
                 number rth = text_ink_height(rk) * 0.6, rtt = text_ink_top(rk) * 0.6
-                text_scaled(rk, x + 16, y + (row_h - rth) / 2 - rtt + 1, rank_c, 0.6)
-                color nick_c = lb_place_nick(i, nk)
+                text_scaled(rk, x + 16, y + (row_h - rth) / 2 - rtt + 1, 0xFFFFFF, 0.6)
                 number nth = text_ink_height(nk) * 0.6, ntt = text_ink_top(nk) * 0.6
-                text_scaled(nk, x + 70, y + (row_h - nth) / 2 - ntt + 1, nick_c, 0.6)
+                text_scaled(nk, x + 70, y + (row_h - nth) / 2 - ntt + 1, 0xFFFFFF, 0.6)
                 number cps = net_leaderboard_cups(i)
                 string cs = "" + floor(cps + 0.5)
-                color cup_c = lb_place_color(i)
                 number cnw = text_ink_width(cs) * 0.6, cth = text_ink_height(cs) * 0.6, ctt = text_ink_top(cs) * 0.6
-                text_scaled(cs, x + w - 20 - cnw, y + (row_h - cth) / 2 - ctt + 1, cup_c, 0.6)
+                text_scaled(cs, x + w - 20 - cnw, y + (row_h - cth) / 2 - ctt + 1, 0xFFFFFF, 0.6)
                 i = i + 1
                 y = y + row_h + gap
             end

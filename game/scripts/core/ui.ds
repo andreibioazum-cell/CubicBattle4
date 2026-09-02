@@ -87,12 +87,14 @@ function text_in_field(string label, number x, number y, number h, color color, 
 end
 
 function button(string label, number x, number y, number w, number h)
-    roundrect(x, y, w, h, 20, 0x5F10A0)
+    // Фиолетовый цвет плашки — общий ui_purple из core/config.ds: тот же цвет
+    // у тоста о достижении и у карточек полученных наград.
+    roundrect(x, y, w, h, 20, ui_purple)
     text_in_box(label, x, y, w, h, 0xFFFFFF, 1)
 end
 
 function button_scaled(string label, number x, number y, number w, number h, number scale)
     // Та же кнопка, но текст меньше — для длинных подписей, чтобы не вылезали за рамки.
-    roundrect(x, y, w, h, 20, 0x5F10A0)
+    roundrect(x, y, w, h, 20, ui_purple)
     text_in_box(label, x, y, w, h, 0xFFFFFF, scale)
 end
