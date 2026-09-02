@@ -37,6 +37,9 @@ number finished=0, atk_x=0, atk_y=0, atk2_x=0, atk2_y=0, joy_id=-1, aim_id=-1, s
 number punch_left=0, punch_cd=0, aim_a=0
 number santa_follow=0
 number super_cd=0, boom_t=0, boom_x=0, boom_y=0, super_windup=0
+// Нажатия во время визуального эффекта ставятся в очередь, но эффекты
+// никогда не рисуются одновременно.
+number queued_punch=0, queued_super=0
 number freeze_a=0
 number player_freeze=0, player_freeze_slow=1, pfreeze_a=0
 number player_poison=0, player_poison_tick=0, player_poison_damage=0, ppoison_a=0

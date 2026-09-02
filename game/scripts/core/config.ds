@@ -2,6 +2,15 @@ include graphics
 
 // Упрощённый конфиг — без праймов и японского, только RU/EN
 number game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
+// Достижения профиля: каждый хранится как бит в achievements.dat. Здесь —
+// зеркала для скриптов и константы битов для проверок через
+// net_mark/net_has_achievement_flag.
+number achievement_welcome=0, achievement_first_win=0, achievement_first_buy=0
+number achievement_all_characters=0
+number ACH_WELCOME=1, ACH_FIRST_WIN=2, ACH_FIRST_BUY=4, ACH_ALL_CHARACTERS=8
+// Тост поверх экрана при получении достижения.
+number ach_toast_bit=0, ach_toast_t=0
+number ACH_TOAST_DURATION=3.6, ACH_TOAST_FADE_IN=0.3, ACH_TOAST_FADE_OUT=0.55
 number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
 number joy_speed=192, bot_speed=190, bot_strafe_speed=96, bot_dodge_speed=330
 number btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535

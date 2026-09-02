@@ -140,13 +140,6 @@ function tr_chat()
     return "Chat"
 end
 
-function tr_online_chat()
-    if language == 1
-        return "Онлайн чат"
-    end
-    return "Online chat"
-end
-
 function tr_no_messages()
     if language == 1
         return "Нет сообщений"
@@ -180,6 +173,101 @@ function tr_account()
         return "Аккаунт"
     end
     return "Account"
+end
+
+function tr_achievements()
+    if language == 1
+        return "Достижения"
+    end
+    return "Achievements"
+end
+
+function tr_achievements_title()
+    if language == 1
+        return "Достижения"
+    end
+    return "Achievements"
+end
+
+function tr_achievement_welcome()
+    return "Привет!"
+end
+
+function tr_achievement_welcome_desc()
+    return "Зайти в игру впервые"
+end
+
+function tr_achievement_grass()
+    return "Потрогай траву"
+end
+
+function tr_achievement_grass_desc()
+    return "Собери всех персонажей в игре"
+end
+
+function tr_achievement_open()
+    if language == 1
+        return "Получено"
+    end
+    return "Unlocked"
+end
+
+function tr_achievement_locked()
+    if language == 1
+        return "Не получено"
+    end
+    return "Locked"
+end
+
+function tr_achievement_toast_title()
+    if language == 1
+        return "ДОСТИЖЕНИЕ"
+    end
+    return "ACHIEVEMENT"
+end
+
+function tr_achievement_first_win()
+    if language == 1
+        return "Первая победа"
+    end
+    return "First win"
+end
+
+function tr_achievement_first_win_desc()
+    if language == 1
+        return "Выиграть первый бой"
+    end
+    return "Win your first battle"
+end
+
+function tr_achievement_first_buy()
+    if language == 1
+        return "Покупка"
+    end
+    return "First purchase"
+end
+
+function tr_achievement_first_buy_desc()
+    if language == 1
+        return "Купить первого персонажа"
+    end
+    return "Buy your first character"
+end
+
+function tr_achievements_progress(number unlocked, number total)
+    string out = "" + unlocked
+    if language == 1
+        out = out + " / " + total
+    else
+        out = out + " of " + total
+    end
+    return out
+end
+
+function tr_achievements_badge(number unlocked, number total)
+    string out = "" + unlocked
+    out = out + "/" + total
+    return out
 end
 
 function tr_login_title()

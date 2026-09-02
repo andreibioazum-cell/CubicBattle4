@@ -81,6 +81,14 @@ function init()
     end
     cups = net_load_cups()
     candies = net_load_candies()
+    number ach = net_load_achievement_flags()
+    // В скрипте нет битовых операторов — извлекаем каждый бит через сдвиг и парность.
+    achievement_welcome = ach - floor(ach*0.5)*2
+    achievement_first_win = floor(ach/2) - floor(floor(ach/2)*0.5)*2
+    achievement_first_buy = floor(ach/4) - floor(floor(ach/4)*0.5)*2
+    achievement_all_characters = floor(ach/8) - floor(floor(ach/8)*0.5)*2
+    // Первый запуск игры открывает достижение «Привет!».
+    check_achievements()
     player_class = net_load_class()
     azum_owned = net_load_azum()
     santa_owned = net_load_santa()
@@ -161,10 +169,83 @@ function update_warning()
     end
 end
 
+// ── Всплывающее уведомление о новом достижении ──────────────────────────
+// Тост висит всегда в конце draw(): поверх любого экрана, но ПОД
+// предупреждением об эпилепсии. Появляется из верхнего края
+// (ACH_TOAST_FADE_IN), держится, затем уезжает вверх (ACH_TOAST_FADE_OUT).
+function tick_achievement_toast()
+    if ach_toast_t > 0
+        ach_toast_t = ach_toast_t - dt
+        if ach_toast_t < 0
+            ach_toast_t = 0
+        end
+    end
+end
+
+function draw_achievement_toast()
+    if ach_toast_bit <= 0 || ach_toast_t <= 0
+        return
+    end
+    number elapsed = ACH_TOAST_DURATION - ach_toast_t
+    number a_in = elapsed / ACH_TOAST_FADE_IN
+    if a_in > 1
+        a_in = 1
+    end
+    if a_in < 0
+        a_in = 0
+    end
+    number a_out = ach_toast_t / ACH_TOAST_FADE_OUT
+    if a_out > 1
+        a_out = 1
+    end
+    if a_out < 0
+        a_out = 0
+    end
+    number a = a_in
+    if a_out < a
+        a = a_out
+    end
+    if a <= 0
+        return
+    end
+    // Слайд сверху: в начале выезжает с -56 px, дальше висит на целевом месте.
+    // Ширина подстраивается под экран, чтобы на узких ландшафтных
+    // устройствах плашка не вылезала за края.
+    number slide = (1 - a) * 56
+    number w = 460
+    if w > screen_w - 32
+        w = screen_w - 32
+    end
+    number h = 70
+    number x = (screen_w - w) / 2
+    number y = 64 - slide
+    number bg_alpha = floor(170 + 60 * a)
+    number bg = (((unsigned)(int)bg_alpha)<<24) | 0x1a1a2e
+    number border_alpha = floor(220 * a)
+    number border_color = (((unsigned)(int)border_alpha)<<24) | 0xFFFFD54A
+    roundrect(x, y, w, h, 18, bg)
+    // Золотая тонкая рамка поверх плашки.
+    roundrect(x + 1, y + 1, w - 2, h - 2, 17, border_color)
+    number title_alpha = floor(255 * a)
+    number title_color = (((unsigned)(int)title_alpha)<<24) | 0xFFFFD54A
+    text_scaled(tr_achievement_toast_title(), x + 60, y + 8, title_color, 0.5)
+    circle(x + 28, y + 38, 18, title_color)
+    string ttext = tr_achievement_welcome()
+    if ach_toast_bit == ACH_FIRST_WIN
+        ttext = tr_achievement_first_win()
+    else if ach_toast_bit == ACH_FIRST_BUY
+        ttext = tr_achievement_first_buy()
+    else if ach_toast_bit == ACH_ALL_CHARACTERS
+        ttext = tr_achievement_grass()
+    end
+    text_scaled(ttext, x + 60, y + 32, (((unsigned)(int)title_alpha)<<24) | 0xFFFFFFFF, 0.6)
+end
+
 function update()
     update_warning()
     update_transition()
     update_music()
+    tick_achievement_toast()
     if game_state == 1
         update_game()
     else if game_state == 5
@@ -191,6 +272,8 @@ function draw()
         draw_levels()
     else if game_state == 10
         draw_leaderboard()
+    else if game_state == 11
+        draw_achievements()
     else
         draw_online()
     end
@@ -201,6 +284,8 @@ function draw()
     if warn_open == 1
         draw_warning()
     end
+    // Уведомление о достижении — над всем, но под предупреждением.
+    draw_achievement_toast()
 end
 
 function touch(number x, number y, number action, number id)
