@@ -364,6 +364,8 @@ function reset_battle()
     gift.t=0
     gift.shot=0
     super_cd=0
+    queued_punch=0
+    queued_super=0
     super_id=-1
     boom_t=0
     boom_x=0
@@ -1402,6 +1404,24 @@ function update_remote_universe()
     end
 end
 
+function flush_queued_action()
+    if queued_punch==0&&queued_super==0
+        return
+    end
+    if punch_left>0||punch_cd>0||ultimate_visual_busy()==1
+        return
+    end
+    if queued_super==1&&super_cd<=0
+        queued_super=0
+        fire_super()
+        return
+    end
+    if queued_punch==1
+        queued_punch=0
+        fire_punch()
+    end
+end
+
 function update_game()
     tick_alert_hold()
     tick_revive()
@@ -1480,6 +1500,7 @@ function update_game()
     end
     update_dust()
     update_gift()
+    flush_queued_action()
     if finished!=0
         return
     end
@@ -1714,6 +1735,7 @@ function update_online()
     tick_santa_follow()
     update_dust()
     update_gift()
+    flush_queued_action()
     if finished!=0
         return
     end
@@ -1750,13 +1772,38 @@ function start_punch_now()
     punch.hit=0
     punch_left=punch_time
     punch_cd=punch_cooldown
+    queued_punch=0
+end
+
+// Ульта и обычная атака используют разные визуальные слои. Пока на арене
+// проигрывается любой эффект ульты, обычный удар не запускается: это не даёт
+// спрайту удара, снежинке или вспышке вселенной накладываться друг на друга.
+function station_boom_visual_busy()
+    number i=0
+    loop i<arr_len(station_boom_ts)
+        if arr_get(station_boom_ts,i)>0
+            return 1
+        end
+        i=i+1
+    end
+    return 0
+end
+
+function ultimate_visual_busy()
+    if super_windup>0||gift.active==1||universe_active==1||boom_t>0||station_spawn_t>0
+        return 1
+    end
+    if station_boom_visual_busy()==1
+        return 1
+    end
+    return 0
 end
 
 function fire_punch()
-    if punch_cd>0
-        return
-    end
-    if super_windup>0
+    if punch_cd>0||ultimate_visual_busy()==1
+        // Не запускаем два визуальных состояния одним кадром, но сохраняем
+        // нажатие — удар начнётся сразу после ульты или её вспышки.
+        queued_punch=1
         return
     end
     start_punch_now()
@@ -1777,7 +1824,7 @@ function tick_santa_follow()
     if finished!=0||player_class!=2
         return
     end
-    if super_windup>0
+    if super_windup>0||gift.active==1||universe_active==1||boom_t>0||station_spawn_t>0
         return
     end
     start_punch_now()
@@ -1790,9 +1837,20 @@ function fire_super()
     if super_cd>0
         return
     end
-    if super_windup>0
+    // Ульта ждёт окончания обычного удара и его кулдауна. Иначе старый
+    // эффект удара и анимация замаха ульты появлялись в одном кадре.
+    if punch_left>0||punch_cd>0||gift.active==1||universe_active==1||boom_t>0||station_spawn_t>0||station_boom_visual_busy()==1
+        queued_super=1
         return
     end
+    if super_windup>0
+        queued_super=1
+        return
+    end
+    // Отменяем отложенный второй удар Деда Мороза: иначе он мог стартовать
+    // одновременно с уже летящей снежинкой после быстрого нажатия двух кнопок.
+    santa_follow=0
+    queued_super=0
     super_windup=punch_time
     punch_left=punch_time
     punch.active=0
@@ -2320,6 +2378,12 @@ function finish_game(number result)
         cups=cups+cup_win
         candies=candies+candy_win
         save_progress()
+        // Первая победа открывает достижение.
+        if achievement_first_win == 0
+            achievement_first_win = 1
+            net_mark_achievement_flag(ACH_FIRST_WIN)
+            show_achievement_toast(ACH_FIRST_WIN)
+        end
         ds_log("win +%g cups +%g candies",cup_win,candy_win)
     end
 end
@@ -2751,7 +2815,7 @@ function draw_online()
     hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
     draw_controls()
     draw_chat()
-    number st=net_status(), sy=back_y+btn_h+18
+    number st=net_status(), sy=chat_btn_y()+btn_h+12
     if st==4
         ctext(tr_no_connection(),sy,0xFF8A80)
         ctext(tr_reconnecting(),sy+32,0xFFF176)

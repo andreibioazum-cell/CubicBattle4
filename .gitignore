@@ -9,4 +9,5 @@ debug.keystore
 # Session file created by the game (saved nick)
 auth.dat
 progress.dat
+achievements.dat
 bans.dat

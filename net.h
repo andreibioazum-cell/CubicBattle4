@@ -104,6 +104,22 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double santa_level, double santa_levels_unlocked,
                            double ebuc_level, double ebuc_levels_unlocked);
 
+/* Достижения профиля: единый битмаск в achievements.dat. ACH_FLAG_* ниже —
+ * код отдельных наград. Добавление новой — это новый бит, старые файлы
+ * читаются как есть.
+ *  WELCOME        — первый запуск игры;
+ *  FIRST_WIN      — первая победа;
+ *  FIRST_BUY      — первая покупка класса;
+ *  ALL_CHARACTERS — собраны все открываемые классы. */
+#define ACH_FLAG_WELCOME         (1u << 0)
+#define ACH_FLAG_FIRST_WIN       (1u << 1)
+#define ACH_FLAG_FIRST_BUY       (1u << 2)
+#define ACH_FLAG_ALL_CHARACTERS  (1u << 3)
+double net_load_achievement_flags(void);
+void net_save_achievement_flags(double flags);
+double net_has_achievement_flag(double flag);
+void net_mark_achievement_flag(double flag);
+
 /* Бан система */
 double net_banned(void);
 double net_is_banned(const char *nick);
