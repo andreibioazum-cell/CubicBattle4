@@ -159,6 +159,14 @@ number ordinary_level=0, ordinary_levels_unlocked=0, azum_level=0, azum_levels_u
 number santa_level=0, santa_levels_unlocked=0
 number ebuc_level=0, ebuc_levels_unlocked=0
 
+// Хэллоуинский батл пасс: 5 уровней по 100 кубков. Уровень 1 даёт обычному
+// классу сразу 3 уровень, уровень 2 — скин «Зомби» для Азума (текстуры ещё
+// нет, пока зомби рисуется зелёным силуэтом), 3–5 — «Скоро».
+number bp_level=0, bp_max=5, bp_cost=100, bp_msg_t=0, bp_msg_kind=0
+// Скин Азума: 0 — обычный, 1 — зомби. Зомби открывается 2-м уровнем батл пасса.
+number azum_skin=0, zombie_tint=0xFF66BB33
+number skin_msg_t=0
+
 number azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
 number ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
 number santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze_time_bonus=0.50
