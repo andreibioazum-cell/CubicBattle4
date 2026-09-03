@@ -85,7 +85,7 @@ function save_progress()
         ordinary_level = player_level
         ordinary_levels_unlocked = levels_unlocked
     end
-    net_save_progress_all(cups, candies, player_class, azum_owned, santa_owned, ebuc_owned, player_level, levels_unlocked, ordinary_level, ordinary_levels_unlocked, azum_level, azum_levels_unlocked, santa_level, santa_levels_unlocked, ebuc_level, ebuc_levels_unlocked)
+    net_save_progress_all(cups, candies, player_class, azum_owned, santa_owned, ebuc_owned, player_level, levels_unlocked, ordinary_level, ordinary_levels_unlocked, azum_level, azum_levels_unlocked, santa_level, santa_levels_unlocked, ebuc_level, ebuc_levels_unlocked, bp_level, azum_skin)
     net_set_class(player_class)
     net_set_level(player_level)
 end
@@ -320,6 +320,8 @@ function draw_lobby()
     if str_len(banned_msg) > 0
         ctext(banned_msg, my + 320 + btn_h + 44, 0xFFFFFF)
     end
+    // Кнопка «???» в левом нижнем углу — вход в хэллоуинский батл пасс.
+    button_scaled("???", 20, screen_h - btn_h - 20, btn_w, btn_h, 0.9)
 end
 
 function draw_class_level_rows(number x, number y, number w, number cls)
@@ -352,7 +354,12 @@ function draw_class_card(number x, number y, number w, number h, number cls, num
     end
     roundrect(x, y, w, h, 22, 0xFF2A2A40)
     number ts = 1.55, spr = 50 * ts
-    tex(x + (w - spr) / 2, y + 12, texname, 0, ts)
+    if cls == 1 && azum_skin == 1
+        // Скин «Зомби» пока без текстуры — зелёный силуэт Азума.
+        tex_tint(x + (w - spr) / 2, y + 12, texname, 0, ts, zombie_tint)
+    else
+        tex(x + (w - spr) / 2, y + 12, texname, 0, ts)
+    end
     number tw = text_ink_width(title)
     // Название класса ниже кубика: раньше базовая линия была на y+92 и
     // заголовок («бук» и др.) залезал на спрайт, который тянется до y+89.
@@ -397,6 +404,12 @@ function draw_classes()
     draw_class_card(x3, y, cw, ch, 2, santa_owned, santa_candy_cost, tr_class_santa(), tr_class_santa_desc(), SANTA_TEX)
     draw_class_card(x4, y, cw, ch, 3, ebuc_owned, ebuc_candy_cost, tr_class_ebuc(), tr_class_ebuc_desc(), EBUC_TEX)
     number by = y + ch + gap
+    number skin_h = 48, skin_gap = 10
+    if player_class == 1
+        // Скины Азума: обычный и (после 2 уровня батл пасса) зомби.
+        draw_skins_row(by, skin_h)
+        by = by + skin_h + skin_gap
+    end
     button_scaled(tr_levels(), (screen_w - btn_w) / 2, by, btn_w, btn_h, 0.9)
     number sy = by + btn_h + 12
     draw_money()
@@ -408,8 +421,42 @@ function draw_classes()
         // Не хватает кубков — надпись тает плавно, а не пропадает резко.
         ctext_fade(tr_class_need_cups(), sy, 0xFFFFFF, class_msg_t, msg_fade)
     end
+    if skin_msg_t > 0
+        skin_msg_t = skin_msg_t - dt
+        if skin_msg_t < 0
+            skin_msg_t = 0
+        end
+        ctext_fade(tr_skin_zombie_locked(), sy, 0xFFFFFF, skin_msg_t, msg_fade)
+    end
     draw_class_stats()
     draw_back()
+end
+
+// Ряд скинов Азума: две кнопки над кнопкой «Уровни». Выбранный скин подсвечен
+// рамкой; зомби заперт тёмной плашкой, пока не куплен 2 уровень батл пасса.
+function skin_button(string label, number x, number y, number w, number h, number sel, number locked)
+    number bg = ui_purple
+    if locked == 1
+        bg = ui_purple_dark
+    end
+    if sel == 1
+        roundrect(x - 4, y - 4, w + 8, h + 8, 22, 0xFF5A5A78)
+    end
+    roundrect(x, y, w, h, 18, bg)
+    text_in_box(label, x, y, w, h, 0xFFFFFF, 0.55)
+end
+
+function draw_skins_row(number y, number h)
+    string label = tr_skins() + ":"
+    number lw = text_ink_width(label) * 0.5
+    text_scaled(label, (screen_w - lw) / 2, y - 28, 0xFFFFFF, 0.5)
+    number bw = 200, bg = 16, total = bw * 2 + bg, x0 = (screen_w - total) / 2
+    skin_button(tr_skin_normal(), x0, y, bw, h, azum_skin == 0, 0)
+    number locked = 0
+    if bp_level < 2
+        locked = 1
+    end
+    skin_button(tr_skin_zombie(), x0 + bw + bg, y, bw, h, azum_skin == 1, locked)
 end
 
 // Два бара выбранного класса: здоровье красное, сила голубая.
@@ -557,6 +604,27 @@ function touch_classes(number x, number y, number action)
         end
     end
     number by = cy + ch + gap
+    number skin_h = 48, skin_gap = 10
+    if player_class == 1
+        number bw2 = 200, bg2 = 16, sx0 = (screen_w - (bw2 * 2 + bg2)) / 2
+        if y >= by - 8 && y <= by + skin_h + 8
+            if x >= sx0 && x <= sx0 + bw2
+                azum_skin = 0
+                save_progress()
+                return
+            end
+            if x >= sx0 + bw2 + bg2 && x <= sx0 + bw2 * 2 + bg2
+                if bp_level >= 2
+                    azum_skin = 1
+                    save_progress()
+                else
+                    skin_msg_t = msg_time
+                end
+                return
+            end
+        end
+        by = by + skin_h + skin_gap
+    end
     if y >= by - 8 && y <= by + btn_h + 8
         if x >= (screen_w - btn_w) / 2 - 12 && x <= (screen_w + btn_w) / 2 + 12
             start_transition(9)
@@ -815,6 +883,11 @@ function touch_lobby(number x, number y, number action)
     if action != 0
         return
     end
+    // Кнопка «???» слева снизу — вход в батл пасс.
+    if x >= 20 - 12 && x <= 20 + btn_w + 12 && y >= screen_h - btn_h - 28 && y <= screen_h - 12
+        start_transition(12)
+        return
+    end
     number mx = (screen_w - btn_w) / 2, my = menu_top()
     if x < mx - 12 || x > mx + btn_w + 12
         return
@@ -915,6 +988,20 @@ function login_do()
         santa_levels_unlocked = net_load_santa_levels_unlocked()
         ebuc_level = net_load_ebuc_level()
         ebuc_levels_unlocked = net_load_ebuc_levels_unlocked()
+        bp_level = net_load_bp_level()
+        azum_skin = net_load_azum_skin()
+        if bp_level < 0
+            bp_level = 0
+        end
+        if bp_level > bp_max
+            bp_level = bp_max
+        end
+        if azum_skin != 0 && azum_skin != 1
+            azum_skin = 0
+        end
+        if azum_skin == 1 && bp_level < 2
+            azum_skin = 0
+        end
         if levels_unlocked < 0
             levels_unlocked = 0
         end
@@ -996,6 +1083,122 @@ function touch_achievements(number x, number y, number action)
     end
 end
 
+// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
+// Пять уровней по 100 кубков, покупаются по порядку. Уровень 1 сразу даёт
+// обычному классу 3 уровень, уровень 2 — скин «Зомби» для Азума, а награды
+// уровней 3–5 ещё не готовы («Скоро»).
+function bp_reward_text(number n)
+    if n == 1
+        return tr_bp_reward_1()
+    end
+    if n == 2
+        return tr_bp_reward_2()
+    end
+    return tr_levels_soon()
+end
+
+function buy_bp_level(number n)
+    if n < 1 || n > bp_max
+        return
+    end
+    if n != bp_level + 1
+        bp_msg_t = msg_time
+        bp_msg_kind = 1
+        return
+    end
+    if cups < bp_cost
+        bp_msg_t = msg_time
+        bp_msg_kind = 0
+        return
+    end
+    cups = cups - bp_cost
+    bp_level = n
+    if n == 1
+        // Награда 1-го уровня: обычный класс сразу на 3 уровне.
+        set_class_level(0, 3, 3)
+        if player_class == 0
+            player_level = 3
+            levels_unlocked = 3
+        end
+    end
+    if n == 2
+        // Награда 2-го уровня: скин «Зомби» на Азума (без текстуры).
+        azum_skin = 1
+    end
+    bp_msg_t = 0
+    bp_msg_kind = 0
+    save_progress()
+end
+
+function draw_battlepass()
+    rect(0, 0, screen_w, screen_h, 0x1a1a2e)
+    ctext(tr_battlepass_title(), back_y + btn_h + 12, 0xFFFFFF)
+    number n = 1, row_h = 84, w = 560, x = (screen_w - w) / 2, y = back_y + btn_h + 84
+    loop n <= bp_max
+        number bought = 0, next = 0
+        if n <= bp_level
+            bought = 1
+        end
+        if n == bp_level + 1
+            next = 1
+        end
+        number bg = ui_purple_dark
+        if bought == 1
+            bg = ui_purple
+        end
+        roundrect(x, y, w, row_h, 20, bg)
+        string level_title = tr_bp_level() + " " + n
+        text_scaled(level_title, x + 16, y + 14, 0xFFFFFF, 0.7)
+        string reward = bp_reward_text(n)
+        text_scaled(reward, x + 16, y + 44, 0xFFFFFF, 0.5)
+        string status = ""
+        if bought == 1
+            status = tr_bp_bought()
+        else if next == 1
+            status = tr_bp_buy() + " · " + bp_cost + " " + tr_cups_unit()
+        else
+            status = tr_bp_locked()
+        end
+        number sw = text_ink_width(status) * 0.5
+        text_scaled(status, x + w - 20 - sw, y + 16, 0xFFFFFF, 0.5)
+        n = n + 1
+        y = y + row_h + 12
+    end
+    number msg_y = back_y + btn_h + 84 + bp_max * (row_h + 12) + 8
+    if bp_msg_t > 0
+        bp_msg_t = bp_msg_t - dt
+        if bp_msg_t < 0
+            bp_msg_t = 0
+        end
+        if bp_msg_kind == 1
+            ctext_fade(tr_bp_need_prev(), msg_y, 0xFFFFFF, bp_msg_t, msg_fade)
+        else
+            ctext_fade(tr_bp_need_cups(), msg_y, 0xFFFFFF, bp_msg_t, msg_fade)
+        end
+    end
+    draw_money()
+    draw_back()
+end
+
+function touch_battlepass(number x, number y, number action)
+    if action != 0
+        return
+    end
+    if back_hit(x, y) == 1
+        start_transition(0)
+        return
+    end
+    number n = 1, row_h = 84, w = 560, rx = (screen_w - w) / 2, ry = back_y + btn_h + 84
+    loop n <= bp_max
+        if x >= rx && x <= rx + w && y >= ry && y <= ry + row_h
+            buy_bp_level(n)
+            return
+        end
+        n = n + 1
+        ry = ry + row_h + 12
+    end
+end
+
 function touch_menu(number x, number y, number action)
     if action != 0
         return
@@ -1018,6 +1221,10 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == 11
         touch_achievements(x, y, action)
+        return
+    end
+    if game_state == 12
+        touch_battlepass(x, y, action)
         return
     end
     number mx = (screen_w - btn_w) / 2, sy = menu_top()

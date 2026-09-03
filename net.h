@@ -95,6 +95,9 @@ double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
 double net_load_ebuc_level(void);
 double net_load_ebuc_levels_unlocked(void);
+/* Хэллоуинский батл пасс и скины Азума. */
+double net_load_bp_level(void);
+double net_load_azum_skin(void);
 void net_save_progress(double cups, double candies, double cls, double azum, double santa, double ebuc,
                        double level, double levels_unlocked);
 void net_save_progress_all(double cups, double candies, double cls, double azum, double santa, double ebuc,
@@ -102,7 +105,8 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
                            double santa_level, double santa_levels_unlocked,
-                           double ebuc_level, double ebuc_levels_unlocked);
+                           double ebuc_level, double ebuc_levels_unlocked,
+                           double bp_level, double azum_skin);
 
 /* Достижения профиля: единый битмаск в achievements.dat. ACH_FLAG_* ниже —
  * код отдельных наград. Добавление новой — это новый бит, старые файлы

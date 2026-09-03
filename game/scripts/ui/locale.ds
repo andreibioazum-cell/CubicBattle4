@@ -688,6 +688,106 @@ function tr_class_need_cups()
     return "Not enough cups"
 end
 
+// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
+function tr_battlepass()
+    if language == 1
+        return "Батл пасс"
+    end
+    return "Battle Pass"
+end
+
+function tr_battlepass_title()
+    if language == 1
+        return "Хэллоуинский батл пасс"
+    end
+    return "Halloween Battle Pass"
+end
+
+function tr_bp_level()
+    if language == 1
+        return "Уровень"
+    end
+    return "Level"
+end
+
+function tr_bp_bought()
+    if language == 1
+        return "Куплено"
+    end
+    return "Bought"
+end
+
+function tr_bp_buy()
+    if language == 1
+        return "Купить"
+    end
+    return "Buy"
+end
+
+function tr_bp_locked()
+    if language == 1
+        return "Заблокировано"
+    end
+    return "Locked"
+end
+
+function tr_bp_need_prev()
+    if language == 1
+        return "Сначала купи предыдущий уровень"
+    end
+    return "Buy the previous level first"
+end
+
+function tr_bp_need_cups()
+    if language == 1
+        return "Не хватает кубков для уровня"
+    end
+    return "Not enough cups for this level"
+end
+
+function tr_bp_reward_1()
+    if language == 1
+        return "Обычный класс: сразу 3 уровень"
+    end
+    return "Ordinary class: instant level 3"
+end
+
+function tr_bp_reward_2()
+    if language == 1
+        return "Скин «Зомби» на Азума"
+    end
+    return "Azum \"Zombie\" skin"
+end
+
+// ── Скины Азума ───────────────────────────────────────────────────────────
+function tr_skins()
+    if language == 1
+        return "Скины"
+    end
+    return "Skins"
+end
+
+function tr_skin_normal()
+    if language == 1
+        return "Обычный"
+    end
+    return "Normal"
+end
+
+function tr_skin_zombie()
+    if language == 1
+        return "Зомби"
+    end
+    return "Zombie"
+end
+
+function tr_skin_zombie_locked()
+    if language == 1
+        return "Открой 2 уровень батл пасса"
+    end
+    return "Unlock battle pass level 2"
+end
+
 function tr_cups_reward(number amount)
     if language == 1
         return "+" + amount + " кубков"

@@ -103,6 +103,20 @@ function init()
     santa_levels_unlocked = net_load_santa_levels_unlocked()
     ebuc_level = net_load_ebuc_level()
     ebuc_levels_unlocked = net_load_ebuc_levels_unlocked()
+    bp_level = net_load_bp_level()
+    azum_skin = net_load_azum_skin()
+    if bp_level < 0
+        bp_level = 0
+    end
+    if bp_level > bp_max
+        bp_level = bp_max
+    end
+    if azum_skin != 0 && azum_skin != 1
+        azum_skin = 0
+    end
+    if azum_skin == 1 && bp_level < 2
+        azum_skin = 0
+    end
     if levels_unlocked < 0
         levels_unlocked = 0
     end
@@ -289,6 +303,8 @@ function draw()
         draw_leaderboard()
     else if game_state == 11
         draw_achievements()
+    else if game_state == 12
+        draw_battlepass()
     else
         draw_online()
     end
