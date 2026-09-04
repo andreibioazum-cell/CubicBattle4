@@ -326,7 +326,7 @@ function draw_bp_row(number n)
     if state == 2
         status = tr_bp_bought()
     else if state == 1
-        status = tr_bp_buy() + " · " + bp_cost + " " + tr_cups_unit()
+        status = tr_bp_buy() + " (" + bp_cost + " " + tr_cups_unit() + ")"
     end
     text_scaled(tr_bp_level() + " " + n, x + card_text_pad, y + 12, c, 0.62)
     text_scaled(bp_reward_text(n), x + card_text_pad, y + 38, c, 0.46)
@@ -335,7 +335,7 @@ end
 
 function draw_battlepass()
     screen_fill()
-    screen_title(tr_battlepass_title())
+    // Заголовка сверху нет — список уровней начинается сразу под «Назад».
     number n = 1
     loop n <= bp_max
         draw_bp_row(n)
@@ -348,7 +348,7 @@ end
 
 // ── Таблица лидеров ───────────────────────────────────────────────────────
 // Подиум: 1 — золото, 2 — монохромное серебро, 3 — бронза. Цветной осталась
-// только подложка строки: сам текст (место, ник, кубки) во всей игре белый.
+// только подложка строки: текст белый, и лишь ник админа — красный/голубой.
 function lb_place_bg(number i)
     if i == 0
         return 0xFF3D3215
@@ -375,7 +375,9 @@ function draw_lb_row(number i)
     number tt = text_ink_top(place) * scale
     number ty = y + (lb_row_h - th) / 2 - tt + 1
     text_scaled(place, x + card_text_pad, ty, text_color, scale)
-    text_scaled(nick, x + 70, ty, text_color, scale)
+    // Ник админа и в таблице лидеров своим цветом: красный у главного,
+    // голубой у второго, у остальных — обычный белый.
+    text_scaled(nick, x + 70, ty, admin_color_of(nick, text_color), scale)
     number cw = text_ink_width(cup_s) * scale
     text_scaled(cup_s, x + w - card_text_pad - cw, ty, text_color, scale)
 end
@@ -450,7 +452,8 @@ end
 
 function draw_login()
     screen_fill()
-    text(tr_login_title(), login_x() + login_lab_ox, login_title_y(), text_color)
+    // Заголовка сверху нет: экран и так подписан кнопкой «Аккаунт», а форма
+    // из двух полей читается без него.
     draw_login_field(tr_nick(), login_nick, tr_nick_ph(), login_nick_y(), login_field == 1)
     draw_login_field(tr_pass(), login_pass, tr_pass_ph(), login_pass_y(), login_field == 2)
     button_scaled(tr_login_btn(), login_btn_x(), login_btn_y(), login_btn_w, btn_h, 0.65)
