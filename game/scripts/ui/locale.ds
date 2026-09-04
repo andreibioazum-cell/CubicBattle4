@@ -422,29 +422,6 @@ function tr_class_azum_desc()
     return "NEVER GIVE UP!"
 end
 
-function tr_class_santa()
-    if language == 1
-        return "Дед Мороз"
-    end
-    return "Santa"
-end
-
-function tr_class_santa_desc()
-    return "It's 12:00 AM!"
-end
-
-function tr_class_ebuc()
-    if language == 1
-        return "буК"
-    end
-    return "ebuC"
-end
-
-// Описание бука не переводится — как и девизы остальных классов.
-function tr_class_ebuc_desc()
-    return "The universe's chaos!"
-end
-
 function tr_super()
     if language == 1
         return "Снежинка"
@@ -539,42 +516,6 @@ function tr_class_level_effect(number cls, number n)
             return "Атака лечит +0.1 HP"
         end
         return "Attack heals +0.1 HP"
-    end
-    if cls == 2 && n == 1
-        if language == 1
-            return "Тик яда +0.15 урона"
-        end
-        return "Poison tick +0.15 damage"
-    end
-    if cls == 2 && n == 2
-        if language == 1
-            return "Тик яда +0.15 урона (x2)"
-        end
-        return "Poison tick +0.15 damage (x2)"
-    end
-    if cls == 2 && n == 3
-        if language == 1
-            return "Яд стакается, снежинка наносит урон"
-        end
-        return "Poison stacks, snowflake deals damage"
-    end
-    if cls == 3 && n == 1
-        if language == 1
-            return "Турель +2 HP"
-        end
-        return "Turret +2 HP"
-    end
-    if cls == 3 && n == 2
-        if language == 1
-            return "Спавн турели лечит +0.5 HP"
-        end
-        return "Placing a turret heals +0.5 HP"
-    end
-    if cls == 3 && n == 3
-        if language == 1
-            return "Луч турели лечит +0.1 HP/сек"
-        end
-        return "Turret beam heals +0.1 HP/sec"
     end
     if cls == 0 && n == 1
         if language == 1
