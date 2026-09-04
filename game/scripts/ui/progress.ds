@@ -12,10 +12,9 @@ include graphics
 // по индексу класса, и ветка одна.
 // ══════════════════════════════════════════════════════════════════════════
 
-// Таблицы по классам: индекс — номер класса (CLASS_ORDINARY..CLASS_AZUM;
-// номера 2 и 3 — Дед Мороз и буК, убраны из игры, но в таблицах и в облаке
-// могут оставаться). arr_get для незаполненного индекса возвращает 0,
-// поэтому таблицы не нужно предварительно «протирать» нулями.
+// Таблицы по классам: индекс — номер класса (CLASS_ORDINARY..CLASS_EBUC).
+// arr_get для незаполненного индекса возвращает 0, поэтому таблицы не нужно
+// предварительно «протирать» нулями.
 array class_level_tbl=arr_new()
 array class_unlocked_tbl=arr_new()
 array class_owned_tbl=arr_new()
@@ -51,12 +50,20 @@ function class_cost_of(number cls)
     if cls == CLASS_AZUM
         return azum_cost
     end
+    if cls == CLASS_SANTA
+        return santa_candy_cost
+    end
+    if cls == CLASS_EBUC
+        return ebuc_candy_cost
+    end
     return 0
 end
 
-// Чем платят за класс: 1 — леденцами, 0 — кубками. Леденцами больше ничего
-// не покупается (Дед Мороз и буК убраны из игры), поэтому всегда 0.
+// Чем платят за класс: 1 — леденцами, 0 — кубками.
 function class_pays_candies(number cls)
+    if cls == CLASS_SANTA || cls == CLASS_EBUC
+        return 1
+    end
     return 0
 end
 
@@ -71,6 +78,12 @@ function class_name_of(number cls)
     if cls == CLASS_AZUM
         return tr_class_azum()
     end
+    if cls == CLASS_SANTA
+        return tr_class_santa()
+    end
+    if cls == CLASS_EBUC
+        return tr_class_ebuc()
+    end
     return tr_class_ordinary()
 end
 
@@ -79,14 +92,23 @@ function class_desc_of(number cls)
     if cls == CLASS_AZUM
         return tr_class_azum_desc()
     end
+    if cls == CLASS_SANTA
+        return tr_class_santa_desc()
+    end
+    if cls == CLASS_EBUC
+        return tr_class_ebuc_desc()
+    end
     return tr_class_ordinary_desc()
 end
 
-// Здоровье класса для полосы характеристик: у Азума две жизни, поэтому
-// вдвое больше обычного.
+// Здоровье класса для полосы характеристик: у Азума две жизни, поэтому вдвое
+// больше, у бука чуть больше обычного.
 function class_hp_of(number cls)
     if cls == CLASS_AZUM
         return 20
+    end
+    if cls == CLASS_EBUC
+        return ebuc_hp
     end
     return 10
 end
@@ -390,9 +412,9 @@ end
 function check_achievements()
     // Первый запуск игры: файл ещё пустой, все флаги нулевые.
     grant_achievement(ACH_WELCOME)
-    // Обычный класс доступен сразу, поэтому для «Потрогай траву» достаточно
-    // купить Азума — второй и последний класс в игре.
-    if class_owned_of(CLASS_AZUM) == 1
+    // Обычный класс доступен сразу, поэтому для «Потрогай траву» нужны три
+    // открываемых: Азум, Дед Мороз и буК.
+    if class_owned_of(CLASS_AZUM) == 1 && class_owned_of(CLASS_SANTA) == 1 && class_owned_of(CLASS_EBUC) == 1
         grant_achievement(ACH_ALL_CHARACTERS)
     end
 end
@@ -439,9 +461,7 @@ function progress_normalize()
         set_class_progress(cls, lv, un)
         cls = cls + 1
     end
-    // Выбранный класс обязан быть в текущем списке и купленным: в старых
-    // сохранениях может числиться Дед Мороз или буК, а этих классов в игре
-    // больше нет.
+    // Выбранный класс обязан быть в списке и купленным.
     if player_class < 0 || player_class >= class_count || class_owned_of(player_class) == 0
         player_class = CLASS_ORDINARY
     end
