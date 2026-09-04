@@ -3,11 +3,6 @@ include graphics
 number chat_open=0
 string chat_input=""
 
-function chat_button(string label, number x, number y, number w, number h)
-    roundrect(x, y, w, h, 20, 0x5F10A0)
-    text_in_box(label, x, y, w, h, 0xFFFFFF, 0.5)
-end
-
 function chat_close_x()
     return screen_w - btn_w - 16
 end
@@ -203,7 +198,7 @@ function draw_chat()
         button(tr_chat(), chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h())
         return
     end
-    rect(0, 0, screen_w, screen_h, 0xFF1E1E2F)
+    screen_fill()
     number cx = chat_close_x()
     // В чате оставляем только кнопку закрытия; лишняя надпись «Онлайн чат»
     // занимала место и визуально опускала историю сообщений.
@@ -218,7 +213,7 @@ function draw_chat()
         start = 0
     end
     if total == 0
-        text_scaled(tr_no_messages(), lx, ly, 0xFFFFFF, 0.5)
+        text_scaled(tr_no_messages(), lx, ly, text_color, 0.5)
     else
         number idx = start, yy = ly
         loop idx < total
@@ -227,33 +222,26 @@ function draw_chat()
             else
                 string uid = net_chat_uid(idx)
                 // Весь текст в чате белый (ник и сообщение одним цветом).
-                draw_nick_msg(uid, ": " + net_chat_text(idx), lx, yy, 0xFFFFFF, 0.5)
+                draw_nick_msg(uid, ": " + net_chat_text(idx), lx, yy, text_color, 0.5)
                 yy = yy + line_h
                 idx = idx + 1
             end
         end
     end
-    roundrect(lx, iy, lw - 122, ih, 10, 0xFF2A2A40)
+    roundrect(lx, iy, lw - 122, ih, 10, card_bg)
     chat_sync_input()
     string shown = chat_input
     if keyboard_visible() == 1
         shown = chat_input + "|"
     end
     if str_len(chat_input) == 0 && keyboard_visible() == 0
-        text_in_field(tr_type_message(), lx + 10, iy, ih, 0xFFFFFF, 0.55)
+        text_in_field(tr_type_message(), lx + 10, iy, ih, text_color, 0.55)
     else if str_len(shown) == 0
-        text_in_field("|", lx + 10, iy, ih, 0xFFFFFF, 0.55)
+        text_in_field("|", lx + 10, iy, ih, text_color, 0.55)
     else
-        text_in_field(shown, lx + 10, iy, ih, 0xFFFFFF, 0.55)
+        text_in_field(shown, lx + 10, iy, ih, text_color, 0.55)
     end
-    chat_button(tr_send(), lx + lw - 112, iy, 112, ih)
-end
-
-function chat_hit(number x, number y, number bx, number by, number bw, number bh)
-    if x >= bx && x <= bx + bw && y >= by && y <= by + bh
-        return 1
-    end
-    return 0
+    button_scaled(tr_send(), lx + lw - 112, iy, 112, ih, 0.5)
 end
 
 function touch_chat(number x, number y, number action)
@@ -261,26 +249,26 @@ function touch_chat(number x, number y, number action)
         return 0
     end
     if chat_open == 0
-        if chat_hit(x, y, chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h()) == 1
+        if hit_rect(x, y, chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h()) == 1
             chat_open = 1
             keyboard_hide()
             return 1
         end
         return 0
     end
-    if chat_hit(x, y, chat_close_x(), chat_top_y(), btn_w, btn_h) == 1
+    if hit_rect(x, y, chat_close_x(), chat_top_y(), btn_w, btn_h) == 1
         chat_open = 0
         keyboard_hide()
         return 1
     end
     number lx = 16, lw = screen_w - 32, iy = chat_input_y(), ih = 52
-    if chat_hit(x, y, lx, iy, lw - 122, ih) == 1
+    if hit_rect(x, y, lx, iy, lw - 122, ih) == 1
         if keyboard_visible() == 0
             keyboard_show()
         end
         return 1
     end
-    if chat_hit(x, y, lx + lw - 112, iy, 112, ih) == 1
+    if hit_rect(x, y, lx + lw - 112, iy, 112, ih) == 1
         chat_send()
         keyboard_hide()
         return 1

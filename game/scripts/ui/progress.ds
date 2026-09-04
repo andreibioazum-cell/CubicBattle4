@@ -1,0 +1,499 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// progress.ds — модель прогресса: классы, уровни, скины, батл пасс,
+// достижения и сохранение. Здесь НЕ рисуется ничего: модуль отвечает на
+// вопросы «сколько стоит», «открыто ли», «что изменится после покупки»,
+// а экраны (ui/menu.ds) только показывают его ответы.
+//
+// Зачем он нужен: раньше одни и те же ветки «if cls == 1 ... if cls == 2 ...»
+// повторялись в семи функциях (чтение уровня, запись уровня, покупка,
+// отрисовка карточки, хит-тест). Теперь данные класса лежат в таблицах
+// по индексу класса, и ветка одна.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Таблицы по классам: индекс — номер класса (CLASS_ORDINARY..CLASS_EBUC).
+// arr_get для незаполненного индекса возвращает 0, поэтому таблицы не нужно
+// предварительно «протирать» нулями.
+array class_level_tbl=arr_new()
+array class_unlocked_tbl=arr_new()
+array class_owned_tbl=arr_new()
+
+// ── Данные класса ─────────────────────────────────────────────────────────
+function class_level_of(number cls)
+    return arr_get(class_level_tbl, cls)
+end
+
+function class_unlocked_of(number cls)
+    return arr_get(class_unlocked_tbl, cls)
+end
+
+// Обычный класс открыт всегда, остальные — после покупки.
+function class_owned_of(number cls)
+    if cls == CLASS_ORDINARY
+        return 1
+    end
+    return arr_get(class_owned_tbl, cls)
+end
+
+function set_class_owned(number cls, number owned)
+    arr_set(class_owned_tbl, cls, owned)
+end
+
+// Записать выбранный уровень и сколько уровней ветки открыто.
+function set_class_progress(number cls, number lv, number un)
+    arr_set(class_level_tbl, cls, lv)
+    arr_set(class_unlocked_tbl, cls, un)
+end
+
+function class_cost_of(number cls)
+    if cls == CLASS_AZUM
+        return azum_cost
+    end
+    if cls == CLASS_SANTA
+        return santa_candy_cost
+    end
+    if cls == CLASS_EBUC
+        return ebuc_candy_cost
+    end
+    return 0
+end
+
+// Чем платят за класс: 1 — леденцами, 0 — кубками.
+function class_pays_candies(number cls)
+    if cls == CLASS_SANTA || cls == CLASS_EBUC
+        return 1
+    end
+    return 0
+end
+
+function class_currency_of(number cls)
+    if class_pays_candies(cls) == 1
+        return tr_candies()
+    end
+    return tr_cups()
+end
+
+function class_name_of(number cls)
+    if cls == CLASS_AZUM
+        return tr_class_azum()
+    end
+    if cls == CLASS_SANTA
+        return tr_class_santa()
+    end
+    if cls == CLASS_EBUC
+        return tr_class_ebuc()
+    end
+    return tr_class_ordinary()
+end
+
+// Девиз класса (не переводится — см. ui/locale.ds).
+function class_desc_of(number cls)
+    if cls == CLASS_AZUM
+        return tr_class_azum_desc()
+    end
+    if cls == CLASS_SANTA
+        return tr_class_santa_desc()
+    end
+    if cls == CLASS_EBUC
+        return tr_class_ebuc_desc()
+    end
+    return tr_class_ordinary_desc()
+end
+
+// Здоровье класса для полосы характеристик: у Азума две жизни, поэтому вдвое
+// больше, у бука чуть больше обычного.
+function class_hp_of(number cls)
+    if cls == CLASS_AZUM
+        return 20
+    end
+    if cls == CLASS_EBUC
+        return ebuc_hp
+    end
+    return 10
+end
+
+// Сила класса — реальный урон удара с учётом уровня (считает бой).
+function class_power_of(number cls)
+    return class_punch_damage_for(cls, class_level_of(cls))
+end
+
+// Подпись кнопки внутри карточки класса.
+function class_pick_label(number cls)
+    if player_class == cls
+        return tr_class_selected()
+    end
+    if class_owned_of(cls) == 0
+        return tr_buy_for(class_cost_of(cls), class_currency_of(cls))
+    end
+    return tr_class_pick()
+end
+
+// Название выбранного класса — для заголовков экранов.
+function class_name()
+    return class_name_of(player_class)
+end
+
+// Подпись на экране классов: не хватило той валюты, в которой класс стоит.
+function class_msg_text()
+    if class_msg_kind == 1
+        return tr_class_need_candies()
+    end
+    return tr_class_need_cups()
+end
+
+// ── Скин класса ───────────────────────────────────────────────────────────
+// Играет ли боец этого класса этим скином: скин «Зомби» пока есть только у
+// Азума, поэтому для остальных классов проверка всегда ложная. skin — номер
+// скина бойца: у своего он из azum_skin, у сетевого соперника — из снимка.
+function skin_is_active(number cls, number skin)
+    if cls == CLASS_AZUM && skin == SKIN_ZOMBIE
+        return 1
+    end
+    return 0
+end
+
+function class_skin_active(number cls)
+    return skin_is_active(cls, azum_skin)
+end
+
+function skin_unlocked(number skin)
+    if skin == SKIN_NORMAL
+        return 1
+    end
+    if skin == SKIN_ZOMBIE
+        if bp_level >= SKIN_ZOMBIE_BP
+            return 1
+        end
+    end
+    return 0
+end
+
+function skin_name_of(number skin)
+    if skin == SKIN_ZOMBIE
+        return tr_skin_zombie()
+    end
+    return tr_skin_normal()
+end
+
+// Выбрать скин. Закрытый скин не выбирается, а показывает подсказку,
+// каким уровнем батл пасса он открывается.
+function pick_skin(number skin)
+    if skin < 0 || skin >= SKIN_COUNT
+        return
+    end
+    if class_has_skins(player_class) == 0
+        return
+    end
+    if skin_unlocked(skin) == 0
+        skin_msg_t = msg_time
+        return
+    end
+    azum_skin = skin
+    save_progress()
+end
+
+// ── Уровни ────────────────────────────────────────────────────────────────
+// Цена n-го уровня: 30 кубков за первый, дальше на 10 дороже.
+function level_cost(number n)
+    return level_base_cost + (n - 1) * level_cost_step
+end
+
+// Перенести прогресс выбранного класса в зеркала player_level/levels_unlocked:
+// именно их читает бой.
+function sync_selected_class()
+    player_level = class_level_of(player_class)
+    levels_unlocked = class_unlocked_of(player_class)
+end
+
+// Выбрать уже открытый уровень.
+function select_level(number cls, number n)
+    set_class_progress(cls, n, class_unlocked_of(cls))
+    if cls == player_class
+        sync_selected_class()
+    end
+    save_progress()
+end
+
+// Купить следующий уровень ветки. 1 — куплено, 0 — не хватило кубков.
+function buy_level(number cls, number n)
+    number cost = level_cost(n)
+    if cups < cost
+        level_msg_kind = 0
+        level_msg_t = msg_time
+        return 0
+    end
+    cups = cups - cost
+    set_class_progress(cls, n, n)
+    if cls == player_class
+        sync_selected_class()
+    end
+    level_msg_t = 0
+    save_progress()
+    return 1
+end
+
+// Тап по строке уровня: открытый уровень выбирается, следующий — покупается,
+// остальные показывают подсказку.
+function level_action(number cls, number n)
+    if n < 1 || n > max_level
+        return
+    end
+    if class_owned_of(cls) == 0
+        class_msg_kind = 0
+        class_msg_t = msg_time
+        return
+    end
+    number un = class_unlocked_of(cls)
+    if n <= un
+        select_level(cls, n)
+        return
+    end
+    if n == un + 1
+        buy_level(cls, n)
+        return
+    end
+    // Уровень дальше следующего: сначала нужно открыть предыдущий.
+    level_msg_kind = 1
+    level_msg_t = msg_time
+end
+
+// Строка статуса уровня в списке: открыт / цена открытия / закрыт.
+function level_status_of(number cls, number n)
+    if n <= class_unlocked_of(cls)
+        return tr_level_status_open()
+    end
+    if n == class_unlocked_of(cls) + 1
+        return tr_level_unlock_cost(level_cost(n))
+    end
+    return tr_level_status_locked()
+end
+
+// Подпись под списком уровней: не хватило кубков или закрыт предыдущим.
+function level_msg_text()
+    if level_msg_kind == 1
+        return tr_level_locked()
+    end
+    return tr_level_need_cups()
+end
+
+// ── Выбор и покупка класса ────────────────────────────────────────────────
+function select_class(number cls)
+    player_class = cls
+    sync_selected_class()
+    save_progress()
+end
+
+function pick_class(number cls)
+    if cls < 0 || cls >= class_count
+        return
+    end
+    if class_owned_of(cls) == 1
+        select_class(cls)
+        return
+    end
+    number cost = class_cost_of(cls)
+    // kind сообщения совпадает с валютой класса: «не хватает кубков» и
+    // «не хватает леденцов» — разные подписи.
+    class_msg_kind = class_pays_candies(cls)
+    if class_pays_candies(cls) == 1
+        if candies < cost
+            class_msg_t = msg_time
+            return
+        end
+        candies = candies - cost
+    else
+        if cups < cost
+            class_msg_t = msg_time
+            return
+        end
+        cups = cups - cost
+    end
+    set_class_owned(cls, 1)
+    select_class(cls)
+    ds_log("bought class %g", cls)
+    // Первая покупка класса открывает достижение «Покупка».
+    grant_achievement(ACH_FIRST_BUY)
+end
+
+// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
+// Состояние строки: 2 — куплено, 1 — следующий (можно купить), 0 — закрыто.
+function bp_row_state(number n)
+    if n <= bp_level
+        return 2
+    end
+    if n == bp_level + 1
+        return 1
+    end
+    return 0
+end
+
+function bp_reward_text(number n)
+    if n == BP_REWARD_CLASS_LEVEL
+        return tr_bp_reward_1()
+    end
+    if n == BP_REWARD_SKIN
+        return tr_bp_reward_2()
+    end
+    return tr_levels_soon()
+end
+
+// Выдать награду купленного уровня батл пасса.
+function bp_apply_reward(number n)
+    if n == BP_REWARD_CLASS_LEVEL
+        // Обычный класс сразу на последнем уровне.
+        set_class_progress(CLASS_ORDINARY, max_level, max_level)
+        if player_class == CLASS_ORDINARY
+            sync_selected_class()
+        end
+    end
+    if n == BP_REWARD_SKIN
+        azum_skin = SKIN_ZOMBIE
+    end
+end
+
+function buy_bp_level(number n)
+    if n < 1 || n > bp_max
+        return
+    end
+    if n != bp_level + 1
+        bp_msg_kind = 1
+        bp_msg_t = msg_time
+        return
+    end
+    if cups < bp_cost
+        bp_msg_kind = 0
+        bp_msg_t = msg_time
+        return
+    end
+    cups = cups - bp_cost
+    bp_level = n
+    bp_apply_reward(n)
+    bp_msg_kind = 0
+    bp_msg_t = 0
+    save_progress()
+end
+
+function bp_msg_text()
+    if bp_msg_kind == 1
+        return tr_bp_need_prev()
+    end
+    return tr_bp_need_cups()
+end
+
+// ── Достижения ────────────────────────────────────────────────────────────
+// Все награды — один битмаск. Побитовых операций в DimScript нет, поэтому бит
+// достаётся делением на вес бита и проверкой на чётность: 1, 2, 4, 8...
+function has_achievement(number bit)
+    number shifted = floor(achievement_mask / bit)
+    return shifted - floor(shifted * 0.5) * 2
+end
+
+function show_achievement_toast(number bit)
+    ach_toast_bit = bit
+    ach_toast_t = ACH_TOAST_DURATION
+end
+
+// Выдать награду: отметить в облаке, добавить бит в маску и показать тост.
+// Повторный вызов ничего не делает — награда выдаётся один раз.
+function grant_achievement(number bit)
+    if has_achievement(bit) == 1
+        return 0
+    end
+    achievement_mask = achievement_mask + bit
+    net_mark_achievement_flag(bit)
+    show_achievement_toast(bit)
+    return 1
+end
+
+// Пересчитать награды, которые зависят от текущего прогресса, а не от
+// события. Вызывается из engine.init() и с экранов лобби/достижений, поэтому
+// даже удалённый achievements.dat быстро восстанавливается из прогресса.
+function check_achievements()
+    // Первый запуск игры: файл ещё пустой, все флаги нулевые.
+    grant_achievement(ACH_WELCOME)
+    // Обычный класс доступен сразу, поэтому для «Потрогай траву» нужны три
+    // открываемых: Азум, Дед Мороз и буК.
+    if class_owned_of(CLASS_AZUM) == 1 && class_owned_of(CLASS_SANTA) == 1 && class_owned_of(CLASS_EBUC) == 1
+        grant_achievement(ACH_ALL_CHARACTERS)
+    end
+end
+
+// ── Сохранение и загрузка ─────────────────────────────────────────────────
+// Записать всё облако прогресса и сообщить сети текущий класс/уровень/скин —
+// их видят соперники в онлайне.
+function save_progress()
+    net_save_progress_all(cups, candies, player_class,
+        class_owned_of(CLASS_AZUM), class_owned_of(CLASS_SANTA), class_owned_of(CLASS_EBUC),
+        player_level, levels_unlocked,
+        class_level_of(CLASS_ORDINARY), class_unlocked_of(CLASS_ORDINARY),
+        class_level_of(CLASS_AZUM), class_unlocked_of(CLASS_AZUM),
+        class_level_of(CLASS_SANTA), class_unlocked_of(CLASS_SANTA),
+        class_level_of(CLASS_EBUC), class_unlocked_of(CLASS_EBUC),
+        bp_level, azum_skin)
+    progress_push_to_net()
+end
+
+// То, что нужно сетевому снимку: класс, уровень и скин своего бойца.
+function progress_push_to_net()
+    net_set_class(player_class)
+    net_set_level(player_level)
+    net_set_skin(azum_skin)
+end
+
+// Привести прогресс к допустимым значениям: уровни в границах ветки, скин —
+// только если открыт нужный уровень батл пасса, класс — только купленный.
+function progress_normalize()
+    bp_level = clamp(bp_level, 0, bp_max)
+    if azum_skin < SKIN_NORMAL || azum_skin >= SKIN_COUNT
+        azum_skin = SKIN_NORMAL
+    end
+    if azum_skin == SKIN_ZOMBIE && bp_level < SKIN_ZOMBIE_BP
+        azum_skin = SKIN_NORMAL
+    end
+    number cls = CLASS_ORDINARY
+    loop cls < class_count
+        number un = clamp(class_unlocked_of(cls), 0, max_level)
+        number lv = class_level_of(cls)
+        if lv < 0 || lv > un
+            lv = 0
+        end
+        set_class_progress(cls, lv, un)
+        if class_owned_of(cls) == 0 && player_class == cls
+            player_class = CLASS_ORDINARY
+        end
+        cls = cls + 1
+    end
+    levels_unlocked = clamp(levels_unlocked, 0, max_level)
+    if player_level < 0 || player_level > levels_unlocked
+        player_level = 0
+    end
+end
+
+// Прочитать прогресс из локальных файлов (их ведёт net.c): вызывается и при
+// старте игры, и после входа по нику/паролю — раньше это были два одинаковых
+// списка из двадцати строк.
+function progress_from_storage()
+    cups = net_load_cups()
+    candies = net_load_candies()
+    achievement_mask = net_load_achievement_flags()
+    player_class = net_load_class()
+    set_class_owned(CLASS_AZUM, net_load_azum())
+    set_class_owned(CLASS_SANTA, net_load_santa())
+    set_class_owned(CLASS_EBUC, net_load_ebuc())
+    player_level = net_load_level()
+    levels_unlocked = net_load_levels_unlocked()
+    set_class_progress(CLASS_ORDINARY, net_load_ordinary_level(), net_load_ordinary_levels_unlocked())
+    set_class_progress(CLASS_AZUM, net_load_azum_level(), net_load_azum_levels_unlocked())
+    set_class_progress(CLASS_SANTA, net_load_santa_level(), net_load_santa_levels_unlocked())
+    set_class_progress(CLASS_EBUC, net_load_ebuc_level(), net_load_ebuc_levels_unlocked())
+    bp_level = net_load_bp_level()
+    azum_skin = net_load_azum_skin()
+    progress_normalize()
+    sync_selected_class()
+    progress_push_to_net()
+    // Награды, зависящие от прогресса («Привет!», «Потрогай траву»),
+    // пересчитываются сразу: даже удалённый achievements.dat восстанавливается
+    // из того, что уже куплено.
+    check_achievements()
+end

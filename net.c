@@ -66,7 +66,7 @@ typedef struct {
     double snow_x,snow_y,snow_dx,snow_dy,snow;
     double station_x,station_y,station_hp,station;
     double universe_x,universe_y,universe;
-    double cls, level;
+    double cls, level, skin;
     int online;
     char nick[24];
 } Actor;
@@ -149,8 +149,12 @@ typedef struct {
 static Progress pg = { .lock = DS_MUTEX_INIT };
 #define LEVEL_MAX 3
 #define BP_MAX 5
+#define SKIN_MAX 1
 static int pending_cls = 0;
 static int pending_level = 0;
+/* Скин своего бойца: как и класс с уровнем, уходит в сетевой снимок, чтобы
+ * соперники видели Азума-зомби, а не только сам игрок. */
+static int pending_skin = 0;
 static void pg_lock(void) { ds_mutex_lock(pg.lock); }
 static void pg_unlock(void) { ds_mutex_unlock(pg.lock); }
 static void data_file_path(char *path, size_t cap, const char *name) {
@@ -381,6 +385,7 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     pg_unlock();
     pending_cls = k;
     pending_level = lv;
+    pending_skin = sk;
     progress_write(c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
 
     char nick[LOGIN_NICK_MAX + 1] = "";
@@ -499,6 +504,15 @@ void net_set_level(double level) {
     pending_level = lv;
     lock(); net.me.level = (double)lv;
     if (net.slot >= 0) net.players[net.slot].level = (double)lv;
+    unlock();
+}
+void net_set_skin(double skin) {
+    int sk = (int)skin;
+    if (sk < 0) sk = 0;
+    if (sk > SKIN_MAX) sk = SKIN_MAX;
+    pending_skin = sk;
+    lock(); net.me.skin = (double)sk;
+    if (net.slot >= 0) net.players[net.slot].skin = (double)sk;
     unlock();
 }
 
@@ -1026,6 +1040,7 @@ static void apply_user_json(const char *resp) {
     pg_unlock();
     pending_cls = cls;
     pending_level = level;
+    pending_skin = azum_skin;
     progress_write(cups, candies, cls, azum, santa, ebuc, level, levels_unlocked,
                    ordinary_level, ordinary_levels_unlocked,
                    azum_level, azum_levels_unlocked,
@@ -1081,7 +1096,7 @@ static int apply_user_json_keep_local(const char *resp) {
     int el = pg.ebuc_level, eul = pg.ebuc_levels_unlocked;
     int bp = pg.bp_level, sk = pg.azum_skin;
     pg_unlock();
-    pending_cls = cls; pending_level = lv;
+    pending_cls = cls; pending_level = lv; pending_skin = sk;
     progress_write(cups, candies, cls, azum, santa, 1, lv, lu,
                    ol, ou, al, au, sl, su, el, eul, bp, sk);
     LOG("restored locally bought ebuc (cloud sync after login)");
@@ -1147,7 +1162,7 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
     pg.bp_level = 0; pg.azum_skin = 0;
     pg.loaded = 1;
     pg_unlock();
-    pending_cls = 0; pending_level = 0;
+    pending_cls = 0; pending_level = 0; pending_skin = 0;
     progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     lg_lock();
     snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
@@ -1976,7 +1991,7 @@ static int actor_same(const Actor *x, const Actor *y) {
         && x->snow_x==y->snow_x && x->snow_y==y->snow_y && x->snow_dx==y->snow_dx && x->snow_dy==y->snow_dy && x->snow==y->snow
         && x->station_x==y->station_x && x->station_y==y->station_y && x->station_hp==y->station_hp && x->station==y->station
         && x->universe_x==y->universe_x && x->universe_y==y->universe_y && x->universe==y->universe
-        && x->cls==y->cls && x->level==y->level && !strcmp(x->nick,y->nick);
+        && x->cls==y->cls && x->level==y->level && x->skin==y->skin && !strcmp(x->nick,y->nick);
 }
 /* Поля позиции в базе валидируются правилами Firebase как 0..1 (снаряды —
  * -1..1). Одно значение вне диапазона отклоняет PUT целиком, и клиент
@@ -2001,10 +2016,10 @@ static int push_state(void) {
     if (ps_have_last && actor_same(&a,&ps_last) && now_ms()-ps_last_put < HEARTBEAT_TICK) return 1;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"stx\":%.5f,\"sty\":%.5f,\"sthp\":%.0f,\"station\":%.0f,\"uzx\":%.5f,\"uzy\":%.5f,\"universe\":%.0f,\"cls\":%.0f,\"level\":%.0f}",
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"stx\":%.5f,\"sty\":%.5f,\"sthp\":%.0f,\"station\":%.0f,\"uzx\":%.5f,\"uzy\":%.5f,\"universe\":%.0f,\"cls\":%.0f,\"level\":%.0f,\"skin\":%.0f}",
         net.uid,enick,clamp01(a.x),clamp01(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
         clamp01(a.punch_x),clamp01(a.punch_y),clamp11(a.punch_dx),clamp11(a.punch_dy),safe(a.punch),
-        clamp01(a.snow_x),clamp01(a.snow_y),clamp11(a.snow_dx),clamp11(a.snow_dy),safe(a.snow),clamp01(a.station_x),clamp01(a.station_y),safe(a.station_hp),safe(a.station),clamp01(a.universe_x),clamp01(a.universe_y),safe(a.universe),safe(a.cls),safe(a.level));
+        clamp01(a.snow_x),clamp01(a.snow_y),clamp11(a.snow_dx),clamp11(a.snow_dy),safe(a.snow),clamp01(a.station_x),clamp01(a.station_y),safe(a.station_hp),safe(a.station),clamp01(a.universe_x),clamp01(a.universe_y),safe(a.universe),safe(a.cls),safe(a.level),safe(a.skin));
     int c = fb_http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d", c);
     if (c == 200) { ps_last = a; ps_last_put = now_ms(); ps_have_last = 1; }
@@ -2070,7 +2085,7 @@ static int claim_slot(void) {
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
-            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"stx\":0,\"sty\":0,\"sthp\":0,\"station\":0,\"uzx\":0,\"uzy\":0,\"universe\":0,\"cls\":%.0f,\"level\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level));
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"stx\":0,\"sty\":0,\"sthp\":0,\"station\":0,\"uzx\":0,\"uzy\":0,\"universe\":0,\"cls\":%.0f,\"level\":%.0f,\"skin\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level),safe(net.me.skin));
         }
         code=fb_http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { claim_seen_uid[slot][0]=0; claim_seen_seq[slot]=0; claim_seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
@@ -2126,6 +2141,7 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/universe",bp); ps[slot].universe=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/cls",bp); ps[slot].cls=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/level",bp); ps[slot].level=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/skin",bp); ps[slot].skin=num(resp,p,0);
         ps[slot].online=1; count++;
     }
     lock(); memcpy(net.players,ps,sizeof(ps)); net.count=count; unlock();
@@ -2355,6 +2371,7 @@ void net_connect(const char *url, const char *room) {
     }
     net.me.cls = (double)pending_cls;
     net.me.level = (double)pending_level;
+    net.me.skin = (double)pending_skin;
     lock(); net.self_banned = 0; unlock();
     /* Список банов нужно перечитать: вдруг бан поставили, пока мы сидели в меню. */
     ban_invalidate();
@@ -2556,5 +2573,14 @@ double net_player_level(double slot) {
     if(i>=0){ lock(); v=net.players[i].level; unlock(); }
     if(v<0) v=0;
     if(v>LEVEL_MAX) v=LEVEL_MAX;
+    return v;
+}
+/* Скин бойца в снимке комнаты. Старые клиенты поле не присылают — тогда оно
+ * читается как 0 (обычный скин), поэтому смешанные версии в онлайне работают. */
+double net_player_skin(double slot) {
+    int i=sidx(slot); double v=0;
+    if(i>=0){ lock(); v=net.players[i].skin; unlock(); }
+    if(v<0) v=0;
+    if(v>SKIN_MAX) v=SKIN_MAX;
     return v;
 }

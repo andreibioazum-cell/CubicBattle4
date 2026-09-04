@@ -28,33 +28,9 @@ function tr_online()
     return "Online"
 end
 
-function tr_console()
-    if language == 1
-        return "Консоль"
-    end
-    return "Console"
-end
 
-function tr_up()
-    if language == 1
-        return "Вверх"
-    end
-    return "Up"
-end
 
-function tr_down()
-    if language == 1
-        return "Вниз"
-    end
-    return "Down"
-end
 
-function tr_clear()
-    if language == 1
-        return "Очистить"
-    end
-    return "Clear"
-end
 
 function tr_back()
     if language == 1
@@ -84,12 +60,6 @@ function tr_victory()
     return "Victory!"
 end
 
-function tr_opponent_defeated()
-    if language == 1
-        return "Соперник побеждён"
-    end
-    return "Opponent defeated"
-end
 
 function tr_defeat()
     if language == 1
@@ -98,19 +68,7 @@ function tr_defeat()
     return "Defeat"
 end
 
-function tr_opponent_won()
-    if language == 1
-        return "Соперник победил"
-    end
-    return "The opponent won"
-end
 
-function tr_you_were_defeated()
-    if language == 1
-        return "Вы повержены"
-    end
-    return "You were defeated"
-end
 
 function tr_no_connection()
     if language == 1
@@ -173,6 +131,18 @@ function tr_account()
         return "Аккаунт"
     end
     return "Account"
+end
+// Приветствие в лобби: «Привет, "ник"» / «Hi, "nick"». Кавычки — часть строки,
+// цвет ника подставляет admin_color_of() в core/config.ds.
+function tr_hello_pre()
+    if language == 1
+        return "Привет, \""
+    end
+    return "Hi, \""
+end
+
+function tr_hello_post()
+    return "\""
 end
 
 function tr_achievements()
@@ -330,12 +300,6 @@ function tr_login_btn()
     return "Log In / Register"
 end
 
-function tr_your_nick()
-    if language == 1
-        return "Ваш ник: "
-    end
-    return "Your nick: "
-end
 
 function tr_leaderboard()
     if language == 1
@@ -427,12 +391,6 @@ function tr_shop()
     return "Shop"
 end
 
-function tr_box()
-    if language == 1
-        return "Ящик"
-    end
-    return "Box"
-end
 
 function tr_candies()
     if language == 1
@@ -441,12 +399,6 @@ function tr_candies()
     return "Candies"
 end
 
-function tr_got()
-    if language == 1
-        return "Выпало:"
-    end
-    return "You got:"
-end
 
 function tr_class_ordinary()
     if language == 1
@@ -521,12 +473,6 @@ function tr_class_pick()
     return "Select"
 end
 
-function tr_your_class()
-    if language == 1
-        return "Класс: "
-    end
-    return "Class: "
-end
 
 function tr_levels()
     if language == 1
@@ -542,12 +488,31 @@ function tr_level()
     return "Level"
 end
 
-function tr_level_absorb()
+// Статусы строки уровня в списке: открыт / цена открытия / закрыт.
+function tr_level_status_open()
     if language == 1
-        return "Поглощение урона"
+        return "Открыт"
     end
-    return "Damage absorb"
+    return "Opened"
 end
+
+function tr_level_status_locked()
+    if language == 1
+        return "Закрыт"
+    end
+    return "Locked"
+end
+
+function tr_level_unlock_cost(number cost)
+    string out = ""
+    if language == 1
+        out = "Открыть · " + cost + " " + tr_cups_unit()
+    else
+        out = "Unlock · " + cost + " " + tr_cups_unit()
+    end
+    return out
+end
+
 
 function tr_levels_for_class()
     if language == 1
@@ -629,12 +594,6 @@ function tr_class_level_effect(number cls, number n)
     return "Attack heals +0.05 HP"
 end
 
-function tr_level_unlock()
-    if language == 1
-        return "Открыть за"
-    end
-    return "Unlock for"
-end
 
 function tr_cups_unit()
     if language == 1
@@ -688,13 +647,14 @@ function tr_class_need_cups()
     return "Not enough cups"
 end
 
-// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
-function tr_battlepass()
+function tr_class_need_candies()
     if language == 1
-        return "Батл пасс"
+        return "Не хватает леденцов"
     end
-    return "Battle Pass"
+    return "Not enough candies"
 end
+
+// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
 
 function tr_battlepass_title()
     if language == 1
@@ -788,6 +748,19 @@ function tr_skin_zombie_locked()
     return "Unlock battle pass level 2"
 end
 
+// Подпись закрытого скина: чем он открывается.
+function tr_skin_bp_hint()
+    if language == 1
+        return "Батл пасс · " + SKIN_ZOMBIE_BP + " уровень"
+    end
+    return "Battle pass · level " + SKIN_ZOMBIE_BP
+end
+
+// Заголовок экрана скинов: «Скины · Азум».
+function tr_skins_title()
+    return tr_skins() + " · " + tr_class_azum()
+end
+
 function tr_cups_reward(number amount)
     if language == 1
         return "+" + amount + " кубков"
@@ -802,16 +775,4 @@ function tr_banned()
     return "You are banned"
 end
 
-function tr_admin_event_on()
-    if language == 1
-        return "ДИСКО ИВЕНТ ВКЛЮЧЕН!"
-    end
-    return "DISCO EVENT STARTED!"
-end
 
-function tr_admin_event_off()
-    if language == 1
-        return "Ивент выключен"
-    end
-    return "Event ended"
-end

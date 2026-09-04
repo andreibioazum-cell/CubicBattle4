@@ -1,12 +1,185 @@
 include graphics
 
-// ui — кнопки и HP бары
-function hud_bar(number bx, number by, number w, number h, number cur, number max, color color, number from_right)
-    roundrect(bx, by, w, h, h / 2, 0xDD171923)
-    number shown = cur
-    if shown < 0
-        shown = 0
+// ══════════════════════════════════════════════════════════════════════════
+// ui.ds — «UI-кит»: примитивы, из которых собраны все экраны.
+//
+// Здесь нет ни одного конкретного экрана. Экраны (ui/menu.ds) берут отсюда
+// кнопки, карточки, хит-тесты и текст, а координаты — из ui/layout.ds.
+// Правило простое: если два экрана рисуют одно и то же (плашку с подписью,
+// затемнённую заблокированную кнопку, полосу HP), примитив живёт здесь.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Цвет ──────────────────────────────────────────────────────────────────
+// Затемнить цвет в k раз (0.75 = «на 25% темнее»), не трогая альфу.
+// Побитовых операций в DimScript нет, поэтому байты раскладываются делением:
+// 0xAARRGGBB → альфа, красный, зелёный, синий. Все значения влезают в double
+// без потери точности (цвет < 2^32, а double точен до 2^53).
+function shade(number rgb, number k)
+    number a = floor(rgb / 16777216)
+    number body = rgb - a * 16777216
+    number r = floor(body / 65536)
+    number g = floor(body / 256) - r * 256
+    number b = body - floor(body / 256) * 256
+    return a * 16777216 + floor(r * k) * 65536 + floor(g * k) * 256 + floor(b * k)
+end
+
+// Цвет заблокированной плашки: тот же фиолетовый, но на 25% темнее.
+function locked_bg()
+    return shade(ui_purple, locked_shade)
+end
+
+// Цвет текста заблокированной плашки. RGB текста рендерер всё равно делает
+// белым (graphics.c), поэтому «на 25% темнее» для текста = альфа 0.75:
+// белый с такой альфой по тёмной плашке выглядит ровно на четверть темнее.
+function locked_text()
+    return locked_text_alpha * 16777216 + text_color
+end
+
+// Плавное исчезновение подписей («Не хватает кубков» и т.п.): пока у таймера
+// остаётся меньше fade секунд, альфа цвета пропорционально падает, поэтому
+// надпись тает, а не пропадает в один кадр.
+function fade_color(number rgb, number t, number fade)
+    number a = clamp(t / fade, 0, 1)
+    return (1 + floor(a * 254)) * 0x1000000 + rgb
+end
+
+// ── Хит-тесты ─────────────────────────────────────────────────────────────
+// Точное попадание в прямоугольник.
+function hit_rect(number px, number py, number x, number y, number w, number h)
+    if px >= x && px <= x + w && py >= y && py <= y + h
+        return 1
     end
+    return 0
+end
+
+// То же, но с допуском на палец (touch_pad_x/touch_pad_y из config.ds):
+// кнопка остаётся прежнего размера, а нажать можно чуть мимо.
+function hit_rect_pad(number px, number py, number x, number y, number w, number h)
+    return hit_rect(px, py, x - touch_pad_x, y - touch_pad_y, w + 2 * touch_pad_x, h + 2 * touch_pad_y)
+end
+
+// ── Текст ─────────────────────────────────────────────────────────────────
+function ctext(string s, number y, color c)
+    text(s, (screen_w - text_ink_width(s)) / 2, y, c)
+end
+
+function ctext_scaled(string s, number y, color c, number scale)
+    text_scaled(s, (screen_w - text_ink_width(s) * scale) / 2, y, c, scale)
+end
+
+function ctext_fade(string s, number y, color rgb, number t, number fade)
+    ctext(s, y, fade_color(rgb, t, fade))
+end
+
+// Текст, точно вписанный в прямоугольник: центрируем реальные видимые
+// границы глифов, а не условную базовую линию шрифта. Небольшая оптическая
+// поправка вниз не даёт «Играть» и подсказкам уезжать вверх.
+function text_in_box(string label, number x, number y, number w, number h, color c, number scale)
+    number tw = text_ink_width(label) * scale
+    number th = text_ink_height(label) * scale
+    number tt = text_ink_top(label) * scale
+    text_scaled(label, x + (w - tw) / 2, y + (h - th) / 2 - tt + 1.5, c, scale)
+end
+
+// Текст, вписанный в поле ввода по высоте (x задаёт вызывающий).
+function text_in_field(string label, number x, number y, number h, color c, number scale)
+    number th = text_ink_height(label) * scale
+    number tt = text_ink_top(label) * scale
+    text_scaled(label, x, y + (h - th) / 2 - tt + 1.5, c, scale)
+end
+
+// Текст по центру прямоугольника (подписи в карточках классов, уровней, скинов).
+function centered_text(string label, number x, number w, number y, color c, number scale)
+    number tw = text_ink_width(label) * scale
+    text_scaled(label, x + (w - tw) / 2, y, c, scale)
+end
+
+// Строка по правому краю прямоугольника (статусы в списках).
+function rtext_in_box(string label, number x, number y, number w, number pad, color c, number scale)
+    number tw = text_ink_width(label) * scale
+    text_scaled(label, x + w - pad - tw, y, c, scale)
+end
+
+// Ник админа своим цветом, остальной текст — обычный. Нужно и в лобби
+// («Hi, "nick"»), и в чате, чтобы подсвечивалась только подпись.
+function draw_nick_msg(string nick, string rest, number x, number y, color base, number scale)
+    number nw = text_ink_width(nick) * scale
+    text_scaled(nick, x, y, admin_color_of(nick, base), scale)
+    text_scaled(rest, x + nw, y, base, scale)
+end
+
+// ── Кнопки ────────────────────────────────────────────────────────────────
+// Обычная кнопка: фиолетовая плашка и белый текст по центру.
+function button(string label, number x, number y, number w, number h)
+    roundrect(x, y, w, h, btn_radius, ui_purple)
+    text_in_box(label, x, y, w, h, text_color, 1)
+end
+
+// Та же кнопка, но текст меньше — для длинных подписей, чтобы не вылезали.
+function button_scaled(string label, number x, number y, number w, number h, number scale)
+    roundrect(x, y, w, h, btn_radius, ui_purple)
+    text_in_box(label, x, y, w, h, text_color, scale)
+end
+
+// Кнопка «Назад» — одна на все экраны, всегда сверху по центру.
+function draw_back()
+    button(tr_back(), (screen_w - btn_w) / 2, back_y, btn_w, btn_h)
+end
+
+function back_hit(number x, number y)
+    return hit_rect_pad(x, y, (screen_w - btn_w) / 2, back_y, btn_w, btn_h)
+end
+
+// ── Карточки и фон ────────────────────────────────────────────────────────
+// Фон любого меню: один цвет на все экраны.
+function screen_fill()
+    rect(0, 0, screen_w, screen_h, bg_screen)
+end
+
+// Карточка списка (класс, уровень, строка батл пасса). Выбранная получает
+// светлую рамку толщиной card_ring_pad со всех сторон, заблокированная —
+// плашку на 25% темнее (locked_shade).
+function card_state(number x, number y, number w, number h, number selected, number locked)
+    if selected == 1
+        roundrect(x - card_ring_pad, y - card_ring_pad, w + 2 * card_ring_pad, h + 2 * card_ring_pad, btn_radius + 4, card_ring)
+    end
+    if locked == 1
+        roundrect(x, y, w, h, btn_radius, shade(card_bg, locked_shade))
+        return
+    end
+    roundrect(x, y, w, h, btn_radius, card_bg)
+end
+
+function card(number x, number y, number w, number h, number selected)
+    card_state(x, y, w, h, selected, 0)
+end
+
+// Фиолетовая плашка списка — карточка достижения и строка батл пасса.
+// Заблокированная рисуется на 25% темнее, как и её текст (panel_text).
+function panel(number x, number y, number w, number h, number locked)
+    if locked == 1
+        roundrect(x, y, w, h, btn_radius, locked_bg())
+        return
+    end
+    roundrect(x, y, w, h, btn_radius, ui_purple)
+end
+
+function panel_text(number locked)
+    if locked == 1
+        return locked_text()
+    end
+    return text_color
+end
+
+// Заголовок экрана — всегда на одном месте под кнопкой «Назад».
+function screen_title(string label)
+    ctext(label, title_y(), text_color)
+end
+
+// ── Полосы ────────────────────────────────────────────────────────────────
+function hud_bar(number bx, number by, number w, number h, number cur, number max, color c, number from_right)
+    roundrect(bx, by, w, h, h / 2, 0xDD171923)
+    number shown = clamp(cur, 0, max)
     // У тонких баров (полоса HP турели, 7 px) отступ 4 px со всех сторон не
     // помещается: заливка получала высоту h-8 < 0, roundrect её не рисовал,
     // и бар оставался тёмным. Для низких баров отступ уменьшаем.
@@ -18,83 +191,37 @@ function hud_bar(number bx, number by, number w, number h, number cur, number ma
     if fh < 1
         fh = 1
     end
-    if max > 0
-        number fill_w = (w - 2 * pad) * shown / max
-        if fill_w > 0
-            if from_right == 1
-                roundrect(bx + w - pad - fill_w, by + pad, fill_w, fh, fh / 2, color)
-            else
-                roundrect(bx + pad, by + pad, fill_w, fh, fh / 2, color)
-            end
-        end
+    if max <= 0
+        return
+    end
+    number fill_w = (w - 2 * pad) * shown / max
+    if fill_w <= 0
+        return
+    end
+    if from_right == 1
+        roundrect(bx + w - pad - fill_w, by + pad, fill_w, fh, fh / 2, c)
+    else
+        roundrect(bx + pad, by + pad, fill_w, fh, fh / 2, c)
     end
 end
 
-function draw_back()
-    button(tr_back(), (screen_w - btn_w) / 2, back_y, btn_w, btn_h)
-end
-
-function back_hit(number x, number y)
-    number bx = (screen_w - btn_w) / 2
-    if x >= bx - 12 && x <= bx + btn_w + 12 && y >= back_y - 8 && y <= back_y + btn_h + 8
-        return 1
+// ── Подписи-сообщения ─────────────────────────────────────────────────────
+// Таймер обратного отсчёта: минус dt за кадр, но не ниже нуля. Им тикают и
+// подписи сообщений («не хватает кубков»), и тост о достижении — раньше каждый
+// экран писал эти четыре строки у себя.
+function tick_down(number t)
+    if t <= 0
+        return 0
     end
-    return 0
+    if t - dt <= 0
+        return 0
+    end
+    return t - dt
 end
 
-function ctext(string s, number y, color color)
-    text(s, (screen_w - text_ink_width(s)) / 2, y, color)
-end
-
-function ctext_scaled(string s, number y, color color, number scale)
-    text_scaled(s, (screen_w - text_ink_width(s) * scale) / 2, y, color, scale)
-end
-
-// Плавное исчезновение подписей («Не хватает кубков» и т.п.): пока у таймера
-// остаётся меньше msg_fade секунд, альфа цвета пропорционально падает, поэтому
-// надпись тает, а не пропадает в один кадр.
-function fade_color(number rgb, number t, number fade)
-    number a = clamp(t / fade, 0, 1)
-    return (1 + floor(a * 254)) * 0x1000000 + rgb
-end
-
-function ctext_fade(string s, number y, color rgb, number t, number fade)
-    ctext(s, y, fade_color(rgb, t, fade))
-end
-
-// Ник админа своим цветом, остальной текст — обычный. Нужно и в лобби
-// («Hi, "nick"»), и в чате, чтобы краснела/голубела только подпись, а не
-// вся строка.
-function draw_nick_msg(string nick, string rest, number x, number y, color base, number scale)
-    number nw = text_ink_width(nick) * scale
-    text_scaled(nick, x, y, admin_color_of(nick, base), scale)
-    text_scaled(rest, x + nw, y, base, scale)
-end
-
-function text_in_box(string label, number x, number y, number w, number h, color color, number scale)
-    // Центруем реальные видимые границы глифов, а не условную базовую линию шрифта.
-    // Небольшая оптическая поправка вниз не даёт Play/Играть и подсказкам «уезжать» вверх.
-    number tw = text_ink_width(label) * scale
-    number th = text_ink_height(label) * scale
-    number tt = text_ink_top(label) * scale
-    text_scaled(label, x + (w - tw) / 2, y + (h - th) / 2 - tt + 1.5, color, scale)
-end
-
-function text_in_field(string label, number x, number y, number h, color color, number scale)
-    number th = text_ink_height(label) * scale
-    number tt = text_ink_top(label) * scale
-    text_scaled(label, x, y + (h - th) / 2 - tt + 1.5, color, scale)
-end
-
-function button(string label, number x, number y, number w, number h)
-    // Фиолетовый цвет плашки — общий ui_purple из core/config.ds: тот же цвет
-    // у тоста о достижении и у карточек полученных наград.
-    roundrect(x, y, w, h, 20, ui_purple)
-    text_in_box(label, x, y, w, h, 0xFFFFFF, 1)
-end
-
-function button_scaled(string label, number x, number y, number w, number h, number scale)
-    // Та же кнопка, но текст меньше — для длинных подписей, чтобы не вылезали за рамки.
-    roundrect(x, y, w, h, 20, ui_purple)
-    text_in_box(label, x, y, w, h, 0xFFFFFF, scale)
+// Нарисовать тающую подпись, если таймер ещё жив.
+function draw_msg(string label, number y, number t)
+    if t > 0
+        ctext_fade(label, y, text_color, t, msg_fade)
+    end
 end
