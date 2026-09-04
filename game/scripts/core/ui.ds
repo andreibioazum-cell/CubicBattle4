@@ -100,6 +100,17 @@ function rtext_in_box(string label, number x, number y, number w, number pad, co
     text_scaled(label, x + w - pad - tw, y, c, scale)
 end
 
+// Два счётчика в одну строку по центру экрана (кошелёк в лобби: кубки и
+// леденцы). Ширина считается от настоящих глифов, поэтому строка не уезжает
+// вбок, когда числа растут.
+function money_pair(string left, string right, number y, number scale, number gap)
+    number lw = text_ink_width(left) * scale
+    number rw = text_ink_width(right) * scale
+    number x = (screen_w - lw - rw - gap) / 2
+    text_scaled(left, x, y, text_color, scale)
+    text_scaled(right, x + lw + gap, y, text_color, scale)
+end
+
 // Ник админа своим цветом, остальной текст — обычный. Нужно и в лобби
 // («Hi, "nick"»), и в чате, чтобы подсвечивалась только подпись.
 function draw_nick_msg(string nick, string rest, number x, number y, color base, number scale)

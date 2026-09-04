@@ -67,9 +67,15 @@ function lobby_hello_y()
     return 18
 end
 
-// Сообщение о бане — под последним пунктом меню.
+// Кошелёк (кубки и леденцы) — строка под последним пунктом меню. Только в
+// лобби: на остальных экранах валют не показываем.
+function lobby_money_y()
+    return menu_row(lobby_rows - 1) + btn_h + 12
+end
+
+// Сообщение о бане — под кошельком, чтобы строки не наезжали друг на друга.
 function lobby_msg_y()
-    return menu_row(lobby_rows - 1) + btn_h + 16
+    return lobby_money_y() + money_line_h + 6
 end
 
 // Кнопка «???» (вход в батл пасс) — левый нижний угол.

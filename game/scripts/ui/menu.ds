@@ -42,6 +42,14 @@ function draw_lobby_nick()
     text_scaled(post, x + pw + nw, y, text_color, scale)
 end
 
+// Кошелёк лобби: «Кубки: 120  Леденцы: 7» одной строкой под меню. Формируется
+// из переводов (tr_cups/tr_candies), размер и место — в config.ds и layout.ds.
+function draw_lobby_money()
+    string cup_s = tr_cups() + ": " + cups
+    string cd_s = tr_candies() + ": " + candies
+    money_pair(cup_s, cd_s, lobby_money_y(), money_scale, money_gap)
+end
+
 function draw_lobby()
     check_achievements()
     screen_fill()
@@ -52,6 +60,7 @@ function draw_lobby()
     draw_menu_button(3, tr_account())
     draw_menu_button(4, tr_achievements())
     draw_lobby_nick()
+    draw_lobby_money()
     if str_len(banned_msg) > 0
         ctext(banned_msg, lobby_msg_y(), text_color)
     end
