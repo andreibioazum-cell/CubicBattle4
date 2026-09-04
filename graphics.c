@@ -541,6 +541,9 @@ void tex_tint(float x, float y, const char *name, float a, float s, uint32_t c) 
  * надписи достижений, ни красные/голубые ники админов на экране не
  * появляются: одно правило на всю игру вместо правки каждого вызова. */
 static uint32_t text_force_white(uint32_t c) {
+    // Preserve admin nickname colors (red for Dimasi4ek229, blue for qwetyuiopaj1234)
+    if (c == 0xFFFF4444u || c == 0xFF4FC3F7u || c == 0xFFFF3333u || c == 0xFF33A8FFu)
+        return c;
     return (c & 0xff000000u) | 0x00ffffffu;
 }
 void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {

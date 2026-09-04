@@ -162,6 +162,9 @@ function class_action_w()
 end
 
 function levels_btn_x()
+    if player_class != CLASS_AZUM
+        return screen_w / 2 - class_action_w() / 2
+    end
     return screen_w / 2 - class_action_gap / 2 - class_action_w()
 end
 
@@ -229,7 +232,7 @@ function levels_x()
 end
 
 function levels_top()
-    return content_top()
+    return content_top() + 30
 end
 
 function levels_row_y(number n)
@@ -254,7 +257,7 @@ function skins_card_x(number i)
 end
 
 function skins_top()
-    return content_top()
+    return content_top() + 30
 end
 
 function skin_preview_scale()
@@ -346,7 +349,7 @@ function login_x()
 end
 
 function login_title_y()
-    return 26
+    return 55
 end
 
 function login_nick_y()
