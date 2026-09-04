@@ -58,8 +58,8 @@ number touch_pad_x=12, touch_pad_y=8
 // Отступ от краёв экрана и ширина «пустой середины» между парой кнопок
 // «Уровни» / «Скины» на экране классов.
 number screen_margin=40, class_action_gap=80
-// Карточки классов: четыре в ряд, высота и пределы ширины.
-number class_count=4, class_gap=14, class_card_h=272
+// Карточки классов: две в ряд, высота и пределы ширины.
+number class_count=2, class_gap=14, class_card_h=272
 number class_card_min_w=150, class_card_max_w=260, class_pick_h=42, class_pick_pad=22
 // Списки (уровни, батл пасс, лидерборд, достижения): ширина и высота строки.
 number list_w=520, level_row_h=70, level_row_gap=8, list_top_gap=40
@@ -119,12 +119,14 @@ number cups_awarded=0
 number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 
 // ── Классы ────────────────────────────────────────────────────────────────
-// 0 — обычный (доступен сразу), 1 — Азум, 2 — Дед Мороз, 3 — буК.
+// В игре два класса: 0 — обычный (доступен сразу), 1 — Азум. Дед Мороз (2)
+// и буК (3) убраны; их номера остались — по ним в облако ещё приходят старые
+// сохранения и чужие сетевые снимки, и бой продолжает их рисовать (battle.ds).
 // Владелец/уровни каждого класса живут в таблицах ui/progress.ds, а не в
 // восьми отдельных переменных: класс добавляется одной строкой данных.
 number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
 number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
-number azum_cost=50, santa_candy_cost=100, ebuc_candy_cost=150
+number azum_cost=50
 
 // ── Уровни классов ────────────────────────────────────────────────────────
 // Уровни 1..3 у каждого класса свои; player_level/levels_unlocked — зеркало
@@ -134,11 +136,12 @@ number max_level=3, level_base_cost=30, level_cost_step=10
 
 // ── Скины ─────────────────────────────────────────────────────────────────
 // Пока скины есть только у Азума: 0 — обычный, 1 — «Зомби» (награда 2-го
-// уровня батл пасса). Текстуры зомби нет, он рисуется зелёным силуэтом
-// (zombie_tint) и в меню, и в бою — у себя и у соперников в онлайне.
+// уровня батл пасса). У зомби свои текстуры (legacy-файлы старого клиента);
+// если их не загрузить, скин откатывается на зелёный силуэт (zombie_tint).
 number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2, SKIN_ZOMBIE_BP=2
-// Выставляется из png_load() при старте: есть ли у Азума своя текстура.
-number azum_tex_ok=0
+// Выставляются из png_load() при старте: есть ли у Азума своя текстура и
+// свои текстуры скина «Зомби» (idle и удар).
+number azum_tex_ok=0, azum_zombie_tex_ok=0, azum_zombie_punch_tex_ok=0
 number azum_skin=SKIN_NORMAL, zombie_tint=0xFF66BB33
 
 // ── Хэллоуинский батл пасс ────────────────────────────────────────────────
@@ -179,6 +182,8 @@ number enemy_human_react_min=0.06, enemy_human_react_max=0.16
 number enemy_human_speed_var=0.22, enemy_human_dodge_fail=0.25
 
 // ── Бой: Дед Мороз, яд и снежинка ─────────────────────────────────────────
+// Дед Мороз убран из игры, но его урон/заморозка всё ещё прилетает в онлайне
+// от старых клиентов — числа остались для совместимости.
 number santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
 number santa_poison_damage_bonus=0.15, santa_freeze_time_bonus=0.50
 number santa_follow_delay=0.4, santa_super_damage=2.0
@@ -187,6 +192,8 @@ number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, bo
 number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
 
 // ── Бой: буК, турель и вселенная ──────────────────────────────────────────
+// буК убран из игры, но турели/вселенные старых клиентов ещё рисуются и
+// бьют в онлайне — числа остались для совместимости.
 number ebuc_hp=12, ebuc_station_hp=9, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
@@ -306,3 +313,5 @@ string GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch
 string AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png"
 string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png"
 string EBUC_TEX="ebuc.png", EBUC_PUNCH_TEX="ebuc_punch.png", DESPENSER_TEX="despenser.png"
+// Скин «Зомби» на Азума: legacy-файлы из старого клиента (idle и удар).
+string AZUM_ZOMBIE_TEX="legacy_zombie_azum.png", AZUM_ZOMBIE_PUNCH_TEX="legacy_zombie_azum_punch.png"

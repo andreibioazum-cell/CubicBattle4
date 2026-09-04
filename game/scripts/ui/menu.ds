@@ -85,7 +85,8 @@ end
 
 // ── Экран классов ─────────────────────────────────────────────────────────
 // Карточка класса: спрайт, название, девиз, уровень и кнопка действия.
-// Спрайт Азума в скине «Зомби» тонируется (текстуры зомби пока нет).
+// Азум в скине «Зомби» ходит своей текстурой (legacy_zombie_azum.png); если
+// файлы не загрузились — прежний зелёный силуэт.
 function draw_class_card(number cls)
     number x = classes_card_x(cls)
     number w = classes_card_w()
@@ -98,7 +99,11 @@ function draw_class_card(number cls)
     number sprite = 50 * scale
     number sx = x + (w - sprite) / 2
     if class_skin_active(cls) == 1
-        tex_tint(sx, class_sprite_y(), class_idle_tex(cls), 0, scale, zombie_tint)
+        if zombie_tex_ok() == 1
+            tex(sx, class_sprite_y(), AZUM_ZOMBIE_TEX, 0, scale)
+        else
+            tex_tint(sx, class_sprite_y(), class_idle_tex(cls), 0, scale, zombie_tint)
+        end
     else
         tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)
     end
@@ -176,7 +181,8 @@ end
 
 // ── Экран скинов (пока только Азум) ───────────────────────────────────────
 // Карточка скина: превью, название и статус. Закрытый скин темнее на 25% —
-// и плашка, и текст, и само превью (locked_shade).
+// и плашка, и текст, и само превью (locked_shade): превью закрытого зомби —
+// тёмно-зелёный силуэт его формы, открытый — настоящая текстура.
 function draw_skin_card(number skin)
     number x = skins_card_x(skin)
     number w = skin_card_w
@@ -189,14 +195,16 @@ function draw_skin_card(number skin)
     number scale = skin_preview_scale()
     number sprite = 50 * scale
     number sx = x + (w - sprite) / 2
-    number tint = zombie_tint
-    if locked == 1
-        tint = shade(zombie_tint, locked_shade)
-    end
     if skin == SKIN_ZOMBIE
-        tex_tint(sx, skin_preview_y(), AZUM_TEX, 0, scale, tint)
+        if locked == 1
+            tex_tint(sx, skin_preview_y(), zombie_idle_tex(), 0, scale, shade(zombie_tint, locked_shade))
+        else if zombie_tex_ok() == 1
+            tex(sx, skin_preview_y(), AZUM_ZOMBIE_TEX, 0, scale)
+        else
+            tex_tint(sx, skin_preview_y(), azum_idle_tex(), 0, scale, zombie_tint)
+        end
     else
-        tex(sx, skin_preview_y(), AZUM_TEX, 0, scale)
+        tex(sx, skin_preview_y(), azum_idle_tex(), 0, scale)
     end
     color c = panel_text(locked)
     string status = tr_skin_bp_hint()

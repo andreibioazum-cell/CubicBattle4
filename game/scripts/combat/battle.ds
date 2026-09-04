@@ -19,6 +19,33 @@ function azum_punch_tex()
     return PUNCH_TEX
 end
 
+// Есть ли у скина «Зомби» обе свои текстуры (idle и удар). Ходит по текстурам
+// только тогда, когда и то, и другое загрузились: половинчатый скин, где
+// удар — чужой силуэт, выглядит хуже зелёного силуэта целиком.
+function zombie_tex_ok()
+    if azum_zombie_tex_ok==1&&azum_zombie_punch_tex_ok==1
+        return 1
+    end
+    return 0
+end
+
+// Спрайт скина «Зомби»: legacy-файлы из старого клиента. Если они не
+// загрузились, возвращается обычная текстура Азума — её назовут зелёным
+// силуэтом (zombie_tint) в draw_fighter_body.
+function zombie_idle_tex()
+    if azum_zombie_tex_ok==1
+        return AZUM_ZOMBIE_TEX
+    end
+    return azum_idle_tex()
+end
+
+function zombie_punch_tex()
+    if azum_zombie_punch_tex_ok==1
+        return AZUM_ZOMBIE_PUNCH_TEX
+    end
+    return azum_punch_tex()
+end
+
 function class_idle_tex(number cls)
     if cls==CLASS_AZUM
         return azum_idle_tex()
@@ -2394,41 +2421,53 @@ end
 
 // Тело и тень бойца — одни функции на всех: игрок, бот и сетевые соперники
 // рисуются одинаково, поэтому спрайт, размер и цвет тени не могут разъехаться.
-// skin — номер скина бойца (у игрока azum_skin, у соперника net_player_skin):
-// скин «Зомби» пока без текстуры, поэтому рисуется зелёным силуэтом (zombie_tint).
-function fighter_sprite(number cls, number punching)
+// skin — номер скина бойца (у игрока azum_skin, у соперника net_player_skin).
+// Скин «Зомби» ходит своими текстурами (legacy_zombie_azum*.png); если они не
+// загрузились, остаётся зелёный силуэт (zombie_tint).
+function fighter_sprite(number cls, number punching, number skin)
+    if skin_is_active(cls,skin)==1
+        if punching==1
+            return zombie_punch_tex()
+        end
+        return zombie_idle_tex()
+    end
     if punching==1
         return class_punch_tex(cls)
     end
     return class_idle_tex(cls)
 end
 
-function draw_fighter_shadow(number x, number y, number ang, number cls, number punching)
+function draw_fighter_shadow(number x, number y, number ang, number cls, number punching, number skin)
     number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-    tex_tint(x-hw-shadow_off,y-hw+shadow_off,fighter_sprite(cls,punching),sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
+    tex_tint(x-hw-shadow_off,y-hw+shadow_off,fighter_sprite(cls,punching,skin),sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
 end
 
 function draw_fighter_body(number x, number y, number ang, number cls, number punching, number skin)
     number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
     number sx=x-hw, sy=y-hw
-    string t=fighter_sprite(cls,punching)
+    string t=fighter_sprite(cls,punching,skin)
     if skin_is_active(cls,skin)==1
+        if zombie_tex_ok()==1
+            // Текстура зомби уже зелёная — тон не нужен.
+            tex(sx,sy,t,sprite_a(ang),ps)
+            return
+        end
         tex_tint(sx,sy,t,sprite_a(ang),ps,zombie_tint)
         return
     end
     tex(sx,sy,t,sprite_a(ang),ps)
 end
 
-function draw_player_shadow(number x, number y, number ang, number punching)
-    draw_fighter_shadow(x,y,ang,player_class,punching)
+function draw_player_shadow(number x, number y, number ang, number punching, number skin)
+    draw_fighter_shadow(x,y,ang,player_class,punching,skin)
 end
 
 function draw_player_body(number x, number y, number ang, number punching)
     draw_fighter_body(x,y,ang,player_class,punching,azum_skin)
 end
 
-function draw_remote_shadow(number x, number y, number ang, number cls, number punching)
-    draw_fighter_shadow(x,y,ang,cls,punching)
+function draw_remote_shadow(number x, number y, number ang, number cls, number punching, number skin)
+    draw_fighter_shadow(x,y,ang,cls,punching,skin)
 end
 
 function draw_remote_body(number x, number y, number ang, number cls, number punching, number skin)
@@ -2453,9 +2492,9 @@ end
 
 function draw_player_shadow_layer()
     if punch_left>0
-        draw_player_shadow(player.x,player.y,player.angle,1)
+        draw_player_shadow(player.x,player.y,player.angle,1,azum_skin)
     else
-        draw_player_shadow(player.x,player.y,player.angle,0)
+        draw_player_shadow(player.x,player.y,player.angle,0,azum_skin)
     end
 end
 
@@ -2763,7 +2802,7 @@ function draw_online()
                 punching=1
                 ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
             end
-            draw_remote_shadow(rx,ry,ra,rcls,punching)
+            draw_remote_shadow(rx,ry,ra,rcls,punching,net_player_skin(i))
         end
         i=i+1
     end

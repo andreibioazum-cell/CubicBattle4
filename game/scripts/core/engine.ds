@@ -97,6 +97,10 @@ function load_textures()
     // бой играет силуэтом обычного класса (см. azum_idle_tex в battle.ds).
     azum_tex_ok = png_load(AZUM_TEX)
     png_load(AZUM_PUNCH_TEX)
+    // Скину «Зомби» — свои legacy-текстуры; если файл не загрузился, скин
+    // откатится на зелёный силуэт (см. zombie_tex_ok в battle.ds).
+    azum_zombie_tex_ok = png_load(AZUM_ZOMBIE_TEX)
+    azum_zombie_punch_tex_ok = png_load(AZUM_ZOMBIE_PUNCH_TEX)
     png_load(SANTA_TEX)
     png_load(SANTA_PUNCH_TEX)
     png_load(EBUC_TEX)
