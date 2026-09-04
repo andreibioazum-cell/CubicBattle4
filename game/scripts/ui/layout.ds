@@ -152,8 +152,10 @@ end
 // Кнопка скинов есть только у Азума — у остальных классов её не рисуем и не
 // ждём нажатия, но «Уровни» остаются на своём месте слева, чтобы кнопка не
 // прыгала при смене класса.
+// Пара кнопок стоит не вплотную к карточкам: class_actions_drop (config.ds)
+// опускает её ещё немного вниз.
 function class_actions_y()
-    return classes_top() + class_card_h + class_gap
+    return classes_top() + class_card_h + class_gap + class_actions_drop
 end
 
 function class_action_w()
@@ -310,8 +312,9 @@ function bp_x()
     return center_x(bp_w())
 end
 
+// Заголовка у экрана нет, поэтому список начинается сразу под «Назад».
 function bp_top()
-    return content_top()
+    return title_y() + 8
 end
 
 function bp_row_y(number n)
@@ -346,10 +349,6 @@ end
 // ── Экран входа ───────────────────────────────────────────────────────────
 function login_x()
     return center_x(login_w) + login_ox
-end
-
-function login_title_y()
-    return 55
 end
 
 function login_nick_y()

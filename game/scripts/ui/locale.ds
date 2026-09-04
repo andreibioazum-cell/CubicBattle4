@@ -237,13 +237,6 @@ function tr_achievement_first_buy_desc()
     return "Buy your first character"
 end
 
-function tr_login_title()
-    if language == 1
-        return "Вход и регистрация"
-    end
-    return "Login / Register"
-end
-
 function tr_nick()
     if language == 1
         return "Ник"
@@ -503,12 +496,13 @@ function tr_level_status_locked()
     return "Locked"
 end
 
+// Ценник на кнопке пишется в скобках: «Открыть (100 кубков)».
 function tr_level_unlock_cost(number cost)
     string out = ""
     if language == 1
-        out = "Открыть · " + cost + " " + tr_cups_unit()
+        out = "Открыть (" + cost + " " + tr_cups_unit() + ")"
     else
-        out = "Unlock · " + cost + " " + tr_cups_unit()
+        out = "Unlock (" + cost + " " + tr_cups_unit() + ")"
     end
     return out
 end
@@ -630,12 +624,13 @@ function tr_cups()
     return "Cups"
 end
 
+// Кнопка покупки класса: цена в скобках — «Купить (100 леденцов)».
 function tr_buy_for(number cost, string currency)
     string out = ""
     if language == 1
-        out = "Купить · " + cost + " " + currency
+        out = "Купить (" + cost + " " + currency + ")"
     else
-        out = "Buy · " + cost + " " + currency
+        out = "Buy (" + cost + " " + currency + ")"
     end
     return out
 end
@@ -655,13 +650,6 @@ function tr_class_need_candies()
 end
 
 // ── Хэллоуинский батл пасс ────────────────────────────────────────────────
-
-function tr_battlepass_title()
-    if language == 1
-        return "Хэллоуинский батл пасс"
-    end
-    return "Halloween Battle Pass"
-end
 
 function tr_bp_level()
     if language == 1
@@ -751,9 +739,9 @@ end
 // Подпись закрытого скина: чем он открывается.
 function tr_skin_bp_hint()
     if language == 1
-        return "Батл пасс · " + SKIN_ZOMBIE_BP + " уровень"
+        return "Батл пасс (" + SKIN_ZOMBIE_BP + " уровень)"
     end
-    return "Battle pass · level " + SKIN_ZOMBIE_BP
+    return "Battle pass (level " + SKIN_ZOMBIE_BP + ")"
 end
 
 // Заголовок экрана скинов: «Скины · Азум».
