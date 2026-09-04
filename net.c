@@ -144,9 +144,11 @@ typedef struct {
     int azum_level, azum_levels_unlocked;
     int santa_level, santa_levels_unlocked;
     int ebuc_level, ebuc_levels_unlocked;
+    int bp_level, azum_skin;
 } Progress;
 static Progress pg = { .lock = DS_MUTEX_INIT };
 #define LEVEL_MAX 3
+#define BP_MAX 5
 static int pending_cls = 0;
 static int pending_level = 0;
 static void pg_lock(void) { ds_mutex_lock(pg.lock); }
@@ -177,17 +179,19 @@ static void progress_write(int cups, int candies, int cls, int azum, int santa, 
                            int ordinary_level, int ordinary_levels_unlocked,
                            int azum_level, int azum_levels_unlocked,
                            int santa_level, int santa_levels_unlocked,
-                           int ebuc_level, int ebuc_levels_unlocked) {
+                           int ebuc_level, int ebuc_levels_unlocked,
+                           int bp_level, int azum_skin) {
     char path[320]; FILE *f;
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "w");
     if (f) {
-        fprintf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+        fprintf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
                 cups, cls, azum, santa, candies, level, levels_unlocked,
                 ordinary_level, ordinary_levels_unlocked,
                 azum_level, azum_levels_unlocked,
                 santa_level, santa_levels_unlocked,
-                ebuc_level, ebuc_levels_unlocked, ebuc);
+                ebuc_level, ebuc_levels_unlocked, ebuc,
+                bp_level, azum_skin);
         fclose(f);
     }
 }
@@ -198,19 +202,21 @@ static void progress_read(void) {
     int azum_level=-1, azum_levels_unlocked=-1;
     int santa_level=-1, santa_levels_unlocked=-1;
     int ebuc_level=-1, ebuc_levels_unlocked=-1;
+    int bp_level=0, azum_skin=0;
     pg_lock();
     if (pg.loaded) { pg_unlock(); return; }
     pg_unlock();
     data_file_path(path, sizeof(path), PROGRESS_FILE);
     f = fopen(path, "r");
     if (f) {
-        int n = fscanf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
+        int n = fscanf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
                        &cups, &cls, &azum, &santa, &candies,
                        &level, &levels_unlocked,
                        &ordinary_level, &ordinary_levels_unlocked,
                        &azum_level, &azum_levels_unlocked,
                        &santa_level, &santa_levels_unlocked,
-                       &ebuc_level, &ebuc_levels_unlocked, &ebuc);
+                       &ebuc_level, &ebuc_levels_unlocked, &ebuc,
+                       &bp_level, &azum_skin);
         if (n < 3) {
             cups=0; candies=0; cls=0; azum=0; santa=0; ebuc=0; level=0; levels_unlocked=0;
             ordinary_level=ordinary_levels_unlocked=0;
@@ -235,6 +241,8 @@ static void progress_read(void) {
                 ebuc_level=ebuc_levels_unlocked=0;
                 ebuc=0;
             }
+            if (n < 17) { bp_level=0; azum_skin=0; }
+            else if (n < 18) { azum_skin=0; }
         }
         fclose(f);
     }
@@ -256,6 +264,9 @@ static void progress_read(void) {
     else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
     else if (cls == 2) { level=santa_level; levels_unlocked=santa_levels_unlocked; }
     else { level=ebuc_level; levels_unlocked=ebuc_levels_unlocked; }
+    if (bp_level < 0) bp_level = 0;
+    if (bp_level > BP_MAX) bp_level = BP_MAX;
+    azum_skin = azum_skin ? 1 : 0;
     pg_lock();
     pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.ebuc = ebuc;
     pg.level = level; pg.levels_unlocked = levels_unlocked;
@@ -263,6 +274,7 @@ static void progress_read(void) {
     pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
     pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
     pg.ebuc_level = ebuc_level; pg.ebuc_levels_unlocked = ebuc_levels_unlocked;
+    pg.bp_level = bp_level; pg.azum_skin = azum_skin;
     pg.loaded = 1;
     pg_unlock();
 }
@@ -282,6 +294,8 @@ double net_load_santa_level(void) { double v; progress_read(); pg_lock(); v = (d
 double net_load_santa_levels_unlocked(void) { double v; progress_read(); pg_lock(); v = (double)pg.santa_levels_unlocked; pg_unlock(); return v; }
 double net_load_ebuc_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.ebuc_level; pg_unlock(); return v; }
 double net_load_ebuc_levels_unlocked(void) { double v; progress_read(); pg_lock(); v = (double)pg.ebuc_levels_unlocked; pg_unlock(); return v; }
+double net_load_bp_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.bp_level; pg_unlock(); return v; }
+double net_load_azum_skin(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum_skin; pg_unlock(); return v; }
 
 typedef struct { char url[FB_URL_MAX]; char body[BODY*2]; } HttpJob;
 static int fb_enabled(void);
@@ -308,20 +322,21 @@ static void http_patch_async(const char *url, const char *body) {
 void net_save_progress(double cups, double candies, double cls, double azum, double santa, double ebuc,
                        double level, double levels_unlocked) {
     int k=(int)cls;
-    int ol,ou,al,au,sl,su,el,eu;
+    int ol,ou,al,au,sl,su,el,eu,bp,sk;
     progress_read();
     pg_lock();
     ol=pg.ordinary_level; ou=pg.ordinary_levels_unlocked;
     al=pg.azum_level; au=pg.azum_levels_unlocked;
     sl=pg.santa_level; su=pg.santa_levels_unlocked;
     el=pg.ebuc_level; eu=pg.ebuc_levels_unlocked;
+    bp=pg.bp_level; sk=pg.azum_skin;
     pg_unlock();
     if (k==0) { ol=(int)level; ou=(int)levels_unlocked; }
     else if (k==1) { al=(int)level; au=(int)levels_unlocked; }
     else if (k==2) { sl=(int)level; su=(int)levels_unlocked; }
     else if (k==3) { el=(int)level; eu=(int)levels_unlocked; }
     net_save_progress_all(cups,candies,cls,azum,santa,ebuc,level,levels_unlocked,
-                          ol,ou,al,au,sl,su,el,eu);
+                          ol,ou,al,au,sl,su,el,eu,bp,sk);
 }
 
 void net_save_progress_all(double cups, double candies, double cls, double azum, double santa, double ebuc,
@@ -329,19 +344,23 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double ordinary_level, double ordinary_levels_unlocked,
                            double azum_level, double azum_levels_unlocked,
                            double santa_level, double santa_levels_unlocked,
-                           double ebuc_level, double ebuc_levels_unlocked) {
+                           double ebuc_level, double ebuc_levels_unlocked,
+                           double bp_level, double azum_skin) {
     int c = (int)cups, cd = (int)candies, k = (int)cls, a = azum ? 1 : 0, sn = santa ? 1 : 0, eu = ebuc ? 1 : 0;
     int lv = (int)level, lu = (int)levels_unlocked;
     int ol = (int)ordinary_level, ou = (int)ordinary_levels_unlocked;
     int al = (int)azum_level, au = (int)azum_levels_unlocked;
     int sl = (int)santa_level, su = (int)santa_levels_unlocked;
     int el = (int)ebuc_level, eul = (int)ebuc_levels_unlocked;
+    int bp = (int)bp_level, sk = azum_skin ? 1 : 0;
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
     if (k != 1 && k != 2 && k != 3) k = 0;
     if (k == 1 && !a) k = 0;
     if (k == 2 && !sn) k = 0;
     if (k == 3 && !eu) k = 0;
+    if (bp < 0) bp = 0;
+    if (bp > BP_MAX) bp = BP_MAX;
     normalize_level_pair(&lv, &lu);
     normalize_level_pair(&ol, &ou);
     normalize_level_pair(&al, &au);
@@ -358,10 +377,11 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     pg.azum_level = al; pg.azum_levels_unlocked = au;
     pg.santa_level = sl; pg.santa_levels_unlocked = su;
     pg.ebuc_level = el; pg.ebuc_levels_unlocked = eul;
+    pg.bp_level = bp; pg.azum_skin = sk;
     pg_unlock();
     pending_cls = k;
     pending_level = lv;
-    progress_write(c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul);
+    progress_write(c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
 
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
@@ -373,8 +393,8 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
         char url[URL], body[BODY*2];
         snprintf(url, sizeof(url), "%s/users/%s.json", net.base, nick);
         snprintf(body, sizeof(body),
-                 "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"ebuc\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d,\"ebuc_level\":%d,\"ebuc_levels\":%d}",
-                 c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul);
+                 "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"ebuc\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d,\"ebuc_level\":%d,\"ebuc_levels\":%d,\"bp\":%d,\"azum_skin\":%d}",
+                 c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
         http_patch_async(url, body);
     }
 }
@@ -948,6 +968,8 @@ static void apply_user_json(const char *resp) {
     int santa_levels_unlocked = (int)num(resp, "santa_levels", -1);
     int ebuc_level = (int)num(resp, "ebuc_level", -1);
     int ebuc_levels_unlocked = (int)num(resp, "ebuc_levels", -1);
+    int bp_level = (int)num(resp, "bp", 0);
+    int azum_skin = (int)num(resp, "azum_skin", 0);
     if (levels_unlocked < 0) levels_unlocked = level;
     if (cups < 0) cups = 0;
     if (candies < 0) candies = 0;
@@ -989,6 +1011,9 @@ static void apply_user_json(const char *resp) {
     else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
     else if (cls == 2) { level=santa_level; levels_unlocked=santa_levels_unlocked; }
     else { level=ebuc_level; levels_unlocked=ebuc_levels_unlocked; }
+    if (bp_level < 0) bp_level = 0;
+    if (bp_level > BP_MAX) bp_level = BP_MAX;
+    azum_skin = azum_skin ? 1 : 0;
     pg_lock();
     pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.ebuc = ebuc;
     pg.level = level; pg.levels_unlocked = levels_unlocked;
@@ -996,6 +1021,7 @@ static void apply_user_json(const char *resp) {
     pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
     pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
     pg.ebuc_level = ebuc_level; pg.ebuc_levels_unlocked = ebuc_levels_unlocked;
+    pg.bp_level = bp_level; pg.azum_skin = azum_skin;
     pg.loaded = 1;
     pg_unlock();
     pending_cls = cls;
@@ -1004,14 +1030,15 @@ static void apply_user_json(const char *resp) {
                    ordinary_level, ordinary_levels_unlocked,
                    azum_level, azum_levels_unlocked,
                    santa_level, santa_levels_unlocked,
-                   ebuc_level, ebuc_levels_unlocked);
+                   ebuc_level, ebuc_levels_unlocked,
+                   bp_level, azum_skin);
 }
 
 /* Протолкнуть текущий локальный прогресс в облако (только после того, как
  * сессия логина уже установлена — иначе PATCH уйдёт без авторизации). */
 static void push_pg_to_cloud(void) {
     int cups, candies, cls, azum, santa, ebuc, lv, lu;
-    int ol, ou, al, au, sl, su, el, eul;
+    int ol, ou, al, au, sl, su, el, eul, bp, sk;
     pg_lock();
     cups = pg.cups; candies = pg.candies; cls = pg.cls;
     azum = pg.azum; santa = pg.santa; ebuc = pg.ebuc;
@@ -1020,9 +1047,10 @@ static void push_pg_to_cloud(void) {
     al = pg.azum_level; au = pg.azum_levels_unlocked;
     sl = pg.santa_level; su = pg.santa_levels_unlocked;
     el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
+    bp = pg.bp_level; sk = pg.azum_skin;
     pg_unlock();
     net_save_progress_all(cups, candies, cls, azum, santa, ebuc,
-                          lv, lu, ol, ou, al, au, sl, su, el, eul);
+                          lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
 }
 
 /* Раньше правила Firebase не пропускали поля ebuc / ebuc_level / ebuc_levels и
@@ -1051,10 +1079,11 @@ static int apply_user_json_keep_local(const char *resp) {
     int al = pg.azum_level, au = pg.azum_levels_unlocked;
     int sl = pg.santa_level, su = pg.santa_levels_unlocked;
     int el = pg.ebuc_level, eul = pg.ebuc_levels_unlocked;
+    int bp = pg.bp_level, sk = pg.azum_skin;
     pg_unlock();
     pending_cls = cls; pending_level = lv;
     progress_write(cups, candies, cls, azum, santa, 1, lv, lu,
-                   ol, ou, al, au, sl, su, el, eul);
+                   ol, ou, al, au, sl, su, el, eul, bp, sk);
     LOG("restored locally bought ebuc (cloud sync after login)");
     return 1;
 }
@@ -1069,7 +1098,7 @@ static int put_default_user(const char *req_url, const char *nick, const char *p
              "{\"nick\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"ebuc\":0,"
              "\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,"
              "\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0,"
-             "\"ebuc_level\":0,\"ebuc_levels\":0%s%s}",
+             "\"ebuc_level\":0,\"ebuc_levels\":0,\"bp\":0,\"azum_skin\":0%s%s}",
              enick, fb_enabled() ? "" : ",\"pass\":\"", fb_enabled() ? "" : epass);
     return fb_http("PUT", req_url, body, NULL, 0);
 }
@@ -1081,6 +1110,7 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
     int keep = 0;
     int cups = 0, candies = 0, cls = 0, azum = 0, santa = 0, ebuc = 0;
     int lv = 0, lu = 0, ol = 0, ou = 0, al = 0, au = 0, sl = 0, su = 0, el = 0, eul = 0;
+    int bp = 0, sk = 0;
     progress_read();
     pg_lock();
     if (pg.loaded) {
@@ -1091,7 +1121,8 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
         al = pg.azum_level; au = pg.azum_levels_unlocked;
         sl = pg.santa_level; su = pg.santa_levels_unlocked;
         el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
-        if (cups > 0 || candies > 0 || azum || santa || ebuc || cls != 0) keep = 1;
+        bp = pg.bp_level; sk = pg.azum_skin;
+        if (cups > 0 || candies > 0 || azum || santa || ebuc || cls != 0 || bp > 0) keep = 1;
     }
     pg_unlock();
     if (keep) {
@@ -1102,7 +1133,7 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
         lg_unlock();
         session_save(nick, pass);
         net_save_progress_all(cups, candies, cls, azum, santa, ebuc,
-                              lv, lu, ol, ou, al, au, sl, su, el, eul);
+                              lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
         LOG("moved local progress into new account '%s'", nick);
         return;
     }
@@ -1113,10 +1144,11 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
     pg.azum_level = 0; pg.azum_levels_unlocked = 0;
     pg.santa_level = 0; pg.santa_levels_unlocked = 0;
     pg.ebuc_level = 0; pg.ebuc_levels_unlocked = 0;
+    pg.bp_level = 0; pg.azum_skin = 0;
     pg.loaded = 1;
     pg_unlock();
     pending_cls = 0; pending_level = 0;
-    progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     lg_lock();
     snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
     snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
