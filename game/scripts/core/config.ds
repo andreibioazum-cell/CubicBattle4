@@ -48,7 +48,7 @@ number stat_hp_color=0xE94560, stat_power_color=0x4FC3F7
 // меню занимает меньше экрана. Все размеры — здесь, а координаты конкретных
 // экранов считаются из них в ui/layout.ds: draw_* и touch_* берут геометрию
 // из одних и тех же функций и не могут разъехаться.
-number btn_w=280, btn_h=56, btn_gap=10, btn_radius=20
+number btn_w=280, btn_h=56, btn_gap=16, btn_radius=20
 number back_y=24, title_gap=12
 // Пунктов в главной колонке меню (Играть, Настройки, Магазин, Аккаунт,
 // Достижения) — от них считается центровка колонки.
@@ -57,7 +57,7 @@ number lobby_rows=5
 number touch_pad_x=12, touch_pad_y=8
 // Отступ от краёв экрана и ширина «пустой середины» между парой кнопок
 // «Уровни» / «Скины» на экране классов.
-number screen_margin=40, class_action_gap=80
+number screen_margin=40, class_action_gap=40
 // Карточки классов: четыре в ряд, высота и пределы ширины.
 number class_count=4, class_gap=14, class_card_h=272
 number class_card_min_w=150, class_card_max_w=260, class_pick_h=42, class_pick_pad=22
