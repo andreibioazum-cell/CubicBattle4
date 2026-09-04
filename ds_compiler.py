@@ -42,7 +42,7 @@ BUILTINS = frozenset({
     'net_player_station', 'net_player_universe_x', 'net_player_universe_y',
     'net_player_universe',
     'net_player_class', 'net_player_level', 'net_player_prime_level',
-    'net_set_level', 'net_set_prime_level', 'net_event', 'net_event_set',
+    'net_set_level', 'net_set_prime_level', 'net_set_skin', 'net_player_skin', 'net_event', 'net_event_set',
     'net_chat_send',
     'net_chat_trim', 'net_chat_count', 'net_chat_text', 'net_chat_uid',
     'net_is_banned', 'net_banned', 'net_ban_set', 'net_chat_is_ban',

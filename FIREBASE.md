@@ -145,7 +145,7 @@ string FB_KEY=""   // Web API key (ограничен пакетом com.cb4)
 ```
 users/<ник>/ nick, cups, candies, cls, azum, santa, level, levels, ...
 rooms/main/
-  players/0..3/ uid, nick, x, y, angle, hp, alive, seq, px,py,pdx,pdy,punch, sx,sy,sdx,sdy,snow, cls, level
+  players/0..3/ uid, nick, x, y, angle, hp, alive, seq, px,py,pdx,pdy,punch, sx,sy,sdx,sdy,snow, cls, level, skin
   chat/<key>/ uid, nick, text
 bans/<ник> true = забанен
 event/ 0=нет, 1=диско, 2=снег

@@ -1,93 +1,250 @@
 include graphics
 
-// Упрощённый конфиг — без праймов и японского, только RU/EN
-number game_state=0, language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
-// Достижения профиля: каждый хранится как бит в achievements.dat. Здесь —
-// зеркала для скриптов и константы битов для проверок через
-// net_mark/net_has_achievement_flag.
-number achievement_welcome=0, achievement_first_win=0, achievement_first_buy=0
-number achievement_all_characters=0
+// ══════════════════════════════════════════════════════════════════════════
+// config.ds — единственное место, где живут числа игры.
+//
+// Правила модуля:
+//   1. Здесь только константы и глобальное состояние-«настройки». Никакой
+//      отрисовки и никакой логики экранов.
+//   2. Имя константы говорит, где она используется: btn_* — кнопки меню,
+//      class_* — классы, bp_* — батл пасс, enemy_* — бот, dust_* — пыль.
+//   3. Если число встречается в двух местах (в draw_* и в touch_*), оно
+//      обязано быть здесь или в ui/layout.ds, а не «зашитым» в экран.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Экраны ────────────────────────────────────────────────────────────────
+// game_state — номер текущего экрана. Числа исторические (их знает облако и
+// старые сохранения не касаются), поэтому значения фиксированы, а смысл
+// описан именами: в коде больше не встречается «if game_state == 8».
+number ST_LOBBY=0, ST_SOLO=1, ST_MODES=2, ST_SETTINGS=4, ST_ONLINE=5
+number ST_CONSOLE=6, ST_LOGIN=7, ST_CLASSES=8, ST_LEVELS=9, ST_LEADERBOARD=10
+number ST_ACHIEVEMENTS=11, ST_BATTLEPASS=12, ST_SKINS=13
+number game_state=ST_LOBBY
+
+// Плавный переход между экранами: t_dir = 1 (затемнение), 2 (смена экрана),
+// -1 (осветление). transition_duration — длительность каждой половины.
+number language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
+
+// ── Тема ──────────────────────────────────────────────────────────────────
+// Один фиолетовый на весь интерфейс: кнопки, тост о достижении, полученные
+// карточки наград. Закрытые/заблокированные плашки не хранят отдельный цвет:
+// они считаются из него через locked_shade (core/ui.ds).
+number ui_purple=0xFF5F10A0
+// Фон всех меню, карточки списков и рамка выбранной карточки.
+number bg_screen=0x1A1A2E, card_bg=0xFF2A2A40, card_ring=0xFF5A5A78, card_ring_pad=4
+// Весь текст в игре белый: graphics.c принудительно подменяет RGB на белый,
+// от скриптов нужен только номер цвета и альфа (для затуханий и затемнения).
+number text_color=0xFFFFFF
+// Заблокированные плашки (достижения, уровни батл пасса, закрытый скин):
+// и фон, и текст становятся на 25% темнее. Фон темнеет через RGB (shade()
+// в core/ui.ds), текст — через альфу, потому что RGB текста рендерер всё
+// равно делает белым: 191/255 = 0.75 непрозрачности белого по тёмной плашке.
+number locked_shade=0.75, locked_text_alpha=191
+// Цвета полос характеристик в карточке класса.
+number stat_hp_color=0xE94560, stat_power_color=0x4FC3F7
+
+// ── Сетка меню ────────────────────────────────────────────────────────────
+// Кнопки стали ниже (56 вместо 64) и стоят плотнее (шаг 66 вместо 80), поэтому
+// меню занимает меньше экрана. Все размеры — здесь, а координаты конкретных
+// экранов считаются из них в ui/layout.ds: draw_* и touch_* берут геометрию
+// из одних и тех же функций и не могут разъехаться.
+number btn_w=280, btn_h=56, btn_gap=10, btn_radius=20
+number back_y=24, title_gap=12
+// Пунктов в главной колонке меню (Играть, Настройки, Магазин, Аккаунт,
+// Достижения) — от них считается центровка колонки.
+number lobby_rows=5
+// Допуск попадания пальцем: хит-бокс кнопки шире самой кнопки.
+number touch_pad_x=12, touch_pad_y=8
+// Отступ от краёв экрана и ширина «пустой середины» между парой кнопок
+// «Уровни» / «Скины» на экране классов.
+number screen_margin=40, class_action_gap=80
+// Карточки классов: четыре в ряд, высота и пределы ширины.
+number class_count=4, class_gap=14, class_card_h=272
+number class_card_min_w=150, class_card_max_w=260, class_pick_h=42, class_pick_pad=22
+// Списки (уровни, батл пасс, лидерборд, достижения): ширина и высота строки.
+number list_w=520, level_row_h=70, level_row_gap=8, list_top_gap=40
+number bp_w_max=560, bp_row_h=64, bp_row_gap=8
+number lb_w_max=560, lb_row_h=42, lb_row_gap=6
+number ach_card_h=96, ach_card_gap=10
+// Карточки скинов.
+number skin_card_w=260, skin_card_h=184, skin_card_gap=28
+// Поля ввода и отступы текста внутри карточек.
+number field_radius=14, field_text_pad=16, card_text_pad=24
+
+// ── Сообщения под кнопками ────────────────────────────────────────────────
+// «Не хватает кубков» и похожие подписи живут msg_time секунд и последние
+// msg_fade из них плавно тают (fade_color в core/ui.ds).
+number msg_time=2.5, msg_fade=0.6
+// Таймеры сообщений каждого экрана: свой, чтобы подписи не перебивали друг
+// друга при быстром переходе между экранами.
+// kind — о чём именно подпись: 0 — не хватило денег, 1 — закрыто предыдущим.
+number class_msg_t=0, class_msg_kind=0
+number level_msg_t=0, level_msg_kind=0
+number skin_msg_t=0
+number bp_msg_t=0, bp_msg_kind=0
+
+// ── Достижения ────────────────────────────────────────────────────────────
+// Все награды — один битмаск (achievement_mask), который целиком хранится в
+// achievements.dat и читается net_load_achievement_flags(). Отдельных
+// переменных-зеркал на каждое достижение больше нет: проверка и выдача идут
+// через has_achievement()/grant_achievement() в ui/progress.ds.
+number achievement_mask=0
 number ACH_WELCOME=1, ACH_FIRST_WIN=2, ACH_FIRST_BUY=4, ACH_ALL_CHARACTERS=8
 // Тост поверх экрана при получении достижения. Живёт тремя фазами: быстрый
 // выезд сверху (ACH_TOAST_FADE_IN), короткая пауза на месте (ACH_TOAST_HOLD)
 // и быстрый уход строго вверх за край экрана (ACH_TOAST_EXIT). Тост нигде не
 // «тает» на месте — он пропадает только тогда, когда целиком ушёл вверх.
-// ACH_TOAST_DURATION = ACH_TOAST_FADE_IN + ACH_TOAST_HOLD + ACH_TOAST_EXIT
-// + 0.08 пустого хвоста: к концу таймера плашка гарантированно уже ушла за
-// верхний край и просто не рисуется, а не исчезает наполовину видимой.
+// ACH_TOAST_DURATION = FADE_IN + HOLD + EXIT + 0.08 пустого хвоста: к концу
+// таймера плашка гарантированно уже за верхним краем и просто не рисуется.
 // (В глобальном number нельзя ссылаться на другой number, поэтому сумма числом.)
 number ach_toast_bit=0, ach_toast_t=0
 number ACH_TOAST_FADE_IN=0.14, ACH_TOAST_HOLD=1.5, ACH_TOAST_EXIT=0.24
 number ACH_TOAST_DURATION=1.96
-// Единый фиолетовый интерфейс: из него рисуются кнопки (core/ui.ds), тост о
-// новом достижении и карточки ПОЛУЧЕННЫХ достижений. ui_purple_dark — тот же
-// фиолетовый, но тёмный: карточки наград, которые ещё не открыты.
-number ui_purple=0xFF5F10A0, ui_purple_dark=0xFF2A1A3E
-// Весь текст в игре — чисто белый (255,255,255): RGB принудительно белый в
-// text_scaled() в graphics.c, от скриптов там нужна только альфа (затухания).
-number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
-number joy_speed=192, bot_speed=190, bot_strafe_speed=96, bot_dodge_speed=330
-number btn_w=280, btn_h=64, back_y=32, online_ready=0, max_players=4, pi=3.1415926535
-number console_scroll=0, cube_scale=1, player_scale=1.8, enemy_scale=1.8, aim_fade_out=0.1, aim_max_alpha=102
-// Плавное исчезновение подписей «не хватает кубков»: сколько секунд строка
-// ещё видна (msg_time) и сколько из них она тает (msg_fade).
-number msg_time=2.5, msg_fade=0.6
+
+// ── Валюты и награды ──────────────────────────────────────────────────────
+// Кубки и леденцы лежат в progress.dat рядом с ником. Кошелёк виден только в
+// лобби: одна строка со счётчиками под пунктами меню (money_scale/money_gap —
+// её размер, money_line_h — сколько места она занимает по вертикали). В
+// классах, уровнях, скинах, достижениях и батл пассе счётчиков нет — там
+// важнее цены на кнопках, иначе экран превращается в таблицу цифр.
+number cups=0, candies=0, cup_win=5, candy_win=3
+number money_scale=0.5, money_gap=24, money_line_h=16
 // Алерт победы/поражения: нельзя выйти тапом в первые alert_hold секунд.
 number alert_hold=0.5, finish_t=0
-// Баннер админа (команда "text ..."): сколько секунд висит сверху экрана,
-// сколько тает, и локальное состояние показа (ts присылает облако).
-number banner_show_time=6, banner_fade=0.5, banner_seen_ts=0, banner_t=0, banner_skip=1, banner_clock=0
-// Сторожок загрузки лидерборда: если ответа нет дольше lb_wait_max секунд,
-// показываем «Нет соединения», а не вечную «Загрузку».
-number lb_wait=0, lb_wait_max=8
+// Награда за победу выдаётся один раз на бой.
+number cups_awarded=0
+// Дебаунс победы в онлайне: соперник должен пробыть в комнате foes_seen_min
+// секунд, прежде чем его исчезновение засчитается как победа (защита от
+// «фантомных» сетевых снимков на гонках удаления слотов).
+number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 
-number remote_fields=11, punch_fields=6, snow_fields=8, remote_smooth=14, remote_snap=220
+// ── Классы ────────────────────────────────────────────────────────────────
+// 0 — обычный (доступен сразу), 1 — Азум, 2 — Дед Мороз, 3 — буК.
+// Владелец/уровни каждого класса живут в таблицах ui/progress.ds, а не в
+// восьми отдельных переменных: класс добавляется одной строкой данных.
+number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
+number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
+number azum_cost=50, santa_candy_cost=100, ebuc_candy_cost=150
 
-// Враг — человечный, не сильнее по урону, но умнее
-// Спавнится дольше, ходит как игрок, бьёт быстрее, поворачивается плавно
+// ── Уровни классов ────────────────────────────────────────────────────────
+// Уровни 1..3 у каждого класса свои; player_level/levels_unlocked — зеркало
+// выбранного класса, его читает бой.
+number player_level=0, levels_unlocked=0
+number max_level=3, level_base_cost=30, level_cost_step=10
+
+// ── Скины ─────────────────────────────────────────────────────────────────
+// Пока скины есть только у Азума: 0 — обычный, 1 — «Зомби» (награда 2-го
+// уровня батл пасса). Текстуры зомби нет, он рисуется зелёным силуэтом
+// (zombie_tint) и в меню, и в бою — у себя и у соперников в онлайне.
+number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2, SKIN_ZOMBIE_BP=2
+// Выставляется из png_load() при старте: есть ли у Азума своя текстура.
+number azum_tex_ok=0
+number azum_skin=SKIN_NORMAL, zombie_tint=0xFF66BB33
+
+// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
+// 5 уровней по bp_cost кубков, покупаются по порядку. Уровень 1 даёт обычному
+// классу сразу 3 уровень, уровень 2 — скин «Зомби» для Азума, 3–5 — «Скоро».
+number bp_level=0, bp_max=5, bp_cost=100
+// Какие уровни батл пасса что выдают: 1-й — последний уровень обычного
+// класса, 2-й — скин «Зомби». Остальные пока «Скоро».
+number BP_REWARD_CLASS_LEVEL=1, BP_REWARD_SKIN=2
+
+// ── Бой: игрок ────────────────────────────────────────────────────────────
+number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
+number joy_speed=192, cube_scale=1, player_scale=1.8, enemy_scale=1.8
+number aim_fade_out=0.1, aim_max_alpha=102
+number online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0
+
+// ── Бой: бонусы уровней ───────────────────────────────────────────────────
+number azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
+number ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
+
+// ── Бой: враг-бот ─────────────────────────────────────────────────────────
+// Враг человечный: не сильнее по урону, но умнее. Спавнится дольше, ходит как
+// игрок, бьёт быстрее, поворачивается плавно. Замах короткий — враг всё ещё
+// успевает довернуться на игрока плавно (enemy_attack_turn_speed), а не
+// мгновенным рывком.
+number bot_speed=190, bot_strafe_speed=96, bot_dodge_speed=330
 number enemy_min_distance=55, enemy_punch_reach=104, enemy_punch_width=104
-// Замах короткий: враг всё ещё успевает довернуться на игрока
-// плавно (enemy_attack_turn_speed), а не мгновенным рывком.
 number enemy_windup=0.10, enemy_lock_time=0.04, enemy_punch_time=0.10, enemy_recovery=0.04
 number enemy_cooldown_min=0.05, enemy_cooldown_max=0.12, enemy_damage=1
-// Стандартное здоровье врага: каждый новый бой начинается с него.
-number enemy_base_hp=10
-number enemy_first_delay=0.45, enemy_spawn_delay=1.6
-number enemy_dodge_time=0.22, enemy_dodge_cooldown=0.65, enemy_reaction=0.10
+number enemy_base_hp=10, enemy_first_delay=0.45
+number enemy_dodge_time=0.22, enemy_dodge_cooldown=0.65
 number enemy_think_min=0.01, enemy_think_max=0.05
 number enemy_lead=0.12, enemy_hit_margin=10, enemy_close_gain=4.2, enemy_flank_time=1.1
 number enemy_still_speed=28, enemy_punish_react=0.08
 number enemy_move_smooth=10, enemy_face_speed=7, enemy_face_max_speed=12, enemy_attack_turn_speed=10
-// Новые человечные параметры
-number enemy_human_wobble=10, enemy_human_error=0.28, enemy_human_miss=0.06
+number enemy_human_wobble=10, enemy_human_miss=0.06
 number enemy_human_react_min=0.06, enemy_human_react_max=0.16
 number enemy_human_speed_var=0.22, enemy_human_dodge_fail=0.25
 
-number login_field=1, login_status=0, login_after=0
-number login_ox=0, login_oy=-20, login_fh=50, login_lab=28, login_lab_ox=12
+// ── Бой: Дед Мороз, яд и снежинка ─────────────────────────────────────────
+number santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
+number santa_poison_damage_bonus=0.15, santa_freeze_time_bonus=0.50
+number santa_follow_delay=0.4, santa_super_damage=2.0
+number super_freeze=3.0, super_freeze_slow=0.12
+number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
+number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
 
-string GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png"
-string AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png"
-string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png"
-string EBUC_TEX="ebuc.png", EBUC_PUNCH_TEX="ebuc_punch.png", DESPENSER_TEX="despenser.png"
+// ── Бой: буК, турель и вселенная ──────────────────────────────────────────
+number ebuc_hp=12, ebuc_station_hp=9, ebuc_station_hp_bonus=1, ebuc_damage=1.0
+number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
+number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
+number ebuc_universe_particles=140, ebuc_place_heal=0.5, ebuc_beam_heal=0.1
+number station_boom_time=0.5, station_hit_time=0.1, station_heal_t=0
+// Базовый масштаб спрайта турели (увеличен в игре) и анимация появления:
+// при спавне спрайт чуть крупнее и быстро сжимается до обычного размера.
+number station_scale=1.6, station_spawn_time=0.2, station_spawn_t=0
+
+// ── Эффекты ───────────────────────────────────────────────────────────────
+number shadow_off=10, shadow_alpha=0x60
+// Леденцы-пикапы на карте в соло.
+number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
+// Пыль: пул общий на всех бегунов (игрок + враг-бот + до трёх соперников
+// в онлайне), поэтому слотов больше, а у каждого бегуна свой кулдаун спавна.
+number dust_max=48, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.06, dust_r_max=8, dust_spd=38
+number dust_back_off=34, dust_back_share=0.85, dust_side_share=0.4
+number dust_cd=0, enemy_dust_cd=0, dust_enemy_min_speed=40
+
+// ── Сеть ──────────────────────────────────────────────────────────────────
+// Сколько чисел приходится на одного сетевого игрока/удар/снежинку в плоских
+// массивах-снимках (см. core/entities.ds).
+number remote_fields=11, punch_fields=6, snow_fields=8, remote_smooth=14, remote_snap=220
+number universe_fields=5, station_fields=4
 string FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main"
 // Web API key Firebase (ограничить пакетом com.cb4 в Google Cloud Console!).
 // Пусто — старый режим без Firebase Auth (переходный для собранных версий).
 // Заполни ключом — и база открывается только нашему приложению: все запросы
 // подписываются токеном Firebase Auth, см. FIREBASE.md.
 string FB_KEY="AIzaSyDJEqopxP5EqEoxP_ehO3jFXbNztu3DgVs"
+// Сторожок загрузки лидерборда: если ответа нет дольше lb_wait_max секунд,
+// показываем «Нет соединения», а не вечную «Загрузку».
+number lb_wait=0, lb_wait_max=8
+// Баннер админа (команда "text ..."): сколько секунд висит сверху экрана,
+// сколько тает, и локальное состояние показа (ts присылает облако).
+number banner_show_time=6, banner_fade=0.5, banner_seen_ts=0, banner_t=0, banner_skip=1
+
+// ── Экран входа ───────────────────────────────────────────────────────────
+// login_field: 1 — ник, 2 — пароль. login_status — код ошибки (см. locale.ds).
+// login_ox/login_oy — небольшая оптическая правка центровки формы.
+number login_field=1, login_status=0, login_after=0
+number login_ox=0, login_oy=-20, login_fh=50, login_lab=28, login_lab_ox=12
+number login_w=460, login_btn_w=380, login_field_gap=26, login_btn_gap=22
 string login_nick="", login_pass=""
 
+// ── Звук и музыка ─────────────────────────────────────────────────────────
 string LOBBY_MUSIC="lobbymusic.wav"
 number music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1.0
 
-// Ивенты
+// ── Ивенты и предупреждение ───────────────────────────────────────────────
+// event_mode приходит из облака: 1 — «диско», 2 — снегопад, 0 — ивента нет.
 number event_mode=0, disco_t=0, event_t=0, event_flakes=44
-// Предупреждение об эпилепсии: полный чёрный экран на 2.5 с, без кнопки,
-// оба языка сразу, красный заголовок, затем плавно тает.
+// Предупреждение об эпилепсии: полный чёрный экран на warn_hold секунд, без
+// кнопки, оба языка сразу, красный заголовок, затем плавно тает.
 number warn_open=1, warn_t=0, warn_a=1, warn_hold=2.5, warn_fade=0.6
 
-// Админка. Админов двое: у каждого свой ник, свой пароль и свой цвет ника.
+// ── Админка ───────────────────────────────────────────────────────────────
+// Админов двое: у каждого свой ник, свой пароль и свой цвет ника.
 // ADMIN_* — главный админ (красный ник), ADMIN2_* — второй (голубой ник).
 // Право на команды даёт именно пара «ник + пароль»: совпала пара — команды
 // твои, и только в онлайне после входа (net_login_status()==2).
@@ -144,55 +301,8 @@ function admin_head_color_of(string nick, number base)
     return base
 end
 
-// Классы
-number player_class=0, azum_revived=0, revive_prot=0
-number cups=0, candies=0, azum_owned=0, santa_owned=0, ebuc_owned=0, cup_win=5, candy_win=3
-number azum_cost=50, cups_awarded=0, match_seen_foe=0, class_msg_t=0
-// Дебаунс победы в онлайне: соперник должен побыть в комнате столько секунд,
-// прежде чем его исчезновение засчитается как победа (защита от «фантомных»
-// сетевых снимков на гонках удаления слотов).
-number foes_seen_t=0, foes_seen_min=1.0
-
-// Уровни 1..3
-number player_level=0, levels_unlocked=0, max_level=3, level_base_cost=30, level_cost_step=10, level_msg_t=0
-number ordinary_level=0, ordinary_levels_unlocked=0, azum_level=0, azum_levels_unlocked=0
-number santa_level=0, santa_levels_unlocked=0
-number ebuc_level=0, ebuc_levels_unlocked=0
-
-// Хэллоуинский батл пасс: 5 уровней по 100 кубков. Уровень 1 даёт обычному
-// классу сразу 3 уровень, уровень 2 — скин «Зомби» для Азума (текстуры ещё
-// нет, пока зомби рисуется зелёным силуэтом), 3–5 — «Скоро».
-number bp_level=0, bp_max=5, bp_cost=100, bp_msg_t=0, bp_msg_kind=0
-// Скин Азума: 0 — обычный, 1 — зомби. Зомби открывается 2-м уровнем батл пасса.
-number azum_skin=0, zombie_tint=0xFF66BB33
-number skin_msg_t=0
-
-number azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
-number ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
-number santa_poison_time_bonus=0.0, santa_poison_damage_bonus=0.15, santa_freeze_time_bonus=0.50
-number santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
-number santa_follow_delay=0.4, santa_super_damage=2.0
-number super_freeze=3.0, super_freeze_slow=0.12
-number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
-number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
-number shadow_off=10, shadow_alpha=0x60
-number santa_candy_cost=100
-// Класс буК / ebuC
-number ebuc_hp=12, ebuc_station_hp=9, ebuc_station_hp_bonus=1, ebuc_damage=1.0
-number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
-number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
-number ebuc_universe_particles=140, ebuc_candy_cost=150
-number station_boom_time=0.5, station_hit_time=0.1, universe_fields=5, station_fields=4
-// Базовый масштаб спрайта турели (увеличен в игре) и анимация появления:
-// при спавне спрайт чуть крупнее и быстро сжимается до обычного размера.
-number station_scale=1.6, station_spawn_time=0.2, station_spawn_t=0
-// Уровни бука: лечение при спавне турели (ур.2) и лечение лучом (ур.3).
-number ebuc_place_heal=0.5, ebuc_beam_heal=0.1, station_heal_t=0
-// Частицы вселенной разлетаются в радиусе экрана и схлопываются в точку бука.
-number ebuc_universe_ring=26, ebuc_universe_flash=0.8
-number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
-// Пыль: пул общий на всех бегунов (игрок + враг-бот + до трёх соперников
-// в онлайне), поэтому слотов больше, а у каждого бегуна свой кулдаун спавна.
-number dust_max=48, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.06, dust_r_max=8, dust_spd=38
-number dust_back_off=34, dust_back_share=0.85, dust_side_share=0.4
-number dust_cd=0, enemy_dust_cd=0, dust_enemy_min_speed=40
+// ── Текстуры ──────────────────────────────────────────────────────────────
+string GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch.png"
+string AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png"
+string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png"
+string EBUC_TEX="ebuc.png", EBUC_PUNCH_TEX="ebuc_punch.png", DESPENSER_TEX="despenser.png"

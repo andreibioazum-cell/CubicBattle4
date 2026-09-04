@@ -77,6 +77,10 @@ double net_player_universe(double slot);
 double net_player_class(double slot);
 double net_player_level(double slot);
 void net_set_level(double level);
+/* Скин бойца (0 — обычный, 1 — «Зомби» у Азума): передаётся в снимке комнаты,
+ * чтобы его видели соперники. */
+void net_set_skin(double skin);
+double net_player_skin(double slot);
 
 /* Прогресс без праймов */
 double net_load_cups(void);

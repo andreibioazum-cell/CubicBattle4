@@ -2,55 +2,64 @@ include graphics
 
 // Упрощённый бой без праймов, с человечным врагом и админкой
 
-function class_idle_tex(number cls)
-    if cls==1
+// Пока azum.png не лежит в game/assets, Азум играет силуэтом обычного класса:
+// невидимый боец хуже «чужого» силуэта. Как только файл появится, флаг
+// включится сам (engine.ds выставляет его из png_load) и менять ничего не надо.
+function azum_idle_tex()
+    if azum_tex_ok==1
         return AZUM_TEX
     end
-    if cls==2
+    return ORDINARY_TEX
+end
+
+function azum_punch_tex()
+    if azum_tex_ok==1
+        return AZUM_PUNCH_TEX
+    end
+    return PUNCH_TEX
+end
+
+function class_idle_tex(number cls)
+    if cls==CLASS_AZUM
+        return azum_idle_tex()
+    end
+    if cls==CLASS_SANTA
         return SANTA_TEX
     end
-    if cls==3
+    if cls==CLASS_EBUC
         return EBUC_TEX
     end
     return ORDINARY_TEX
 end
 
 function class_punch_tex(number cls)
-    if cls==1
-        return AZUM_PUNCH_TEX
+    if cls==CLASS_AZUM
+        return azum_punch_tex()
     end
-    if cls==2
+    if cls==CLASS_SANTA
         return SANTA_PUNCH_TEX
     end
-    if cls==3
+    if cls==CLASS_EBUC
         return EBUC_PUNCH_TEX
     end
     return PUNCH_TEX
 end
 
-function player_idle_tex()
-    return class_idle_tex(player_class)
-end
-
-function player_punch_tex()
-    return class_punch_tex(player_class)
-end
-
 function class_punch_damage_for(number cls, number lv)
-    if cls==2
+    if cls==CLASS_SANTA
         return santa_damage
     end
-    if cls==3
+    if cls==CLASS_EBUC
         return ebuc_damage
     end
-    if cls==0&&lv>=1
+    if cls==CLASS_ORDINARY&&lv>=1
         return punch_damage*(1+ordinary_damage_bonus)
     end
     return punch_damage
 end
 
 function player_max_hp_for(number cls)
-    if cls==3
+    if cls==CLASS_EBUC
         return ebuc_hp
     end
     return 10
@@ -191,7 +200,7 @@ function place_station()
     // Анимация появления: спрайт чуть крупнее и быстро сжимается.
     station_spawn_t=station_spawn_time
     // Уровень 2: спавн турели лечит бука.
-    if player_class==3&&player_level>=2
+    if player_class==CLASS_EBUC&&player_level>=2
         player.hp=clamp(player.hp+ebuc_place_heal,0,player.max_hp)
     end
 end
@@ -222,7 +231,7 @@ end
 
 function take_damage(number dmg)
     number reduction=0
-    if player_class==1&&azum_revived==1&&player_level>=1
+    if player_class==CLASS_AZUM&&azum_revived==1&&player_level>=1
         reduction=azum_second_life_damage_reduction
     end
     if reduction<0
@@ -233,7 +242,7 @@ function take_damage(number dmg)
     end
     number real=dmg*(1-reduction)
     // Станция бука впитывает урон, пока жива; лишний урон идёт в самого бука.
-    if player_class==3&&station.active==1&&real>0
+    if player_class==CLASS_EBUC&&station.active==1&&real>0
         number absorbed=real
         if absorbed>station.hp
             absorbed=station.hp
@@ -254,9 +263,9 @@ end
 
 function heal_after_attack()
     number amount=0
-    if player_class==1&&player_level>=3
+    if player_class==CLASS_AZUM&&player_level>=3
         amount=azum_attack_heal
-    else if player_class==0&&player_level>=3
+    else if player_class==CLASS_ORDINARY&&player_level>=3
         amount=ordinary_attack_heal
     end
     if amount>0
@@ -471,8 +480,8 @@ function init_online()
     // Баннер: не показываем баннер, который висел до нашего входа в комнату.
     banner_skip=1
     banner_t=0
-    net_set_class(player_class)
-    net_set_level(player_level)
+    // Класс, уровень и скин своего бойца — их видят соперники.
+    progress_push_to_net()
     net_connect(FIREBASE,ROOM)
 end
 
@@ -548,9 +557,9 @@ end
 
 function move_player()
     number spd=joy_speed
-    if player_class==1&&player_level>=2
+    if player_class==CLASS_AZUM&&player_level>=2
         spd=spd*(1+azum_speed_bonus)
-    else if player_class==0&&player_level>=2
+    else if player_class==CLASS_ORDINARY&&player_level>=2
         spd=spd*(1+ordinary_speed_bonus)
     end
     if player_freeze>0
@@ -1214,15 +1223,6 @@ function tick_player_poison()
 end
 
 // ── Ульта бука: вселенная ──────────────────────────────────────────────────
-function start_universe(number x, number y, number id)
-    universe_active=1
-    universe_t=0
-    universe_hit=0
-    universe_x=x
-    universe_y=y
-    universe_id=id
-end
-
 // Прямой урон от вселенной: он бьёт самого бука, врага и станцию отдельно,
 // поэтому станция не «спасает» бука от собственной вселенной.
 // Вторая ульта отключена, но функция оставлена для совместимости со старыми клиентами.
@@ -1230,14 +1230,14 @@ function universe_collapse(number dmg)
     if finished!=0
         return
     end
-    if game_state!=5
+    if game_state!=ST_ONLINE
         enemy.hp=enemy.hp-dmg
         if enemy.hp<0
             enemy.hp=0
         end
     end
     // Станция бука тоже ломается вселенной.
-    if player_class==3&&station.active==1
+    if player_class==CLASS_EBUC&&station.active==1
         station.hp=station.hp-dmg
         station_hit_t=station_hit_time
         if station.hp<=0
@@ -1255,7 +1255,7 @@ function universe_collapse(number dmg)
             return
         end
     end
-    if finished==0&&game_state!=5&&enemy.hp<=0
+    if finished==0&&game_state!=ST_ONLINE&&enemy.hp<=0
         finish_game(1)
     end
 end
@@ -1265,7 +1265,7 @@ function universe_collapse_remote(number dmg)
     if finished!=0
         return
     end
-    if player_class==3&&station.active==1
+    if player_class==CLASS_EBUC&&station.active==1
         station.hp=station.hp-dmg
         station_hit_t=station_hit_time
         if station.hp<=0
@@ -1308,7 +1308,7 @@ function tick_station()
         end
     end
     // Уровень 3: каждую секунду луч живой турели лечит бука.
-    if player_class==3&&player_level>=3&&station.active==1&&finished==0&&player.hp>0
+    if player_class==CLASS_EBUC&&player_level>=3&&station.active==1&&finished==0&&player.hp>0
         station_heal_t=station_heal_t+dt
         if station_heal_t>=1
             station_heal_t=station_heal_t-1
@@ -1576,7 +1576,7 @@ function update_remote_punches()
             else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
                 number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
                 take_damage(class_punch_damage_for(rcls,rlevel))
-                if rcls==2
+                if rcls==CLASS_SANTA
                     if player_poison<=0
                         player_poison_tick=santa_poison_tick_interval
                     end
@@ -1670,10 +1670,10 @@ function push_self()
     if player.hp<=0
         alive=0
     end
-    net_set_level(player_level)
+    progress_push_to_net()
     net_publish(player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive)
     net_publish_punch(punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot)
-    if player_class==3
+    if player_class==CLASS_EBUC
         if station.active==1
             net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot+1)
         else
@@ -1855,7 +1855,7 @@ function fire_super()
     punch_left=punch_time
     punch.active=0
     punch.hit=0
-    if player_class==3
+    if player_class==CLASS_EBUC
         super_cd=ebuc_super_cd_time
     else
         super_cd=super_cd_time
@@ -1882,15 +1882,15 @@ function tick_super_windup()
         gift.active=1
         gift.t=0
         gift.shot=gift.shot+1
-        if game_state==5
+        if game_state==ST_ONLINE
             net_publish_snow(gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot)
         end
         return
     end
-    if player_class==3
+    if player_class==CLASS_EBUC
         // Вторая ульта (вселенная) отключена — теперь всегда только станция.
         place_station()
-        if game_state==5
+        if game_state==ST_ONLINE
             net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot)
         end
     end
@@ -1904,7 +1904,7 @@ function update_gift()
     gift.x=gift.x+gift.dx*super_speed*dt
     gift.y=gift.y+gift.dy*super_speed*dt
     number touched=0
-    if game_state==5
+    if game_state==ST_ONLINE
         if gift.t>super_range/super_speed
             touched=1
         end
@@ -1924,7 +1924,7 @@ function update_gift()
     boom_x=gift.x
     boom_y=gift.y
     boom_t=boom_time
-    if game_state!=5&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
+    if game_state!=ST_ONLINE&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
         freeze_enemy(santa_freeze_time_for(player_level),super_freeze_slow)
         enemy.hp=enemy.hp-santa_super_damage
         if enemy.hp<=0
@@ -2293,7 +2293,7 @@ function update_remote_snow()
                     arr_set(remote_snow,b+7,y)
                     if dist(x,y,player.x,player.y)<=super_radius
                         number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
-                        if rcls==2
+                        if rcls==CLASS_SANTA
                             freeze_time=santa_freeze_time_for(rlevel)
                         end
                         if player_freeze<freeze_time
@@ -2378,12 +2378,9 @@ function finish_game(number result)
         cups=cups+cup_win
         candies=candies+candy_win
         save_progress()
-        // Первая победа открывает достижение.
-        if achievement_first_win == 0
-            achievement_first_win = 1
-            net_mark_achievement_flag(ACH_FIRST_WIN)
-            show_achievement_toast(ACH_FIRST_WIN)
-        end
+        // Первая победа открывает достижение: grant_achievement сам проверяет,
+        // не выдана ли награда раньше, отмечает её в облаке и показывает тост.
+        grant_achievement(ACH_FIRST_WIN)
         ds_log("win +%g cups +%g candies",cup_win,candy_win)
     end
 end
@@ -2395,40 +2392,47 @@ function draw_punch_box(number x, number y, number dx, number dy, number reach, 
     end
 end
 
-function draw_player_shadow(number x, number y, number ang, number punching)
-    number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-    string t=player_idle_tex()
+// Тело и тень бойца — одни функции на всех: игрок, бот и сетевые соперники
+// рисуются одинаково, поэтому спрайт, размер и цвет тени не могут разъехаться.
+// skin — номер скина бойца (у игрока azum_skin, у соперника net_player_skin):
+// скин «Зомби» пока без текстуры, поэтому рисуется зелёным силуэтом (zombie_tint).
+function fighter_sprite(number cls, number punching)
     if punching==1
-        t=player_punch_tex()
+        return class_punch_tex(cls)
     end
-    tex_tint(x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
+    return class_idle_tex(cls)
+end
+
+function draw_fighter_shadow(number x, number y, number ang, number cls, number punching)
+    number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+    tex_tint(x-hw-shadow_off,y-hw+shadow_off,fighter_sprite(cls,punching),sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
+end
+
+function draw_fighter_body(number x, number y, number ang, number cls, number punching, number skin)
+    number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
+    number sx=x-hw, sy=y-hw
+    string t=fighter_sprite(cls,punching)
+    if skin_is_active(cls,skin)==1
+        tex_tint(sx,sy,t,sprite_a(ang),ps,zombie_tint)
+        return
+    end
+    tex(sx,sy,t,sprite_a(ang),ps)
+end
+
+function draw_player_shadow(number x, number y, number ang, number punching)
+    draw_fighter_shadow(x,y,ang,player_class,punching)
 end
 
 function draw_player_body(number x, number y, number ang, number punching)
-    number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-    string t=player_idle_tex()
-    if punching==1
-        t=player_punch_tex()
-    end
-    tex(x-hw,y-hw,t,sprite_a(ang),ps)
+    draw_fighter_body(x,y,ang,player_class,punching,azum_skin)
 end
 
 function draw_remote_shadow(number x, number y, number ang, number cls, number punching)
-    number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-    string t=class_idle_tex(cls)
-    if punching==1
-        t=class_punch_tex(cls)
-    end
-    tex_tint(x-hw-shadow_off,y-hw+shadow_off,t,sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
+    draw_fighter_shadow(x,y,ang,cls,punching)
 end
 
-function draw_remote_body(number x, number y, number ang, number cls, number punching)
-    number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
-    string t=class_idle_tex(cls)
-    if punching==1
-        t=class_punch_tex(cls)
-    end
-    tex(x-hw,y-hw,t,sprite_a(ang),ps)
+function draw_remote_body(number x, number y, number ang, number cls, number punching, number skin)
+    draw_fighter_body(x,y,ang,cls,punching,skin)
 end
 
 function draw_grass()
@@ -2498,11 +2502,11 @@ function draw_controls()
     circle(atk_x,atk_y,70,0xE94560)
     ring(atk_x,atk_y,70,4,0x000000)
     text_in_box(tr_punch(),atk_x-70,atk_y-70,140,140,0xFFFFFF,0.55)
-    if (player_class==2||player_class==3)&&(game_state==1||game_state==5)
+    if (player_class==CLASS_SANTA||player_class==CLASS_EBUC)&&(game_state==ST_SOLO||game_state==ST_ONLINE)
         circle(atk2_x,atk2_y,70,0x5F10A0)
         ring(atk2_x,atk2_y,70,4,0x000000)
         string sl=tr_super()
-        if player_class==3
+        if player_class==CLASS_EBUC
             sl=tr_super_ebuc()
         end
         number sls=0.55
@@ -2634,7 +2638,7 @@ function banner_color_now(string name)
 end
 
 function update_banner()
-    if game_state!=5
+    if game_state!=ST_ONLINE
         return
     end
     number ts=net_banner_ts()
@@ -2802,7 +2806,7 @@ function draw_online()
                 punching=1
                 ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
             end
-            draw_remote_body(rx,ry,ra,rcls,punching)
+            draw_remote_body(rx,ry,ra,rcls,punching,net_player_skin(i))
             string rn=net_player_nick(i)
             if str_len(rn)>0
                 color rncol=admin_head_color_of(rn,0xFFFFFF)
@@ -2887,7 +2891,7 @@ function touch_game(number x, number y, number action, number id)
         drop_joy()
         return
     end
-    if game_state==5&&touch_chat(x,y,action)==1
+    if game_state==ST_ONLINE&&touch_chat(x,y,action)==1
         return
     end
     if back_hit(x,y)==1&&action!=2
@@ -2897,7 +2901,7 @@ function touch_game(number x, number y, number action, number id)
     if chat_open==1
         return
     end
-    if (player_class==2||player_class==3)&&(game_state==1||game_state==5)
+    if (player_class==CLASS_SANTA||player_class==CLASS_EBUC)&&(game_state==ST_SOLO||game_state==ST_ONLINE)
         if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=96
             super_id=id
             return
@@ -2914,7 +2918,7 @@ function touch_game(number x, number y, number action, number id)
     end
     if action==1&&id==aim_id
         aim_id=-1
-        if game_state==1||online_ready==1
+        if game_state==ST_SOLO||online_ready==1
             fire_punch()
         end
         return

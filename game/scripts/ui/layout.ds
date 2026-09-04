@@ -1,0 +1,378 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// layout.ds — геометрия всех экранов меню.
+//
+// Единственная причина существования модуля: раньше каждый экран считал свои
+// координаты дважды — один раз в draw_*, второй раз в touch_*, с одинаковыми
+// «магическими» числами (72, 152, 232, 312...). Число меняли в одном месте,
+// кнопки разъезжались с хит-боксами. Теперь координата считается здесь один
+// раз, а draw_* и touch_* вызывают одну и ту же функцию.
+//
+// Все размеры берутся из core/config.ds (btn_h, btn_gap, list_w, ...).
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Общий каркас экрана ───────────────────────────────────────────────────
+// Ширина списка, которая влезает на экран: заданная в config, но не шире
+// экрана минус отступы по бокам.
+function fit_w(number w)
+    return clamp(w, 0, screen_w - 2 * screen_margin)
+end
+
+// x левого края центрированного блока ширины w.
+function center_x(number w)
+    return (screen_w - w) / 2
+end
+
+// Заголовок экрана — сразу под кнопкой «Назад».
+function title_y()
+    return back_y + btn_h + title_gap
+end
+
+// Первый ряд контента под заголовком.
+function content_top()
+    return title_y() + list_top_gap
+end
+
+// ── Колонка кнопок (лобби, режимы, настройки) ─────────────────────────────
+function menu_x()
+    return center_x(btn_w)
+end
+
+function menu_stride()
+    return btn_h + btn_gap
+end
+
+// Колонка центрируется по вертикали целиком, поэтому на низких экранах
+// пункты не уезжают за край.
+function menu_top()
+    return screen_h / 2 - (lobby_rows * btn_h + (lobby_rows - 1) * btn_gap) / 2
+end
+
+function menu_row(number i)
+    return menu_top() + i * menu_stride()
+end
+
+// Хит-тест i-го пункта колонки: те же координаты, что и при отрисовке.
+function hit_menu_row(number px, number py, number i)
+    return hit_rect_pad(px, py, menu_x(), menu_row(i), btn_w, btn_h)
+end
+
+// ── Лобби ─────────────────────────────────────────────────────────────────
+function lobby_title_y()
+    return menu_top() - 70
+end
+
+function lobby_hello_y()
+    return 18
+end
+
+// Кошелёк (кубки и леденцы) — строка под последним пунктом меню. Только в
+// лобби: на остальных экранах валют не показываем.
+function lobby_money_y()
+    return menu_row(lobby_rows - 1) + btn_h + 12
+end
+
+// Сообщение о бане — под кошельком, чтобы строки не наезжали друг на друга.
+function lobby_msg_y()
+    return lobby_money_y() + money_line_h + 6
+end
+
+// Кнопка «???» (вход в батл пасс) — левый нижний угол.
+function lobby_bp_x()
+    return 20
+end
+
+function lobby_bp_y()
+    return screen_h - btn_h - 20
+end
+
+function hit_lobby_bp(number px, number py)
+    return hit_rect_pad(px, py, lobby_bp_x(), lobby_bp_y(), btn_w, btn_h)
+end
+
+// ── Экран классов ─────────────────────────────────────────────────────────
+function classes_card_w()
+    number total_gap = class_gap * (class_count - 1)
+    number w = (screen_w - 2 * screen_margin - total_gap) / class_count
+    return clamp(w, class_card_min_w, class_card_max_w)
+end
+
+function classes_total_w()
+    return classes_card_w() * class_count + class_gap * (class_count - 1)
+end
+
+function classes_top()
+    return back_y + btn_h + title_gap
+end
+
+function classes_card_x(number i)
+    return center_x(classes_total_w()) + i * (classes_card_w() + class_gap)
+end
+
+// Содержимое карточки класса: спрайт, название, девиз, уровень, кнопка.
+function class_sprite_scale()
+    return 1.55
+end
+
+function class_sprite_y()
+    return classes_top() + 12
+end
+
+function class_title_y()
+    return classes_top() + 100
+end
+
+function class_desc_y()
+    return classes_top() + 132
+end
+
+function class_level_y()
+    return classes_top() + 156
+end
+
+function class_pick_inset()
+    return 24
+end
+
+function class_pick_w()
+    return classes_card_w() - 2 * class_pick_inset()
+end
+
+function class_pick_y()
+    return classes_top() + class_card_h - class_pick_h - class_pick_pad
+end
+
+function hit_class_card(number px, number py, number cls)
+    return hit_rect(px, py, classes_card_x(cls), classes_top(), classes_card_w(), class_card_h)
+end
+
+// ── Пара кнопок «Уровни» / «Скины» под карточками ─────────────────────────
+// Посередине пусто (class_action_gap): «Уровни» слева, «Скины» справа.
+// Кнопка скинов есть только у Азума — у остальных классов её не рисуем и не
+// ждём нажатия, но «Уровни» остаются на своём месте слева, чтобы кнопка не
+// прыгала при смене класса.
+function class_actions_y()
+    return classes_top() + class_card_h + class_gap
+end
+
+function class_action_w()
+    number half = (screen_w - 2 * screen_margin - class_action_gap) / 2
+    return clamp(half, 0, btn_w)
+end
+
+function levels_btn_x()
+    return screen_w / 2 - class_action_gap / 2 - class_action_w()
+end
+
+function skins_btn_x()
+    return screen_w / 2 + class_action_gap / 2
+end
+
+// У какого класса есть скины. Пока список короткий — одна проверка; когда
+// скины появятся у других классов, сюда добавится их номер.
+function class_has_skins(number cls)
+    if cls == CLASS_AZUM
+        return 1
+    end
+    return 0
+end
+
+function skins_btn_visible()
+    return class_has_skins(player_class)
+end
+
+function hit_levels_btn(number px, number py)
+    return hit_rect_pad(px, py, levels_btn_x(), class_actions_y(), class_action_w(), btn_h)
+end
+
+function hit_skins_btn(number px, number py)
+    if skins_btn_visible() == 0
+        return 0
+    end
+    return hit_rect_pad(px, py, skins_btn_x(), class_actions_y(), class_action_w(), btn_h)
+end
+
+// Подписи-сообщения экрана классов рисуются под парой кнопок.
+function class_msg_y()
+    return class_actions_y() + btn_h + 14
+end
+
+// ── Полосы характеристик выбранного класса (низ экрана классов) ───────────
+function stat_bar_w()
+    return fit_w(520)
+end
+
+function stat_bar_h()
+    return 26
+end
+
+function stat_hp_y()
+    return screen_h - 110
+end
+
+function stat_power_y()
+    return screen_h - 46
+end
+
+function stat_motto_y()
+    return stat_hp_y() - 72
+end
+
+// ── Экран уровней ─────────────────────────────────────────────────────────
+function levels_w()
+    return fit_w(list_w)
+end
+
+function levels_x()
+    return center_x(levels_w())
+end
+
+function levels_top()
+    return content_top()
+end
+
+function levels_row_y(number n)
+    return levels_top() + (n - 1) * (level_row_h + level_row_gap)
+end
+
+function levels_msg_y()
+    return levels_row_y(max_level) + level_row_h + 12
+end
+
+function hit_level_row(number px, number py, number n)
+    return hit_rect(px, py, levels_x(), levels_row_y(n), levels_w(), level_row_h)
+end
+
+// ── Экран скинов ──────────────────────────────────────────────────────────
+function skins_total_w()
+    return skin_card_w * SKIN_COUNT + skin_card_gap * (SKIN_COUNT - 1)
+end
+
+function skins_card_x(number i)
+    return center_x(skins_total_w()) + i * (skin_card_w + skin_card_gap)
+end
+
+function skins_top()
+    return content_top()
+end
+
+function skin_preview_scale()
+    return 1.8
+end
+
+function skin_preview_y()
+    return skins_top() + 16
+end
+
+function skin_name_y()
+    return skins_top() + 118
+end
+
+function skin_status_y()
+    return skins_top() + 146
+end
+
+function skins_msg_y()
+    return skins_top() + skin_card_h + 16
+end
+
+function hit_skin_card(number px, number py, number i)
+    return hit_rect(px, py, skins_card_x(i), skins_top(), skin_card_w, skin_card_h)
+end
+
+// ── Экран достижений ──────────────────────────────────────────────────────
+function ach_w()
+    return fit_w(760)
+end
+
+function ach_x()
+    return center_x(ach_w())
+end
+
+function ach_top()
+    return content_top()
+end
+
+function ach_card_y(number i)
+    return ach_top() + i * (ach_card_h + ach_card_gap)
+end
+
+// ── Экран батл пасса ──────────────────────────────────────────────────────
+function bp_w()
+    return fit_w(bp_w_max)
+end
+
+function bp_x()
+    return center_x(bp_w())
+end
+
+function bp_top()
+    return content_top()
+end
+
+function bp_row_y(number n)
+    return bp_top() + (n - 1) * (bp_row_h + bp_row_gap)
+end
+
+function bp_msg_y()
+    return bp_row_y(bp_max) + bp_row_h + 12
+end
+
+function hit_bp_row(number px, number py, number n)
+    return hit_rect(px, py, bp_x(), bp_row_y(n), bp_w(), bp_row_h)
+end
+
+// ── Экран таблицы лидеров ─────────────────────────────────────────────────
+function lb_w()
+    return fit_w(lb_w_max)
+end
+
+function lb_x()
+    return center_x(lb_w())
+end
+
+function lb_top()
+    return content_top()
+end
+
+function lb_row_y(number i)
+    return lb_top() + i * (lb_row_h + lb_row_gap)
+end
+
+// ── Экран входа ───────────────────────────────────────────────────────────
+function login_x()
+    return center_x(login_w) + login_ox
+end
+
+function login_title_y()
+    return 26
+end
+
+function login_nick_y()
+    return screen_h / 2 - 100 + login_oy
+end
+
+function login_pass_y()
+    return login_nick_y() + login_fh + login_field_gap
+end
+
+function login_btn_y()
+    return login_pass_y() + login_fh + login_btn_gap
+end
+
+function login_btn_x()
+    return center_x(login_btn_w)
+end
+
+function login_msg_y()
+    return login_btn_y() + btn_h + 16
+end
+
+function hit_login_field(number px, number py, number field_y)
+    return hit_rect(px, py, login_x(), field_y, login_w, login_fh)
+end
+
+function hit_login_btn(number px, number py)
+    return hit_rect_pad(px, py, login_btn_x(), login_btn_y(), login_btn_w, btn_h)
+end

@@ -13,15 +13,17 @@ def find_ds_files(directory):
     раньше, бой и эффекты — позже, движок (главный цикл) замыкает список.
     """
     order = [
-        "core/config.ds",
-        "ui/locale.ds",
-        "core/entities.ds",
-        "core/ui.ds",
-        "ui/chat.ds",
-        "ui/menu.ds",
-        "combat/battle.ds",
-        "fx/dust.ds",
-        "core/engine.ds",
+        "core/config.ds",     # константы: экраны, тема, сетка, баланс
+        "ui/locale.ds",       # переводы RU/EN
+        "core/entities.ds",   # объекты и состояние боя
+        "core/ui.ds",         # UI-кит: кнопки, карточки, хит-тесты, текст
+        "ui/progress.ds",     # модель прогресса: классы, уровни, скины, награды
+        "ui/layout.ds",       # геометрия экранов (общая для draw_* и touch_*)
+        "ui/chat.ds",         # онлайн-чат
+        "ui/menu.ds",         # экраны меню
+        "combat/battle.ds",   # бой, бот, сетевые игроки
+        "fx/dust.ds",         # след пыли
+        "core/engine.ds",     # главный цикл
     ]
     files = []
     for root, _dirs, names in os.walk(directory):
@@ -39,6 +41,32 @@ def find_ds_files(directory):
             return (1, rel)
 
     return sorted(files, key=key)
+
+
+def run_lint(scripts_dir):
+    """Прогоняет tools/ds_lint.py по только что скомпилированным скриптам.
+
+    Компилятор DimScript молча выбрасывает присваивания необъявленным
+    именам, поэтому без линта опечатка, скажем, в menu.ds исчезала бы из
+    game.c без следа и проявлялась уже в собранной игре. По умолчанию линт
+    только печатает найденное; строгим его делает DS_LINT_STRICT=1 — тогда
+    gen.py завершается ошибкой (удобно включить в CI).
+    """
+    if not scripts_dir:
+        return []
+    try:
+        from tools import ds_lint
+    except Exception as e:  # линт не должен ломать генерацию
+        print(f"ds_lint skipped: {e}")
+        return []
+    errors = ds_lint.lint_dir(scripts_dir)
+    if errors:
+        print(f"ds_lint: {len(errors)} problem(s)")
+        for e in errors:
+            print(" -", e)
+    else:
+        print("ds_lint: ok")
+    return errors
 
 
 def usage(stream=sys.stdout):
@@ -105,6 +133,10 @@ def main():
     if compiler.errors:
         note += f" (errors above are non-fatal: game still builds)"
     print(f"{output_path} generated from {len(compiler.lines)} line(s){note}")
+
+    lint_errors = run_lint(src_dir if os.path.isdir(input_path) else None)
+    if lint_errors and os.environ.get('DS_LINT_STRICT', '').lower() in ('1', 'true', 'yes'):
+        return 1
 
     if dump_c:
         print("\n" + "=" * 60)
