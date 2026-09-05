@@ -1,0 +1,363 @@
+function disco_color(number phase)
+    number r=127+127*sin(phase)
+    number g=127+127*sin(phase+2.094)
+    number b=127+127*sin(phase+4.188)
+    number a=55+90*(0.5+0.5*sin(disco_t*16))
+    return ((((unsigned)(int)a)<<24)|(((unsigned)(int)r)<<16)|(((unsigned)(int)g)<<8)|((unsigned)(int)b))
+end
+
+function draw_disco()
+    if event_mode!=1
+        return
+    end
+    number col=disco_color(disco_t*18)
+    rect(0,0,screen_w,screen_h,col)
+    number ct=disco_t*12
+    number r=110+40*sin(ct)
+    ring(screen_w/2,screen_h/2,r,7,0xC0FFFFFF)
+end
+
+function update_event()
+    event_mode=net_event()
+    event_t=event_t+dt
+    if event_t>100000
+        event_t=0
+    end
+    if event_mode==1
+        disco_t=disco_t+dt
+    else
+        disco_t=0
+    end
+end
+
+// ── Баннер админа (команда "text сообщение цвет") ─────────────────────────
+// Облако хранит последний баннер (ts/text/color) в banner.json; каждый клиент
+// сам, увидев новый ts, показывает текст banner_show_time секунд сверху
+// экрана. Только что вошедшие в комнату старый баннер не повторяют.
+
+// RGB по имени цвета; неизвестное имя — белый.
+function banner_named_color(string name)
+    if str_eq(name,"red")==1
+        return 0x00FF5252
+    end
+    if str_eq(name,"green")==1
+        return 0x0000E676
+    end
+    if str_eq(name,"blue")==1
+        return 0x004FC3F7
+    end
+    if str_eq(name,"yellow")==1
+        return 0x00FFD54A
+    end
+    if str_eq(name,"orange")==1
+        return 0x00FF9800
+    end
+    if str_eq(name,"purple")==1
+        return 0x00AB47BC
+    end
+    if str_eq(name,"pink")==1
+        return 0x00FF80AB
+    end
+    if str_eq(name,"cyan")==1
+        return 0x0000E5FF
+    end
+    if str_eq(name,"black")==1
+        return 0x00222222
+    end
+    return 0x00FFFFFF
+end
+
+// Цвет баннера на текущем кадре: статичные именованные цвета.
+// Rainbow-переливание убрано: неизвестное имя цвета даёт белый.
+function banner_color_now(string name)
+    return banner_named_color(name)
+end
+
+function update_banner()
+    if game_state!=ST_ONLINE
+        return
+    end
+    number ts=net_banner_ts()
+    if ts>0
+        if banner_skip==1
+            // Первый ответ после входа в онлайн — не показываем старый баннер.
+            banner_seen_ts=ts
+            banner_skip=0
+        else if ts!=banner_seen_ts
+            banner_seen_ts=ts
+            banner_t=banner_show_time
+        end
+    end
+    if banner_t>0
+        banner_t=banner_t-dt
+        if banner_t<0
+            banner_t=0
+        end
+    end
+end
+
+function draw_banner()
+    if banner_t<=0
+        return
+    end
+    string txt=net_banner_text()
+    if str_len(txt)==0
+        return
+    end
+    // Плавные вход и выход: альфа из расстояния до обоих краёв показа.
+    number elapsed=banner_show_time-banner_t
+    number a=elapsed
+    if a>banner_t
+        a=banner_t
+    end
+    number alpha=floor(clamp(a/banner_fade,0,1)*230)
+    if alpha<=0
+        return
+    end
+    number sc=1.05
+    number w=text_ink_width(txt)*sc
+    if w>screen_w-40
+        sc=(screen_w-40)/w
+        w=text_ink_width(txt)*sc
+    end
+    number x=(screen_w-w)/2
+    // Баннер ниже и крупнее, без фоновой плашки — только текст.
+    number y=118
+    // Цвет баннера админ по-прежнему присылает командой «text ... <цвет>», но
+    // рендерер рисует весь текст белым (см. graphics.c), поэтому от цвета
+    // здесь остаётся только альфа плавного появления и исчезновения.
+    color col=banner_color_now(net_banner_color())
+    text_scaled(txt,x,y,((((unsigned)(int)alpha)<<24)|col),sc)
+end
+
+function hash01(number i)
+    number v=sin(i*127.1+11.7)*43758.5453
+    return v-floor(v)
+end
+
+function frac01(number v)
+    return v-floor(v)
+end
+
+function draw_snow()
+    if event_mode!=2
+        return
+    end
+    number i=0
+    loop i<event_flakes
+        // Каждая снежинка живёт свой цикл: появляется в случайной точке,
+        // со случайным размером (не больше самой png-снежинки, 64px = scale 1)
+        // и, не двигаясь, постепенно уменьшается до нуля. Потом рождается
+        // заново в новом месте с новым размером.
+        number h1=hash01(i), h2=hash01(i+91)
+        number life=2.2+2.6*h1
+        number ph=frac01(event_t/life+h2)
+        number cyc=floor(event_t/life+h2)
+        number hx=hash01(i*7+cyc*131+1)
+        number hy=hash01(i*13+cyc*197+2)
+        number hs=hash01(i*29+cyc*57+3)
+        number hr=hash01(i*17+cyc*83+4)
+        number s0=0.3+0.7*hs
+        number s=s0*(1-ph)
+        if s>0.02
+            number xx=36+hx*(screen_w-72)
+            number yy=36+hy*(screen_h-72)
+            number hw=32*s
+            tex(xx-hw,yy-hw,SNOWFLAKE_TEX,hr*2*pi,s)
+        end
+        i=i+1
+    end
+end
+
+// Ник над персонажем: центрируем и по горизонтали, и по вертикали с учётом
+// реальных границ глифов, а не базовой линии — иначе надпись «улетает» выше
+// головы. Нижний край текста в 12px над верхушкой спрайта.
+function draw_overhead_nick(string nick, number cx, number top_y, color col)
+    number w=text_ink_width(nick)*0.5
+    number th=text_ink_height(nick)*0.5
+    number tt=text_ink_top(nick)*0.5
+    text_scaled(nick,cx-w/2,top_y-12-th-tt,col,0.5)
+end
+
+function draw_online()
+    draw_grass()
+    draw_disco()
+    draw_field()
+    draw_dust()
+    draw_player_shadow_layer()
+    number i=0, b=0, rb=0, rx=0, ry=0, ra=0, rcls=0, punching=0
+    loop i<max_players
+        b=i*remote_fields
+        rb=i*punch_fields
+        if arr_get(remotes,b+5)==1
+            rx=arr_get(remotes,b+1)
+            ry=arr_get(remotes,b+2)
+            ra=arr_get(remotes,b+3)
+            rcls=arr_get(remotes,b+10)
+            punching=0
+            if arr_get(remote_punches,rb)==1
+                punching=1
+                ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
+            end
+            draw_remote_shadow(rx,ry,ra,rcls,punching,net_player_skin(i))
+        end
+        i=i+1
+    end
+    draw_player_hitbox_layer()
+    i=0
+    loop i<max_players
+        b=i*remote_fields
+        rb=i*punch_fields
+        if arr_get(remotes,b+5)==1&&arr_get(remote_punches,rb)==1
+            draw_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1)
+        end
+        i=i+1
+    end
+    draw_gift()
+    draw_boom()
+    draw_remote_snow()
+    draw_universe()
+    draw_remote_universe()
+    draw_station()
+    draw_remote_station()
+    draw_player_body_layer()
+    number hw=25*cube_scale*player_scale
+    string myn=net_player_nick(net_slot())
+    if str_len(myn)>0
+        // Ник над своим персонажем: красный у главного админа, голубой у второго.
+        color ncol=admin_head_color_of(myn,0xFFFFFF)
+        draw_overhead_nick(myn,player.x,player.y-hw,ncol)
+    end
+    i=0
+    loop i<max_players
+        b=i*remote_fields
+        rb=i*punch_fields
+        if arr_get(remotes,b+5)==1
+            rx=arr_get(remotes,b+1)
+            ry=arr_get(remotes,b+2)
+            ra=arr_get(remotes,b+3)
+            rcls=arr_get(remotes,b+10)
+            punching=0
+            if arr_get(remote_punches,rb)==1
+                punching=1
+                ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
+            end
+            draw_remote_body(rx,ry,ra,rcls,punching,net_player_skin(i))
+            string rn=net_player_nick(i)
+            if str_len(rn)>0
+                color rncol=admin_head_color_of(rn,0xFFFFFF)
+                draw_overhead_nick(rn,rx,ry-hw,rncol)
+            end
+        end
+        i=i+1
+    end
+    draw_player_freeze()
+    draw_player_poison()
+    draw_snow()
+    number w=screen_w/3
+    hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
+    draw_controls()
+    draw_chat()
+    number st=net_status(), sy=chat_btn_y()+btn_h+12
+    if st==4
+        ctext(tr_no_connection(),sy,0xFFFFFF)
+        ctext(tr_reconnecting(),sy+32,0xFFFFFF)
+    else if st==1
+        ctext(tr_connecting(),sy,0xFFFFFF)
+    end
+    if finished==2
+        draw_result(tr_defeat())
+    end
+    draw_banner()
+end
+
+function drop_joy()
+    joy_id=-1
+    joy.dx=0
+    joy.dy=0
+    joy.ox=0
+    joy.oy=0
+end
+
+function joy_touch(number x, number y, number action, number id)
+    if action==1
+        if id==joy_id
+            drop_joy()
+        end
+        return
+    end
+    if action==0
+        if joy_id!=-1
+            return
+        end
+        if sqrt((x-joy.x)*(x-joy.x)+(y-joy.y)*(y-joy.y))>150
+            return
+        end
+        joy_id=id
+    end
+    if id!=joy_id
+        return
+    end
+    number dx=x-joy.x, dy=y-joy.y, d=sqrt(dx*dx+dy*dy)
+    if d>joy.r
+        joy.dx=dx/d
+        joy.dy=dy/d
+        joy.ox=joy.dx*joy.r
+        joy.oy=joy.dy*joy.r
+    else
+        joy.dx=dx/joy.r
+        joy.dy=dy/joy.r
+        joy.ox=dx
+        joy.oy=dy
+    end
+end
+
+function touch_game(number x, number y, number action, number id)
+    if finished!=0
+        // Скипнуть алерт можно только спустя alert_hold секунд после конца
+        // боя — случайный тап в первые мгновения не выбрасывает из матча.
+        if action==0&&finish_t>=alert_hold
+            start_transition(0)
+        end
+        return
+    end
+    if action==3
+        aim_id=-1
+        super_id=-1
+        drop_joy()
+        return
+    end
+    if game_state==ST_ONLINE&&touch_chat(x,y,action)==1
+        return
+    end
+    if back_hit(x,y)==1&&action!=2
+        start_transition(0)
+        return
+    end
+    if chat_open==1
+        return
+    end
+    if (player_class==CLASS_SANTA||player_class==CLASS_EBUC)&&(game_state==ST_SOLO||game_state==ST_ONLINE)
+        if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=96
+            super_id=id
+            return
+        end
+        if action==1&&id==super_id
+            super_id=-1
+            fire_super()
+            return
+        end
+    end
+    if action==0&&sqrt((x-atk_x)*(x-atk_x)+(y-atk_y)*(y-atk_y))<=96
+        aim_id=id
+        return
+    end
+    if action==1&&id==aim_id
+        aim_id=-1
+        if game_state==ST_SOLO||online_ready==1
+            fire_punch()
+        end
+        return
+    end
+    joy_touch(x,y,action,id)
+end

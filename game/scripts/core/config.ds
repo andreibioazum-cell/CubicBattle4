@@ -87,7 +87,7 @@ number bp_msg_t=0, bp_msg_kind=0
 // Все награды — один битмаск (achievement_mask), который целиком хранится в
 // achievements.dat и читается net_load_achievement_flags(). Отдельных
 // переменных-зеркал на каждое достижение больше нет: проверка и выдача идут
-// через has_achievement()/grant_achievement() в ui/progress.ds.
+// через has_achievement()/grant_achievement() в ui/progress_classes.ds и ui/progress_rewards.ds.
 number achievement_mask=0
 number ACH_WELCOME=1, ACH_FIRST_WIN=2, ACH_FIRST_BUY=4, ACH_ALL_CHARACTERS=8
 // Тост поверх экрана при получении достижения. Живёт тремя фазами: быстрый
@@ -120,7 +120,7 @@ number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 
 // ── Классы ────────────────────────────────────────────────────────────────
 // 0 — обычный (доступен сразу), 1 — Азум, 2 — Дед Мороз, 3 — буК.
-// Владелец/уровни каждого класса живут в таблицах ui/progress.ds, а не в
+// Владелец/уровни каждого класса живут в таблицах ui/progress_classes.ds и ui/progress_rewards.ds, а не в
 // восьми отдельных переменных: класс добавляется одной строкой данных.
 number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
 number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
@@ -226,7 +226,7 @@ number lb_wait=0, lb_wait_max=8
 number banner_show_time=6, banner_fade=0.5, banner_seen_ts=0, banner_t=0, banner_skip=1
 
 // ── Экран входа ───────────────────────────────────────────────────────────
-// login_field: 1 — ник, 2 — пароль. login_status — код ошибки (см. locale.ds).
+// login_field: 1 — ник, 2 — пароль. login_status — код ошибки (см. locale_core.ds и locale_progress.ds).
 // login_ox/login_oy — небольшая оптическая правка центровки формы.
 number login_field=1, login_status=0, login_after=0
 number login_ox=0, login_oy=-20, login_fh=50, login_lab=28, login_lab_ox=12

@@ -13,17 +13,28 @@ def find_ds_files(directory):
     раньше, бой и эффекты — позже, движок (главный цикл) замыкает список.
     """
     order = [
-        "core/config.ds",     # константы: экраны, тема, сетка, баланс
-        "ui/locale.ds",       # переводы RU/EN
-        "core/entities.ds",   # объекты и состояние боя
-        "core/ui.ds",         # UI-кит: кнопки, карточки, хит-тесты, текст
-        "ui/progress.ds",     # модель прогресса: классы, уровни, скины, награды
-        "ui/layout.ds",       # геометрия экранов (общая для draw_* и touch_*)
-        "ui/chat.ds",         # онлайн-чат
-        "ui/menu.ds",         # экраны меню
-        "combat/battle.ds",   # бой, бот, сетевые игроки
-        "fx/dust.ds",         # след пыли
-        "core/engine.ds",     # главный цикл
+        "core/config.ds",          # константы: экраны, тема, сетка, баланс
+        "ui/locale_core.ds",       # основные переводы RU/EN
+        "ui/locale_progress.ds",   # переводы прогресса, наград и магазина
+        "core/entities.ds",        # объекты и состояние боя
+        "core/ui.ds",              # UI-кит: кнопки, карточки, хит-тесты, текст
+        "ui/progress_classes.ds",  # классы, уровни и скины
+        "ui/progress_rewards.ds",  # награды, сохранение и синхронизация
+        "ui/layout.ds",            # геометрия экранов (draw_* и touch_*)
+        "ui/chat.ds",              # онлайн-чат
+        "ui/menu_screens.ds",      # отрисовка экранов меню
+        "ui/menu_input.ds",        # переходы и обработка нажатий меню
+        "combat/battle_rules.ds",  # классы, урон, турель и сброс боя
+        "combat/battle_setup.ds",  # запуск боя, спавн и движение игрока
+        "combat/battle_movement.ds", # прицеливание и движение бота
+        "combat/battle_ai.ds",     # решения и атаки бота, статусы
+        "combat/battle_abilities.ds", # способности и основной update боя
+        "combat/battle_online.ds", # сетевые снимки и завершение матча
+        "combat/battle_actions_fx.ds", # атаки и эффекты способностей
+        "combat/battle_render.ds", # поле, бойцы и интерфейс боя
+        "combat/battle_events_input.ds", # события, баннеры и ввод
+        "fx/dust.ds",              # след пыли
+        "core/engine.ds",          # главный цикл
     ]
     files = []
     for root, _dirs, names in os.walk(directory):
@@ -47,7 +58,7 @@ def run_lint(scripts_dir):
     """Прогоняет tools/ds_lint.py по только что скомпилированным скриптам.
 
     Компилятор DimScript молча выбрасывает присваивания необъявленным
-    именам, поэтому без линта опечатка, скажем, в menu.ds исчезала бы из
+    именам, поэтому без линта опечатка, скажем, в menu_input.ds исчезала бы из
     game.c без следа и проявлялась уже в собранной игре. По умолчанию линт
     только печатает найденное; строгим его делает DS_LINT_STRICT=1 — тогда
     gen.py завершается ошибкой (удобно включить в CI).
