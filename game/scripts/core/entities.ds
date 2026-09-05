@@ -64,5 +64,4 @@ array dust=arr_new()
 array remote_dust_cd=arr_new()
 
 // баны и админ
-number banned_until=0
 string banned_msg=""

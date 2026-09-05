@@ -152,13 +152,6 @@ function tr_achievements()
     return "Achievements"
 end
 
-function tr_achievements_title()
-    if language == 1
-        return "Достижения"
-    end
-    return "Achievements"
-end
-
 // Все названия и описания достижений переведены на оба языка: RU и EN.
 function tr_achievement_welcome()
     if language == 1
@@ -237,13 +230,6 @@ function tr_achievement_first_buy_desc()
     return "Buy your first character"
 end
 
-function tr_login_title()
-    if language == 1
-        return "Вход и регистрация"
-    end
-    return "Login / Register"
-end
-
 function tr_nick()
     if language == 1
         return "Ник"
@@ -306,13 +292,6 @@ function tr_leaderboard()
         return "Лидерборд"
     end
     return "Leaderboard"
-end
-
-function tr_leaderboard_title()
-    if language == 1
-        return "Лидерборд (кубки)"
-    end
-    return "Leaderboard (cups)"
 end
 
 function tr_loading()

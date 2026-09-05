@@ -182,11 +182,6 @@ function panel_text(number locked)
     return text_color
 end
 
-// Заголовок экрана — всегда на одном месте под кнопкой «Назад».
-function screen_title(string label)
-    ctext(label, title_y(), text_color)
-end
-
 // ── Полосы ────────────────────────────────────────────────────────────────
 function hud_bar(number bx, number by, number w, number h, number cur, number max, color c, number from_right)
     roundrect(bx, by, w, h, h / 2, 0xDD171923)

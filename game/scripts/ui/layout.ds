@@ -348,10 +348,6 @@ function login_x()
     return center_x(login_w) + login_ox
 end
 
-function login_title_y()
-    return 55
-end
-
 function login_nick_y()
     return screen_h / 2 - 100 + login_oy
 end
