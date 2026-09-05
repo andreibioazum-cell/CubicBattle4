@@ -308,3 +308,74 @@ function tr_banned()
     end
     return "You are banned"
 end
+
+// ── Моды ──────────────────────────────────────────────────────────────────
+function tr_mods()
+    if language == 1
+        return "Моды"
+    end
+    return "Mods"
+end
+
+function tr_mods_import()
+    if language == 1
+        return "Импортировать мод"
+    end
+    return "Import mod"
+end
+
+function tr_mods_delete()
+    if language == 1
+        return "Удалить"
+    end
+    return "Delete"
+end
+
+function tr_mods_empty()
+    if language == 1
+        return "Моды не установлены"
+    end
+    return "No mods installed"
+end
+
+function tr_mods_hint()
+    if language == 1
+        return "Моды пока не работают в игре"
+    end
+    return "Mods do not affect the game yet"
+end
+
+function tr_mods_name_ph()
+    if language == 1
+        return "имя файла мода"
+    end
+    return "mod file name"
+end
+
+function tr_mods_added()
+    if language == 1
+        return "Мод импортирован"
+    end
+    return "Mod imported"
+end
+
+function tr_mods_removed()
+    if language == 1
+        return "Мод удалён"
+    end
+    return "Mod deleted"
+end
+
+function tr_mods_full()
+    if language == 1
+        return "Больше модов не влезает"
+    end
+    return "Mod list is full"
+end
+
+function tr_mods_no_name()
+    if language == 1
+        return "Введите имя файла"
+    end
+    return "Enter a file name"
+end

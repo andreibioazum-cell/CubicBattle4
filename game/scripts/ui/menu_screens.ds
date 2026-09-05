@@ -81,6 +81,7 @@ function draw_settings()
     draw_menu_button(0, tr_back())
     draw_menu_button(1, "English")
     draw_menu_button(2, "Русский")
+    draw_menu_button(3, tr_mods())
 end
 
 // ── Экран классов ─────────────────────────────────────────────────────────

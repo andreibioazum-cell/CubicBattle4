@@ -375,3 +375,58 @@ end
 function hit_login_btn(number px, number py)
     return hit_rect_pad(px, py, login_btn_x(), login_btn_y(), login_btn_w, btn_h)
 end
+
+// ── Экран модов ───────────────────────────────────────────────────────────
+// Сверху поле ввода имени файла и кнопка импорта, ниже — список слотов:
+// у каждого своя кнопка «Удалить» справа.
+function mods_w()
+    return fit_w(620)
+end
+
+function mods_x()
+    return center_x(mods_w())
+end
+
+function mods_field_y()
+    return content_top()
+end
+
+function mods_import_y()
+    return mods_field_y() + login_fh + 14
+end
+
+function mods_top()
+    return mods_import_y() + btn_h + 24
+end
+
+function mods_row_y(number i)
+    return mods_top() + i * (mod_row_h + mod_row_gap)
+end
+
+function mods_del_w()
+    return 150
+end
+
+function mods_del_x()
+    return mods_x() + mods_w() - card_text_pad - mods_del_w()
+end
+
+function mods_del_y(number i)
+    return mods_row_y(i) + (mod_row_h - mod_del_h) / 2
+end
+
+function mods_msg_y()
+    return mods_row_y(mods_max) + 10
+end
+
+function hit_mods_field(number px, number py)
+    return hit_rect(px, py, mods_x(), mods_field_y(), mods_w(), login_fh)
+end
+
+function hit_mods_import(number px, number py)
+    return hit_rect_pad(px, py, mods_x(), mods_import_y(), mods_w(), btn_h)
+end
+
+function hit_mods_delete(number px, number py, number i)
+    return hit_rect_pad(px, py, mods_del_x(), mods_del_y(i), mods_del_w(), mod_del_h)
+end

@@ -1,0 +1,117 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// mods.ds — экран модов (Настройки → Моды).
+//
+// Список установленных модов, импорт по имени файла и удаление. Сами моды
+// игра пока не подключает: экран только ведёт список, о чём говорит подсказка
+// внизу экрана. Геометрия — в ui/layout.ds, работа со слотами — в
+// ui/progress_rewards.ds, тексты — в ui/locale_progress.ds.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Экран модов ───────────────────────────────────────────────────────────
+// Поле ввода имени файла, кнопка импорта и список установленных модов с
+// кнопкой «Удалить» у каждого. Моды пока только числятся в списке: игра их
+// не подключает, о чём и говорит подсказка внизу.
+function draw_mod_row(number i)
+    number y = mods_row_y(i)
+    card(mods_x(), y, mods_w(), mod_row_h, 0)
+    text_scaled(mod_slot(i), mods_x() + card_text_pad, y + 22, text_color, 0.55)
+    button_scaled(tr_mods_delete(), mods_del_x(), mods_del_y(i), mods_del_w(), mod_del_h, 0.5)
+end
+
+function draw_mods()
+    screen_fill()
+    string shown = mod_buf
+    if str_len(mod_buf) == 0 && mod_input == 0
+        shown = tr_mods_name_ph()
+    end
+    if mod_input == 1
+        shown = mod_buf + "|"
+    end
+    roundrect(mods_x(), mods_field_y(), mods_w(), login_fh, field_radius, card_bg)
+    text_in_field(shown, mods_x() + field_text_pad, mods_field_y(), login_fh, text_color, 0.55)
+    button_scaled(tr_mods_import(), mods_x(), mods_import_y(), mods_w(), btn_h, 0.6)
+    if mods_count == 0
+        ctext_scaled(tr_mods_empty(), mods_top() + 20, text_color, 0.55)
+    end
+    number i = 0
+    loop i < mods_count
+        draw_mod_row(i)
+        i = i + 1
+    end
+    mods_msg_t = tick_down(mods_msg_t)
+    draw_msg(mods_msg_text(), mods_msg_y(), mods_msg_t)
+    ctext_scaled(tr_mods_hint(), mods_msg_y() + 34, text_color, 0.45)
+    draw_back()
+end
+
+// ── Экран модов ───────────────────────────────────────────────────────────
+// Поле ввода делит клавиатуру с формой входа: фокус открывает системную
+// клавиатуру, текст забирается из неё же.
+function mods_open()
+    mod_input = 0
+    mod_buf = ""
+    mods_msg_t = 0
+    keyboard_clear()
+    keyboard_hide()
+end
+
+function mods_sync_field()
+    if mod_input == 1 && keyboard_visible() == 1
+        mod_buf = keyboard_get_text()
+    end
+end
+
+function mods_focus()
+    mod_input = 1
+    keyboard_clear()
+    if str_len(mod_buf) > 0
+        keyboard_type(mod_buf)
+    end
+    keyboard_show()
+end
+
+function mods_do_import()
+    mods_sync_field()
+    if mod_import(mod_buf) == 1
+        mod_buf = ""
+        mod_input = 0
+        keyboard_clear()
+        keyboard_hide()
+    end
+end
+
+function update_mods()
+    mods_sync_field()
+    if keyboard_enter_pressed() == 1
+        mods_do_import()
+    end
+end
+
+function touch_mods(number x, number y, number action)
+    if action != 0
+        return
+    end
+    if back_hit(x, y) == 1
+        keyboard_hide()
+        start_transition(ST_SETTINGS)
+        return
+    end
+    if hit_mods_field(x, y) == 1
+        mods_focus()
+        return
+    end
+    if hit_mods_import(x, y) == 1
+        mods_do_import()
+        return
+    end
+    number i = 0
+    loop i < mods_count
+        if hit_mods_delete(x, y, i) == 1
+            mod_delete(i)
+            return
+        end
+        i = i + 1
+    end
+end
