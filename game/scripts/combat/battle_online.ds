@@ -1,0 +1,254 @@
+function clear_remote_punch(number s)
+    number rb=s*punch_fields, k=0
+    loop k<punch_fields
+        arr_set(remote_punches,rb+k,0)
+        k=k+1
+    end
+end
+
+function start_remote_punch(number s)
+    number rb=s*punch_fields
+    arr_set(remote_punches,rb,1)
+    arr_set(remote_punches,rb+1,net_player_punch_x(s)*screen_w)
+    arr_set(remote_punches,rb+2,net_player_punch_y(s)*screen_h)
+    arr_set(remote_punches,rb+3,net_player_punch_dx(s))
+    arr_set(remote_punches,rb+4,net_player_punch_dy(s))
+    arr_set(remote_punches,rb+5,0)
+end
+
+function read_remotes()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*remote_fields
+        if net_player_online(s)==1&&s!=net_slot()
+            number x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h, a=net_player_angle(s)
+            if arr_get(remotes,b)==0
+                arr_set(remotes,b,1)
+                arr_set(remotes,b+1,x)
+                arr_set(remotes,b+2,y)
+                arr_set(remotes,b+3,a)
+                arr_set(remotes,b+7,x)
+                arr_set(remotes,b+8,y)
+                arr_set(remotes,b+9,a)
+            else
+                arr_set(remotes,b+7,x)
+                arr_set(remotes,b+8,y)
+                arr_set(remotes,b+9,a)
+            end
+            arr_set(remotes,b+4,net_player_hp(s))
+            arr_set(remotes,b+5,net_player_alive(s))
+            arr_set(remotes,b+10,net_player_class(s))
+            number net_p=net_player_punch(s), prev_p=arr_get(remotes,b+6)
+            if net_p!=prev_p
+                arr_set(remotes,b+6,net_p)
+                start_remote_punch(s)
+            end
+        else
+            arr_set(remotes,b,0)
+            arr_set(remotes,b+5,0)
+            clear_remote_punch(s)
+        end
+        s=s+1
+    end
+end
+
+function update_remote_punches()
+    number s=0
+    loop s<max_players
+        number rb=s*punch_fields
+        if arr_get(remote_punches,rb)==1
+            number t=arr_get(remote_punches,rb+5)+dt
+            arr_set(remote_punches,rb+5,t)
+            if arr_get(remotes,s*remote_fields+5)==0
+                clear_remote_punch(s)
+            else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
+                number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
+                take_damage(class_punch_damage_for(rcls,rlevel))
+                if rcls==CLASS_SANTA
+                    if player_poison<=0
+                        player_poison_tick=santa_poison_tick_interval
+                    end
+                    player_poison=santa_poison_time_for(rlevel)
+                    player_poison_damage=santa_poison_damage_for(rlevel)
+                end
+                clear_remote_punch(s)
+                if player.hp<=0
+                    player.hp=0
+                    if try_revive()==0
+                        finish_game(2)
+                        return
+                    end
+                end
+            else if t>punch_time
+                clear_remote_punch(s)
+            end
+        end
+        s=s+1
+    end
+end
+
+function smooth_remotes()
+    number s=0
+    loop s<max_players
+        number b=s*remote_fields
+        if arr_get(remotes,b+5)==1
+            number rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3)
+            number nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=arr_get(remotes,b+9)
+            if dist(rx,ry,nx,ny)>remote_snap
+                rx=nx
+                ry=ny
+                ra=na
+            else
+                rx=lerp(rx,nx,clamp(dt*remote_smooth,0,1))
+                ry=lerp(ry,ny,clamp(dt*remote_smooth,0,1))
+                number da=na-ra
+                if da>pi
+                    da=da-2*pi
+                end
+                if da<0-pi
+                    da=da+2*pi
+                end
+                ra=ra+da*clamp(dt*remote_smooth,0,1)
+                // Соперник в онлайне тоже тянет за собой след пыли.
+                tick_remote_dust(s,rx,ry,nx,ny)
+            end
+            arr_set(remotes,b+1,rx)
+            arr_set(remotes,b+2,ry)
+            arr_set(remotes,b+3,ra)
+        end
+        s=s+1
+    end
+end
+
+function count_living_remotes()
+    number count=0, s=0
+    loop s<max_players
+        if s!=net_slot()&&arr_get(remotes,s*remote_fields+5)==1
+            count=count+1
+        end
+        s=s+1
+    end
+    return count
+end
+
+function check_online_finish()
+    if online_ready==0||finished!=0
+        return
+    end
+    number enemies_alive=count_living_remotes()
+    if enemies_alive>0
+        // Дебаунс: соперник должен реально побыть в комнате (секунду), прежде
+        // чем его исчезновение станет победой. Один «фантомный» сетевой снимок
+        // (например, гонка с удалением чужого слота) победу засчитать не может.
+        foes_seen_t=foes_seen_t+dt
+        if foes_seen_t>foes_seen_min
+            match_seen_foe=1
+        end
+    end
+    if match_seen_foe==1&&enemies_alive==0
+        finish_game(1)
+    end
+end
+
+function push_self()
+    if net_slot()<0
+        return
+    end
+    number alive=1
+    if player.hp<=0
+        alive=0
+    end
+    progress_push_to_net()
+    net_publish(player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive)
+    net_publish_punch(punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot)
+    if player_class==CLASS_EBUC
+        if station.active==1
+            net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot+1)
+        else
+            net_publish_station(0,0,0,0)
+        end
+        if universe_active==1
+            net_publish_universe(universe_x/screen_w,universe_y/screen_h,universe_id)
+        else
+            net_publish_universe(0,0,0)
+        end
+    end
+end
+
+function update_online()
+    // Бан мог прилететь уже во время боя: сразу выкидываем в меню с сообщением.
+    if net_banned() == 1
+        banned_msg = tr_banned()
+        start_transition(0)
+        return
+    end
+    tick_alert_hold()
+    update_banner()
+    tick_revive()
+    tick_freeze()
+    tick_player_poison()
+    tick_station()
+    tick_universe()
+    update_aim()
+    if finished!=0
+        return
+    end
+    if player.hp<=0
+        if try_revive()==0
+            finish_game(2)
+            return
+        end
+    end
+    move_player()
+    if punch_left>0
+        punch_left=punch_left-dt
+        if punch_left<0
+            punch_left=0
+        end
+    end
+    follow_punch()
+    if super_cd>0
+        super_cd=super_cd-dt
+        if super_cd<0
+            super_cd=0
+        end
+    end
+    if boom_t>0
+        boom_t=boom_t-dt
+        if boom_t<0
+            boom_t=0
+        end
+    end
+    tick_super_windup()
+    tick_santa_follow()
+    update_dust()
+    update_gift()
+    flush_queued_action()
+    if finished!=0
+        return
+    end
+    // Мир синхронизируем, пока у нас есть слот в комнате, а не только пока
+    // net_status()==NET_PLAYING: статус NET_ERROR ставит поток-писатель при
+    // временном сбое PUT (плохая сеть), но поток-читатель в это время продолжает
+    // тянуть позиции и чат. Раньше весь обмен миром замирал при любой ошибке
+    // записи: чат обновлялся, а персонажи стояли («чат прогрузился, никто не
+    // двигается, висит переподключение»).
+    if net_slot()>=0
+        if online_ready==0
+            place_online()
+        end
+        read_remotes()
+        smooth_remotes()
+        update_remote_punches()
+        update_remote_snow()
+        update_remote_station()
+        update_remote_universe()
+        check_online_finish()
+        push_self()
+    end
+    update_event()
+    chat_update()
+end

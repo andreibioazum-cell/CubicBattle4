@@ -1,10 +1,10 @@
 include graphics
 
 // ══════════════════════════════════════════════════════════════════════════
-// progress.ds — модель прогресса: классы, уровни, скины, батл пасс,
+// progress_classes.ds — модель классов и уровней: классы, уровни, скины, батл пасс,
 // достижения и сохранение. Здесь НЕ рисуется ничего: модуль отвечает на
 // вопросы «сколько стоит», «открыто ли», «что изменится после покупки»,
-// а экраны (ui/menu.ds) только показывают его ответы.
+// а экраны (ui/menu_screens.ds и ui/menu_input.ds) только показывают его ответы.
 //
 // Зачем он нужен: раньше одни и те же ветки «if cls == 1 ... if cls == 2 ...»
 // повторялись в семи функциях (чтение уровня, запись уровня, покупка,
@@ -87,7 +87,7 @@ function class_name_of(number cls)
     return tr_class_ordinary()
 end
 
-// Девиз класса (не переводится — см. ui/locale.ds).
+// Девиз класса (не переводится — см. ui/locale_core.ds).
 function class_desc_of(number cls)
     if cls == CLASS_AZUM
         return tr_class_azum_desc()
@@ -318,183 +318,3 @@ end
 
 // ── Хэллоуинский батл пасс ────────────────────────────────────────────────
 // Состояние строки: 2 — куплено, 1 — следующий (можно купить), 0 — закрыто.
-function bp_row_state(number n)
-    if n <= bp_level
-        return 2
-    end
-    if n == bp_level + 1
-        return 1
-    end
-    return 0
-end
-
-function bp_reward_text(number n)
-    if n == BP_REWARD_CLASS_LEVEL
-        return tr_bp_reward_1()
-    end
-    if n == BP_REWARD_SKIN
-        return tr_bp_reward_2()
-    end
-    return tr_levels_soon()
-end
-
-// Выдать награду купленного уровня батл пасса.
-function bp_apply_reward(number n)
-    if n == BP_REWARD_CLASS_LEVEL
-        // Обычный класс сразу на последнем уровне.
-        set_class_progress(CLASS_ORDINARY, max_level, max_level)
-        if player_class == CLASS_ORDINARY
-            sync_selected_class()
-        end
-    end
-    if n == BP_REWARD_SKIN
-        azum_skin = SKIN_ZOMBIE
-    end
-end
-
-function buy_bp_level(number n)
-    if n < 1 || n > bp_max
-        return
-    end
-    if n != bp_level + 1
-        bp_msg_kind = 1
-        bp_msg_t = msg_time
-        return
-    end
-    if cups < bp_cost
-        bp_msg_kind = 0
-        bp_msg_t = msg_time
-        return
-    end
-    cups = cups - bp_cost
-    bp_level = n
-    bp_apply_reward(n)
-    bp_msg_kind = 0
-    bp_msg_t = 0
-    save_progress()
-end
-
-function bp_msg_text()
-    if bp_msg_kind == 1
-        return tr_bp_need_prev()
-    end
-    return tr_bp_need_cups()
-end
-
-// ── Достижения ────────────────────────────────────────────────────────────
-// Все награды — один битмаск. Побитовых операций в DimScript нет, поэтому бит
-// достаётся делением на вес бита и проверкой на чётность: 1, 2, 4, 8...
-function has_achievement(number bit)
-    number shifted = floor(achievement_mask / bit)
-    return shifted - floor(shifted * 0.5) * 2
-end
-
-function show_achievement_toast(number bit)
-    ach_toast_bit = bit
-    ach_toast_t = ACH_TOAST_DURATION
-end
-
-// Выдать награду: отметить в облаке, добавить бит в маску и показать тост.
-// Повторный вызов ничего не делает — награда выдаётся один раз.
-function grant_achievement(number bit)
-    if has_achievement(bit) == 1
-        return 0
-    end
-    achievement_mask = achievement_mask + bit
-    net_mark_achievement_flag(bit)
-    show_achievement_toast(bit)
-    return 1
-end
-
-// Пересчитать награды, которые зависят от текущего прогресса, а не от
-// события. Вызывается из engine.init() и с экранов лобби/достижений, поэтому
-// даже удалённый achievements.dat быстро восстанавливается из прогресса.
-function check_achievements()
-    // Первый запуск игры: файл ещё пустой, все флаги нулевые.
-    grant_achievement(ACH_WELCOME)
-    // Обычный класс доступен сразу, поэтому для «Потрогай траву» нужны три
-    // открываемых: Азум, Дед Мороз и буК.
-    if class_owned_of(CLASS_AZUM) == 1 && class_owned_of(CLASS_SANTA) == 1 && class_owned_of(CLASS_EBUC) == 1
-        grant_achievement(ACH_ALL_CHARACTERS)
-    end
-end
-
-// ── Сохранение и загрузка ─────────────────────────────────────────────────
-// Записать всё облако прогресса и сообщить сети текущий класс/уровень/скин —
-// их видят соперники в онлайне.
-function save_progress()
-    net_save_progress_all(cups, candies, player_class,
-        class_owned_of(CLASS_AZUM), class_owned_of(CLASS_SANTA), class_owned_of(CLASS_EBUC),
-        player_level, levels_unlocked,
-        class_level_of(CLASS_ORDINARY), class_unlocked_of(CLASS_ORDINARY),
-        class_level_of(CLASS_AZUM), class_unlocked_of(CLASS_AZUM),
-        class_level_of(CLASS_SANTA), class_unlocked_of(CLASS_SANTA),
-        class_level_of(CLASS_EBUC), class_unlocked_of(CLASS_EBUC),
-        bp_level, azum_skin)
-    progress_push_to_net()
-end
-
-// То, что нужно сетевому снимку: класс, уровень и скин своего бойца.
-function progress_push_to_net()
-    net_set_class(player_class)
-    net_set_level(player_level)
-    net_set_skin(azum_skin)
-end
-
-// Привести прогресс к допустимым значениям: уровни в границах ветки, скин —
-// только если открыт нужный уровень батл пасса, класс — только купленный.
-function progress_normalize()
-    bp_level = clamp(bp_level, 0, bp_max)
-    if azum_skin < SKIN_NORMAL || azum_skin >= SKIN_COUNT
-        azum_skin = SKIN_NORMAL
-    end
-    if azum_skin == SKIN_ZOMBIE && bp_level < SKIN_ZOMBIE_BP
-        azum_skin = SKIN_NORMAL
-    end
-    number cls = CLASS_ORDINARY
-    loop cls < class_count
-        number un = clamp(class_unlocked_of(cls), 0, max_level)
-        number lv = class_level_of(cls)
-        if lv < 0 || lv > un
-            lv = 0
-        end
-        set_class_progress(cls, lv, un)
-        cls = cls + 1
-    end
-    // Выбранный класс обязан быть в списке и купленным.
-    if player_class < 0 || player_class >= class_count || class_owned_of(player_class) == 0
-        player_class = CLASS_ORDINARY
-    end
-    levels_unlocked = clamp(levels_unlocked, 0, max_level)
-    if player_level < 0 || player_level > levels_unlocked
-        player_level = 0
-    end
-end
-
-// Прочитать прогресс из локальных файлов (их ведёт net.c): вызывается и при
-// старте игры, и после входа по нику/паролю — раньше это были два одинаковых
-// списка из двадцати строк.
-function progress_from_storage()
-    cups = net_load_cups()
-    candies = net_load_candies()
-    achievement_mask = net_load_achievement_flags()
-    player_class = net_load_class()
-    set_class_owned(CLASS_AZUM, net_load_azum())
-    set_class_owned(CLASS_SANTA, net_load_santa())
-    set_class_owned(CLASS_EBUC, net_load_ebuc())
-    player_level = net_load_level()
-    levels_unlocked = net_load_levels_unlocked()
-    set_class_progress(CLASS_ORDINARY, net_load_ordinary_level(), net_load_ordinary_levels_unlocked())
-    set_class_progress(CLASS_AZUM, net_load_azum_level(), net_load_azum_levels_unlocked())
-    set_class_progress(CLASS_SANTA, net_load_santa_level(), net_load_santa_levels_unlocked())
-    set_class_progress(CLASS_EBUC, net_load_ebuc_level(), net_load_ebuc_levels_unlocked())
-    bp_level = net_load_bp_level()
-    azum_skin = net_load_azum_skin()
-    progress_normalize()
-    sync_selected_class()
-    progress_push_to_net()
-    // Награды, зависящие от прогресса («Привет!», «Потрогай траву»),
-    // пересчитываются сразу: даже удалённый achievements.dat восстанавливается
-    // из того, что уже куплено.
-    check_achievements()
-end

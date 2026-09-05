@@ -1,0 +1,284 @@
+// ── Ульта бука: вселенная ──────────────────────────────────────────────────
+// Прямой урон от вселенной: он бьёт самого бука, врага и станцию отдельно,
+// поэтому станция не «спасает» бука от собственной вселенной.
+// Вторая ульта отключена, но функция оставлена для совместимости со старыми клиентами.
+function universe_collapse(number dmg)
+    if finished!=0
+        return
+    end
+    if game_state!=ST_ONLINE
+        enemy.hp=enemy.hp-dmg
+        if enemy.hp<0
+            enemy.hp=0
+        end
+    end
+    // Станция бука тоже ломается вселенной.
+    if player_class==CLASS_EBUC&&station.active==1
+        station.hp=station.hp-dmg
+        station_hit_t=station_hit_time
+        if station.hp<=0
+            destroy_station()
+        end
+    end
+    // Сам бук тоже может погибнуть от своей ульты.
+    player.hp=player.hp-dmg
+    if player.hp<0
+        player.hp=0
+    end
+    if player.hp<=0
+        if try_revive()==0
+            finish_game(2)
+            return
+        end
+    end
+    if finished==0&&game_state!=ST_ONLINE&&enemy.hp<=0
+        finish_game(1)
+    end
+end
+
+// Чужая вселенная в онлайне: ломает только самого получателя и его станцию.
+function universe_collapse_remote(number dmg)
+    if finished!=0
+        return
+    end
+    if player_class==CLASS_EBUC&&station.active==1
+        station.hp=station.hp-dmg
+        station_hit_t=station_hit_time
+        if station.hp<=0
+            destroy_station()
+        end
+    end
+    player.hp=player.hp-dmg
+    if player.hp<0
+        player.hp=0
+    end
+    if player.hp<=0
+        if try_revive()==0
+            finish_game(2)
+        end
+    end
+end
+
+function tick_universe()
+    if universe_active==0
+        return
+    end
+    universe_t=universe_t+dt
+    universe_a=clamp(universe_t/ebuc_universe_collapse_time,0,1)
+    if universe_t>=ebuc_universe_collapse_time
+        universe_active=0
+        universe_hit=1
+        universe_collapse(ebuc_universe_damage_for(player_level))
+    end
+end
+
+function tick_station()
+    // Станция стоит на месте и не развеивается сама, пока её не сломают.
+    tick_station_boom()
+    tick_station_hit()
+    // Анимация появления турели затухает.
+    if station_spawn_t>0
+        station_spawn_t=station_spawn_t-dt
+        if station_spawn_t<0
+            station_spawn_t=0
+        end
+    end
+    // Уровень 3: каждую секунду луч живой турели лечит бука.
+    if player_class==CLASS_EBUC&&player_level>=3&&station.active==1&&finished==0&&player.hp>0
+        station_heal_t=station_heal_t+dt
+        if station_heal_t>=1
+            station_heal_t=station_heal_t-1
+            player.hp=clamp(player.hp+ebuc_beam_heal,0,player.max_hp)
+        end
+    else
+        station_heal_t=0
+    end
+end
+
+function update_remote_station()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*station_fields
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_station,b,0)
+            arr_set(remote_station,b+1,0)
+            arr_set(remote_station,b+2,0)
+            arr_set(remote_station,b+3,0)
+        else
+            number cnt=net_player_station(s)
+            if cnt>0
+                arr_set(remote_station,b,1)
+                arr_set(remote_station,b+1,net_player_station_x(s)*screen_w)
+                arr_set(remote_station,b+2,net_player_station_y(s)*screen_h)
+                arr_set(remote_station,b+3,0)
+            else
+                // Состояние: 0 — нет, 1 — турель стоит, 2 — идёт взрыв.
+                // b+1/b+2 хранят последнюю позицию турели, b+3 — таймер взрыва.
+                number st=arr_get(remote_station,b)
+                number bt=arr_get(remote_station,b+3)
+                if st==1&&bt<=0
+                    // Турель только что сломалась: взрыв виден и доигрывает.
+                    arr_set(remote_station,b,2)
+                    arr_set(remote_station,b+3,station_boom_time)
+                else if bt>0
+                    bt=bt-dt
+                    if bt<0
+                        bt=0
+                    end
+                    arr_set(remote_station,b+3,bt)
+                    if bt<=0
+                        arr_set(remote_station,b,0)
+                    end
+                else
+                    arr_set(remote_station,b,0)
+                end
+            end
+        end
+        s=s+1
+    end
+end
+
+function update_remote_universe()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*universe_fields
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_universe,b,0)
+            arr_set(remote_universe,b+1,0)
+        else
+            number ucnt=net_player_universe(s)
+            number prev=arr_get(remote_universe,b)
+            if ucnt!=prev&&ucnt>0
+                arr_set(remote_universe,b,ucnt)
+                arr_set(remote_universe,b+1,1)
+                arr_set(remote_universe,b+2,net_player_universe_x(s)*screen_w)
+                arr_set(remote_universe,b+3,net_player_universe_y(s)*screen_h)
+                arr_set(remote_universe,b+4,0)
+            end
+            if arr_get(remote_universe,b+1)==1
+                number t=arr_get(remote_universe,b+4)+dt
+                arr_set(remote_universe,b+4,t)
+                if t>=ebuc_universe_collapse_time
+                    arr_set(remote_universe,b+1,0)
+                    arr_set(remote_universe,b,0)
+                    // Чужая вселенная тоже бьёт локального игрока и его станцию.
+                    number rlevel=net_player_level(s)
+                    universe_collapse_remote(ebuc_universe_damage_for(rlevel))
+                    if finished!=0
+                        return
+                    end
+                end
+            end
+        end
+        s=s+1
+    end
+end
+
+function flush_queued_action()
+    if queued_punch==0&&queued_super==0
+        return
+    end
+    if punch_left>0||punch_cd>0||ultimate_visual_busy()==1
+        return
+    end
+    if queued_super==1&&super_cd<=0
+        queued_super=0
+        fire_super()
+        return
+    end
+    if queued_punch==1
+        queued_punch=0
+        fire_punch()
+    end
+end
+
+function update_game()
+    tick_alert_hold()
+    tick_revive()
+    tick_freeze()
+    tick_player_poison()
+    tick_station()
+    tick_universe()
+    update_aim()
+    if finished!=0
+        return
+    end
+    if player.hp<=0
+        if try_revive()==0
+            finish_game(2)
+            return
+        end
+    end
+    move_player()
+    number ci=0
+    loop ci<candy_count
+        if dist(arr_get(candy_x,ci),arr_get(candy_y,ci),player.x,player.y)<player.size*0.65+18
+            candies=candies+candy_give
+            save_progress()
+            ds_log("candy picked -> %g",candies)
+            candy_rand_pos(ci)
+        end
+        ci=ci+1
+    end
+    if punch_left>0
+        punch_left=punch_left-dt
+        if punch_left<0
+            punch_left=0
+        end
+    end
+    follow_punch()
+    if super_cd>0
+        super_cd=super_cd-dt
+        if super_cd<0
+            super_cd=0
+        end
+    end
+    if boom_t>0
+        boom_t=boom_t-dt
+        if boom_t<0
+            boom_t=0
+        end
+    end
+    tick_super_windup()
+    tick_santa_follow()
+    if punch_left>0&&punch.active==1&&punch.hit==0
+        if enemy_in_punch()==1
+            punch.hit=1
+            if player_class==2&&santa_follow>0
+                if player_level>=3
+                    if enemy.poison<=0
+                        enemy.poison_tick=santa_poison_tick_interval
+                        enemy.poison_damage=santa_poison_damage_for(player_level)
+                    else
+                        enemy.poison_damage=enemy.poison_damage+santa_poison_damage_for(player_level)
+                    end
+                    enemy.poison=santa_poison_time_for(player_level)
+                else
+                    if enemy.poison<=0
+                        enemy.poison_tick=santa_poison_tick_interval
+                    end
+                    enemy.poison=santa_poison_time_for(player_level)
+                end
+            end
+            enemy.hp=enemy.hp-class_punch_damage(player_class)
+            heal_after_attack()
+            if enemy.hp<=0
+                finish_game(1)
+                return
+            end
+        end
+    end
+    update_dust()
+    update_gift()
+    flush_queued_action()
+    if finished!=0
+        return
+    end
+    update_enemy()
+end

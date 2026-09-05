@@ -1,0 +1,329 @@
+function tr_super()
+    if language == 1
+        return "Снежинка"
+    end
+    return "Snowflake"
+end
+
+function tr_super_ebuc()
+    if language == 1
+        return "Ульта"
+    end
+    return "Ult"
+end
+
+function tr_class_selected()
+    if language == 1
+        return "Выбран"
+    end
+    return "Selected"
+end
+
+function tr_class_pick()
+    if language == 1
+        return "Выбрать"
+    end
+    return "Select"
+end
+
+
+function tr_levels()
+    if language == 1
+        return "Уровни"
+    end
+    return "Levels"
+end
+
+function tr_level()
+    if language == 1
+        return "Уровень"
+    end
+    return "Level"
+end
+
+// Статусы строки уровня в списке: открыт / цена открытия / закрыт.
+function tr_level_status_open()
+    if language == 1
+        return "Открыт"
+    end
+    return "Opened"
+end
+
+function tr_level_status_locked()
+    if language == 1
+        return "Закрыт"
+    end
+    return "Locked"
+end
+
+function tr_level_unlock_cost(number cost)
+    string out = ""
+    if language == 1
+        out = "Открыть · " + cost + " " + tr_cups_unit()
+    else
+        out = "Unlock · " + cost + " " + tr_cups_unit()
+    end
+    return out
+end
+
+
+function tr_levels_for_class()
+    if language == 1
+        return "Уровни класса"
+    end
+    return "Class levels"
+end
+
+function tr_class_level_effect(number cls, number n)
+    if cls == 1 && n == 1
+        if language == 1
+            return "Вторая жизнь: урон -10%"
+        end
+        return "Second life: damage -10%"
+    end
+    if cls == 1 && n == 2
+        if language == 1
+            return "Скорость +3%"
+        end
+        return "Speed +3%"
+    end
+    if cls == 1 && n == 3
+        if language == 1
+            return "Атака лечит +0.1 HP"
+        end
+        return "Attack heals +0.1 HP"
+    end
+    if cls == 2 && n == 1
+        if language == 1
+            return "Тик яда +0.15 урона"
+        end
+        return "Poison tick +0.15 damage"
+    end
+    if cls == 2 && n == 2
+        if language == 1
+            return "Тик яда +0.15 урона (x2)"
+        end
+        return "Poison tick +0.15 damage (x2)"
+    end
+    if cls == 2 && n == 3
+        if language == 1
+            return "Яд стакается, снежинка наносит урон"
+        end
+        return "Poison stacks, snowflake deals damage"
+    end
+    if cls == 3 && n == 1
+        if language == 1
+            return "Турель +2 HP"
+        end
+        return "Turret +2 HP"
+    end
+    if cls == 3 && n == 2
+        if language == 1
+            return "Спавн турели лечит +0.5 HP"
+        end
+        return "Placing a turret heals +0.5 HP"
+    end
+    if cls == 3 && n == 3
+        if language == 1
+            return "Луч турели лечит +0.1 HP/сек"
+        end
+        return "Turret beam heals +0.1 HP/sec"
+    end
+    if cls == 0 && n == 1
+        if language == 1
+            return "Урон атаки +5%"
+        end
+        return "Attack damage +5%"
+    end
+    if cls == 0 && n == 2
+        if language == 1
+            return "Скорость +2%"
+        end
+        return "Speed +2%"
+    end
+    if language == 1
+        return "Атака лечит +0.05 HP"
+    end
+    return "Attack heals +0.05 HP"
+end
+
+
+function tr_cups_unit()
+    if language == 1
+        return "кубков"
+    end
+    return "cups"
+end
+
+function tr_level_locked()
+    if language == 1
+        return "Сначала откройте предыдущий"
+    end
+    return "Unlock the previous level first"
+end
+
+function tr_level_need_cups()
+    if language == 1
+        return "Не хватает кубков для уровня"
+    end
+    return "Not enough cups for this level"
+end
+
+function tr_levels_soon()
+    if language == 1
+        return "Скоро!"
+    end
+    return "Coming soon!"
+end
+
+function tr_cups()
+    if language == 1
+        return "Кубки"
+    end
+    return "Cups"
+end
+
+function tr_buy_for(number cost, string currency)
+    string out = ""
+    if language == 1
+        out = "Купить · " + cost + " " + currency
+    else
+        out = "Buy · " + cost + " " + currency
+    end
+    return out
+end
+
+function tr_class_need_cups()
+    if language == 1
+        return "Не хватает кубков"
+    end
+    return "Not enough cups"
+end
+
+function tr_class_need_candies()
+    if language == 1
+        return "Не хватает леденцов"
+    end
+    return "Not enough candies"
+end
+
+// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
+
+function tr_battlepass_title()
+    if language == 1
+        return "Хэллоуинский батл пасс"
+    end
+    return "Halloween Battle Pass"
+end
+
+function tr_bp_level()
+    if language == 1
+        return "Уровень"
+    end
+    return "Level"
+end
+
+function tr_bp_bought()
+    if language == 1
+        return "Куплено"
+    end
+    return "Bought"
+end
+
+function tr_bp_buy()
+    if language == 1
+        return "Купить"
+    end
+    return "Buy"
+end
+
+function tr_bp_locked()
+    if language == 1
+        return "Заблокировано"
+    end
+    return "Locked"
+end
+
+function tr_bp_need_prev()
+    if language == 1
+        return "Сначала купи предыдущий уровень"
+    end
+    return "Buy the previous level first"
+end
+
+function tr_bp_need_cups()
+    if language == 1
+        return "Не хватает кубков для уровня"
+    end
+    return "Not enough cups for this level"
+end
+
+function tr_bp_reward_1()
+    if language == 1
+        return "Обычный класс: сразу 3 уровень"
+    end
+    return "Ordinary class: instant level 3"
+end
+
+function tr_bp_reward_2()
+    if language == 1
+        return "Скин «Зомби» на Азума"
+    end
+    return "Azum \"Zombie\" skin"
+end
+
+// ── Скины Азума ───────────────────────────────────────────────────────────
+function tr_skins()
+    if language == 1
+        return "Скины"
+    end
+    return "Skins"
+end
+
+function tr_skin_normal()
+    if language == 1
+        return "Обычный"
+    end
+    return "Normal"
+end
+
+function tr_skin_zombie()
+    if language == 1
+        return "Зомби"
+    end
+    return "Zombie"
+end
+
+function tr_skin_zombie_locked()
+    if language == 1
+        return "Открой 2 уровень батл пасса"
+    end
+    return "Unlock battle pass level 2"
+end
+
+// Подпись закрытого скина: чем он открывается.
+function tr_skin_bp_hint()
+    if language == 1
+        return "Батл пасс · " + SKIN_ZOMBIE_BP + " уровень"
+    end
+    return "Battle pass · level " + SKIN_ZOMBIE_BP
+end
+
+// Заголовок экрана скинов: «Скины · Азум».
+function tr_skins_title()
+    return tr_skins() + " · " + tr_class_azum()
+end
+
+function tr_cups_reward(number amount)
+    if language == 1
+        return "+" + amount + " кубков"
+    end
+    return "+" + amount + " Cups"
+end
+
+function tr_banned()
+    if language == 1
+        return "Вы забанены"
+    end
+    return "You are banned"
+end

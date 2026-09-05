@@ -1,0 +1,411 @@
+function start_enemy_attack()
+    number ta=atan2(player.y-enemy.y,player.x-enemy.x), da=ta-enemy.angle
+    if da>pi
+        da=da-2*pi
+    end
+    if da<0-pi
+        da=da+2*pi
+    end
+    // человечный промах по углу
+    number err = (rand()%100-50)/100.0 * enemy_human_wobble * pi/180
+    if rand()%100 < enemy_human_miss*100
+        err = err + (rand()%100-50)/100.0 * 0.35
+    end
+    enemy.aim_err = err
+    // Раньше здесь угол мгновенно выставлялся на игрока — враг дёргался.
+    // Теперь он доворачивается плавно во время замаха (enemy_turn_prediction),
+    // поэтому атаку начинаем только если успеем довернуться за замах.
+    number turn_budget = enemy_attack_turn_speed * (enemy_windup - enemy_lock_time)
+    if fabs(da) > turn_budget
+        return 0
+    end
+    enemy.state=1
+    enemy.state_time=enemy_windup
+    enemy.hit=0
+    enemy.react=enemy_human_react_min + (rand()%100)/100.0*(enemy_human_react_max-enemy_human_react_min)
+    return 1
+end
+
+// Плавный доворот на игрока: тот же лимит скорости, что и у доворота в замахе.
+function enemy_face_player()
+    enemy_predict(enemy_lead)
+    number ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x), da=ta-enemy.angle
+    if da>pi
+        da=da-2*pi
+    end
+    if da<0-pi
+        da=da+2*pi
+    end
+    number step=enemy_attack_turn_speed*dt
+    enemy.angle=enemy.angle+clamp(da,0-step,step)
+end
+
+function enemy_engage(number desired)
+    number dx=aim_tx-enemy.x, dy=aim_ty-enemy.y, d=sqrt(dx*dx+dy*dy)
+    if d<1
+        d=1
+    end
+    // добавляем кривизну ходьбы
+    enemy.wobble_t = enemy.wobble_t + dt* (1.2 + (rand()%100)/100.0)
+    number wobble_off = sin(enemy.wobble_t*2.7)*14 + cos(enemy.wobble_t*1.3)*9
+    // желаемая дистанция с рандомом
+    desired = desired + (rand()%100-50)/100.0*18
+    number radial=clamp((d-desired)*enemy_close_gain,-bot_speed,bot_speed)
+    number orbit=bot_strafe_speed*enemy.strafe*0.5
+    if d>desired+110
+        orbit=orbit*0.4
+    end
+    // иногда идёт не идеально ровно — добавляем боковой шум
+    number perp_x = 0 - dy/d * wobble_off
+    number perp_y = dx/d * wobble_off
+    number vx=dx/d*radial - dy/d*orbit + perp_x*0.3
+    number vy=dy/d*radial + dx/d*orbit + perp_y*0.3
+    // скорость как у игрока, но с вариацией
+    number cap=bot_speed*enemy.speed_var
+    number sp=sqrt(vx*vx+vy*vy)
+    if sp>cap&&sp>0.001
+        vx=vx/sp*cap
+        vy=vy/sp*cap
+    end
+    // иногда человек спотыкается — резко меняет скорость
+    if rand()%1000 < 8
+        vx = vx*0.4
+        vy = vy*0.4
+        enemy.hesit = 0.08 + (rand()%100)/1000.0
+    end
+    if enemy.hesit>0
+        enemy.hesit = enemy.hesit - dt
+        vx = vx*0.55
+        vy = vy*0.55
+        if enemy.hesit<0
+            enemy.hesit=0
+        end
+    end
+    number ms=clamp(dt*enemy_move_smooth,0,1)
+    enemy.svx=lerp(enemy.svx,vx,ms)
+    enemy.svy=lerp(enemy.svy,vy,ms)
+    enemy_move(enemy.svx,enemy.svy)
+end
+
+function update_enemy()
+    enemy_track_player()
+    enemy.mvx=0
+    enemy.mvy=0
+    enemy.wobble_t = enemy.wobble_t + dt
+
+    if enemy.freeze>0
+        enemy.freeze=enemy.freeze-dt
+        if enemy.freeze<0
+            enemy.freeze=0
+        end
+    end
+    if enemy.freeze>0
+        freeze_a=freeze_a+dt/freeze_fade_in
+    else
+        freeze_a=freeze_a-dt/freeze_fade_out
+    end
+    if freeze_a<0
+        freeze_a=0
+    end
+    if freeze_a>1
+        freeze_a=1
+    end
+    if enemy.cooldown>0
+        enemy.cooldown=enemy.cooldown-dt*enemy_freeze_factor()
+        if enemy.cooldown<0
+            enemy.cooldown=0
+        end
+    end
+    if enemy.dodge_cd>0
+        enemy.dodge_cd=enemy.dodge_cd-dt
+        if enemy.dodge_cd<0
+            enemy.dodge_cd=0
+        end
+    end
+    if enemy.flank>0
+        enemy.flank=enemy.flank-dt
+    end
+    if enemy.react>0
+        enemy.react=enemy.react-dt
+        if enemy.react<0
+            enemy.react=0
+        end
+    end
+    if enemy.poison>0
+        if enemy.poison_tick<=0
+            enemy.poison_tick=santa_poison_tick_interval
+        end
+        enemy.poison=enemy.poison-dt
+        enemy.poison_tick=enemy.poison_tick-dt
+        if enemy.poison_tick<=0
+            number tick_dmg=santa_poison_damage_for(player_level)
+            if player_level>=3&&enemy.poison_damage>0
+                tick_dmg=enemy.poison_damage
+            end
+            enemy.hp=enemy.hp-tick_dmg
+            enemy.poison=0
+            enemy.poison_tick=0
+            enemy.poison_damage=0
+            if enemy.hp<=0
+                enemy.hp=0
+                finish_game(1)
+                return
+            end
+        end
+        if enemy.poison<=0
+            enemy.poison=0
+            enemy.poison_tick=0
+            enemy.poison_damage=0
+        end
+    end
+    if enemy.poison>0
+        poison_a=poison_a+dt/freeze_fade_in
+    else
+        poison_a=poison_a-dt/freeze_fade_out
+    end
+    if poison_a<0
+        poison_a=0
+    end
+    if poison_a>1
+        poison_a=1
+    end
+
+    number dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
+    if d<1
+        d=1
+    end
+    number pr=player.size*0.65, reach=enemy_punch_reach+pr
+
+    // замах
+    if enemy.state==1
+        enemy.state_time=enemy.state_time-dt
+        if enemy.state_time>enemy_lock_time
+            enemy_turn_prediction()
+        end
+        enemy_predict(enemy_lead)
+        number adx=aim_tx-enemy.x, ady=aim_ty-enemy.y, ad=sqrt(adx*adx+ady*ady)
+        if ad<1
+            ad=1
+        end
+        if ad>reach-enemy_hit_margin
+            enemy_move(adx/ad*bot_speed*0.85,ady/ad*bot_speed*0.85)
+        end
+        if enemy.state_time<=0
+            enemy.state=2
+            enemy.state_time=enemy_punch_time
+            enemy.hit=0
+        end
+        return
+    end
+
+    if enemy.state==2
+        enemy.state_time=enemy.state_time-dt
+        if enemy.hit==0&&player_in_enemy_punch()==1
+            // иногда человек промахивается даже в упор
+            if rand()%100 >= enemy_human_miss*100 || rand()%100 < 30
+                enemy.hit=1
+                if revive_prot<=0
+                    take_damage(enemy_damage)
+                    ds_log("enemy punch! hp %g",player.hp)
+                    if player.hp<=0
+                        player.hp=0
+                        if try_revive()==0
+                            finish_game(2)
+                            return
+                        end
+                    end
+                end
+            else
+                ds_log("enemy miss (human)")
+            end
+        end
+        if enemy.state_time<=0
+            enemy.state=3
+            enemy.state_time=enemy_recovery
+            enemy.cooldown=enemy_roll_cooldown()
+            if enemy.hit==1&&enemy_free_window()==1
+                enemy.cooldown=enemy_cooldown_min*0.7
+                enemy.think=0
+            else
+                enemy.think=enemy_think_min+(rand()%100)/100.0*(enemy_think_max-enemy_think_min)
+            end
+        end
+        return
+    end
+
+    if enemy.state==3
+        enemy.state_time=enemy.state_time-dt
+        if enemy_free_window()==0&&d<reach*0.85
+            enemy_predict(0)
+            enemy_engage(reach*0.95)
+        end
+        // После удара не отворачиваемся в сторону движения: враг остаётся
+        // лицом к игроку и сразу готов бить снова.
+        enemy_face_player()
+        if enemy.state_time<=0
+            enemy.state=0
+            if enemy.flank<=0
+                enemy_pick_flank()
+                enemy.flank=enemy_flank_time + (rand()%100)/100.0*0.4
+            end
+        end
+        return
+    end
+
+    if enemy.state==4
+        enemy.state_time=enemy.state_time-dt
+        number dpx=cos(player.angle), dpy=sin(player.angle)
+        // кривой уворот
+        number dodge_err = (rand()%100-50)/100.0*0.6
+        number dvx=-dpy*enemy.strafe*bot_dodge_speed*(0.7+dodge_err)-dpx*bot_speed*0.25
+        number dvy=dpx*enemy.strafe*bot_dodge_speed*(0.7+dodge_err)-dpy*bot_speed*0.25
+        enemy_move(dvx,dvy)
+        enemy_face_motion()
+        if enemy.state_time<=0
+            enemy.state=0
+            enemy.dodge_cd=enemy_dodge_cooldown + (rand()%100)/100.0*0.3
+            enemy.cooldown=0
+            enemy.think=0.08
+        end
+        return
+    end
+
+    // реакция на удар игрока — не всегда уклоняется, иногда криво
+    if punch_left>0&&punch_left<=punch_time-enemy.react&&enemy.dodge_cd<=0&&enemy_in_danger()==1
+        if enemy.react<=0
+            // шанс не увернуться
+            if rand()%100 < enemy_human_dodge_fail*100
+                ds_log("enemy dodge fail (human)")
+            else
+                number side=(enemy.y-player.y)*cos(player.angle)-(enemy.x-player.x)*sin(player.angle)
+                if side>=0
+                    enemy.strafe=1
+                else
+                    enemy.strafe=-1
+                end
+                // иногда выбирает не ту сторону
+                if rand()%100 < 18
+                    enemy.strafe = 0 - enemy.strafe
+                end
+                enemy.state=4
+                enemy.state_time=enemy_dodge_time + (rand()%100-50)/100.0*0.08
+                enemy.react=enemy_human_react_min + (rand()%100)/100.0*(enemy_human_react_max-enemy_human_react_min)
+                return
+            end
+        end
+    end
+
+    if enemy_free_window()==1
+        enemy.think=0
+        if enemy.cooldown<=0&&(d<=reach||enemy_would_hit()==1)
+            // иногда фейнт вместо атаки
+            if rand()%100 < 12
+                enemy_pick_flank()
+                enemy.flank=enemy_flank_time
+                enemy.think=0.12
+                enemy_engage(reach*1.2)
+                enemy_face_motion()
+                return
+            end
+            if start_enemy_attack()==1
+                return
+            end
+            // Ещё не довернулся: плавно разворачиваемся, не замирая на месте.
+            enemy_predict(enemy_lead)
+            enemy_engage(reach*0.55)
+            enemy_face_player()
+            return
+        end
+        enemy_predict(enemy_lead)
+        enemy_engage(reach*0.55)
+        // Вплотную смотрим на игрока (иначе он крутится спиной перед ударом),
+        // издалека — в сторону движения.
+        if d<=reach
+            enemy_face_player()
+        else
+            enemy_face_motion()
+        end
+        return
+    end
+
+    if enemy.cooldown<=0&&enemy.think<=0&&(d<=reach*0.95||enemy_would_hit()==1)
+        // человечная задержка — не мгновенно
+        if enemy.react<=0
+            if start_enemy_attack()==1
+                return
+            end
+        end
+    end
+
+    if enemy.think>0
+        enemy.think=enemy.think-dt
+    end
+    if enemy.flank<=0
+        enemy_pick_flank()
+        enemy.flank=enemy_flank_time
+    end
+
+    number desired=reach*0.62
+    if d<enemy_min_distance*0.75
+        desired=enemy_min_distance*0.75
+    end
+    enemy_predict(enemy_lead)
+    enemy_engage(desired)
+    if d<=reach
+        enemy_face_player()
+    else
+        enemy_face_motion()
+    end
+end
+
+function tick_freeze()
+    if player_freeze>0
+        player_freeze=player_freeze-dt
+        if player_freeze<0
+            player_freeze=0
+        end
+    end
+    if player_freeze>0
+        pfreeze_a=pfreeze_a+dt/freeze_fade_in
+    else
+        pfreeze_a=pfreeze_a-dt/freeze_fade_out
+    end
+    if pfreeze_a<0
+        pfreeze_a=0
+    end
+    if pfreeze_a>1
+        pfreeze_a=1
+    end
+end
+
+function tick_player_poison()
+    if player_poison>0
+        if player_poison_tick<=0
+            player_poison_tick=santa_poison_tick_interval
+        end
+        player_poison=player_poison-dt
+        player_poison_tick=player_poison_tick-dt
+        if player_poison_tick<=0
+            take_damage(player_poison_damage)
+            player_poison=0
+            player_poison_tick=0
+            player_poison_damage=0
+        end
+        if player_poison<=0
+            player_poison=0
+            player_poison_tick=0
+            player_poison_damage=0
+        end
+    end
+    if player_poison>0
+        ppoison_a=ppoison_a+dt/freeze_fade_in
+    else
+        ppoison_a=ppoison_a-dt/freeze_fade_out
+    end
+    if ppoison_a<0
+        ppoison_a=0
+    end
+    if ppoison_a>1
+        ppoison_a=1
+    end
+end
