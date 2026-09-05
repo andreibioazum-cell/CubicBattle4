@@ -151,213 +151,77 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
     return 2;
 }
 
-/* Разбор записи /users/<ник> в локальный прогресс (без пароля: в защищённом
- * режиме пароль проверяет Firebase Auth, а не база). */
-static void apply_user_json(const char *resp) {
-    int cups = (int)num(resp, "cups", 0);
-    int candies = (int)num(resp, "candies", 0);
-    int cls = (int)num(resp, "cls", 0);
-    int azum = (int)num(resp, "azum", 0);
-    int santa = (int)num(resp, "santa", 0);
-    int ebuc = (int)num(resp, "ebuc", 0);
-    int level = (int)num(resp, "level", 0);
-    int levels_unlocked = (int)num(resp, "levels", -1);
-    int ordinary_level = (int)num(resp, "ordinary_level", -1);
-    int ordinary_levels_unlocked = (int)num(resp, "ordinary_levels", -1);
-    int azum_level = (int)num(resp, "azum_level", -1);
-    int azum_levels_unlocked = (int)num(resp, "azum_levels", -1);
-    int santa_level = (int)num(resp, "santa_level", -1);
-    int santa_levels_unlocked = (int)num(resp, "santa_levels", -1);
-    int ebuc_level = (int)num(resp, "ebuc_level", -1);
-    int ebuc_levels_unlocked = (int)num(resp, "ebuc_levels", -1);
-    int bp_level = (int)num(resp, "bp", 0);
-    int azum_skin = (int)num(resp, "azum_skin", 0);
-    if (levels_unlocked < 0) levels_unlocked = level;
-    if (cups < 0) cups = 0;
-    if (candies < 0) candies = 0;
-    if (cls != 1 && cls != 2 && cls != 3) cls = 0;
-    azum = azum ? 1 : 0;
-    santa = santa ? 1 : 0;
-    ebuc = ebuc ? 1 : 0;
-    if (cls == 1 && !azum) cls = 0;
-    if (cls == 2 && !santa) cls = 0;
-    if (cls == 3 && !ebuc) cls = 0;
-    if (ordinary_level < 0 && ordinary_levels_unlocked < 0 &&
-        azum_level < 0 && azum_levels_unlocked < 0 &&
-        santa_level < 0 && santa_levels_unlocked < 0 &&
-        ebuc_level < 0 && ebuc_levels_unlocked < 0) {
-        ordinary_level=ordinary_levels_unlocked=0;
-        azum_level=azum_levels_unlocked=0;
-        santa_level=santa_levels_unlocked=0;
-        ebuc_level=ebuc_levels_unlocked=0;
-        if (cls==1 && azum) { azum_level=level; azum_levels_unlocked=levels_unlocked; }
-        else if (cls==2 && santa) { santa_level=level; santa_levels_unlocked=levels_unlocked; }
-        else if (cls==3 && ebuc) { ebuc_level=level; ebuc_levels_unlocked=levels_unlocked; }
-        else { ordinary_level=level; ordinary_levels_unlocked=levels_unlocked; }
-    } else {
-        if (ordinary_level < 0) ordinary_level = 0;
-        if (ordinary_levels_unlocked < 0) ordinary_levels_unlocked = ordinary_level;
-        if (azum_level < 0) azum_level = 0;
-        if (azum_levels_unlocked < 0) azum_levels_unlocked = azum_level;
-        if (santa_level < 0) santa_level = 0;
-        if (santa_levels_unlocked < 0) santa_levels_unlocked = santa_level;
-        if (ebuc_level < 0) ebuc_level = 0;
-        if (ebuc_levels_unlocked < 0) ebuc_levels_unlocked = ebuc_level;
-    }
-    normalize_level_pair(&level, &levels_unlocked);
-    normalize_level_pair(&ordinary_level, &ordinary_levels_unlocked);
-    normalize_level_pair(&azum_level, &azum_levels_unlocked);
-    normalize_level_pair(&santa_level, &santa_levels_unlocked);
-    normalize_level_pair(&ebuc_level, &ebuc_levels_unlocked);
-    if (cls == 0) { level=ordinary_level; levels_unlocked=ordinary_levels_unlocked; }
-    else if (cls == 1) { level=azum_level; levels_unlocked=azum_levels_unlocked; }
-    else if (cls == 2) { level=santa_level; levels_unlocked=santa_levels_unlocked; }
-    else { level=ebuc_level; levels_unlocked=ebuc_levels_unlocked; }
-    if (bp_level < 0) bp_level = 0;
-    if (bp_level > BP_MAX) bp_level = BP_MAX;
-    azum_skin = azum_skin ? 1 : 0;
-    pg_lock();
-    pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.ebuc = ebuc;
-    pg.level = level; pg.levels_unlocked = levels_unlocked;
-    pg.ordinary_level = ordinary_level; pg.ordinary_levels_unlocked = ordinary_levels_unlocked;
-    pg.azum_level = azum_level; pg.azum_levels_unlocked = azum_levels_unlocked;
-    pg.santa_level = santa_level; pg.santa_levels_unlocked = santa_levels_unlocked;
-    pg.ebuc_level = ebuc_level; pg.ebuc_levels_unlocked = ebuc_levels_unlocked;
-    pg.bp_level = bp_level; pg.azum_skin = azum_skin;
-    pg.loaded = 1;
-    pg_unlock();
-    pending_cls = cls;
-    pending_level = level;
-    pending_skin = azum_skin;
-    progress_write(cups, candies, cls, azum, santa, ebuc, level, levels_unlocked,
-                   ordinary_level, ordinary_levels_unlocked,
-                   azum_level, azum_levels_unlocked,
-                   santa_level, santa_levels_unlocked,
-                   ebuc_level, ebuc_levels_unlocked,
-                   bp_level, azum_skin);
-}
-
-/* Протолкнуть текущий локальный прогресс в облако (только после того, как
- * сессия логина уже установлена — иначе PATCH уйдёт без авторизации). */
-static void push_pg_to_cloud(void) {
-    int cups, candies, cls, azum, santa, ebuc, lv, lu;
-    int ol, ou, al, au, sl, su, el, eul, bp, sk;
-    pg_lock();
-    cups = pg.cups; candies = pg.candies; cls = pg.cls;
-    azum = pg.azum; santa = pg.santa; ebuc = pg.ebuc;
-    lv = pg.level; lu = pg.levels_unlocked;
-    ol = pg.ordinary_level; ou = pg.ordinary_levels_unlocked;
-    al = pg.azum_level; au = pg.azum_levels_unlocked;
-    sl = pg.santa_level; su = pg.santa_levels_unlocked;
-    el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
-    bp = pg.bp_level; sk = pg.azum_skin;
-    pg_unlock();
-    net_save_progress_all(cups, candies, cls, azum, santa, ebuc,
-                          lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
-}
-
-/* Раньше правила Firebase не пропускали поля ebuc / ebuc_level / ebuc_levels и
- * cls=3, поэтому покупка бука не попадала в облако: после перезахода облачная
- * запись «стирала» локально купленный класс. Теперь, если на устройстве бук
- * уже куплен (progress.dat), а облачная запись его не знает, возвращаем
- * локальную покупку. Возврат 1 — облако нужно обновить после логина. */
-static int apply_user_json_keep_local(const char *resp) {
-    int had = 0, local_ebuc = 0, local_cls = 0, local_el = 0, local_eu = 0;
-    progress_read();
-    pg_lock();
-    if (pg.loaded) { had = 1; local_ebuc = pg.ebuc; local_cls = pg.cls;
-                    local_el = pg.ebuc_level; local_eu = pg.ebuc_levels_unlocked; }
-    pg_unlock();
-    apply_user_json(resp);
-    if (!had || local_ebuc != 1) return 0;
-    pg_lock();
-    if (pg.ebuc != 0) { pg_unlock(); return 0; }
-    pg.ebuc = 1;
-    if (local_cls == 3) pg.cls = 3;
-    if (local_el > pg.ebuc_level) pg.ebuc_level = local_el;
-    if (local_eu > pg.ebuc_levels_unlocked) pg.ebuc_levels_unlocked = local_eu;
-    int cups = pg.cups, candies = pg.candies, cls = pg.cls;
-    int azum = pg.azum, santa = pg.santa, lv = pg.level, lu = pg.levels_unlocked;
-    int ol = pg.ordinary_level, ou = pg.ordinary_levels_unlocked;
-    int al = pg.azum_level, au = pg.azum_levels_unlocked;
-    int sl = pg.santa_level, su = pg.santa_levels_unlocked;
-    int el = pg.ebuc_level, eul = pg.ebuc_levels_unlocked;
-    int bp = pg.bp_level, sk = pg.azum_skin;
-    pg_unlock();
-    pending_cls = cls; pending_level = lv; pending_skin = sk;
-    progress_write(cups, candies, cls, azum, santa, 1, lv, lu,
-                   ol, ou, al, au, sl, su, el, eul, bp, sk);
-    LOG("restored locally bought ebuc (cloud sync after login)");
-    return 1;
-}
-
-/* Создание записи нового игрока. with_pass — только для старого режима без
+/* Создание записи нового игрока. pass — только для старого режима без
  * Firebase Auth: там пароль хранится в базе (и это плохо). */
 static int put_default_user(const char *req_url, const char *nick, const char *pass) {
-    char body[BODY], epass[128], enick[64];
-    json_escape(pass ? pass : "", epass, sizeof(epass));
-    json_escape(nick, enick, sizeof(enick));
-    snprintf(body, sizeof(body),
-             "{\"nick\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"ebuc\":0,"
-             "\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,"
-             "\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0,"
-             "\"ebuc_level\":0,\"ebuc_levels\":0,\"bp\":0,\"azum_skin\":0%s%s}",
-             enick, fb_enabled() ? "" : ",\"pass\":\"", fb_enabled() ? "" : epass);
+    Profile empty;
+    char body[BODY], epass[128];
+    size_t n;
+    memset(&empty, 0, sizeof(empty));
+    snprintf(empty.owner, sizeof(empty.owner), "%s", nick ? nick : "");
+    profile_json(body, sizeof(body), &empty, nick ? nick : "", 1);
+    if (!body[0]) return 0;
+    if (!fb_enabled() && pass && *pass) {
+        json_escape(pass, epass, sizeof(epass));
+        n = strlen(body);
+        if (body[n - 1] == '}' && n + strlen(epass) + 12 < sizeof(body))
+            snprintf(body + n - 1, sizeof(body) - (n - 1), ",\"pass\":\"%s\"}", epass);
+    }
     return fb_http("PUT", req_url, body, NULL, 0);
 }
 
+/* Сессия установлена (вход или регистрация), а записи в облаке не было.
+ * Локальный прогресс переносим в новый аккаунт, если он ничей (файл от старой
+ * версии) или принадлежит этому нику: оффлайн-покупки не должны пропадать, но
+ * и чужой аккаунт на этом устройстве подхватывать нельзя. */
 static void net_auth_session_ok(const char *nick, const char *pass) {
-    /* Если на устройстве уже есть оффлайн-прогресс (купленные классы,
-     * валюты, уровни), создание нового аккаунта не должно его стирать:
-     * переносим всё в облачную запись нового ника. */
-    int keep = 0;
-    int cups = 0, candies = 0, cls = 0, azum = 0, santa = 0, ebuc = 0;
-    int lv = 0, lu = 0, ol = 0, ou = 0, al = 0, au = 0, sl = 0, su = 0, el = 0, eul = 0;
-    int bp = 0, sk = 0;
+    Profile p;
+    int moved = 0, mine = 0;
+    memset(&p, 0, sizeof(p));
     progress_read();
+    achievements_read();
     pg_lock();
-    if (pg.loaded) {
-        cups = pg.cups; candies = pg.candies; cls = pg.cls;
-        azum = pg.azum; santa = pg.santa; ebuc = pg.ebuc;
-        lv = pg.level; lu = pg.levels_unlocked;
-        ol = pg.ordinary_level; ou = pg.ordinary_levels_unlocked;
-        al = pg.azum_level; au = pg.azum_levels_unlocked;
-        sl = pg.santa_level; su = pg.santa_levels_unlocked;
-        el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
-        bp = pg.bp_level; sk = pg.azum_skin;
-        if (cups > 0 || candies > 0 || azum || santa || ebuc || cls != 0 || bp > 0) keep = 1;
+    mine = pg.loaded && (pg.p.owner[0] == 0 || nick_same(pg.p.owner, nick));
+    if (mine) {
+        p = pg.p;
+        moved = p.cups > 0 || p.candies > 0 || p.azum || p.santa || p.ebuc ||
+                p.cls != 0 || p.bp_level > 0 || p.azum_skin > 0 ||
+                p.ordinary_levels_unlocked > 0 || p.azum_levels_unlocked > 0 ||
+                p.santa_levels_unlocked > 0 || p.ebuc_levels_unlocked > 0;
     }
     pg_unlock();
-    if (keep) {
-        lg_lock();
-        snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
-        snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
-        lg.status = NET_LOGIN_OK;
-        lg_unlock();
-        session_save(nick, pass);
-        net_save_progress_all(cups, candies, cls, azum, santa, ebuc,
-                              lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
-        LOG("moved local progress into new account '%s'", nick);
-        return;
+    if (!mine) {
+        /* Копия на устройстве принадлежит другому нику — его награды новому
+         * аккаунту не отдаём (свои он получит заново: check_achievements()
+         * выдаёт «Привет!» и «Потрогай траву» по текущему прогрессу). */
+        ds_mutex_lock(ach_lock);
+        ach_flags = 0;
+        ach_loaded = 1;
+        ds_mutex_unlock(ach_lock);
+        achievements_write(0);
     }
-    pg_lock();
-    pg.cups = 0; pg.candies = 0; pg.cls = 0; pg.azum = 0; pg.santa = 0; pg.ebuc = 0;
-    pg.level = 0; pg.levels_unlocked = 0;
-    pg.ordinary_level = 0; pg.ordinary_levels_unlocked = 0;
-    pg.azum_level = 0; pg.azum_levels_unlocked = 0;
-    pg.santa_level = 0; pg.santa_levels_unlocked = 0;
-    pg.ebuc_level = 0; pg.ebuc_levels_unlocked = 0;
-    pg.bp_level = 0; pg.azum_skin = 0;
-    pg.loaded = 1;
-    pg_unlock();
-    pending_cls = 0; pending_level = 0; pending_skin = 0;
-    progress_write(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     lg_lock();
     snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
     snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
     lg.status = NET_LOGIN_OK;
     lg_unlock();
     session_save(nick, pass);
+    /* profile_save поставит владельца, ts, подтянет достижения, запишет файл и
+     * отправит профиль в облако (для нового аккаунта — нулевой). */
+    profile_save(&p);
+    if (moved) LOG("moved local progress into account '%s'", nick);
+}
+
+/* Вход в существующий аккаунт: запоминаем сессию (auth.dat), а если слияние
+ * показало, что облако отстало от локальной копии, сразу догоняем его. */
+static void net_login_ok_existing(const char *nick, const char *pass, int cloud_behind) {
+    lg_lock();
+    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
+    snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
+    lg.status = NET_LOGIN_OK;
+    lg_unlock();
+    session_save(nick, pass);
+    if (cloud_behind) progress_push_cloud_current();
 }
 
 /* В защищённом режиме ник обязан быть ASCII (латиница/цифры/«_»): из него

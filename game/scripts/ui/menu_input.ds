@@ -33,9 +33,10 @@ function draw_login_field(string label, string value, string placeholder, number
     text_in_field(shown, login_x() + field_text_pad, y, login_fh, text_color, 0.6)
 end
 
+// Заголовка «Вход и регистрация» на экране нет: поля подписаны сами («Ник»,
+// «Пароль»), а кнопка под ними и так говорит, что делает экран.
 function draw_login()
     screen_fill()
-    text(tr_login_title(), login_x() + login_lab_ox, login_title_y(), text_color)
     draw_login_field(tr_nick(), login_nick, tr_nick_ph(), login_nick_y(), login_field == 1)
     draw_login_field(tr_pass(), login_pass, tr_pass_ph(), login_pass_y(), login_field == 2)
     button_scaled(tr_login_btn(), login_btn_x(), login_btn_y(), login_btn_w, btn_h, 0.65)
@@ -232,11 +233,11 @@ function touch_settings(number x, number y)
         return
     end
     if hit_menu_row(x, y, 1) == 1
-        language = 0
+        set_language(0)
         return
     end
     if hit_menu_row(x, y, 2) == 1
-        language = 1
+        set_language(1)
     end
 end
 

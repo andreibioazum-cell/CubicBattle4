@@ -1,47 +1,6 @@
-static void achievements_read(void) {
-    char path[320];
-    FILE *f;
-    unsigned int flags = 0;
-    ds_mutex_lock(ach_lock);
-    if (ach_loaded) { ds_mutex_unlock(ach_lock); return; }
-    ds_mutex_unlock(ach_lock);
-    data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
-    f = fopen(path, "r");
-    if (f) {
-        /* Современный формат — одно целое число-битмаск. Старые сборки писали
-         * «welcome all_characters» (0/1 0/1): такой файл тоже читаем и
-         * перекладываем в биты. */
-        char line[64];
-        if (fgets(line, sizeof(line), f)) {
-            int a = 0, b = 0;
-            if (sscanf(line, "%d %d", &a, &b) == 2) {
-                flags = (unsigned int)((a ? ACH_FLAG_WELCOME : 0)
-                                       | (b ? ACH_FLAG_ALL_CHARACTERS : 0));
-            } else if (sscanf(line, "%u", &flags) != 1) {
-                flags = 0;
-            }
-        } else {
-            flags = 0;
-        }
-        fclose(f);
-    }
-    ds_mutex_lock(ach_lock);
-    ach_flags = flags;
-    ach_loaded = 1;
-    ds_mutex_unlock(ach_lock);
-}
-
-static void achievements_write(unsigned int flags) {
-    char path[320];
-    FILE *f;
-    data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
-    f = fopen(path, "w");
-    if (f) {
-        fprintf(f, "%u\n", flags);
-        fclose(f);
-    }
-}
-
+/* Публичный API достижений (биты ACH_FLAG_* описаны в net.h). Само хранение
+ * живёт в state_storage.inc: achievements.dat на устройстве и поле ach в
+ * облачной записи игрока — награда больше не привязана к одному устройству. */
 double net_load_achievement_flags(void) {
     double value;
     achievements_read();
@@ -49,6 +8,7 @@ double net_load_achievement_flags(void) {
     return value;
 }
 
+/* Заменить маску целиком (локально и в облаке). */
 void net_save_achievement_flags(double flags) {
     unsigned int f = (unsigned int)flags;
     ds_mutex_lock(ach_lock);
@@ -56,6 +16,7 @@ void net_save_achievement_flags(double flags) {
     ach_loaded = 1;
     ds_mutex_unlock(ach_lock);
     achievements_write(f);
+    progress_push_cloud_current();
 }
 
 double net_has_achievement_flag(double flag) {
@@ -67,6 +28,8 @@ double net_has_achievement_flag(double flag) {
     return result;
 }
 
+/* Выдать награду: бит добавляется к маске, маска пишется в файл и сразу уходит
+ * в облако вместе с профилем (progress_push_cloud_current). */
 void net_mark_achievement_flag(double flag) {
     unsigned int f;
     achievements_read();
@@ -75,6 +38,7 @@ void net_mark_achievement_flag(double flag) {
     f = ach_flags;
     ds_mutex_unlock(ach_lock);
     achievements_write(f);
+    progress_push_cloud_current();
 }
 
 void net_set_class(double cls) {

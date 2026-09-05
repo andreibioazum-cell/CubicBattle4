@@ -18,9 +18,18 @@
             if (net_log_ok()) LOGERR("net_auth: network error connecting to %s", req_url);
             return (double)NET_ERROR;
         }
-        if (code != 200 || !p || !*p || !strncmp(p, "null", 4)) {
-            /* Записи ещё нет (новый аккаунт или старый без записи) — создаём
-             * дефолтную без пароля. */
+        if (code != 200) {
+            /* Прочитать профиль не дали (401/403/5xx). Считать запись
+             * отсутствующей здесь нельзя: put_default_user перезаписал бы весь
+             * облачный прогресс игрока нулями. Выходим ошибкой — локальная
+             * копия при этом цела, а net_autologin продолжит по кэшу. */
+            if (net_log_ok())
+                LOGERR("net_auth: read profile '%s' failed HTTP %d (cloud record untouched)", nick, code);
+            return (double)NET_ERROR;
+        }
+        if (!p || !*p || !strncmp(p, "null", 4)) {
+            /* Записи действительно нет (новый аккаунт или старый без записи) —
+             * создаём дефолтную без пароля. */
             int put_code = put_default_user(req_url, nick, NULL);
             if (put_code != 200) {
                 if (net_log_ok()) LOGERR("net_auth: create user record failed HTTP %d", put_code);
@@ -31,16 +40,11 @@
             return (double)NET_LOGIN_OK;
         }
         if (*p == '{') {
-            int restored = apply_user_json_keep_local(resp);
-            lg_lock();
-            snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
-            snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
-            lg.status = NET_LOGIN_OK;
-            lg_unlock();
-            session_save(nick, pass);
-            if (restored) push_pg_to_cloud();
-            LOG("logged in: '%s' (cups=%d, candies=%d)", nick,
-                (int)num(resp, "cups", 0), (int)num(resp, "candies", 0));
+            int cloud_behind = apply_user_json_merge(resp, nick);
+            net_login_ok_existing(nick, pass, cloud_behind);
+            LOG("logged in: '%s' (cups=%d, candies=%d, cls=%d, ach=%u)", nick,
+                (int)num(resp, "cups", 0), (int)num(resp, "candies", 0),
+                (int)num(resp, "cls", 0), (unsigned int)num(resp, "ach", 0));
             return (double)NET_LOGIN_OK;
         }
         return (double)NET_ERROR;
@@ -54,7 +58,7 @@
     }
 
     const char *p = skip_ws(resp);
-    if (!p || !*p || !strncmp(p, "null", 4) || code == 404) {
+    if (code == 404 || (code == 200 && (!p || !*p || !strncmp(p, "null", 4)))) {
         int put_code = put_default_user(req_url, nick, pass);
         if (put_code != 200) {
             if (net_log_ok()) LOGERR("net_auth: register failed HTTP %d", put_code);
@@ -64,21 +68,23 @@
         LOG("registered and logged in: '%s'", nick);
         return (double)NET_LOGIN_OK;
     }
+    if (code != 200) {
+        /* То же правило, что и в защищённом режиме: ошибка чтения — не
+         * отсутствие записи, облачный прогресс не трогаем. */
+        if (net_log_ok())
+            LOGERR("net_auth: read profile '%s' failed HTTP %d (cloud record untouched)", nick, code);
+        return (double)NET_ERROR;
+    }
 
     if (*p == '{') {
         char got_pass[64] = "";
         strv(resp, "pass", got_pass, sizeof(got_pass));
         if (strcmp(got_pass, pass) == 0) {
-            int restored = apply_user_json_keep_local(resp);
-            lg_lock();
-            snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
-            snprintf(lg.session_pass, sizeof(lg.session_pass), "%s", pass);
-            lg.status = NET_LOGIN_OK;
-            lg_unlock();
-            session_save(nick, pass);
-            if (restored) push_pg_to_cloud();
-            LOG("logged in: '%s' (cups=%d, candies=%d)", nick,
-                (int)num(resp, "cups", 0), (int)num(resp, "candies", 0));
+            int cloud_behind = apply_user_json_merge(resp, nick);
+            net_login_ok_existing(nick, pass, cloud_behind);
+            LOG("logged in: '%s' (cups=%d, candies=%d, cls=%d, ach=%u)", nick,
+                (int)num(resp, "cups", 0), (int)num(resp, "candies", 0),
+                (int)num(resp, "cls", 0), (unsigned int)num(resp, "ach", 0));
             return (double)NET_LOGIN_OK;
         } else {
             if (net_log_ok()) LOG("wrong password for '%s'", nick);

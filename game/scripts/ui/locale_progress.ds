@@ -208,13 +208,8 @@ function tr_class_need_candies()
 end
 
 // ── Хэллоуинский батл пасс ────────────────────────────────────────────────
-
-function tr_battlepass_title()
-    if language == 1
-        return "Хэллоуинский батл пасс"
-    end
-    return "Halloween Battle Pass"
-end
+// Заголовка у экрана батл пасса нет (см. draw_battlepass в ui/menu_screens.ds),
+// поэтому отдельного перевода на «Хэллоуинский батл пасс» больше нет.
 
 function tr_bp_level()
     if language == 1

@@ -114,6 +114,13 @@ function save_progress()
     progress_push_to_net()
 end
 
+// Сменить язык интерфейса и запомнить его в профиле (файл + облако): раньше
+// язык вообще нигде не сохранялся и сбрасывался на английский при перезапуске.
+function set_language(number lang)
+    language = lang
+    net_save_language(lang)
+end
+
 // То, что нужно сетевому снимку: класс, уровень и скин своего бойца.
 function progress_push_to_net()
     net_set_class(player_class)
@@ -157,6 +164,9 @@ end
 function progress_from_storage()
     cups = net_load_cups()
     candies = net_load_candies()
+    language = net_load_language()
+    // Достижения net.c читает из файла и из облачной записи игрока и
+    // объединяет их при входе, поэтому здесь уже готовая маска.
     achievement_mask = net_load_achievement_flags()
     player_class = net_load_class()
     set_class_owned(CLASS_AZUM, net_load_azum())

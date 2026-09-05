@@ -237,13 +237,6 @@ function tr_achievement_first_buy_desc()
     return "Buy your first character"
 end
 
-function tr_login_title()
-    if language == 1
-        return "Вход и регистрация"
-    end
-    return "Login / Register"
-end
-
 function tr_nick()
     if language == 1
         return "Ник"

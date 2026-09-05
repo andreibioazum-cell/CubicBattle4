@@ -102,6 +102,10 @@ double net_load_ebuc_levels_unlocked(void);
 /* Хэллоуинский батл пасс и скины Азума. */
 double net_load_bp_level(void);
 double net_load_azum_skin(void);
+/* Язык интерфейса (0 — English, 1 — Русский): хранится в профиле игрока вместе
+ * с валютами и классами, поэтому не сбрасывается при перезапуске. */
+double net_load_language(void);
+void net_save_language(double lang);
 void net_save_progress(double cups, double candies, double cls, double azum, double santa, double ebuc,
                        double level, double levels_unlocked);
 void net_save_progress_all(double cups, double candies, double cls, double azum, double santa, double ebuc,
@@ -112,7 +116,8 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double ebuc_level, double ebuc_levels_unlocked,
                            double bp_level, double azum_skin);
 
-/* Достижения профиля: единый битмаск в achievements.dat. ACH_FLAG_* ниже —
+/* Достижения профиля: единый битмаск в achievements.dat и поле ach записи
+ * /users/<ник> в облаке (при входе маски объединяются). ACH_FLAG_* ниже —
  * код отдельных наград. Добавление новой — это новый бит, старые файлы
  * читаются как есть.
  *  WELCOME        — первый запуск игры;

@@ -63,6 +63,7 @@ BUILTINS = frozenset({
     'net_load_ebuc_levels_unlocked', 'net_load_bp_level', 'net_load_azum_skin',
     'net_load_ordinary_prime_level',
     'net_load_azum_prime_level', 'net_load_santa_prime_level',
+    'net_load_language', 'net_save_language',
     'net_save_progress', 'net_save_progress_all', 'net_load_achievement_flags',
     'net_save_achievement_flags', 'net_has_achievement_flag',
     'net_mark_achievement_flag', 'keyboard_show',
