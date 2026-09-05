@@ -81,11 +81,12 @@ function draw_settings()
     draw_menu_button(0, tr_back())
     draw_menu_button(1, "English")
     draw_menu_button(2, "Русский")
+    draw_menu_button(3, tr_mods())
 end
 
 // ── Экран классов ─────────────────────────────────────────────────────────
 // Карточка класса: спрайт, название, девиз, уровень и кнопка действия.
-// Азум в скине «Зомби» ходит своей текстурой (legacy_zombie_azum.png); если
+// Азум в скине «Зомби» ходит своей текстурой (zombie_azum.png); если
 // файлы не загрузились — прежний зелёный силуэт.
 function draw_class_card(number cls)
     number x = classes_card_x(cls)
@@ -168,7 +169,6 @@ end
 
 function draw_levels()
     screen_fill()
-    screen_title(tr_levels_for_class() + " · " + class_name())
     number n = 1
     loop n <= max_level
         draw_level_row(n)
@@ -220,7 +220,6 @@ end
 
 function draw_skins()
     screen_fill()
-    screen_title(tr_skins_title())
     number skin = 0
     loop skin < SKIN_COUNT
         draw_skin_card(skin)
@@ -298,7 +297,6 @@ end
 function draw_achievements()
     check_achievements()
     screen_fill()
-    screen_title(tr_achievements_title())
     number i = 0
     loop i < achievement_count()
         draw_achievement_card(i)
@@ -335,7 +333,6 @@ end
 
 function draw_battlepass()
     screen_fill()
-    screen_title(tr_battlepass_title())
     number n = 1
     loop n <= bp_max
         draw_bp_row(n)
@@ -382,7 +379,6 @@ end
 
 function draw_leaderboard()
     screen_fill()
-    screen_title(tr_leaderboard_title())
     number st = net_leaderboard_status()
     if st == 1
         lb_wait = lb_wait + dt

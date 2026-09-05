@@ -178,3 +178,91 @@ function progress_from_storage()
     // из того, что уже куплено.
     check_achievements()
 end
+
+// ── Моды ──────────────────────────────────────────────────────────────────
+// Установленные моды живут в шести строковых слотах (mod_1..mod_6 из
+// core/config.ds): строковых массивов в DimScript нет. Слоты всегда идут
+// подряд, поэтому удаление сдвигает список вверх.
+// Сами моды пока никак не подключаются к игре — экран только ведёт список.
+function mod_slot(number i)
+    if i == 0
+        return mod_1
+    end
+    if i == 1
+        return mod_2
+    end
+    if i == 2
+        return mod_3
+    end
+    if i == 3
+        return mod_4
+    end
+    if i == 4
+        return mod_5
+    end
+    return mod_6
+end
+
+function set_mod_slot(number i, string name)
+    if i == 0
+        mod_1 = name
+    else if i == 1
+        mod_2 = name
+    else if i == 2
+        mod_3 = name
+    else if i == 3
+        mod_4 = name
+    else if i == 4
+        mod_5 = name
+    else
+        mod_6 = name
+    end
+end
+
+// Импорт: имя файла из поля ввода занимает первый свободный слот.
+function mod_import(string name)
+    if str_len(str_trim(name)) == 0
+        mods_msg_kind = 1
+        mods_msg_t = msg_time
+        return 0
+    end
+    if mods_count >= mods_max
+        mods_msg_kind = 2
+        mods_msg_t = msg_time
+        return 0
+    end
+    set_mod_slot(mods_count, str_trim(name))
+    mods_count = mods_count + 1
+    mods_msg_kind = 3
+    mods_msg_t = msg_time
+    return 1
+end
+
+// Удаление: слот стирается, «хвост» списка сдвигается на его место.
+function mod_delete(number idx)
+    if idx < 0 || idx >= mods_count
+        return
+    end
+    number i = idx
+    loop i < mods_count - 1
+        set_mod_slot(i, mod_slot(i + 1))
+        i = i + 1
+    end
+    set_mod_slot(mods_count - 1, "")
+    mods_count = mods_count - 1
+    mods_msg_kind = 4
+    mods_msg_t = msg_time
+end
+
+function mods_msg_text()
+    if mods_msg_kind == 1
+        return tr_mods_no_name()
+    end
+    if mods_msg_kind == 2
+        return tr_mods_full()
+    end
+    if mods_msg_kind == 3
+        return tr_mods_added()
+    end
+    return tr_mods_removed()
+end

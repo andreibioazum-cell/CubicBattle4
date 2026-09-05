@@ -35,7 +35,6 @@ end
 
 function draw_login()
     screen_fill()
-    text(tr_login_title(), login_x() + login_lab_ox, login_title_y(), text_color)
     draw_login_field(tr_nick(), login_nick, tr_nick_ph(), login_nick_y(), login_field == 1)
     draw_login_field(tr_pass(), login_pass, tr_pass_ph(), login_pass_y(), login_field == 2)
     button_scaled(tr_login_btn(), login_btn_x(), login_btn_y(), login_btn_w, btn_h, 0.65)
@@ -150,6 +149,22 @@ function draw_warning()
     ctext_scaled(tr_warn_ru4(), y + 318, body, 0.52)
 end
 
+// ── Заставка студии ───────────────────────────────────────────────────────
+// Чёрный экран, по центру название студии, под ним тонкая линия. Всё
+// нарисовано альфой studio_a, поэтому появление и уход плавные.
+function studio_rgb(number rgb)
+    return (1 + floor(studio_a * 254)) * 0x1000000 + rgb
+end
+
+function draw_studio()
+    rect(0, 0, screen_w, screen_h, studio_rgb(0))
+    color body = studio_rgb(text_color)
+    number y = screen_h / 2 - 30
+    ctext_scaled(STUDIO_NAME, y, body, 1.1)
+    number lw = fit_w(320)
+    rect(center_x(lw), y + 34, lw, 2, body)
+end
+
 // ══════════════════════════════════════════════════════════════════════════
 // Нажатия
 // ══════════════════════════════════════════════════════════════════════════
@@ -237,6 +252,10 @@ function touch_settings(number x, number y)
     end
     if hit_menu_row(x, y, 2) == 1
         language = 1
+        return
+    end
+    if hit_menu_row(x, y, 3) == 1
+        start_transition(ST_MODS)
     end
 end
 
@@ -403,6 +422,10 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == ST_BATTLEPASS
         touch_battlepass(x, y, action)
+        return
+    end
+    if game_state == ST_MODS
+        touch_mods(x, y, action)
         return
     end
     if game_state == ST_LEADERBOARD

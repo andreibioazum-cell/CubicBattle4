@@ -29,7 +29,7 @@ function zombie_tex_ok()
     return 0
 end
 
-// Спрайт скина «Зомби»: legacy-файлы из старого клиента. Если они не
+// Спрайт скина «Зомби»: zombie_azum*.png. Если они не
 // загрузились, возвращается обычная текстура Азума — её назовут зелёным
 // силуэтом (zombie_tint) в draw_fighter_body.
 function zombie_idle_tex()
