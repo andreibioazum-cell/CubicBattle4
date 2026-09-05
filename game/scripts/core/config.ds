@@ -134,7 +134,7 @@ number max_level=3, level_base_cost=30, level_cost_step=10
 
 // ── Скины ─────────────────────────────────────────────────────────────────
 // Пока скины есть только у Азума: 0 — обычный, 1 — «Зомби» (награда 2-го
-// уровня батл пасса). У зомби свои текстуры (legacy-файлы старого клиента);
+// уровня батл пасса). У зомби свои текстуры (zombie_azum*.png);
 // если их не загрузить, скин откатывается на зелёный силуэт (zombie_tint).
 number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2, SKIN_ZOMBIE_BP=2
 // Выставляются из png_load() при старте: есть ли у Азума своя текстура и
@@ -335,5 +335,5 @@ string AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.pn
 string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png"
 string EBUC_TEX="ebuc.png", EBUC_PUNCH_TEX="ebuc_punch.png", DESPENSER_TEX="despenser.png"
 string DICE_TEX="dice.png"
-// Скин «Зомби» на Азума: legacy-файлы из старого клиента (idle и удар).
-string AZUM_ZOMBIE_TEX="legacy_zombie_azum.png", AZUM_ZOMBIE_PUNCH_TEX="legacy_zombie_azum_punch.png"
+// Скин «Зомби» на Азума: своя пара текстур (стойка и удар).
+string AZUM_ZOMBIE_TEX="zombie_azum.png", AZUM_ZOMBIE_PUNCH_TEX="zombie_azum_punch.png"
