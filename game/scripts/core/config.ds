@@ -152,7 +152,10 @@ number BP_REWARD_CLASS_LEVEL=1, BP_REWARD_SKIN=2
 
 // ── Бой: игрок ────────────────────────────────────────────────────────────
 number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
-number joy_speed=192, cube_scale=1, player_scale=1.8, enemy_scale=1.8
+number joy_speed=192, player_scale=1.8, enemy_scale=1.8
+// Только визуальный масштаб в бою: спрайты и их тени на 40% крупнее.
+// PNG, превью в меню и размеры хитбоксов (player_scale/enemy_scale) не меняем.
+number cube_scale=1.4
 number aim_fade_out=0.1, aim_max_alpha=102
 number online_ready=0, max_players=4, pi=3.1415926535, console_scroll=0
 
@@ -198,7 +201,8 @@ number station_boom_time=0.5, station_hit_time=0.1, station_heal_t=0
 number station_scale=1.6, station_spawn_time=0.2, station_spawn_t=0
 
 // ── Эффекты ───────────────────────────────────────────────────────────────
-number shadow_off=10, shadow_alpha=0x60
+// Непрозрачность тени ~19% (48/255): вдвое слабее прежних 0x60.
+number shadow_off=10, shadow_alpha=0x30
 // Леденцы-пикапы на карте в соло.
 number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
 // Пыль: пул общий на всех бегунов (игрок + враг-бот + до трёх соперников
