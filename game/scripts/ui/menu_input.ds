@@ -35,7 +35,6 @@ end
 
 function draw_login()
     screen_fill()
-    text(tr_login_title(), login_x() + login_lab_ox, login_title_y(), text_color)
     draw_login_field(tr_nick(), login_nick, tr_nick_ph(), login_nick_y(), login_field == 1)
     draw_login_field(tr_pass(), login_pass, tr_pass_ph(), login_pass_y(), login_field == 2)
     button_scaled(tr_login_btn(), login_btn_x(), login_btn_y(), login_btn_w, btn_h, 0.65)
