@@ -1,0 +1,286 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// battle_event_plates.ds — ивент 3 «Плиты и кубик» (только онлайн).
+//
+// На арене лежат две красные плиты. Когда на обе одновременно встают два
+// игрока (свой боец и сетевые соперники считаются одинаково), плиты начинают
+// уменьшаться и пропадают. Сразу после этого в центре экрана появляется
+// обычный игральный кубик: он крутится и швыряет по всей карте леденцы.
+// Упавший леденец можно подобрать — он даёт +1 леденец, как пикапы в соло.
+//
+// Координаты плит считаются из долей экрана и у всех клиентов одинаковые,
+// занятость видна по сетевым снимкам позиций, поэтому фазы ивента наступают
+// у каждого клиента сами — отдельная синхронизация по сети не нужна (как
+// диско и снегопад, ивент остаётся клиентским визуальным событием).
+// ══════════════════════════════════════════════════════════════════════════
+
+// Фазы: 0 — ждём игроков на плитах, 1 — плиты уменьшаются, 2 — кубик и леденцы.
+number plates_phase=0, plates_t=0, plates_prev_mode=0
+number plate_a_lit=0, plate_b_lit=0
+number dice_t=0, dice_angle=0, dice_throw_cd=0, dice_next_candy=0
+array dice_candies=arr_new()
+
+function plates_event_reset()
+    plates_phase=0
+    plates_t=0
+    plate_a_lit=0
+    plate_b_lit=0
+    dice_t=0
+    dice_angle=0
+    dice_throw_cd=0
+    dice_next_candy=0
+    arr_clear(dice_candies)
+    number i=0
+    loop i<dice_candy_max*dice_candy_fields
+        arr_push(dice_candies,0)
+        i=i+1
+    end
+end
+
+function plate_ax()
+    return screen_w*plates_xa
+end
+
+function plate_ay()
+    return screen_h*plates_yy
+end
+
+function plate_bx()
+    return screen_w*plates_xb
+end
+
+function plate_by()
+    return screen_h*plates_yy
+end
+
+// Стоит ли хоть один живой боец (свой или сетевой) на точке (px,py).
+function fighter_on_plate(number px, number py)
+    if player.hp>0&&dist(player.x,player.y,px,py)<plates_stand_r
+        return 1
+    end
+    number s=0
+    loop s<max_players
+        number b=s*remote_fields
+        if s!=net_slot()&&arr_get(remotes,b+5)==1
+            if dist(arr_get(remotes,b+1),arr_get(remotes,b+2),px,py)<plates_stand_r
+                return 1
+            end
+        end
+        s=s+1
+    end
+    return 0
+end
+
+// Кубик швыряет очередной леденец в случайную точку карты. Слоты идут по
+// кругу: когда все заняты, новый бросок заменяет самый старый леденец.
+function dice_throw_candy()
+    number b=dice_next_candy*dice_candy_fields
+    number m=candy_margin+16
+    number tx=m+rand()%(int)(screen_w-2*m)
+    number ty=m+rand()%(int)(screen_h-2*m)
+    arr_set(dice_candies,b,1)
+    arr_set(dice_candies,b+1,0)
+    arr_set(dice_candies,b+2,screen_w/2)
+    arr_set(dice_candies,b+3,screen_h/2)
+    arr_set(dice_candies,b+4,tx)
+    arr_set(dice_candies,b+5,ty)
+    dice_next_candy=dice_next_candy+1
+    if dice_next_candy>=dice_candy_max
+        dice_next_candy=0
+    end
+end
+
+// Летящие леденцы доигрывают полёт, упавшие можно подобрать как пикапы.
+function dice_collect()
+    number i=0
+    loop i<dice_candy_max
+        number b=i*dice_candy_fields
+        if arr_get(dice_candies,b)==1
+            number t=arr_get(dice_candies,b+1)
+            if t<dice_candy_flight
+                arr_set(dice_candies,b+1,t+dt)
+            else if dist(arr_get(dice_candies,b+4),arr_get(dice_candies,b+5),player.x,player.y)<player.size*0.65+18
+                candies=candies+candy_give
+                save_progress()
+                arr_set(dice_candies,b,0)
+                ds_log("event candy picked -> %g",candies)
+            end
+        end
+        i=i+1
+    end
+end
+
+// Кубик крутится (скорость слегка «дышит») и кидает леденцы по расписанию.
+function tick_dice()
+    dice_t=dice_t+dt
+    dice_angle=dice_angle+dt*(dice_spin_base+0.9*sin(dice_t*1.7))
+    dice_throw_cd=dice_throw_cd-dt
+    if dice_throw_cd<=0
+        dice_throw_cd=dice_throw_interval
+        dice_throw_candy()
+    end
+    dice_collect()
+end
+
+function tick_plates_event()
+    if event_mode!=3
+        if plates_prev_mode==3
+            plates_event_reset()
+        end
+        plates_prev_mode=event_mode
+        return
+    end
+    if plates_prev_mode!=3
+        plates_event_reset()
+    end
+    plates_prev_mode=3
+    if plates_phase==0
+        plate_a_lit=fighter_on_plate(plate_ax(),plate_ay())
+        plate_b_lit=fighter_on_plate(plate_bx(),plate_by())
+        if plate_a_lit==1&&plate_b_lit==1
+            plates_phase=1
+            plates_t=0
+            ds_log("plates event: both plates occupied, shrinking")
+        end
+    else if plates_phase==1
+        plates_t=plates_t+dt
+        if plates_t>=plates_shrink_time
+            plates_phase=2
+            dice_t=0
+            dice_angle=0
+            dice_throw_cd=0.3
+            ds_log("plates event: dice appeared")
+        end
+    else
+        tick_dice()
+    end
+end
+
+// ── Отрисовка ──────────────────────────────────────────────────────────────
+
+// Красная плита: тёмная подложка, светлая верхушка и кольцо-подсказка.
+// k — текущий масштаб (плиты уменьшаются), lit — на плите кто-то стоит.
+function draw_plate(number cx, number cy, number k, number lit)
+    if k<=0
+        return
+    end
+    number half=plates_size/2*k
+    number r=20*k
+    number pulse=0.5+0.5*sin(event_t*5)
+    number aa=floor(clamp(k*1.4,0,1)*235)
+    color dark=(((unsigned)(int)floor(aa*0.85))<<24)|0x007F1414
+    color tr=0x00E53935
+    if lit==1
+        tr=0x00FF6E63
+    end
+    color top=(((unsigned)(int)aa)<<24)|tr
+    roundrect(cx-half-5*k,cy-half-5*k,half*2+10*k,half*2+10*k,r+5*k,dark)
+    roundrect(cx-half,cy-half,half*2,half*2,r,top)
+    number rr=half*0.45+2*pulse*k
+    color hint=(((unsigned)(int)floor(aa*0.55))<<24)|0x00FFFFFF
+    ring(cx,cy,rr,3*k,hint)
+end
+
+function draw_event_plates()
+    if event_mode!=3||plates_phase==2
+        return
+    end
+    number k=1
+    if plates_phase==1
+        k=1-plates_t/plates_shrink_time
+    end
+    draw_plate(plate_ax(),plate_ay(),k,plate_a_lit)
+    draw_plate(plate_bx(),plate_by(),k,plate_b_lit)
+end
+
+// Леденцы из кубика: в полёте летят по дуге с подрастанием, после посадки
+// лежат как обычные пикапы.
+function draw_event_candies()
+    if event_mode!=3||plates_phase!=2
+        return
+    end
+    number i=0
+    loop i<dice_candy_max
+        number b=i*dice_candy_fields
+        if arr_get(dice_candies,b)==1
+            number t=arr_get(dice_candies,b+1)
+            number k=t/dice_candy_flight
+            if k>1
+                k=1
+            end
+            number e=1-(1-k)*(1-k)
+            number xx=arr_get(dice_candies,b+2)+(arr_get(dice_candies,b+4)-arr_get(dice_candies,b+2))*e
+            number yy=arr_get(dice_candies,b+3)+(arr_get(dice_candies,b+5)-arr_get(dice_candies,b+3))*e
+            number sc=candy_scale*(1+0.45*sin(pi*k))
+            number hw=25*sc
+            tex(xx-hw,yy-hw,CANDY_TEX,i*1.7+k*5,sc)
+        end
+        i=i+1
+    end
+end
+
+function dice_corner_x(number cx, number ox, number oy, number c, number s)
+    return cx+ox*c-oy*s
+end
+
+function dice_corner_y(number cy, number ox, number oy, number c, number s)
+    return cy+ox*s+oy*c
+end
+
+// Запасной кубик на случай, если dice.png не загрузилась: повёрнутый квадрат
+// из линий и кружки-точки на гранях.
+function draw_dice_fallback(number cx, number cy, number a, number sc)
+    number h=56*sc, c=cos(a), s=sin(a)
+    number x1=dice_corner_x(cx,-h,-h,c,s), y1=dice_corner_y(cy,-h,-h,c,s)
+    number x2=dice_corner_x(cx,h,-h,c,s), y2=dice_corner_y(cy,h,-h,c,s)
+    number x3=dice_corner_x(cx,h,h,c,s), y3=dice_corner_y(cy,h,h,c,s)
+    number x4=dice_corner_x(cx,-h,h,c,s), y4=dice_corner_y(cy,-h,h,c,s)
+    number th=9*sc
+    color side=0xF5FAFAF8
+    line(x1,y1,x2,y2,th,side)
+    line(x2,y2,x3,y3,th,side)
+    line(x3,y3,x4,y4,th,side)
+    line(x4,y4,x1,y1,th,side)
+    number pr=10*sc, d=27*sc
+    color pip=0xE81E2233
+    circle(dice_corner_x(cx,0,0,c,s),dice_corner_y(cy,0,0,c,s),pr,pip)
+    circle(dice_corner_x(cx,-d,-d,c,s),dice_corner_y(cy,-d,-d,c,s),pr,pip)
+    circle(dice_corner_x(cx,d,-d,c,s),dice_corner_y(cy,d,-d,c,s),pr,pip)
+    circle(dice_corner_x(cx,-d,d,c,s),dice_corner_y(cy,-d,d,c,s),pr,pip)
+    circle(dice_corner_x(cx,d,d,c,s),dice_corner_y(cy,d,d,c,s),pr,pip)
+end
+
+// Обычный игральный кубик в центре экрана: вырастает из точки, крутится,
+// слегка покачивается и оставляет под собой мягкую тень. В момент появления
+// расходится кольцо-всплеск.
+function draw_event_dice()
+    if event_mode!=3||plates_phase!=2
+        return
+    end
+    number cx=screen_w/2, cy=screen_h/2
+    number pop=1
+    if dice_t<0.4
+        number p=dice_t/0.4
+        pop=1-(1-p)*(1-p)
+    end
+    number sc=dice_size/128*pop
+    if sc<=0.01
+        return
+    end
+    number wob=6*pop*sin(dice_t*3)
+    number hw=64*sc
+    if dice_tex_ok==1
+        tex_tint(cx-hw+10,cy-hw+wob+12,DICE_TEX,dice_angle,sc,0x55000000)
+        tex(cx-hw,cy-hw+wob,DICE_TEX,dice_angle,sc)
+    else
+        draw_dice_fallback(cx,cy+wob,dice_angle,sc)
+    end
+    if dice_t<0.6
+        number rr=40+dice_t/0.6*170
+        number aa=floor((1-dice_t/0.6)*170)
+        if aa>0
+            ring(cx,cy,rr,6,aa*0x1000000)
+        end
+    end
+end

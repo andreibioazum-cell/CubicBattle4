@@ -108,6 +108,7 @@ function load_textures()
     png_load(DESPENSER_TEX)
     png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
+    dice_tex_ok=png_load(DICE_TEX)
 end
 
 function start_music()

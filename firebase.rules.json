@@ -6,7 +6,7 @@
     "event": {
       ".read": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
       ".write": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')",
-      ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2"
+      ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3"
     },
 
     "banner": {

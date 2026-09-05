@@ -89,6 +89,11 @@ function admin_handle(string msg)
         net_chat_send("SNOW EVENT by " + by)
         return 1
     end
+    if str_eq(msg, "event 3") == 1
+        net_event_set(3)
+        net_chat_send("PLATES EVENT by " + by)
+        return 1
+    end
     if net_chat_is_ban(msg) == 1
         string t1 = net_chat_ban_target(msg)
         if str_len(t1) > 0
@@ -130,7 +135,7 @@ function chat_send()
         return
     end
     if is_admin() == 1
-        if str_eq(chat_input, "event 0") == 1 || str_eq(chat_input, "event 1") == 1 || str_eq(chat_input, "event 2") == 1
+        if str_eq(chat_input, "event 0") == 1 || str_eq(chat_input, "event 1") == 1 || str_eq(chat_input, "event 2") == 1 || str_eq(chat_input, "event 3") == 1
             admin_handle(chat_input)
             chat_input = ""
             keyboard_clear()

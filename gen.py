@@ -32,6 +32,7 @@ def find_ds_files(directory):
         "combat/battle_online.ds", # сетевые снимки и завершение матча
         "combat/battle_actions_fx.ds", # атаки и эффекты способностей
         "combat/battle_render.ds", # поле, бойцы и интерфейс боя
+        "combat/battle_event_plates.ds", # ивент «плиты и кубик»
         "combat/battle_events_input.ds", # события, баннеры и ввод
         "fx/dust.ds",              # след пыли
         "core/engine.ds",          # главный цикл

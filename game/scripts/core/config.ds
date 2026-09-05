@@ -238,8 +238,20 @@ string LOBBY_MUSIC="lobbymusic.wav"
 number music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1.0
 
 // ── Ивенты и предупреждение ───────────────────────────────────────────────
-// event_mode приходит из облака: 1 — «диско», 2 — снегопад, 0 — ивента нет.
+// event_mode приходит из облака: 1 — «диско», 2 — снегопад, 3 — «плиты и
+// кубик», 0 — ивента нет.
 number event_mode=0, disco_t=0, event_t=0, event_flakes=44
+// Ивент 3 «Плиты и кубик» (см. combat/battle_event_plates.ds): две красные
+// плиты; когда два игрока одновременно встают на них, плиты уменьшаются и
+// пропадают, затем в центре экрана крутится игральный кубик и швыряет по
+// карте леденцы-пикапы. Доли экрана и размеры одинаковы у всех клиентов —
+// ивент синхронизируется сам по сетевым позициям, как диско и снегопад.
+number plates_size=150, plates_shrink_time=0.9, plates_stand_r=80
+number plates_xa=0.22, plates_xb=0.78, plates_yy=0.5
+number dice_size=112, dice_spin_base=2.2, dice_throw_interval=0.45
+number dice_candy_flight=0.85, dice_candy_max=14, dice_candy_fields=6
+// Выставляется из png_load() при старте: загрузилась ли текстура кубика.
+number dice_tex_ok=0
 // Предупреждение об эпилепсии: полный чёрный экран на warn_hold секунд, без
 // кнопки, оба языка сразу, красный заголовок, затем плавно тает.
 number warn_open=1, warn_t=0, warn_a=1, warn_hold=2.5, warn_fade=0.6
@@ -307,5 +319,6 @@ string GRASS="grass.png", ORDINARY_TEX="ordinary.png", PUNCH_TEX="ordinary_punch
 string AZUM_TEX="azum.png", AZUM_PUNCH_TEX="azum_punch.png", SANTA_TEX="santa.png"
 string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAKE_TEX="snowflake.png"
 string EBUC_TEX="ebuc.png", EBUC_PUNCH_TEX="ebuc_punch.png", DESPENSER_TEX="despenser.png"
+string DICE_TEX="dice.png"
 // Скин «Зомби» на Азума: legacy-файлы из старого клиента (idle и удар).
 string AZUM_ZOMBIE_TEX="legacy_zombie_azum.png", AZUM_ZOMBIE_PUNCH_TEX="legacy_zombie_azum_punch.png"

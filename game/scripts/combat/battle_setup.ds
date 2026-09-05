@@ -86,6 +86,7 @@ function reset_battle()
     player_poison_damage=0
     ppoison_a=0
     poison_a=0
+    plates_event_reset()
     joy.x=130
     joy.y=screen_h-150
     joy.r=70
