@@ -28,6 +28,8 @@ function update_event()
     else
         disco_t=0
     end
+    // Ивент 3 «плиты и кубик»: своя машина состояний, см. модуль.
+    tick_plates_event()
 end
 
 // ── Баннер админа (команда "text сообщение цвет") ─────────────────────────
@@ -183,6 +185,10 @@ function draw_online()
     draw_grass()
     draw_disco()
     draw_field()
+    // Ивент «плиты и кубик»: плиты лежат на земле под бойцами, туда же —
+    // разбросанные кубиком леденцы (как пикапы в соло).
+    draw_event_plates()
+    draw_event_candies()
     draw_dust()
     draw_player_shadow_layer()
     number i=0, b=0, rb=0, rx=0, ry=0, ra=0, rcls=0, punching=0
@@ -251,6 +257,8 @@ function draw_online()
         end
         i=i+1
     end
+    // Кубик ивента рисуется поверх бойцов: это центральный объект события.
+    draw_event_dice()
     draw_player_freeze()
     draw_player_poison()
     draw_snow()
