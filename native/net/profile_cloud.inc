@@ -15,7 +15,7 @@ typedef struct {
     Profile pending;
     char nick[LOGIN_NICK_MAX + 1];
 } ProfilePush;
-static ProfilePush push = { .lock = DS_MUTEX_INIT };
+static ProfilePush pushq = { .lock = DS_MUTEX_INIT };
 
 /* JSON записи /users/<ник> из профиля. extras=1 добавляет новые поля (ach, ts,
  * lang), extras=0 — тот же профиль старым набором полей: запасной вариант для
@@ -77,12 +77,12 @@ static void *profile_push_job(void *arg) {
     for (;;) {
         Profile p;
         char nick[LOGIN_NICK_MAX + 1];
-        ds_mutex_lock(push.lock);
-        if (!push.dirty) { push.busy = 0; ds_mutex_unlock(push.lock); break; }
-        push.dirty = 0;
-        p = push.pending;
-        snprintf(nick, sizeof(nick), "%s", push.nick);
-        ds_mutex_unlock(push.lock);
+        ds_mutex_lock(pushq.lock);
+        if (!pushq.dirty) { pushq.busy = 0; ds_mutex_unlock(pushq.lock); break; }
+        pushq.dirty = 0;
+        p = pushq.pending;
+        snprintf(nick, sizeof(nick), "%s", pushq.nick);
+        ds_mutex_unlock(pushq.lock);
         profile_patch_once(&p, nick);
     }
     return NULL;
@@ -107,19 +107,19 @@ static void profile_push_cloud(const Profile *p) {
     out = *p;
     achievements_read();
     ds_mutex_lock(ach_lock); out.ach = ach_flags; ds_mutex_unlock(ach_lock);
-    ds_mutex_lock(push.lock);
-    push.pending = out;
-    snprintf(push.nick, sizeof(push.nick), "%s", nick);
-    push.dirty = 1;
-    if (!push.busy) { push.busy = 1; start = 1; }
-    ds_mutex_unlock(push.lock);
+    ds_mutex_lock(pushq.lock);
+    pushq.pending = out;
+    snprintf(pushq.nick, sizeof(pushq.nick), "%s", nick);
+    pushq.dirty = 1;
+    if (!pushq.busy) { pushq.busy = 1; start = 1; }
+    ds_mutex_unlock(pushq.lock);
     if (!start) return;
     t = ds_thread_start(profile_push_job, NULL);
     if (t) { ds_thread_detach(t); return; }
     /* Поток не создался — снимаем флаг, иначе очередь встанет навсегда. */
-    ds_mutex_lock(push.lock);
-    push.busy = 0;
-    ds_mutex_unlock(push.lock);
+    ds_mutex_lock(pushq.lock);
+    pushq.busy = 0;
+    ds_mutex_unlock(pushq.lock);
 }
 
 /* Отправить в облако профиль, который уже в памяти (pg): после слияния на входе
