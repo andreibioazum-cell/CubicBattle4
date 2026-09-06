@@ -1,6 +1,6 @@
 {
   "rules": {
-    ".read": false,
+    ".read": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')",
     ".write": false,
 
     "event": {
@@ -61,6 +61,7 @@
       "$room": {
         "players": {
           ".read": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
+          ".write": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')",
           "$slot": {
             ".write": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
             ".validate": "$slot.matches(/^[0-3]$/) && newData.hasChildren(['uid','nick','x','y','angle','hp','alive','seq'])",
@@ -98,6 +99,7 @@
         "chat": {
           ".read": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
           ".indexOn": ".key",
+          ".write": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')",
           "$msg": {
             ".write": "auth != null && auth.token.email.matches(/@cb4[.]game$/) && auth.token.firebase.sign_in_provider == 'password'",
             ".validate": "newData.hasChildren(['uid','nick','text'])",
@@ -106,6 +108,10 @@
             "text": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 96" },
             "$other": { ".validate": false }
           }
+        },
+        "$other": {
+          ".write": "auth != null && (auth.token.email.toLowerCase() == 'dimasi4ek229@cb4.game' || auth.token.email.toLowerCase() == 'qwertyuiopaj1234@cb4.game')",
+          ".validate": false
         }
       }
     },

@@ -64,7 +64,8 @@
 <section id="authBox">
   <h2>Вход админа</h2>
   <p class="muted">Ник и пароль от игры (аккаунт <code>&lt;ник&gt;@cb4.game</code>).
-     Чистить базу могут только админские аккаунты — правила пропускают запись только им.</p>
+     Мусор в корне и комнатах, <code>/event</code> и <code>/bans</code> пишут только админские
+     аккаунты из <code>firebase.rules.json</code>; чат и слоты можно чистить и обычным игрокам.</p>
   <div class="row">
     <input id="nick" placeholder="ник" value="Dimasi4ek229" size="18">
     <input id="pass" placeholder="пароль" type="password" size="18" autocomplete="current-password">
@@ -174,18 +175,23 @@ const DEFAULT_WORDS = [
 ].join(", ");
 
 /* ---------- схема игры: что вообще существует ---------- */
-const ROOT_OK   = ["users","rooms","bans","event"];
+const ROOT_OK   = ["users","rooms","bans","event","banner"];
 const USER_REQ  = ["nick","cups","candies","cls","azum","santa","level","levels"];
+/* Всё, что пускают правила firebase.rules.json (включая ebuc/bp/azum_skin и уровни
+ * после удаления батл-пасса) — иначе панель предлагает удалить живой прогресс. */
 const USER_OPT  = ["ordinary_level","ordinary_levels","azum_level","azum_levels",
-                   "santa_level","santa_levels"];
+                   "santa_level","santa_levels","ebuc","ebuc_level","ebuc_levels",
+                   "bp","azum_skin"];
 const ROOM_OK   = ["players","chat"];
 const SLOT_REQ  = ["uid","nick","x","y","angle","hp","alive","seq"];
-const SLOT_OPT  = ["px","py","pdx","pdy","punch","sx","sy","sdx","sdy","snow","cls","level"];
+const SLOT_OPT  = ["px","py","pdx","pdy","punch","sx","sy","sdx","sdy","snow",
+                   "stx","sty","sthp","station","uzx","uzy","universe","cls","level","skin"];
 const CHAT_OK   = ["uid","nick","text"];
 const NICK_RE   = /^[A-Za-z0-9_]{1,16}$/;
 const SLOT_STALE_MS = 60000;
 
 let TOKEN = null, REFRESH = null, EMAIL = "", EXP = 0, SNAP = null, FOUND = [];
+let SCOPED = false; /* корень закрыт правилами: снимок собран по игровым узлам */
 
 function log(msg, cls){
   const d = document.createElement("div");
@@ -363,11 +369,12 @@ async function doLogin(){
     log("вход выполнен: " + email + (ok.sfx ? " (суффикс «" + ok.sfx + "»)" : " (без суффикса)"), "good");
     log("токен: провайдер " + ((p.firebase || {}).sign_in_provider || "?") +
         ", годен до " + new Date((p.exp || 0) * 1000).toLocaleTimeString(), "");
-    if(isAdmin) log("права админа есть — правила пустят запись в event и bans", "good");
+    if(isAdmin) log("права админа есть — правила пустят запись в event/bans, полный снимок корня и чистку комнат", "good");
     else{
-      log("это не админский аккаунт: чистить чат и слоты можно, а event/bans и чужие users — нет", "warn");
+      log("это не админский аккаунт: читаются игровые узлы, чат и слоты чистить можно, а event/bans, чужие users и мусор в корне/комнатах — нет", "warn");
       alert("Вход прошёл, но " + email + " нет в списке админов firebase.rules.json.\n\n" +
-            "Чат и слоты чистить можно, а /event, /bans и чужие /users — нет.");
+            "Чат и слоты (в т.ч. целиком) чистить можно; /event, /bans, чужие /users и мусор " +
+            "в корне/комнатах — нет. Корневой мусор виден и удаляется только админами.");
     }
     scan();
   }catch(e){
@@ -409,21 +416,49 @@ async function rtdb(path, method = "GET", body, retried){
     }
     let msg = `${method} /${path} → ${r.status} ${txt.slice(0,140)}`;
     if(r.status === 401 || r.status === 403)
-      msg += "  (401/403 = правила базы или протухший токен; если это удаление мусора — " +
-             "такой узел правилам firebase.rules.json не по зубам никому, кроме админа)";
+      msg += "  (401/403 = протухший токен либо правила базы; опубликуй свежие " +
+             "firebase.rules.json — мусор в корне и в комнатах пишут только админы, " +
+             "а при запрете контейнера панель удаляет по детям)";
     throw new Error(msg);
   }
   return txt ? JSON.parse(txt) : null;
 }
 
 /* ---------- сканирование ---------- */
+/* Полный снимок читается с корня — это умеют админы (firebase.rules.json:
+ * ".read" на корне для админов). Если корень закрыт (не-админ или старые
+ * правила), читаем известные игровые узлы по отдельности — так панель
+ * продолжает работать и под обычным аккаунтом (чат/слоты), просто без
+ * корневого мусора. */
+const ROOT_PARTS = ["users","rooms","bans","event","banner"];
+async function takeSnapshot(){
+  try{ return {data: (await rtdb("")) || {}, scoped: false}; }
+  catch(e){
+    if(!/(403|permission|denied|unauthorized)/i.test(e.message)) throw e;
+    const out = {};
+    let firstErr = null;
+    for(const p of ROOT_PARTS){
+      try{
+        const v = await rtdb(p);
+        if(v !== null && typeof v === "object") out[p] = v;
+      }catch(e2){ firstErr = firstErr || e2; }
+    }
+    if(Object.keys(out).length) return {data: out, scoped: true};
+    throw firstErr || e;
+  }
+}
 async function scan(){
   $("#scan").disabled = true; $("#scanInfo").textContent = "читаю…";
   try{
-    SNAP = await rtdb("") || {};
+    const snap = await takeSnapshot();
+    SNAP = snap.data;
+    SCOPED = snap.scoped;
+    if(SCOPED)
+      log("корень базы закрыт правилами — читаю игровые узлы по отдельности (корневой мусор виден только админам)", "warn");
     analyze();
-    $("#scanInfo").textContent = "снимок получен " + new Date().toLocaleTimeString();
-    log("снимок базы получен", "good");
+    $("#scanInfo").textContent = "снимок получен " + new Date().toLocaleTimeString() +
+                                 (SCOPED ? " · корень закрыт, по узлам" : "");
+    log("снимок базы получен" + (SCOPED ? " (по узлам)" : ""), "good");
   }catch(e){
     $("#scanInfo").innerHTML = '<span class="err">ошибка</span>';
     log("скан: " + e.message, "err");
@@ -528,8 +563,8 @@ function analyze(){
   }
 
   /* event */
-  if("event" in d && !num(d.event, 0, 2))
-    add("unknown_field", "event", "значение ивента вне 0..2", JSON.stringify(d.event));
+  if("event" in d && !num(d.event, 0, 3))
+    add("unknown_field", "event", "значение ивента вне 0..3", JSON.stringify(d.event));
 
   stats();
   render();
@@ -615,6 +650,25 @@ function wipePlan(paths){
   return plan;
 }
 
+/* Удаление узла с запасным путём: если правила не пускают удалить контейнер
+ * целиком (rooms/*/chat, rooms/*/players и т.п.), удаляем по одному ребёнку —
+ * каждый ребёнок правилами пишется, и эффект тот же. */
+async function wipeNode(p){
+  try{ await rtdb(p, "DELETE"); return; }
+  catch(e){
+    if(!/(403|permission|denied)/i.test(e.message)) throw e;
+    let cur = null;
+    if(SNAP) cur = p.split("/").reduce((o,k) => (o && typeof o === "object") ? o[k] : undefined, SNAP);
+    if(cur === null || typeof cur !== "object"){
+      try{ cur = await rtdb(p); }catch(e2){ throw e; }
+    }
+    if(cur === null || typeof cur !== "object") throw e;
+    const ks = Object.keys(cur);
+    if(!ks.length) throw e;
+    for(const k of ks) await rtdb(p + "/" + k, "DELETE");
+  }
+}
+
 /* Firebase REST не умеет батч-удаление — поэтому ускоряем двумя приёмами:
  * схлопыванием (wipePlan) и параллельным пулом запросов. 10 одновременно —
  * компромисс между скоростью и лимитами Firebase. */
@@ -634,7 +688,7 @@ async function wipe(){
   const worker = async () => {
     while(queue.length){
       const p = queue.shift();
-      try{ await rtdb(p, "DELETE"); ok++; log("удалено: " + p); }
+      try{ await wipeNode(p); ok++; log("удалено: " + p); }
       catch(e){ fail++; log("НЕ удалено " + p + " — " + e.message, "err"); }
       done++; tick();
     }
@@ -694,10 +748,10 @@ $("#unban").onclick = () => { const n = $("#banNick").value.trim();
   if(n) safe(() => rtdb("bans/" + n, "DELETE"), "разбан " + n); };
 $("#clearChat").onclick = () => { const r = $("#room").value.trim() || "main";
   if(confirm("Стереть весь чат комнаты " + r + "?"))
-    safe(() => rtdb(`rooms/${r}/chat`, "DELETE"), "очистка чата"); };
+    safe(() => wipeNode(`rooms/${r}/chat`), "очистка чата"); };
 $("#clearSlots").onclick = () => { const r = $("#room").value.trim() || "main";
   if(confirm("Сбросить все слоты игроков в " + r + "? Все выпадут из боя."))
-    safe(() => rtdb(`rooms/${r}/players`, "DELETE"), "сброс слотов"); };
+    safe(() => wipeNode(`rooms/${r}/players`), "сброс слотов"); };
 $("#dump").onclick = () => {
   if(!SNAP) return alert("Сначала отсканируй базу");
   const b = new Blob([JSON.stringify(SNAP, null, 2)], {type:"application/json"});
