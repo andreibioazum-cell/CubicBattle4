@@ -11,6 +11,7 @@
 
     <application
         android:label="Cubic Battle 4"
+        android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
         android:extractNativeLibs="true">
 

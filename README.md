@@ -353,6 +353,10 @@ python3 tools/check_game_file_size.py
 команды NDK и упаковки APK находятся в `.github/workflows/main.yml`. Сборка
 использует API 29 для нативных библиотек и target API 34 для APK.
 
+Иконка приложения — `game/assets/icon.png`: из неё нарезаны
+`game/res/mipmap-*/ic_launcher.png`, манифест ссылается на `@mipmap/ic_launcher`,
+а `aapt` при упаковке получает каталог `game/res` (`-S game/res`).
+
 Локально через CMake собирается только нативная библиотека `libds_game.so` —
 нужны Python 3, CMake и NDK (его инструментальный файл). Под другие платформы
 CMake сообщает об ошибке:
