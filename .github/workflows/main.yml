@@ -4,79 +4,156 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build-android:
     name: Build Android APK (Android 10-14 arm64+arm32)
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Check package name consistency
-      run: |
-        set -e
-        grep -q 'package="com.cb4"' game/AndroidManifest.xml
-        grep -q 'android:name="com.cb4.GameActivity"' game/AndroidManifest.xml
-        grep -q '^package com.cb4;' game/java/com/dimscript/gamedemo/GameActivity.java
-        grep -q 'Java_com_cb4_GameActivity_nativeReplaceText' runtime.c
-        grep -q 'Java_com_cb4_GameActivity_nativeSubmitText' runtime.c
-        grep -q 'Java_com_cb4_GameActivity_nativeKeyboardHidden' runtime.c
-        ! grep -rn 'dimscript\.gamedemo\|Java_com_dimscript\|com\.CB4\|Java_com_CB4' \
-          game/AndroidManifest.xml game/java runtime.c
+      - name: Check package name consistency
+        run: |
+          grep -q 'package="com.cb4"' game/AndroidManifest.xml
+          grep -q 'android:name="com.cb4.GameActivity"' game/AndroidManifest.xml
+          grep -q '^package com.cb4;' game/java/com/dimscript/gamedemo/GameActivity.java
+          grep -q 'Java_com_cb4_GameActivity_nativeReplaceText' runtime.c
+          grep -q 'Java_com_cb4_GameActivity_nativeSubmitText' runtime.c
+          grep -q 'Java_com_cb4_GameActivity_nativeKeyboardHidden' runtime.c
+          ! grep -rn 'dimscript\.gamedemo\|Java_com_dimscript\|com\.CB4\|Java_com_CB4' \
+            game/AndroidManifest.xml game/java runtime.c
 
-    - uses: android-actions/setup-android@v3
-    - uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: r25c
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Restore signing key from Secrets
+        env:
+          CB4_P12_BASE64: ${{ secrets.CB4_P12_BASE64 }}
+          CB4_P12_PASSWORD: ${{ secrets.CB4_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
 
-    - name: Generate game.c
-      run: |
-        python3 gen.py
+          if [[ -z "$CB4_P12_BASE64" || -z "$CB4_P12_PASSWORD" ]]; then
+            echo "::error::Add CB4_P12_BASE64 and CB4_P12_PASSWORD repository secrets."
+            exit 1
+          fi
 
-    - name: Stage assets
-      run: |
-        python3 stage_assets.py game/assets staging/assets
+          umask 077
+          KEY_DIR="$RUNNER_TEMP/cb4-signing"
+          mkdir -p "$KEY_DIR"
+          chmod 700 "$KEY_DIR"
 
-    - name: Build NDK (arm64-v8a + armeabi-v7a, min API 29 Android 10)
-      run: |
-        NDK_ROOT=$ANDROID_NDK_ROOT
-        TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-        GLUE="$NDK_ROOT/sources/android/native_app_glue"
+          if ! printf '%s' "$CB4_P12_BASE64" \
+            | tr -d '[:space:]' \
+            | base64 --decode > "$KEY_DIR/CB4.p12"; then
+            echo "::error::CB4_P12_BASE64 is not valid Base64."
+            exit 1
+          fi
 
-        mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/assets
+          chmod 600 "$KEY_DIR/CB4.p12"
 
-        "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
-          game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
-          -I. -I$GLUE -landroid -llog -lm \
-          -o staging/lib/arm64-v8a/libds_game.so
+          if ! keytool -list -storetype PKCS12 \
+            -keystore "$KEY_DIR/CB4.p12" \
+            -storepass:env CB4_P12_PASSWORD > /dev/null; then
+            echo "::error::Cannot open the P12. Check the key and its password."
+            exit 1
+          fi
 
-        "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
-          game/game.c runtime.c main.c $GLUE/android_native_app_glue.c \
-          -I. -I$GLUE -landroid -llog -lm \
-          -o staging/lib/armeabi-v7a/libds_game.so
+      - uses: android-actions/setup-android@v3
 
-    - name: Package APK (Android 10 to 14, target API 34)
-      run: |
-        SDK_ROOT=$ANDROID_HOME
-        BT="$SDK_ROOT/build-tools/34.0.0"
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-        "$BT/aapt" package -f -M game/AndroidManifest.xml \
-          -I "$SDK_ROOT/platforms/android-34/android.jar" \
-          -F unsigned.apk ./staging/
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r25c
 
-        "$BT/zipalign" -v 4 unsigned.apk aligned.apk
-        keytool -genkey -v -keystore debug.keystore -storepass android \
-          -alias debug -keypass android -keyalg RSA -keysize 2048 \
-          -validity 10000 -dname "CN=Debug" 2>/dev/null || true
-        "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
-          --out Game.apk aligned.apk
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Game-APK-Android10-14-arm64-arm32
-        path: Game.apk
+      - name: Generate game.c
+        run: python3 gen.py
+
+      - name: Stage assets
+        run: python3 stage_assets.py game/assets staging/assets
+
+      - name: Build native libraries
+        env:
+          NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GLUE="$NDK_ROOT/sources/android/native_app_glue"
+
+          mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a
+
+          "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
+            game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
+            -I. -I"$GLUE" -landroid -llog -lm \
+            -o staging/lib/arm64-v8a/libds_game.so
+
+          "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
+            game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
+            -I. -I"$GLUE" -landroid -llog -lm \
+            -o staging/lib/armeabi-v7a/libds_game.so
+
+      - name: Package and align APK
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+
+          "$BT/aapt" package -f \
+            -M game/AndroidManifest.xml \
+            -I "$ANDROID_HOME/platforms/android-34/android.jar" \
+            -F unsigned.apk ./staging/
+
+          "$BT/zipalign" -v 4 unsigned.apk aligned.apk
+
+      - name: Sign APK
+        env:
+          CB4_P12_PASSWORD: ${{ secrets.CB4_P12_PASSWORD }}
+          CB4_KEY_ALIAS: ${{ secrets.CB4_KEY_ALIAS }}
+          CB4_KEY_PASSWORD: ${{ secrets.CB4_KEY_PASSWORD || secrets.CB4_P12_PASSWORD }}
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+
+          SIGN_ARGS=(
+            --ks "$RUNNER_TEMP/cb4-signing/CB4.p12"
+            --ks-type PKCS12
+            --ks-pass env:CB4_P12_PASSWORD
+            --key-pass env:CB4_KEY_PASSWORD
+          )
+
+          if [[ -n "$CB4_KEY_ALIAS" ]]; then
+            SIGN_ARGS+=(--ks-key-alias "$CB4_KEY_ALIAS")
+          fi
+
+          "$BT/apksigner" sign "${SIGN_ARGS[@]}" \
+            --out Game.apk aligned.apk
+
+      - name: Verify APK signature
+        run: |
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" \
+            verify --verbose --print-certs Game.apk
+
+      - name: Delete temporary signing key
+        if: ${{ always() }}
+        run: rm -rf -- "${RUNNER_TEMP:?}/cb4-signing"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Game-APK-Android10-14-arm64-arm32
+          path: Game.apk
+          if-no-files-found: error
