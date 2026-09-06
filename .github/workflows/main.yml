@@ -116,6 +116,7 @@ jobs:
 
           "$BT/aapt" package -f \
             -M game/AndroidManifest.xml \
+            -S game/res \
             -I "$ANDROID_HOME/platforms/android-34/android.jar" \
             -F unsigned.apk ./staging/
 
