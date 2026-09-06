@@ -1,66 +1,3 @@
-function bp_row_state(number n)
-    if n <= bp_level
-        return 2
-    end
-    if n == bp_level + 1
-        return 1
-    end
-    return 0
-end
-
-function bp_reward_text(number n)
-    if n == BP_REWARD_CLASS_LEVEL
-        return tr_bp_reward_1()
-    end
-    if n == BP_REWARD_SKIN
-        return tr_bp_reward_2()
-    end
-    return tr_levels_soon()
-end
-
-// Выдать награду купленного уровня батл пасса.
-function bp_apply_reward(number n)
-    if n == BP_REWARD_CLASS_LEVEL
-        // Обычный класс сразу на последнем уровне.
-        set_class_progress(CLASS_ORDINARY, max_level, max_level)
-        if player_class == CLASS_ORDINARY
-            sync_selected_class()
-        end
-    end
-    if n == BP_REWARD_SKIN
-        azum_skin = SKIN_ZOMBIE
-    end
-end
-
-function buy_bp_level(number n)
-    if n < 1 || n > bp_max
-        return
-    end
-    if n != bp_level + 1
-        bp_msg_kind = 1
-        bp_msg_t = msg_time
-        return
-    end
-    if cups < bp_cost
-        bp_msg_kind = 0
-        bp_msg_t = msg_time
-        return
-    end
-    cups = cups - bp_cost
-    bp_level = n
-    bp_apply_reward(n)
-    bp_msg_kind = 0
-    bp_msg_t = 0
-    save_progress()
-end
-
-function bp_msg_text()
-    if bp_msg_kind == 1
-        return tr_bp_need_prev()
-    end
-    return tr_bp_need_cups()
-end
-
 // ── Достижения ────────────────────────────────────────────────────────────
 // Все награды — один битмаск. Побитовых операций в DimScript нет, поэтому бит
 // достаётся делением на вес бита и проверкой на чётность: 1, 2, 4, 8...
@@ -90,8 +27,6 @@ end
 // события. Вызывается из engine.init() и с экранов лобби/достижений, поэтому
 // даже удалённый achievements.dat быстро восстанавливается из прогресса.
 function check_achievements()
-    // Первый запуск игры: файл ещё пустой, все флаги нулевые.
-    grant_achievement(ACH_WELCOME)
     // Обычный класс доступен сразу, поэтому для «Потрогай траву» нужны три
     // открываемых: Азум, Дед Мороз и буК.
     if class_owned_of(CLASS_AZUM) == 1 && class_owned_of(CLASS_SANTA) == 1 && class_owned_of(CLASS_EBUC) == 1
@@ -101,7 +36,8 @@ end
 
 // ── Сохранение и загрузка ─────────────────────────────────────────────────
 // Записать всё облако прогресса и сообщить сети текущий класс/уровень/скин —
-// их видят соперники в онлайне.
+// их видят соперники в онлайне. Параметр bp хэллоуинского батл пасса больше
+// не используется (сам батл пасс убран) и всегда пишется как 0.
 function save_progress()
     net_save_progress_all(cups, candies, player_class,
         class_owned_of(CLASS_AZUM), class_owned_of(CLASS_SANTA), class_owned_of(CLASS_EBUC),
@@ -110,7 +46,7 @@ function save_progress()
         class_level_of(CLASS_AZUM), class_unlocked_of(CLASS_AZUM),
         class_level_of(CLASS_SANTA), class_unlocked_of(CLASS_SANTA),
         class_level_of(CLASS_EBUC), class_unlocked_of(CLASS_EBUC),
-        bp_level, azum_skin)
+        0, azum_skin)
     progress_push_to_net()
 end
 
@@ -122,13 +58,13 @@ function progress_push_to_net()
 end
 
 // Привести прогресс к допустимым значениям: уровни в границах ветки, скин —
-// только если открыт нужный уровень батл пасса, класс — только купленный.
+// только если открыто достижение «Легенды не умирают...», класс — только
+// купленный.
 function progress_normalize()
-    bp_level = clamp(bp_level, 0, bp_max)
     if azum_skin < SKIN_NORMAL || azum_skin >= SKIN_COUNT
         azum_skin = SKIN_NORMAL
     end
-    if azum_skin == SKIN_ZOMBIE && bp_level < SKIN_ZOMBIE_BP
+    if azum_skin == SKIN_ZOMBIE && has_achievement(ACH_LEGENDS) == 0
         azum_skin = SKIN_NORMAL
     end
     number cls = CLASS_ORDINARY
@@ -158,6 +94,7 @@ function progress_from_storage()
     cups = net_load_cups()
     candies = net_load_candies()
     achievement_mask = net_load_achievement_flags()
+    azum_revive_count = net_load_azum_revives()
     player_class = net_load_class()
     set_class_owned(CLASS_AZUM, net_load_azum())
     set_class_owned(CLASS_SANTA, net_load_santa())
@@ -168,14 +105,18 @@ function progress_from_storage()
     set_class_progress(CLASS_AZUM, net_load_azum_level(), net_load_azum_levels_unlocked())
     set_class_progress(CLASS_SANTA, net_load_santa_level(), net_load_santa_levels_unlocked())
     set_class_progress(CLASS_EBUC, net_load_ebuc_level(), net_load_ebuc_levels_unlocked())
-    bp_level = net_load_bp_level()
     azum_skin = net_load_azum_skin()
+    // Те, кто получил «Зомби» через хэллоуинский батл пасс (он убран), свою
+    // награду не теряют: скин на месте — считаем достижение открытым.
+    if azum_skin == SKIN_ZOMBIE && has_achievement(ACH_LEGENDS) == 0
+        grant_achievement(ACH_LEGENDS)
+    end
     progress_normalize()
     sync_selected_class()
     progress_push_to_net()
-    // Награды, зависящие от прогресса («Привет!», «Потрогай траву»),
-    // пересчитываются сразу: даже удалённый achievements.dat восстанавливается
-    // из того, что уже куплено.
+    // Награды, зависящие от прогресса («Потрогай траву»), пересчитываются
+    // сразу: даже удалённый achievements.dat восстанавливается из того, что
+    // уже куплено.
     check_achievements()
 end
 

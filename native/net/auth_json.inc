@@ -1,23 +1,23 @@
 static void achievements_read(void) {
     char path[320];
     FILE *f;
-    unsigned int flags = 0;
+    unsigned int flags = 0, revives = 0;
     ds_mutex_lock(ach_lock);
     if (ach_loaded) { ds_mutex_unlock(ach_lock); return; }
     ds_mutex_unlock(ach_lock);
     data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
     f = fopen(path, "r");
     if (f) {
-        /* Современный формат — одно целое число-битмаск. Старые сборки писали
-         * «welcome all_characters» (0/1 0/1): такой файл тоже читаем и
-         * перекладываем в биты. */
+        /* Современный формат — битмаск и (со 2-го числа) счётчик возрождений
+         * Азума. Старые сборки писали «welcome all_characters» (0/1 0/1) или
+         * одно число-битмаск: такие файлы тоже читаем. Достижение «Привет!»
+         * удалено, его бит (0) при чтении старого формата не ставится. */
         char line[64];
         if (fgets(line, sizeof(line), f)) {
             int a = 0, b = 0;
-            if (sscanf(line, "%d %d", &a, &b) == 2) {
-                flags = (unsigned int)((a ? ACH_FLAG_WELCOME : 0)
-                                       | (b ? ACH_FLAG_ALL_CHARACTERS : 0));
-            } else if (sscanf(line, "%u", &flags) != 1) {
+            if (sscanf(line, "%d %d", &a, &b) == 2 && a <= 1 && b <= 1) {
+                flags = (unsigned int)((b ? ACH_FLAG_ALL_CHARACTERS : 0));
+            } else if (sscanf(line, "%u %u", &flags, &revives) < 1) {
                 flags = 0;
             }
         } else {
@@ -27,17 +27,18 @@ static void achievements_read(void) {
     }
     ds_mutex_lock(ach_lock);
     ach_flags = flags;
+    ach_revives = revives;
     ach_loaded = 1;
     ds_mutex_unlock(ach_lock);
 }
 
-static void achievements_write(unsigned int flags) {
+static void achievements_write(unsigned int flags, unsigned int revives) {
     char path[320];
     FILE *f;
     data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
     f = fopen(path, "w");
     if (f) {
-        fprintf(f, "%u\n", flags);
+        fprintf(f, "%u %u\n", flags, revives);
         fclose(f);
     }
 }
@@ -51,11 +52,14 @@ double net_load_achievement_flags(void) {
 
 void net_save_achievement_flags(double flags) {
     unsigned int f = (unsigned int)flags;
+    unsigned int r;
+    achievements_read();
     ds_mutex_lock(ach_lock);
+    r = ach_revives;
     ach_flags = f;
     ach_loaded = 1;
     ds_mutex_unlock(ach_lock);
-    achievements_write(f);
+    achievements_write(f, r);
 }
 
 double net_has_achievement_flag(double flag) {
@@ -68,13 +72,34 @@ double net_has_achievement_flag(double flag) {
 }
 
 void net_mark_achievement_flag(double flag) {
-    unsigned int f;
+    unsigned int f, r;
     achievements_read();
     ds_mutex_lock(ach_lock);
     ach_flags |= (unsigned int)flag;
     f = ach_flags;
+    r = ach_revives;
     ds_mutex_unlock(ach_lock);
-    achievements_write(f);
+    achievements_write(f, r);
+}
+
+/* Счётчик возрождений за Азума — второе число в achievements.dat. Лежит рядом
+ * с флагами, чтобы достижение «Легенды не умирают...» переживало перезаход. */
+double net_load_azum_revives(void) {
+    double value;
+    achievements_read();
+    ds_mutex_lock(ach_lock); value = (double)ach_revives; ds_mutex_unlock(ach_lock);
+    return value;
+}
+
+void net_save_azum_revives(double revives) {
+    unsigned int f, r = (unsigned int)revives;
+    achievements_read();
+    ds_mutex_lock(ach_lock);
+    f = ach_flags;
+    ach_revives = r;
+    ach_loaded = 1;
+    ds_mutex_unlock(ach_lock);
+    achievements_write(f, r);
 }
 
 void net_set_class(double cls) {

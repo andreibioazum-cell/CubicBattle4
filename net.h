@@ -42,7 +42,16 @@ double net_leaderboard_cups(double idx);
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
 void net_publish_snow(double x, double y, double dx, double dy, double snow);
-void net_publish_station(double x, double y, double hp, double counter);
+/* Турели бука: до трёх живых турелей, каждая со своим положением и HP.
+ * count — сколько турелей живо сейчас (0..3). Поля station1_, station2_,
+ * station3_ держат турели 1/2/3 по порядку установки. */
+void net_publish_turrets(double x1, double y1, double hp1,
+                         double x2, double y2, double hp2,
+                         double x3, double y3, double hp3,
+                         double count);
+/* Рывок Азума: стартовая точка, направление и счётчик рывка. Счётчик меняется
+ * на каждом рывке — получатели ловят по нему начало рывка. */
+void net_publish_dash(double x, double y, double dx, double dy, double dash);
 void net_publish_universe(double x, double y, double counter);
 void net_set_class(double cls);
 double net_status(void);
@@ -70,10 +79,22 @@ double net_player_snow(double slot);
 double net_player_station_x(double slot);
 double net_player_station_y(double slot);
 double net_player_station_hp(double slot);
+double net_player_station2_x(double slot);
+double net_player_station2_y(double slot);
+double net_player_station2_hp(double slot);
+double net_player_station3_x(double slot);
+double net_player_station3_y(double slot);
+double net_player_station3_hp(double slot);
+/* Сколько турелей живо у игрока (0..3). */
 double net_player_station(double slot);
 double net_player_universe_x(double slot);
 double net_player_universe_y(double slot);
 double net_player_universe(double slot);
+double net_player_dash(double slot);
+double net_player_dash_x(double slot);
+double net_player_dash_y(double slot);
+double net_player_dash_dx(double slot);
+double net_player_dash_dy(double slot);
 double net_player_class(double slot);
 double net_player_level(double slot);
 void net_set_level(double level);
@@ -99,7 +120,9 @@ double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
 double net_load_ebuc_level(void);
 double net_load_ebuc_levels_unlocked(void);
-/* Хэллоуинский батл пасс и скины Азума. */
+/* Скины Азума. bp_level из батл пасса (убран из игры) остаётся в том же
+ * позиционном поле прогресса, чтобы старые сохранения читались как раньше;
+ * игра его больше не использует. */
 double net_load_bp_level(void);
 double net_load_azum_skin(void);
 void net_save_progress(double cups, double candies, double cls, double azum, double santa, double ebuc,
@@ -115,18 +138,24 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
 /* Достижения профиля: единый битмаск в achievements.dat. ACH_FLAG_* ниже —
  * код отдельных наград. Добавление новой — это новый бит, старые файлы
  * читаются как есть.
- *  WELCOME        — первый запуск игры;
  *  FIRST_WIN      — первая победа;
  *  FIRST_BUY      — первая покупка класса;
- *  ALL_CHARACTERS — собраны все открываемые классы. */
-#define ACH_FLAG_WELCOME         (1u << 0)
+ *  ALL_CHARACTERS — собраны все открываемые классы;
+ *  LEGENDS        — 25 возрождений за Азума (скин «Зомби»).
+ * Бит 0 занимало удалённое достижение «Привет!» — новый код его не
+ * выставляет и не читает (старые файлы с ним просто теряют этот бит). */
 #define ACH_FLAG_FIRST_WIN       (1u << 1)
 #define ACH_FLAG_FIRST_BUY       (1u << 2)
 #define ACH_FLAG_ALL_CHARACTERS  (1u << 3)
+#define ACH_FLAG_LEGENDS         (1u << 4)
 double net_load_achievement_flags(void);
 void net_save_achievement_flags(double flags);
 double net_has_achievement_flag(double flag);
 void net_mark_achievement_flag(double flag);
+/* Счётчик возрождений за Азума: хранится вторым числом в achievements.dat,
+ * чтобы переживать перезаход и не трогать формат progress.dat. */
+double net_load_azum_revives(void);
+void net_save_azum_revives(double revives);
 
 /* Бан система */
 double net_banned(void);

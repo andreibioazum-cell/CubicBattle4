@@ -25,6 +25,7 @@ function reset_battle()
     enemy.poison=0
     enemy.poison_tick=0
     enemy.poison_damage=0
+    enemy.stun=0
     enemy.wobble=0
     enemy.wobble_t=0
     enemy.react=0
@@ -58,19 +59,44 @@ function reset_battle()
     boom_y=0
     freeze_a=0
     super_windup=0
-    station.active=0
-    station.hp=0
-    station.max_hp=0
+    player_freeze=0
+    player_freeze_slow=1
+    pfreeze_a=0
+    player_stun=0
+    pstun_a=0
+    player_poison=0
+    player_poison_tick=0
+    player_poison_damage=0
+    ppoison_a=0
+    poison_a=0
+    stun_a=0
+    dash_active=0
+    dash_t=0
+    dash_dx=0
+    dash_dy=0
+    dash_hit=0
+    dash_pub=0
+    dash_x0=0
+    dash_y0=0
+    dash_cd=0
+    arr_clear(turret_x)
+    arr_clear(turret_y)
+    arr_clear(turret_hp)
+    arr_clear(turret_maxhp)
+    arr_clear(turret_spawn_t)
+    number i=0
+    loop i<turret_max
+        arr_push(turret_x,0)
+        arr_push(turret_y,0)
+        arr_push(turret_hp,0)
+        arr_push(turret_maxhp,0)
+        arr_push(turret_spawn_t,0)
+        i=i+1
+    end
+    turret_heal_t=0
     arr_clear(station_boom_xs)
     arr_clear(station_boom_ys)
     arr_clear(station_boom_ts)
-    station_hit_t=0
-    station_spawn_t=0
-    station_heal_t=0
-    arr_clear(ebuc_station_stack_x)
-    arr_clear(ebuc_station_stack_y)
-    arr_clear(ebuc_station_stack_hp)
-    arr_clear(ebuc_station_stack_max)
     universe_active=0
     universe_t=0
     universe_x=0
@@ -78,14 +104,6 @@ function reset_battle()
     universe_hit=0
     universe_id=0
     universe_a=0
-    player_freeze=0
-    player_freeze_slow=1
-    pfreeze_a=0
-    player_poison=0
-    player_poison_tick=0
-    player_poison_damage=0
-    ppoison_a=0
-    poison_a=0
     plates_event_reset()
     joy.x=130
     joy.y=screen_h-150
@@ -102,7 +120,8 @@ function reset_battle()
     arr_clear(remote_snow)
     arr_clear(remote_station)
     arr_clear(remote_universe)
-    number i=0
+    arr_clear(remote_dash)
+    i=0
     loop i<max_players*remote_fields
         arr_push(remotes,0)
         i=i+1
@@ -125,6 +144,11 @@ function reset_battle()
     i=0
     loop i<max_players*universe_fields
         arr_push(remote_universe,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players*dash_fields
+        arr_push(remote_dash,0)
         i=i+1
     end
     arr_clear(dust)
@@ -205,6 +229,8 @@ function spawn_enemy()
     ds_log("enemy spawned instantly")
 end
 
+// Леденцы-пикапы рисуются и подбираются, только пока конфеты включены:
+// при candy_enabled==0 карта остаётся без пикапов, но код и файлы на месте.
 function candy_rand_pos(number i)
     number m=candy_margin, k=0
     number cx=m+rand()%(int)(screen_w-2*m), cy=m+rand()%(int)(screen_h-2*m)
@@ -222,6 +248,9 @@ function candy_rand_pos(number i)
 end
 
 function spawn_all_candies()
+    if candy_enabled==0
+        return
+    end
     number i=0
     loop i<candy_count
         candy_rand_pos(i)

@@ -1,8 +1,8 @@
 include graphics
 
 // ══════════════════════════════════════════════════════════════════════════
-// menu_screens.ds — отрисовка экранов меню: лобби, режимы, настройки, классы, уровни, скины,
-// достижения, батл пасс, таблица лидеров и вход по нику.
+// menu_screens.ds — отрисовка экранов меню: лобби, режимы, настройки, классы,
+// уровни, скины, достижения, таблица лидеров и вход по нику.
 //
 // Модуль тонкий намеренно. Каждый экран делает ровно две вещи:
 //   draw_*(...)  — «что нарисовать»;
@@ -46,6 +46,12 @@ end
 // из переводов (tr_cups/tr_candies), размер и место — в config.ds и layout.ds.
 function draw_lobby_money()
     string cup_s = tr_cups() + ": " + cups
+    if candy_enabled == 0
+        // Конфеты отключены параметром candy_enabled: в кошельке остаются
+        // только кубки. Баланс леденцов в файлах не трогается.
+        ctext_scaled(cup_s, lobby_money_y(), text_color, money_scale)
+        return
+    end
     string cd_s = tr_candies() + ": " + candies
     money_pair(cup_s, cd_s, lobby_money_y(), money_scale, money_gap)
 end
@@ -64,8 +70,6 @@ function draw_lobby()
     if str_len(banned_msg) > 0
         ctext(banned_msg, lobby_msg_y(), text_color)
     end
-    // Кнопка «???» в левом нижнем углу — вход в хэллоуинский батл пасс.
-    button_scaled("???", lobby_bp_x(), lobby_bp_y(), btn_w, btn_h, 0.9)
 end
 
 function draw_modes()
@@ -86,10 +90,13 @@ end
 
 // ── Экран классов ─────────────────────────────────────────────────────────
 // Карточка класса: спрайт, название, девиз, уровень и кнопка действия.
+// Карточки рисуются по видимой сетке: если конфеты отключены и Дед Мороз ещё
+// не куплен, его карточка исчезает, а остальные сдвигаются по центру.
 // Азум в скине «Зомби» ходит своей текстурой (zombie_azum.png); если
 // файлы не загрузились — прежний зелёный силуэт.
-function draw_class_card(number cls)
-    number x = classes_card_x(cls)
+function draw_class_card(number vi)
+    number cls = visible_class_at(vi)
+    number x = classes_card_x(vi)
     number w = classes_card_w()
     number selected = 0
     if player_class == cls && class_owned_of(cls) == 1
@@ -134,10 +141,10 @@ end
 
 function draw_classes()
     screen_fill()
-    number cls = 0
-    loop cls < class_count
-        draw_class_card(cls)
-        cls = cls + 1
+    number vi = 0
+    loop vi < classes_visible_count()
+        draw_class_card(vi)
+        vi = vi + 1
     end
     // Под карточками пара кнопок: слева «Уровни», справа «Скины», середина
     // пустая. Скины есть только у Азума — у остальных классов правой кнопки
@@ -207,7 +214,7 @@ function draw_skin_card(number skin)
         tex(sx, skin_preview_y(), azum_idle_tex(), 0, scale)
     end
     color c = panel_text(locked)
-    string status = tr_skin_bp_hint()
+    string status = tr_skin_legends_hint()
     if locked == 0
         status = tr_class_pick()
         if selected == 1
@@ -226,7 +233,7 @@ function draw_skins()
         skin = skin + 1
     end
     skin_msg_t = tick_down(skin_msg_t)
-    draw_msg(tr_skin_zombie_locked(), skins_msg_y(), skin_msg_t)
+    draw_msg(tr_skins_need_legends(), skins_msg_y(), skin_msg_t)
     draw_back()
 end
 
@@ -247,7 +254,7 @@ function achievement_bit(number i)
     if i == 3
         return ACH_ALL_CHARACTERS
     end
-    return ACH_WELCOME
+    return ACH_LEGENDS
 end
 
 function achievement_title(number i)
@@ -260,7 +267,7 @@ function achievement_title(number i)
     if i == 3
         return tr_achievement_grass()
     end
-    return tr_achievement_welcome()
+    return tr_achievement_legends()
 end
 
 function achievement_desc(number i)
@@ -273,7 +280,7 @@ function achievement_desc(number i)
     if i == 3
         return tr_achievement_grass_desc()
     end
-    return tr_achievement_welcome_desc()
+    return tr_achievement_legends_desc()
 end
 
 // Карточка награды: полученная — яркий фиолетовый, закрытая — тот же цвет на
@@ -302,44 +309,6 @@ function draw_achievements()
         draw_achievement_card(i)
         i = i + 1
     end
-    draw_back()
-end
-
-// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
-// Пять уровней по bp_cost кубков, покупаются по порядку. Купленный и
-// доступный для покупки уровни — яркий фиолетовый, закрытые — на 25% темнее
-// (и плашка, и текст).
-function draw_bp_row(number n)
-    number state = bp_row_state(n)
-    number locked = 0
-    if state == 0
-        locked = 1
-    end
-    number x = bp_x()
-    number y = bp_row_y(n)
-    number w = bp_w()
-    panel(x, y, w, bp_row_h, locked)
-    color c = panel_text(locked)
-    string status = tr_bp_locked()
-    if state == 2
-        status = tr_bp_bought()
-    else if state == 1
-        status = tr_bp_buy() + " · " + bp_cost + " " + tr_cups_unit()
-    end
-    text_scaled(tr_bp_level() + " " + n, x + card_text_pad, y + 12, c, 0.62)
-    text_scaled(bp_reward_text(n), x + card_text_pad, y + 38, c, 0.46)
-    rtext_in_box(status, x, y + 14, w, card_text_pad, c, 0.46)
-end
-
-function draw_battlepass()
-    screen_fill()
-    number n = 1
-    loop n <= bp_max
-        draw_bp_row(n)
-        n = n + 1
-    end
-    bp_msg_t = tick_down(bp_msg_t)
-    draw_msg(bp_msg_text(), bp_msg_y(), bp_msg_t)
     draw_back()
 end
 

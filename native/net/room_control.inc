@@ -401,6 +401,9 @@ static int actor_same(const Actor *x, const Actor *y) {
         && x->punch_x==y->punch_x && x->punch_y==y->punch_y && x->punch_dx==y->punch_dx && x->punch_dy==y->punch_dy && x->punch==y->punch
         && x->snow_x==y->snow_x && x->snow_y==y->snow_y && x->snow_dx==y->snow_dx && x->snow_dy==y->snow_dy && x->snow==y->snow
         && x->station_x==y->station_x && x->station_y==y->station_y && x->station_hp==y->station_hp && x->station==y->station
+        && x->station2_x==y->station2_x && x->station2_y==y->station2_y && x->station2_hp==y->station2_hp
+        && x->station3_x==y->station3_x && x->station3_y==y->station3_y && x->station3_hp==y->station3_hp
+        && x->dash_x==y->dash_x && x->dash_y==y->dash_y && x->dash_dx==y->dash_dx && x->dash_dy==y->dash_dy && x->dash==y->dash
         && x->universe_x==y->universe_x && x->universe_y==y->universe_y && x->universe==y->universe
         && x->cls==y->cls && x->level==y->level && x->skin==y->skin && !strcmp(x->nick,y->nick);
 }

@@ -78,36 +78,35 @@ function lobby_msg_y()
     return lobby_money_y() + money_line_h + 6
 end
 
-// Кнопка «???» (вход в батл пасс) — левый нижний угол.
-function lobby_bp_x()
-    return 20
-end
-
-function lobby_bp_y()
-    return screen_h - btn_h - 20
-end
-
-function hit_lobby_bp(number px, number py)
-    return hit_rect_pad(px, py, lobby_bp_x(), lobby_bp_y(), btn_w, btn_h)
-end
-
 // ── Экран классов ─────────────────────────────────────────────────────────
+// Сетка карточек считается по видимым классам (classes_visible_count):
+// скрытый класс (Дед Мороз при выключенных конфетах) не занимает ячейку,
+// и карточки не оставляют дыр.
 function classes_card_w()
-    number total_gap = class_gap * (class_count - 1)
-    number w = (screen_w - 2 * screen_margin - total_gap) / class_count
+    number n = classes_visible_count()
+    if n < 1
+        n = 1
+    end
+    number total_gap = class_gap * (n - 1)
+    number w = (screen_w - 2 * screen_margin - total_gap) / n
     return clamp(w, class_card_min_w, class_card_max_w)
 end
 
 function classes_total_w()
-    return classes_card_w() * class_count + class_gap * (class_count - 1)
+    number n = classes_visible_count()
+    if n < 1
+        n = 1
+    end
+    return classes_card_w() * n + class_gap * (n - 1)
 end
 
 function classes_top()
     return back_y + btn_h + title_gap
 end
 
-function classes_card_x(number i)
-    return center_x(classes_total_w()) + i * (classes_card_w() + class_gap)
+// vi — позиция в видимой сетке (0, 1, 2...), а не номер класса.
+function classes_card_x(number vi)
+    return center_x(classes_total_w()) + vi * (classes_card_w() + class_gap)
 end
 
 // Содержимое карточки класса: спрайт, название, девиз, уровень, кнопка.
@@ -143,8 +142,9 @@ function class_pick_y()
     return classes_top() + class_card_h - class_pick_h - class_pick_pad
 end
 
-function hit_class_card(number px, number py, number cls)
-    return hit_rect(px, py, classes_card_x(cls), classes_top(), classes_card_w(), class_card_h)
+// vi — позиция в видимой сетке, в ней же рисуются карточки.
+function hit_class_card(number px, number py, number vi)
+    return hit_rect(px, py, classes_card_x(vi), classes_top(), classes_card_w(), class_card_h)
 end
 
 // ── Пара кнопок «Уровни» / «Скины» под карточками ─────────────────────────
@@ -299,31 +299,6 @@ end
 
 function ach_card_y(number i)
     return ach_top() + i * (ach_card_h + ach_card_gap)
-end
-
-// ── Экран батл пасса ──────────────────────────────────────────────────────
-function bp_w()
-    return fit_w(bp_w_max)
-end
-
-function bp_x()
-    return center_x(bp_w())
-end
-
-function bp_top()
-    return content_top()
-end
-
-function bp_row_y(number n)
-    return bp_top() + (n - 1) * (bp_row_h + bp_row_gap)
-end
-
-function bp_msg_y()
-    return bp_row_y(bp_max) + bp_row_h + 12
-end
-
-function hit_bp_row(number px, number py, number n)
-    return hit_rect(px, py, bp_x(), bp_row_y(n), bp_w(), bp_row_h)
 end
 
 // ── Экран таблицы лидеров ─────────────────────────────────────────────────

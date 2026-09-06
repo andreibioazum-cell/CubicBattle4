@@ -1,7 +1,7 @@
 include graphics
 
 // ══════════════════════════════════════════════════════════════════════════
-// progress_classes.ds — модель классов и уровней: классы, уровни, скины, батл пасс,
+// progress_classes.ds — модель классов и уровней: классы, уровни, скины,
 // достижения и сохранение. Здесь НЕ рисуется ничего: модуль отвечает на
 // вопросы «сколько стоит», «открыто ли», «что изменится после покупки»,
 // а экраны (ui/menu_screens.ds и ui/menu_input.ds) только показывают его ответы.
@@ -138,7 +138,7 @@ function class_msg_text()
 end
 
 // ── Скин класса ───────────────────────────────────────────────────────────
-// Играет ли боец этого класса этим скином: скин «Зомби» пока есть только у
+// Играет ли боец этого класса этим скином: скин «Зомби» есть только у
 // Азума, поэтому для остальных классов проверка всегда ложная. skin — номер
 // скина бойца: у своего он из azum_skin, у сетевого соперника — из снимка.
 function skin_is_active(number cls, number skin)
@@ -152,12 +152,14 @@ function class_skin_active(number cls)
     return skin_is_active(cls, azum_skin)
 end
 
+// Скин «Зомби» открывает достижение «Легенды не умирают...» (25 возрождений
+// за Азума). Обычный скин доступен всегда.
 function skin_unlocked(number skin)
     if skin == SKIN_NORMAL
         return 1
     end
     if skin == SKIN_ZOMBIE
-        if bp_level >= SKIN_ZOMBIE_BP
+        if has_achievement(ACH_LEGENDS) == 1
             return 1
         end
     end
@@ -172,7 +174,7 @@ function skin_name_of(number skin)
 end
 
 // Выбрать скин. Закрытый скин не выбирается, а показывает подсказку,
-// каким уровнем батл пасса он открывается.
+// каким достижением он открывается.
 function pick_skin(number skin)
     if skin < 0 || skin >= SKIN_COUNT
         return
@@ -186,6 +188,59 @@ function pick_skin(number skin)
     end
     azum_skin = skin
     save_progress()
+end
+
+// ── Видимость классов ─────────────────────────────────────────────────────
+// Пока конфеты отключены (candy_enabled==0), Дед Мороз скрыт из списка
+// классов, если он ещё не куплен. Купленный Дед Мороз остаётся на месте —
+// класс и его скины продолжают работать.
+function class_visible(number cls)
+    if cls == CLASS_SANTA && candy_enabled == 0 && class_owned_of(CLASS_SANTA) == 0
+        return 0
+    end
+    return 1
+end
+
+// Сколько карточек классов видно сейчас (скрытые не занимают места в сетке).
+function classes_visible_count()
+    number n = 0, cls = 0
+    loop cls < class_count
+        if class_visible(cls) == 1
+            n = n + 1
+        end
+        cls = cls + 1
+    end
+    return n
+end
+
+// Какой класс стоит на vi-й видимой позиции сетки.
+function visible_class_at(number vi)
+    number n = 0, cls = 0
+    loop cls < class_count
+        if class_visible(cls) == 1
+            if n == vi
+                return cls
+            end
+            n = n + 1
+        end
+        cls = cls + 1
+    end
+    return CLASS_ORDINARY
+end
+
+// На какой видимой позиции стоит класс; -1, если класс сейчас скрыт.
+function class_visible_index(number cls)
+    number n = 0, c = 0
+    loop c < class_count
+        if class_visible(c) == 1
+            if c == cls
+                return n
+            end
+            n = n + 1
+        end
+        c = c + 1
+    end
+    return -1
 end
 
 // ── Уровни ────────────────────────────────────────────────────────────────
@@ -310,6 +365,3 @@ function pick_class(number cls)
     // Первая покупка класса открывает достижение «Покупка».
     grant_achievement(ACH_FIRST_BUY)
 end
-
-// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
-// Состояние строки: 2 — куплено, 1 — следующий (можно купить), 0 — закрыто.

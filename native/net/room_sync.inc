@@ -14,10 +14,16 @@ static int push_state(void) {
     if (ps_have_last && actor_same(&a,&ps_last) && now_ms()-ps_last_put < HEARTBEAT_TICK) return 1;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
-    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"stx\":%.5f,\"sty\":%.5f,\"sthp\":%.0f,\"station\":%.0f,\"uzx\":%.5f,\"uzy\":%.5f,\"universe\":%.0f,\"cls\":%.0f,\"level\":%.0f,\"skin\":%.0f}",
+    snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":%.5f,\"y\":%.5f,\"angle\":%.5f,\"hp\":%.0f,\"alive\":%.0f,\"seq\":%lu,\"px\":%.5f,\"py\":%.5f,\"pdx\":%.5f,\"pdy\":%.5f,\"punch\":%.0f,\"sx\":%.5f,\"sy\":%.5f,\"sdx\":%.5f,\"sdy\":%.5f,\"snow\":%.0f,\"stx\":%.5f,\"sty\":%.5f,\"sthp\":%.0f,\"s2x\":%.5f,\"s2y\":%.5f,\"s2hp\":%.0f,\"s3x\":%.5f,\"s3y\":%.5f,\"s3hp\":%.0f,\"station\":%.0f,\"dax\":%.5f,\"day\":%.5f,\"dadx\":%.5f,\"dady\":%.5f,\"dash\":%.0f,\"uzx\":%.5f,\"uzy\":%.5f,\"universe\":%.0f,\"cls\":%.0f,\"level\":%.0f,\"skin\":%.0f}",
         net.uid,enick,clamp01(a.x),clamp01(a.y),safe(a.a),safe(a.hp),safe(a.alive),seq,
         clamp01(a.punch_x),clamp01(a.punch_y),clamp11(a.punch_dx),clamp11(a.punch_dy),safe(a.punch),
-        clamp01(a.snow_x),clamp01(a.snow_y),clamp11(a.snow_dx),clamp11(a.snow_dy),safe(a.snow),clamp01(a.station_x),clamp01(a.station_y),safe(a.station_hp),safe(a.station),clamp01(a.universe_x),clamp01(a.universe_y),safe(a.universe),safe(a.cls),safe(a.level),safe(a.skin));
+        clamp01(a.snow_x),clamp01(a.snow_y),clamp11(a.snow_dx),clamp11(a.snow_dy),safe(a.snow),
+        clamp01(a.station_x),clamp01(a.station_y),safe(a.station_hp),
+        clamp01(a.station2_x),clamp01(a.station2_y),safe(a.station2_hp),
+        clamp01(a.station3_x),clamp01(a.station3_y),safe(a.station3_hp),
+        safe(a.station),
+        clamp01(a.dash_x),clamp01(a.dash_y),clamp11(a.dash_dx),clamp11(a.dash_dy),safe(a.dash),
+        clamp01(a.universe_x),clamp01(a.universe_y),safe(a.universe),safe(a.cls),safe(a.level),safe(a.skin));
     int c = fb_http("PUT",url,body,NULL,0);
     if (c != 200 && net_log_ok()) LOGERR("push state: HTTP %d", c);
     if (c == 200) { ps_last = a; ps_last_put = now_ms(); ps_have_last = 1; }
@@ -83,7 +89,7 @@ static int claim_slot(void) {
         {
             char enick[64];
             json_escape(net.me.nick,enick,sizeof(enick));
-            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"stx\":0,\"sty\":0,\"sthp\":0,\"station\":0,\"uzx\":0,\"uzy\":0,\"universe\":0,\"cls\":%.0f,\"level\":%.0f,\"skin\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level),safe(net.me.skin));
+            snprintf(body,sizeof(body),"{\"uid\":\"%s\",\"nick\":\"%s\",\"x\":0,\"y\":0,\"angle\":0,\"hp\":0,\"alive\":0,\"seq\":0,\"px\":0,\"py\":0,\"pdx\":0,\"pdy\":0,\"punch\":0,\"sx\":0,\"sy\":0,\"sdx\":0,\"sdy\":0,\"snow\":0,\"stx\":0,\"sty\":0,\"sthp\":0,\"s2x\":0,\"s2y\":0,\"s2hp\":0,\"s3x\":0,\"s3y\":0,\"s3hp\":0,\"station\":0,\"dax\":0,\"day\":0,\"dadx\":0,\"dady\":0,\"dash\":0,\"uzx\":0,\"uzy\":0,\"universe\":0,\"cls\":%.0f,\"level\":%.0f,\"skin\":%.0f}",net.uid,enick,safe(net.me.cls),safe(net.me.level),safe(net.me.skin));
         }
         code=fb_http_ex("PUT",url,body,NULL,0, etag[0] ? "if-match" : NULL, etag[0] ? etag : NULL, NULL, 0);
         if(code==200) { claim_seen_uid[slot][0]=0; claim_seen_seq[slot]=0; claim_seen_at[slot]=0; LOG("slot %d uid %s",slot,net.uid); return slot; }
@@ -133,7 +139,18 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/stx",bp); ps[slot].station_x=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/sty",bp); ps[slot].station_y=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/sthp",bp); ps[slot].station_hp=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/s2x",bp); ps[slot].station2_x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/s2y",bp); ps[slot].station2_y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/s2hp",bp); ps[slot].station2_hp=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/s3x",bp); ps[slot].station3_x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/s3y",bp); ps[slot].station3_y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/s3hp",bp); ps[slot].station3_hp=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/station",bp); ps[slot].station=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/dax",bp); ps[slot].dash_x=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/day",bp); ps[slot].dash_y=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/dadx",bp); ps[slot].dash_dx=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/dady",bp); ps[slot].dash_dy=num(resp,p,0);
+        snprintf(p,sizeof(p),"%s/dash",bp); ps[slot].dash=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/uzx",bp); ps[slot].universe_x=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/uzy",bp); ps[slot].universe_y=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/universe",bp); ps[slot].universe=num(resp,p,0);
