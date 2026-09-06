@@ -651,7 +651,7 @@ function wipePlan(paths){
 }
 
 /* Удаление узла с запасным путём: если правила не пускают удалить контейнер
- * целиком (rooms/*/chat, rooms/*/players и т.п.), удаляем по одному ребёнку —
+ * целиком (rooms/<комната>/chat, rooms/<комната>/players и т.п.), удаляем по одному ребёнку —
  * каждый ребёнок правилами пишется, и эффект тот же. */
 async function wipeNode(p){
   try{ await rtdb(p, "DELETE"); return; }
