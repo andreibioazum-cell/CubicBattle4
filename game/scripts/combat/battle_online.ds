@@ -64,26 +64,37 @@ function update_remote_punches()
             arr_set(remote_punches,rb+5,t)
             if arr_get(remotes,s*remote_fields+5)==0
                 clear_remote_punch(s)
-            else if in_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),player.x,player.y)==1
-                number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
-                take_damage(class_punch_damage_for(rcls,rlevel))
-                if rcls==CLASS_SANTA
-                    if player_poison<=0
-                        player_poison_tick=santa_poison_tick_interval
+            else
+                // Удар соперника бьёт игрока (по центру, как раньше) или
+                // живую турель бука — с проверкой на радиус турели. Если удар
+                // приняла турель, её HP убывает и виден взрыв при разрушении.
+                number target=punch_resolve_target(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),0)
+                if target==0||(target>=1&&target<=turret_max)
+                    number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
+                    if target==0
+                        take_damage(class_punch_damage_for(rcls,rlevel))
+                        if rcls==CLASS_SANTA
+                            if player_poison<=0
+                                player_poison_tick=santa_poison_tick_interval
+                            end
+                            player_poison=santa_poison_time_for(rlevel)
+                            player_poison_damage=santa_poison_damage_for(rlevel)
+                        end
+                    else
+                        damage_turret(target-1,class_punch_damage_for(rcls,rlevel))
+                        ds_log("remote punch hit turret %g, hp %g",target-1,arr_get(turret_hp,target-1))
                     end
-                    player_poison=santa_poison_time_for(rlevel)
-                    player_poison_damage=santa_poison_damage_for(rlevel)
-                end
-                clear_remote_punch(s)
-                if player.hp<=0
-                    player.hp=0
-                    if try_revive()==0
-                        finish_game(2)
-                        return
+                    clear_remote_punch(s)
+                    if player.hp<=0
+                        player.hp=0
+                        if try_revive()==0
+                            finish_game(2)
+                            return
+                        end
                     end
+                else if t>punch_time
+                    clear_remote_punch(s)
                 end
-            else if t>punch_time
-                clear_remote_punch(s)
             end
         end
         s=s+1
@@ -165,15 +176,40 @@ function push_self()
     net_publish(player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive)
     net_publish_punch(punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot)
     if player_class==CLASS_EBUC
-        if station.active==1
-            net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot+1)
-        else
-            net_publish_station(0,0,0,0)
+        // Все живые турели, каждая со своим HP: у соперников полоса здоровья
+        // всегда свежая (публикуется при каждом изменении).
+        number x1=0, y1=0, h1=0, x2=0, y2=0, h2=0, x3=0, y3=0, h3=0
+        if turret_alive(0)==1
+            x1=arr_get(turret_x,0)/screen_w
+            y1=arr_get(turret_y,0)/screen_h
+            h1=arr_get(turret_hp,0)
         end
+        if turret_alive(1)==1
+            x2=arr_get(turret_x,1)/screen_w
+            y2=arr_get(turret_y,1)/screen_h
+            h2=arr_get(turret_hp,1)
+        end
+        if turret_alive(2)==1
+            x3=arr_get(turret_x,2)/screen_w
+            y3=arr_get(turret_y,2)/screen_h
+            h3=arr_get(turret_hp,2)
+        end
+        net_publish_turrets(x1,y1,h1,x2,y2,h2,x3,y3,h3,turret_count_alive())
         if universe_active==1
             net_publish_universe(universe_x/screen_w,universe_y/screen_h,universe_id)
         else
             net_publish_universe(0,0,0)
+        end
+    end
+    // Рывок Азума: старт публикуем один раз (нужна точная стартовая позиция
+    // и направление), когда рывок закончился — гасим счётчик.
+    if player_class==CLASS_AZUM
+        if dash_active==1&&dash_pub==0
+            net_publish_dash(dash_x0/screen_w,dash_y0/screen_h,dash_dx,dash_dy,dash_seq)
+            dash_pub=1
+        else if dash_active==0&&dash_pub==1
+            net_publish_dash(0,0,0,0,0)
+            dash_pub=0
         end
     end
 end
@@ -189,8 +225,9 @@ function update_online()
     update_banner()
     tick_revive()
     tick_freeze()
+    tick_player_stun()
     tick_player_poison()
-    tick_station()
+    tick_turrets()
     tick_universe()
     update_aim()
     if finished!=0
@@ -203,6 +240,7 @@ function update_online()
         end
     end
     move_player()
+    tick_dash()
     if punch_left>0
         punch_left=punch_left-dt
         if punch_left<0
@@ -244,6 +282,7 @@ function update_online()
         smooth_remotes()
         update_remote_punches()
         update_remote_snow()
+        update_remote_dashes()
         update_remote_station()
         update_remote_universe()
         check_online_finish()

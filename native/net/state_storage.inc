@@ -65,6 +65,9 @@ typedef struct {
     double punch_x,punch_y,punch_dx,punch_dy,punch;
     double snow_x,snow_y,snow_dx,snow_dy,snow;
     double station_x,station_y,station_hp,station;
+    double station2_x,station2_y,station2_hp;
+    double station3_x,station3_y,station3_hp;
+    double dash_x,dash_y,dash_dx,dash_dy,dash;
     double universe_x,universe_y,universe;
     double cls, level, skin;
     int online;
@@ -405,7 +408,9 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
 }
 /* Достижения — отдельный маленький файл с единым битмаском: ACH_FLAG_* задают
  * отдельные награды. Добавление нового бита не ломает старые записи. Путь
- * хранится рядом с аккаунтом и прогрессом. */
+ * хранится рядом с аккаунтом и прогрессом. Реализация функций — в
+ * auth_json.inc, здесь только общие для файла статические переменные. */
 static DSMutex ach_lock = DS_MUTEX_INIT;
 static int ach_loaded = 0;
 static unsigned int ach_flags = 0;
+static unsigned int ach_revives = 0;

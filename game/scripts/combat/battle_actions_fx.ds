@@ -26,16 +26,28 @@ function station_boom_visual_busy()
 end
 
 function ultimate_visual_busy()
-    if super_windup>0||gift.active==1||universe_active==1||boom_t>0||station_spawn_t>0
+    if super_windup>0||gift.active==1||universe_active==1||boom_t>0
         return 1
     end
     if station_boom_visual_busy()==1
         return 1
     end
+    // Анимация появления любой живой турели тоже держит очередь.
+    number i=0
+    loop i<turret_max
+        if arr_get(turret_spawn_t,i)>0
+            return 1
+        end
+        i=i+1
+    end
     return 0
 end
 
 function fire_punch()
+    // Во время рывка бить нельзя, оглушённый игрок тоже не бьёт.
+    if dash_active>0||player_stun>0
+        return
+    end
     if punch_cd>0||ultimate_visual_busy()==1
         // Не запускаем два визуальных состояния одним кадром, но сохраняем
         // нажатие — удар начнётся сразу после ульты или её вспышки.
@@ -60,13 +72,53 @@ function tick_santa_follow()
     if finished!=0||player_class!=2
         return
     end
-    if super_windup>0||gift.active==1||universe_active==1||boom_t>0||station_spawn_t>0
+    if super_windup>0||gift.active==1||universe_active==1||boom_t>0
         return
     end
     start_punch_now()
 end
 
+// Старт рывка Азума: направление фиксируется; во время рывка джойстиком
+// можно только поворачиваться. Публикация в сеть — в push_self (нужна точная
+// стартовая позиция, а не позиция кадра нажатия).
+function start_dash_now()
+    dash_active=1
+    dash_t=azum_dash_time
+    dash_dx=cos(player.angle)
+    dash_dy=sin(player.angle)
+    dash_hit=0
+    dash_x0=player.x
+    dash_y0=player.y
+    dash_cd=azum_dash_cd
+    dash_seq=dash_seq+1
+    dash_pub=0
+    queued_super=0
+    // Рывок обрывает текущий удар, чтобы не лететь со спрайтом удара.
+    punch.active=0
+    punch.hit=0
+    punch_left=0
+    santa_follow=0
+end
+
 function fire_super()
+    if player_class==CLASS_AZUM
+        // Кнопка ульты у Азума — рывок.
+        if dash_cd>0
+            queued_super=0
+            return
+        end
+        if player_stun>0||player_freeze>0
+            queued_super=0
+            return
+        end
+        if punch_left>0||punch_cd>0||ultimate_visual_busy()==1
+            queued_super=1
+            return
+        end
+        queued_super=0
+        start_dash_now()
+        return
+    end
     if player_class!=2&&player_class!=3
         return
     end
@@ -75,7 +127,7 @@ function fire_super()
     end
     // Ульта ждёт окончания обычного удара и его кулдауна. Иначе старый
     // эффект удара и анимация замаха ульты появлялись в одном кадре.
-    if punch_left>0||punch_cd>0||gift.active==1||universe_active==1||boom_t>0||station_spawn_t>0||station_boom_visual_busy()==1
+    if punch_left>0||punch_cd>0||gift.active==1||universe_active==1||boom_t>0||station_boom_visual_busy()==1
         queued_super=1
         return
     end
@@ -92,7 +144,7 @@ function fire_super()
     punch.active=0
     punch.hit=0
     if player_class==CLASS_EBUC
-        super_cd=ebuc_super_cd_time
+        super_cd=ebuc_station_cd
     else
         super_cd=super_cd_time
     end
@@ -124,11 +176,9 @@ function tick_super_windup()
         return
     end
     if player_class==CLASS_EBUC
-        // Вторая ульта (вселенная) отключена — теперь всегда только станция.
-        place_station()
-        if game_state==ST_ONLINE
-            net_publish_station(station.x/screen_w,station.y/screen_h,station.hp,station.shot)
-        end
+        // Ульта бука — турель (вторая ульта, вселенная, отключена).
+        place_turret()
+        ds_log("turret placed, alive %g/%g",turret_count_alive(),turret_max)
     end
 end
 
@@ -199,10 +249,9 @@ function draw_boom()
     draw_boom_at(boom_x,boom_y,boom_t)
 end
 
-// ── Луч турели бука ────────────────────────────────────────────────────────
+// ── Турели бука ───────────────────────────────────────────────────────────
 // Живая турель непрерывно излучает луч от себя до своего хозяина: плотное,
-// почти непрозрачное яркое ядро внутри зелёного свечения. Без бегущих
-// кружков и колец на концах — только чистый луч.
+// почти непрозрачное яркое ядро внутри зелёного свечения.
 function draw_station_beam(number sx, number sy, number px, number py)
     number dx=px-sx, dy=py-sy
     number d=sqrt(dx*dx+dy*dy)
@@ -215,7 +264,6 @@ function draw_station_beam(number sx, number sy, number px, number py)
     number x1=sx, y1=sy
     // не заходить внутрь спрайта игрока
     number x2=px-nx*32, y2=py-ny*32
-    // Пульсация луча убрана: ширина и яркость постоянные.
     number a=floor(250)
     // внешнее свечение — плотное, без пульсации
     line(x1,y1,x2,y2,15,(((unsigned)(int)200)<<24)|0x0000E676)
@@ -223,18 +271,14 @@ function draw_station_beam(number sx, number sy, number px, number py)
     line(x1,y1,x2,y2,6,(((unsigned)(int)a)<<24)|0x00C8FAD6)
 end
 
-function draw_station_at(number x, number y, number hp, number max_hp)
+// Одна турель: спрайт, анимация появления (spawn 0..1) и полоса HP над ней.
+function draw_turret_at(number x, number y, number hp, number max_hp, number spawn)
     number scale=station_scale
-    if station.active==1&&x==station.x&&y==station.y
-        // Появление: спрайт немного увеличен и быстро сжимается до нормы.
-        // Эффект урона (сжатие при попадании) убран.
-        if station_spawn_t>0
-            number sp=clamp(station_spawn_t/station_spawn_time,0,1)
-            scale=station_scale*(1.0+0.25*sp)
-        end
+    if spawn>0
+        number sp=clamp(spawn/station_spawn_time,0,1)
+        scale=station_scale*(1.0+0.25*sp)
     end
-    // Спрайт турели 50x50: центрируем по половине реального размера,
-    // раньше смещение считалось от 44px и спрайт уезжал вниз-влево.
+    // Спрайт турели 50x50: центрируем по половине реального размера.
     number hw=25*scale
     tex(x-hw,y-hw,DESPENSER_TEX,0,scale)
     // Полоса здоровья турели — прямо над ней.
@@ -284,25 +328,23 @@ function draw_turret_boom(number x, number y, number bt)
     end
 end
 
+// Свои турели: каждая со своим лучом, спрайтом и HP. Взрывы разрушенных
+// турелей доигрывают на своих местах.
 function draw_station()
-    // Рисуем запасные турели из стека (старые)
-    number si=0
-    loop si<arr_len(ebuc_station_stack_x)
-        number sx=arr_get(ebuc_station_stack_x,si)
-        number sy=arr_get(ebuc_station_stack_y,si)
-        number sh=arr_get(ebuc_station_stack_hp,si)
-        number sm=arr_get(ebuc_station_stack_max,si)
-        // чуть темнее/прозрачнее чтобы отличать
-        draw_station_at(sx,sy,sh,sm)
-        si=si+1
+    number i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            draw_station_beam(arr_get(turret_x,i),arr_get(turret_y,i),player.x,player.y)
+        end
+        i=i+1
     end
-    if station.active==1
-        // Луч рисуем под спрайтом, чтобы он «выходил прямо из центра» турели.
-        // Активная турель излучает луч до самого бука.
-        draw_station_beam(station.x,station.y,player.x,player.y)
-        draw_station_at(station.x,station.y,station.hp,station.max_hp)
+    i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            draw_turret_at(arr_get(turret_x,i),arr_get(turret_y,i),arr_get(turret_hp,i),arr_get(turret_maxhp,i),arr_get(turret_spawn_t,i))
+        end
+        i=i+1
     end
-    // Все взрывы разрушенных турелей доигрывают на своих местах.
     number bi=0
     loop bi<arr_len(station_boom_ts)
         number bt=arr_get(station_boom_ts,bi)
@@ -374,6 +416,7 @@ function draw_universe()
     draw_universe_at(universe_x,universe_y,universe_id,universe_t)
 end
 
+// Чужие турели (онлайн): раскладка как в update_remote_station.
 function draw_remote_station()
     if net_slot()<0
         return
@@ -382,18 +425,36 @@ function draw_remote_station()
     loop s<max_players
         number b=s*station_fields
         if s!=net_slot()
-            number st=arr_get(remote_station,b)
-            if st==1
-                // Луч рисуем под спрайтом, чтобы он «выходил прямо из центра» турели.
-                number rb=s*remote_fields
-                if arr_get(remotes,rb+5)==1
-                    draw_station_beam(arr_get(remote_station,b+1),arr_get(remote_station,b+2),arr_get(remotes,rb+1),arr_get(remotes,rb+2))
+            number rb=s*remote_fields
+            number owner_alive=arr_get(remotes,rb+5)
+            number ox=arr_get(remotes,rb+1)
+            number oy=arr_get(remotes,rb+2)
+            number o=b+1, st=0
+            number i=0
+            loop i<turret_max
+                st=arr_get(remote_station,o)
+                if st==1
+                    // Луч рисуем под спрайтом, чтобы он «выходил из центра».
+                    if owner_alive==1
+                        draw_station_beam(arr_get(remote_station,o+1),arr_get(remote_station,o+2),ox,oy)
+                    end
                 end
-                number rl=net_player_level(s)
-                draw_station_at(arr_get(remote_station,b+1),arr_get(remote_station,b+2),net_player_station_hp(s),ebuc_station_hp_for(rl))
-            else if st==2
-                // Взрыв чужой турели виден и у нас — доигрывает до конца.
-                draw_turret_boom(arr_get(remote_station,b+1),arr_get(remote_station,b+2),arr_get(remote_station,b+3))
+                o=o+5
+                i=i+1
+            end
+            o=b+1
+            i=0
+            loop i<turret_max
+                st=arr_get(remote_station,o)
+                if st==1
+                    number rl=net_player_level(s)
+                    draw_turret_at(arr_get(remote_station,o+1),arr_get(remote_station,o+2),arr_get(remote_station,o+3),ebuc_station_hp_for(rl),0)
+                else if st==2
+                    // Взрыв чужой турели виден и у нас — доигрывает до конца.
+                    draw_turret_boom(arr_get(remote_station,o+1),arr_get(remote_station,o+2),arr_get(remote_station,o+4))
+                end
+                o=o+5
+                i=i+1
             end
         end
         s=s+1

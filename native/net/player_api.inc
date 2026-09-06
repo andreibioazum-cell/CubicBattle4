@@ -13,9 +13,22 @@ void net_publish_snow(double x, double y, double dx, double dy, double snow) {
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
     unlock();
 }
-void net_publish_station(double x, double y, double hp, double counter) {
+void net_publish_turrets(double x1, double y1, double hp1,
+                         double x2, double y2, double hp2,
+                         double x3, double y3, double hp3,
+                         double count) {
     lock();
-    net.me.station_x=x; net.me.station_y=y; net.me.station_hp=hp; net.me.station=counter;
+    net.me.station_x=x1; net.me.station_y=y1; net.me.station_hp=hp1;
+    net.me.station2_x=x2; net.me.station2_y=y2; net.me.station2_hp=hp2;
+    net.me.station3_x=x3; net.me.station3_y=y3; net.me.station3_hp=hp3;
+    net.me.station=count;
+    if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
+    unlock();
+}
+void net_publish_dash(double x, double y, double dx, double dy, double dash) {
+    lock();
+    net.me.dash_x=x; net.me.dash_y=y;
+    net.me.dash_dx=dx; net.me.dash_dy=dy; net.me.dash=dash;
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
     unlock();
 }
@@ -140,7 +153,18 @@ READER(net_player_snow, net.players[i].snow)
 READER(net_player_station_x, net.players[i].station_x)
 READER(net_player_station_y, net.players[i].station_y)
 READER(net_player_station_hp, net.players[i].station_hp)
+READER(net_player_station2_x, net.players[i].station2_x)
+READER(net_player_station2_y, net.players[i].station2_y)
+READER(net_player_station2_hp, net.players[i].station2_hp)
+READER(net_player_station3_x, net.players[i].station3_x)
+READER(net_player_station3_y, net.players[i].station3_y)
+READER(net_player_station3_hp, net.players[i].station3_hp)
 READER(net_player_station, net.players[i].station)
+READER(net_player_dash_x, net.players[i].dash_x)
+READER(net_player_dash_y, net.players[i].dash_y)
+READER(net_player_dash_dx, net.players[i].dash_dx)
+READER(net_player_dash_dy, net.players[i].dash_dy)
+READER(net_player_dash, net.players[i].dash)
 READER(net_player_universe_x, net.players[i].universe_x)
 READER(net_player_universe_y, net.players[i].universe_y)
 READER(net_player_universe, net.players[i].universe)

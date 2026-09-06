@@ -7,7 +7,7 @@ include graphics
 //   1. Здесь только константы и глобальное состояние-«настройки». Никакой
 //      отрисовки и никакой логики экранов.
 //   2. Имя константы говорит, где она используется: btn_* — кнопки меню,
-//      class_* — классы, bp_* — батл пасс, enemy_* — бот, dust_* — пыль.
+//      class_* — классы, enemy_* — бот, dust_* — пыль.
 //   3. Если число встречается в двух местах (в draw_* и в touch_*), оно
 //      обязано быть здесь или в ui/layout.ds, а не «зашитым» в экран.
 // ══════════════════════════════════════════════════════════════════════════
@@ -18,7 +18,7 @@ include graphics
 // описан именами: в коде больше не встречается «if game_state == 8».
 number ST_LOBBY=0, ST_SOLO=1, ST_MODES=2, ST_SETTINGS=4, ST_ONLINE=5
 number ST_CONSOLE=6, ST_LOGIN=7, ST_CLASSES=8, ST_LEVELS=9, ST_LEADERBOARD=10
-number ST_ACHIEVEMENTS=11, ST_BATTLEPASS=12, ST_SKINS=13, ST_MODS=14
+number ST_ACHIEVEMENTS=11, ST_SKINS=13, ST_MODS=14
 number game_state=ST_LOBBY
 
 // Плавный переход между экранами: t_dir = 1 (затемнение), 2 (смена экрана),
@@ -35,7 +35,7 @@ number bg_screen=0x1A1A2E, card_bg=0xFF2A2A40, card_ring=0xFF5A5A78, card_ring_p
 // Весь текст в игре белый: graphics.c принудительно подменяет RGB на белый,
 // от скриптов нужен только номер цвета и альфа (для затуханий и затемнения).
 number text_color=0xFFFFFF
-// Заблокированные плашки (достижения, уровни батл пасса, закрытый скин):
+// Заблокированные плашки (достижения, закрытый скин):
 // и фон, и текст становятся на 25% темнее. Фон темнеет через RGB (shade()
 // в core/ui.ds), текст — через альфу, потому что RGB текста рендерер всё
 // равно делает белым: 191/255 = 0.75 непрозрачности белого по тёмной плашке.
@@ -61,9 +61,8 @@ number screen_margin=40, class_action_gap=40
 // Карточки классов: четыре в ряд, высота и пределы ширины.
 number class_count=4, class_gap=14, class_card_h=272
 number class_card_min_w=150, class_card_max_w=260, class_pick_h=42, class_pick_pad=22
-// Списки (уровни, батл пасс, лидерборд, достижения): ширина и высота строки.
+// Списки (уровни, лидерборд, достижения): ширина и высота строки.
 number list_w=520, level_row_h=70, level_row_gap=8, list_top_gap=40
-number bp_w_max=560, bp_row_h=64, bp_row_gap=8
 number lb_w_max=560, lb_row_h=42, lb_row_gap=6
 number ach_card_h=96, ach_card_gap=10
 // Карточки скинов.
@@ -81,15 +80,18 @@ number msg_time=2.5, msg_fade=0.6
 number class_msg_t=0, class_msg_kind=0
 number level_msg_t=0, level_msg_kind=0
 number skin_msg_t=0
-number bp_msg_t=0, bp_msg_kind=0
 
 // ── Достижения ────────────────────────────────────────────────────────────
 // Все награды — один битмаск (achievement_mask), который целиком хранится в
 // achievements.dat и читается net_load_achievement_flags(). Отдельных
 // переменных-зеркал на каждое достижение больше нет: проверка и выдача идут
 // через has_achievement()/grant_achievement() в ui/progress_classes.ds и ui/progress_rewards.ds.
+// «Легенды не умирают...» — 25 возрождений за Азума, награда — скин «Зомби».
 number achievement_mask=0
-number ACH_WELCOME=1, ACH_FIRST_WIN=2, ACH_FIRST_BUY=4, ACH_ALL_CHARACTERS=8
+number ACH_FIRST_WIN=2, ACH_FIRST_BUY=4, ACH_ALL_CHARACTERS=8, ACH_LEGENDS=16
+number ACH_LEGENDS_NEED=25
+// Счётчик возрождений за Азума: второе число в achievements.dat (см. net.c).
+number azum_revive_count=0
 // Тост поверх экрана при получении достижения. Живёт тремя фазами: быстрый
 // выезд сверху (ACH_TOAST_FADE_IN), короткая пауза на месте (ACH_TOAST_HOLD)
 // и быстрый уход строго вверх за край экрана (ACH_TOAST_EXIT). Тост нигде не
@@ -105,9 +107,19 @@ number ACH_TOAST_DURATION=1.96
 // Кубки и леденцы лежат в progress.dat рядом с ником. Кошелёк виден только в
 // лобби: одна строка со счётчиками под пунктами меню (money_scale/money_gap —
 // её размер, money_line_h — сколько места она занимает по вертикали). В
-// классах, уровнях, скинах, достижениях и батл пассе счётчиков нет — там
-// важнее цены на кнопках, иначе экран превращается в таблицу цифр.
+// классах, уровнях, скинах и достижениях счётчиков нет — там важнее цены на
+// кнопках, иначе экран превращается в таблицу цифр.
 number cups=0, candies=0, cup_win=5, candy_win=3
+// ── Конфеты: временное отключение ────────────────────────────────────────
+// Параметр включает/выключает конфеты в игре (0 — выключены по умолчанию).
+// Код и файлы конфет остаются на месте; при 0 не работает только «визуал»:
+//   — леденцы-пикапы на арене и леденцы из ивента «плиты и кубик»;
+//   — +candy_win леденцов за победу (кубки за победу остаются);
+//   — счётчик «Леденцы» в лобби (накопленное на аккаунте НЕ удаляется);
+//   — карточка Деда Мороза в классах, пока он не куплен (купленный виден).
+// Покупки классов за леденцы продолжают работать (тратится накопленное).
+// Поставь 1 — конфеты вернутся целиком.
+number candy_enabled=0
 number money_scale=0.5, money_gap=24, money_line_h=16
 // Алерт победы/поражения: нельзя выйти тапом в первые alert_hold секунд.
 number alert_hold=0.5, finish_t=0
@@ -133,22 +145,15 @@ number player_level=0, levels_unlocked=0
 number max_level=3, level_base_cost=30, level_cost_step=10
 
 // ── Скины ─────────────────────────────────────────────────────────────────
-// Пока скины есть только у Азума: 0 — обычный, 1 — «Зомби» (награда 2-го
-// уровня батл пасса). У зомби свои текстуры (zombie_azum*.png);
-// если их не загрузить, скин откатывается на зелёный силуэт (zombie_tint).
-number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2, SKIN_ZOMBIE_BP=2
+// Скины есть только у Азума: 0 — обычный, 1 — «Зомби». «Зомби» выдаёт
+// достижение «Легенды не умирают...» (25 возрождений за Азума). У зомби свои
+// текстуры (zombie_azum*.png); если их не загрузить, скин откатывается на
+// зелёный силуэт (zombie_tint).
+number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2
 // Выставляются из png_load() при старте: есть ли у Азума своя текстура и
 // свои текстуры скина «Зомби» (idle и удар).
 number azum_tex_ok=0, azum_zombie_tex_ok=0, azum_zombie_punch_tex_ok=0
 number azum_skin=SKIN_NORMAL, zombie_tint=0xFF66BB33
-
-// ── Хэллоуинский батл пасс ────────────────────────────────────────────────
-// 5 уровней по bp_cost кубков, покупаются по порядку. Уровень 1 даёт обычному
-// классу сразу 3 уровень, уровень 2 — скин «Зомби» для Азума, 3–5 — «Скоро».
-number bp_level=0, bp_max=5, bp_cost=100
-// Какие уровни батл пасса что выдают: 1-й — последний уровень обычного
-// класса, 2-й — скин «Зомби». Остальные пока «Скоро».
-number BP_REWARD_CLASS_LEVEL=1, BP_REWARD_SKIN=2
 
 // ── Бой: игрок ────────────────────────────────────────────────────────────
 number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
@@ -190,20 +195,31 @@ number super_freeze=3.0, super_freeze_slow=0.12
 number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
 number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
 
-// ── Бой: буК, турель и вселенная ──────────────────────────────────────────
+// ── Бой: буК, турели и вселенная ─────────────────────────────────────────
 number ebuc_hp=12, ebuc_station_hp=9, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
 number ebuc_universe_particles=140, ebuc_place_heal=0.5, ebuc_beam_heal=0.1
-number station_boom_time=0.5, station_hit_time=0.1, station_heal_t=0
-// Базовый масштаб спрайта турели (увеличен в игре) и анимация появления:
-// при спавне спрайт чуть крупнее и быстро сжимается до обычного размера.
-number station_scale=1.6, station_spawn_time=0.2, station_spawn_t=0
+number station_boom_time=0.5
+// Настоящие турели: бук может держать одновременно до turret_max штук, у
+// каждой своё HP и своя позиция (видны в онлайне). Новая турель ставится в
+// свободный слот; если все turret_max заняты, самая старая взрывается.
+// Радиус попадания по турели и масштаб спрайта с анимацией появления.
+number turret_max=3, turret_hit_r=30, station_scale=1.6, station_spawn_time=0.2
+// Кулдаун турели (кнопка ульты бука).
+number ebuc_station_cd=5
+
+// ── Бой: рывок Азума ──────────────────────────────────────────────────────
+// Вторая кнопка (как ульта) у Азума — рывок: игрок проносится вперёд, по пути
+// нанося урон и оглушая противника. Во время рывка можно поворачиваться
+// джойстиком, но направление рывка не меняется (задаётся в момент старта).
+number azum_dash_cd=5.0, azum_dash_time=0.24, azum_dash_speed=780
+number azum_dash_damage=2, azum_dash_stun=1.0, dash_hit_r=34
 
 // ── Эффекты ───────────────────────────────────────────────────────────────
 // Непрозрачность тени ~19% (48/255): вдвое слабее прежних 0x60.
 number shadow_off=10, shadow_alpha=0x30
-// Леденцы-пикапы на карте в соло.
+// Леденцы-пикапы на карте в соло (спавнятся, только если candy_enabled==1).
 number candy_count=5, candy_margin=46, candy_scale=0.7, candy_give=1
 // Пыль: пул общий на всех бегунов (игрок + враг-бот + до трёх соперников
 // в онлайне), поэтому слотов больше, а у каждого бегуна свой кулдаун спавна.
@@ -215,7 +231,12 @@ number dust_cd=0, enemy_dust_cd=0, dust_enemy_min_speed=40
 // Сколько чисел приходится на одного сетевого игрока/удар/снежинку в плоских
 // массивах-снимках (см. core/entities.ds).
 number remote_fields=11, punch_fields=6, snow_fields=8, remote_smooth=14, remote_snap=220
-number universe_fields=5, station_fields=4
+number universe_fields=5
+// Сетевые турели на слота: 1 счётчик + turret_max турелей по 5 полей
+// (состояние, x, y, hp, таймер взрыва).
+number station_fields=1+turret_max*5
+// Сетевой рывок: счётчик, активность, старт x/y, направление dx/dy, время, попал.
+number dash_fields=8
 string FIREBASE="https://cubicbattleserver-19ae2-default-rtdb.firebaseio.com", ROOM="main"
 // Web API key Firebase (ограничить пакетом com.cb4 в Google Cloud Console!).
 // Пусто — старый режим без Firebase Auth (переходный для собранных версий).

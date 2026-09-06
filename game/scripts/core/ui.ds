@@ -147,9 +147,9 @@ function screen_fill()
     rect(0, 0, screen_w, screen_h, bg_screen)
 end
 
-// Карточка списка (класс, уровень, строка батл пасса). Выбранная получает
-// светлую рамку толщиной card_ring_pad со всех сторон, заблокированная —
-// плашку на 25% темнее (locked_shade).
+// Карточка списка (класс, уровень). Выбранная получает светлую рамку
+// толщиной card_ring_pad со всех сторон, заблокированная — плашку на 25%
+// темнее (locked_shade).
 function card_state(number x, number y, number w, number h, number selected, number locked)
     if selected == 1
         roundrect(x - card_ring_pad, y - card_ring_pad, w + 2 * card_ring_pad, h + 2 * card_ring_pad, btn_radius + 4, card_ring)
@@ -165,7 +165,7 @@ function card(number x, number y, number w, number h, number selected)
     card_state(x, y, w, h, selected, 0)
 end
 
-// Фиолетовая плашка списка — карточка достижения и строка батл пасса.
+// Фиолетовая плашка списка — карточка достижения.
 // Заблокированная рисуется на 25% темнее, как и её текст (panel_text).
 function panel(number x, number y, number w, number h, number locked)
     if locked == 1

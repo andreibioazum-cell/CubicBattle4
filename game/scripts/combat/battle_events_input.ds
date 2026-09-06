@@ -19,6 +19,11 @@ end
 
 function update_event()
     event_mode=net_event()
+    // Ивент 3 «плиты и кубик» целиком про леденцы: пока конфеты отключены
+    // (candy_enabled==0), ивент не запускается вовсе — ни плит, ни кубика.
+    if event_mode==3&&candy_enabled==0
+        event_mode=0
+    end
     event_t=event_t+dt
     if event_t>100000
         event_t=0
@@ -226,6 +231,7 @@ function draw_online()
     draw_remote_universe()
     draw_station()
     draw_remote_station()
+    draw_remote_dash()
     draw_player_body_layer()
     number hw=25*cube_scale*player_scale
     string myn=net_player_nick(net_slot())
@@ -261,6 +267,8 @@ function draw_online()
     draw_event_dice()
     draw_player_freeze()
     draw_player_poison()
+    draw_player_stun()
+    draw_dash_streak()
     draw_snow()
     number w=screen_w/3
     hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
@@ -345,7 +353,9 @@ function touch_game(number x, number y, number action, number id)
     if chat_open==1
         return
     end
-    if (player_class==CLASS_SANTA||player_class==CLASS_EBUC)&&(game_state==ST_SOLO||game_state==ST_ONLINE)
+    // Вторая кнопка способности: снежинка (Дед Мороз), турель (буК),
+    // рывок (Азум).
+    if (player_class==CLASS_AZUM||player_class==CLASS_SANTA||player_class==CLASS_EBUC)&&(game_state==ST_SOLO||game_state==ST_ONLINE)
         if action==0&&sqrt((x-atk2_x)*(x-atk2_x)+(y-atk2_y)*(y-atk2_y))<=96
             super_id=id
             return

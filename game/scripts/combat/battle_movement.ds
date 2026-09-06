@@ -1,4 +1,43 @@
 function move_player()
+    // Оглушение: игрок не двигается и не поворачивается.
+    if player_stun>0
+        return
+    end
+    if dash_active>0
+        // Рывок Азума: игрок летит строго вдоль dash_dx/dash_dy (направление
+        // зафиксировано в момент старта), джойстиком можно только
+        // поворачиваться — направление рывка от этого не меняется.
+        number jm2=sqrt(joy.dx*joy.dx+joy.dy*joy.dy)
+        if jm2>0.15
+            player.angle=atan2(joy.dy,joy.dx)
+        end
+        player.x=player.x+dash_dx*azum_dash_speed*dt
+        player.y=player.y+dash_dy*azum_dash_speed*dt
+        if player.x<player.size
+            player.x=player.size
+            dash_active=0
+            dash_t=0
+        end
+        if player.x>screen_w-player.size
+            player.x=screen_w-player.size
+            dash_active=0
+            dash_t=0
+        end
+        if player.y<player.size
+            player.y=player.size
+            dash_active=0
+            dash_t=0
+        end
+        if player.y>screen_h-player.size
+            player.y=screen_h-player.size
+            dash_active=0
+            dash_t=0
+        end
+        if dash_active==1
+            tick_dust(dash_dx,dash_dy,1)
+        end
+        return
+    end
     number spd=joy_speed
     if player_class==CLASS_AZUM&&player_level>=2
         spd=spd*(1+azum_speed_bonus)

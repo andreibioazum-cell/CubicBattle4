@@ -1,6 +1,6 @@
 // ── Ульта бука: вселенная ──────────────────────────────────────────────────
-// Прямой урон от вселенной: он бьёт самого бука, врага и станцию отдельно,
-// поэтому станция не «спасает» бука от собственной вселенной.
+// Прямой урон от вселенной: он бьёт самого бука, все его турели и врага
+// отдельно, поэтому турели не «спасают» бука от собственной вселенной.
 // Вторая ульта отключена, но функция оставлена для совместимости со старыми клиентами.
 function universe_collapse(number dmg)
     if finished!=0
@@ -12,12 +12,12 @@ function universe_collapse(number dmg)
             enemy.hp=0
         end
     end
-    // Станция бука тоже ломается вселенной.
-    if player_class==CLASS_EBUC&&station.active==1
-        station.hp=station.hp-dmg
-        station_hit_t=station_hit_time
-        if station.hp<=0
-            destroy_station()
+    // Все турели бука ломаются вселенной.
+    if player_class==CLASS_EBUC
+        number i=0
+        loop i<turret_max
+            damage_turret(i,dmg)
+            i=i+1
         end
     end
     // Сам бук тоже может погибнуть от своей ульты.
@@ -36,16 +36,16 @@ function universe_collapse(number dmg)
     end
 end
 
-// Чужая вселенная в онлайне: ломает только самого получателя и его станцию.
+// Чужая вселенная в онлайне: ломает самого получателя и все его турели.
 function universe_collapse_remote(number dmg)
     if finished!=0
         return
     end
-    if player_class==CLASS_EBUC&&station.active==1
-        station.hp=station.hp-dmg
-        station_hit_t=station_hit_time
-        if station.hp<=0
-            destroy_station()
+    if player_class==CLASS_EBUC
+        number i=0
+        loop i<turret_max
+            damage_turret(i,dmg)
+            i=i+1
         end
     end
     player.hp=player.hp-dmg
@@ -72,29 +72,13 @@ function tick_universe()
     end
 end
 
-function tick_station()
-    // Станция стоит на месте и не развеивается сама, пока её не сломают.
-    tick_station_boom()
-    tick_station_hit()
-    // Анимация появления турели затухает.
-    if station_spawn_t>0
-        station_spawn_t=station_spawn_t-dt
-        if station_spawn_t<0
-            station_spawn_t=0
-        end
-    end
-    // Уровень 3: каждую секунду луч живой турели лечит бука.
-    if player_class==CLASS_EBUC&&player_level>=3&&station.active==1&&finished==0&&player.hp>0
-        station_heal_t=station_heal_t+dt
-        if station_heal_t>=1
-            station_heal_t=station_heal_t-1
-            player.hp=clamp(player.hp+ebuc_beam_heal,0,player.max_hp)
-        end
-    else
-        station_heal_t=0
-    end
-end
-
+// Сетевые турели соперников. Раскладка слота (station_fields чисел на игрока):
+//   0               — не используется (раньше тут был счётчик);
+//   i-я турель (0..2): 1+i*5 — состояние (0 нет, 1 стоит, 2 взрыв),
+//                      2+i*5 — x, 3+i*5 — y, 4+i*5 — hp, 5+i*5 — таймер взрыва.
+// Переходы: hp в снимке >0 → турель стоит; hp упало до 0 → на её месте
+// доигрывает взрыв (состояние 2), потом слот гаснет. HP убывает в снимке
+// хозяина, поэтому полоса здоровья чужой турели всегда честная.
 function update_remote_station()
     if net_slot()<0
         return
@@ -103,38 +87,54 @@ function update_remote_station()
     loop s<max_players
         number b=s*station_fields
         if s==net_slot()||net_player_online(s)!=1
-            arr_set(remote_station,b,0)
-            arr_set(remote_station,b+1,0)
-            arr_set(remote_station,b+2,0)
-            arr_set(remote_station,b+3,0)
+            number f=0
+            loop f<station_fields
+                arr_set(remote_station,b+f,0)
+                f=f+1
+            end
         else
-            number cnt=net_player_station(s)
-            if cnt>0
-                arr_set(remote_station,b,1)
-                arr_set(remote_station,b+1,net_player_station_x(s)*screen_w)
-                arr_set(remote_station,b+2,net_player_station_y(s)*screen_h)
-                arr_set(remote_station,b+3,0)
-            else
-                // Состояние: 0 — нет, 1 — турель стоит, 2 — идёт взрыв.
-                // b+1/b+2 хранят последнюю позицию турели, b+3 — таймер взрыва.
-                number st=arr_get(remote_station,b)
-                number bt=arr_get(remote_station,b+3)
-                if st==1&&bt<=0
-                    // Турель только что сломалась: взрыв виден и доигрывает.
-                    arr_set(remote_station,b,2)
-                    arr_set(remote_station,b+3,station_boom_time)
-                else if bt>0
-                    bt=bt-dt
-                    if bt<0
-                        bt=0
-                    end
-                    arr_set(remote_station,b+3,bt)
-                    if bt<=0
-                        arr_set(remote_station,b,0)
-                    end
+            number i=0
+            loop i<turret_max
+                number o=b+1+i*5
+                number hx=0, hy=0, hhp=0
+                if i==0
+                    hx=net_player_station_x(s)*screen_w
+                    hy=net_player_station_y(s)*screen_h
+                    hhp=net_player_station_hp(s)
+                else if i==1
+                    hx=net_player_station2_x(s)*screen_w
+                    hy=net_player_station2_y(s)*screen_h
+                    hhp=net_player_station2_hp(s)
                 else
-                    arr_set(remote_station,b,0)
+                    hx=net_player_station3_x(s)*screen_w
+                    hy=net_player_station3_y(s)*screen_h
+                    hhp=net_player_station3_hp(s)
                 end
+                if hhp>0
+                    // живая турель (или только что поставленная/починенная)
+                    arr_set(remote_station,o,1)
+                    arr_set(remote_station,o+1,hx)
+                    arr_set(remote_station,o+2,hy)
+                    arr_set(remote_station,o+3,hhp)
+                    arr_set(remote_station,o+4,0)
+                else
+                    number st=arr_get(remote_station,o)
+                    if st==1
+                        // турель только что сломалась: взрыв доигрывает на её месте
+                        arr_set(remote_station,o,2)
+                        arr_set(remote_station,o+4,station_boom_time)
+                    else if st==2
+                        number bt=arr_get(remote_station,o+4)-dt
+                        if bt<0
+                            bt=0
+                        end
+                        arr_set(remote_station,o+4,bt)
+                        if bt<=0
+                            arr_set(remote_station,o,0)
+                        end
+                    end
+                end
+                i=i+1
             end
         end
         s=s+1
@@ -167,11 +167,76 @@ function update_remote_universe()
                 if t>=ebuc_universe_collapse_time
                     arr_set(remote_universe,b+1,0)
                     arr_set(remote_universe,b,0)
-                    // Чужая вселенная тоже бьёт локального игрока и его станцию.
+                    // Чужая вселенная тоже бьёт локального игрока и его турели.
                     number rlevel=net_player_level(s)
                     universe_collapse_remote(ebuc_universe_damage_for(rlevel))
                     if finished!=0
                         return
+                    end
+                end
+            end
+        end
+        s=s+1
+    end
+end
+
+// Чужие рывки Азума. Раскладка слота (dash_fields чисел на игрока):
+//   +0 счётчик, +1 активен, +2/+3 старт рывка (x,y), +4/+5 направление,
+//   +6 оставшееся время, +7 уже попал (урон один раз за рывок).
+function update_remote_dashes()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*dash_fields
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_dash,b,0)
+            arr_set(remote_dash,b+1,0)
+        else
+            number gen=net_player_dash(s)
+            if gen!=arr_get(remote_dash,b)
+                arr_set(remote_dash,b,gen)
+                if gen>0
+                    arr_set(remote_dash,b+1,1)
+                    arr_set(remote_dash,b+2,net_player_dash_x(s)*screen_w)
+                    arr_set(remote_dash,b+3,net_player_dash_y(s)*screen_h)
+                    arr_set(remote_dash,b+4,net_player_dash_dx(s))
+                    arr_set(remote_dash,b+5,net_player_dash_dy(s))
+                    arr_set(remote_dash,b+6,azum_dash_time)
+                    arr_set(remote_dash,b+7,0)
+                else
+                    // счётчик погашен — рывок закончился
+                    arr_set(remote_dash,b+1,0)
+                end
+            end
+            if arr_get(remote_dash,b+1)==1
+                number t=arr_get(remote_dash,b+6)-dt
+                if t<0
+                    t=0
+                end
+                arr_set(remote_dash,b+6,t)
+                if t<=0
+                    arr_set(remote_dash,b+1,0)
+                    arr_set(remote_dash,b+7,0)
+                else if arr_get(remote_dash,b+7)==0&&finished==0
+                    // рывок режется по пути: кого задел — игрока или турель
+                    number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5))
+                    if target==0
+                        arr_set(remote_dash,b+7,1)
+                        take_damage(azum_dash_damage)
+                        stun_player(azum_dash_stun)
+                        ds_log("remote dash hit player")
+                        if player.hp<=0
+                            player.hp=0
+                            if try_revive()==0
+                                finish_game(2)
+                                return
+                            end
+                        end
+                    else if target>=1&&target<=turret_max
+                        arr_set(remote_dash,b+7,1)
+                        damage_turret(target-1,azum_dash_damage)
                     end
                 end
             end
@@ -187,10 +252,20 @@ function flush_queued_action()
     if punch_left>0||punch_cd>0||ultimate_visual_busy()==1
         return
     end
-    if queued_super==1&&super_cd<=0
-        queued_super=0
-        fire_super()
-        return
+    if queued_super==1
+        if player_class==CLASS_AZUM
+            if dash_cd<=0
+                queued_super=0
+                fire_super()
+                return
+            end
+        else
+            if super_cd<=0
+                queued_super=0
+                fire_super()
+                return
+            end
+        end
     end
     if queued_punch==1
         queued_punch=0
@@ -198,12 +273,49 @@ function flush_queued_action()
     end
 end
 
+// Рывок Азума в соло: каждый кадр рывка проверяем, не задели ли врага.
+function tick_dash_solo_hit()
+    if dash_active==0||dash_hit==1||finished!=0
+        return
+    end
+    number pr=player.size*0.65+enemy.size*0.65+12
+    if dist(player.x,player.y,enemy.x,enemy.y)<=pr
+        dash_hit=1
+        enemy.hp=enemy.hp-azum_dash_damage
+        stun_enemy(azum_dash_stun)
+        ds_log("dash hit enemy, hp %g",enemy.hp)
+        if enemy.hp<=0
+            enemy.hp=0
+            finish_game(1)
+        end
+    end
+end
+
+// Тикеры рывка: таймер рывка (движение уже в move_player) и кулдаун кнопки.
+function tick_dash()
+    if dash_active>0
+        dash_t=dash_t-dt
+        if dash_t<=0
+            dash_t=0
+            dash_active=0
+            dash_hit=0
+        end
+    end
+    if dash_cd>0
+        dash_cd=dash_cd-dt
+        if dash_cd<0
+            dash_cd=0
+        end
+    end
+end
+
 function update_game()
     tick_alert_hold()
     tick_revive()
     tick_freeze()
+    tick_player_stun()
     tick_player_poison()
-    tick_station()
+    tick_turrets()
     tick_universe()
     update_aim()
     if finished!=0
@@ -216,15 +328,21 @@ function update_game()
         end
     end
     move_player()
-    number ci=0
-    loop ci<candy_count
-        if dist(arr_get(candy_x,ci),arr_get(candy_y,ci),player.x,player.y)<player.size*0.65+18
-            candies=candies+candy_give
-            save_progress()
-            ds_log("candy picked -> %g",candies)
-            candy_rand_pos(ci)
+    tick_dash()
+    tick_dash_solo_hit()
+    // Леденцы-пикапы подбираются только при включённых конфетах: при
+    // candy_enabled==0 их нет на карте (см. spawn_all_candies).
+    if candy_enabled==1
+        number ci=0
+        loop ci<candy_count
+            if dist(arr_get(candy_x,ci),arr_get(candy_y,ci),player.x,player.y)<player.size*0.65+18
+                candies=candies+candy_give
+                save_progress()
+                ds_log("candy picked -> %g",candies)
+                candy_rand_pos(ci)
+            end
+            ci=ci+1
         end
-        ci=ci+1
     end
     if punch_left>0
         punch_left=punch_left-dt

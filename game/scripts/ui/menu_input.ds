@@ -195,11 +195,6 @@ function touch_lobby(number x, number y, number action)
     if action != 0
         return
     end
-    // «???» слева снизу — вход в батл пасс.
-    if hit_lobby_bp(x, y) == 1
-        start_transition(ST_BATTLEPASS)
-        return
-    end
     if hit_menu_row(x, y, 0) == 1
         start_transition(ST_MODES)
         return
@@ -275,13 +270,15 @@ function touch_classes(number x, number y, number action)
         start_transition(ST_SKINS)
         return
     end
-    number cls = 0
-    loop cls < class_count
-        if hit_class_card(x, y, cls) == 1
-            pick_class(cls)
+    // Хит-тест идёт по видимой сетке: скрытых карточек (Дед Мороз при
+    // отключённых конфетах) нет ни в отрисовке, ни в нажатиях.
+    number vi = 0
+    loop vi < classes_visible_count()
+        if hit_class_card(x, y, vi) == 1
+            pick_class(visible_class_at(vi))
             return
         end
-        cls = cls + 1
+        vi = vi + 1
     end
 end
 
@@ -327,24 +324,6 @@ function touch_achievements(number x, number y, number action)
     end
     if back_hit(x, y) == 1
         start_transition(ST_LOBBY)
-    end
-end
-
-function touch_battlepass(number x, number y, number action)
-    if action != 0
-        return
-    end
-    if back_hit(x, y) == 1
-        start_transition(ST_LOBBY)
-        return
-    end
-    number n = 1
-    loop n <= bp_max
-        if hit_bp_row(x, y, n) == 1
-            buy_bp_level(n)
-            return
-        end
-        n = n + 1
     end
 end
 
@@ -418,10 +397,6 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == ST_ACHIEVEMENTS
         touch_achievements(x, y, action)
-        return
-    end
-    if game_state == ST_BATTLEPASS
-        touch_battlepass(x, y, action)
         return
     end
     if game_state == ST_MODS

@@ -133,9 +133,9 @@ function init()
     net_set_firebase_key(FB_KEY)
     net_autologin(FIREBASE)
     start_music()
-    // Валюты, классы, уровни, скины, батл пасс и достижения читаются одним
-    // вызовом: он же приводит их к допустимым значениям и отдаёт сети класс,
-    // уровень и скин своего бойца.
+    // Валюты, классы, уровни, скины и достижения читаются одним вызовом: он
+    // же приводит их к допустимым значениям и отдаёт сети класс, уровень и
+    // скин своего бойца.
     progress_from_storage()
     ds_log("init: ready")
 end
@@ -231,7 +231,7 @@ function achievement_toast_text()
     if ach_toast_bit == ACH_ALL_CHARACTERS
         return tr_achievement_grass()
     end
-    return tr_achievement_welcome()
+    return tr_achievement_legends()
 end
 
 function draw_achievement_toast()
@@ -317,8 +317,6 @@ function draw_screen()
         draw_leaderboard()
     else if game_state == ST_ACHIEVEMENTS
         draw_achievements()
-    else if game_state == ST_BATTLEPASS
-        draw_battlepass()
     else if game_state == ST_MODS
         draw_mods()
     else
