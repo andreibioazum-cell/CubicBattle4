@@ -22,6 +22,9 @@ jobs:
       - name: Check package name consistency
         run: |
           grep -q 'package="com.cb4"' game/AndroidManifest.xml
+          # RuStore отклоняет APK без версии (verCode=null при анализе пакета)
+          grep -q 'android:versionCode="[0-9]\+"' game/AndroidManifest.xml
+          grep -q 'android:versionName="[^"]\+"' game/AndroidManifest.xml
           grep -q 'android:name="com.cb4.GameActivity"' game/AndroidManifest.xml
           grep -q '^package com.cb4;' game/java/com/dimscript/gamedemo/GameActivity.java
           grep -q 'Java_com_cb4_GameActivity_nativeReplaceText' runtime.c
@@ -114,10 +117,16 @@ jobs:
         run: |
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
+          VERSION_CODE="$(sed -n 's/.*android:versionCode="\([0-9]\+\)".*/\1/p' game/AndroidManifest.xml | head -n1)"
+          VERSION_NAME="$(sed -n 's/.*android:versionName="\([^"]\+\)".*/\1/p' game/AndroidManifest.xml | head -n1)"
+          echo "versionCode=$VERSION_CODE versionName=$VERSION_NAME"
+
           "$BT/aapt" package -f \
             -M game/AndroidManifest.xml \
             -S game/res \
             -I "$ANDROID_HOME/platforms/android-34/android.jar" \
+            --version-code "$VERSION_CODE" \
+            --version-name "$VERSION_NAME" \
             -F unsigned.apk ./staging/
 
           "$BT/zipalign" -v 4 unsigned.apk aligned.apk
@@ -144,10 +153,13 @@ jobs:
           "$BT/apksigner" sign "${SIGN_ARGS[@]}" \
             --out Game.apk aligned.apk
 
-      - name: Verify APK signature
+      - name: Verify APK metadata and signature
         run: |
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" \
-            verify --verbose --print-certs Game.apk
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          "$BT/aapt" dump badging Game.apk | head -n 5
+          "$BT/aapt" dump badging Game.apk | grep -q "versionCode='[0-9]\+'" \
+            || { echo "::error::APK has no versionCode - RuStore will reject it."; exit 1; }
+          "$BT/apksigner" verify --verbose --print-certs Game.apk
 
       - name: Delete temporary signing key
         if: ${{ always() }}
