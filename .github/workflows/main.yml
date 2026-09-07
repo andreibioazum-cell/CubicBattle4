@@ -13,7 +13,7 @@ defaults:
 
 jobs:
   build-android:
-    name: Build Android APK (Android 10-14 arm64+arm32)
+    name: Build Android APK (Android 8-15 arm64+arm32+x86_64)
     runs-on: ubuntu-latest
 
     steps:
@@ -75,7 +75,7 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;34.0.0"
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
@@ -101,17 +101,22 @@ jobs:
           TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
           GLUE="$NDK_ROOT/sources/android/native_app_glue"
 
-          mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a
+          mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/lib/x86_64
 
-          "$TOOLCHAIN/aarch64-linux-android29-clang" -O3 -s -fPIC -shared \
+          "$TOOLCHAIN/aarch64-linux-android26-clang" -O3 -s -fPIC -shared \
             game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
             -I. -I"$GLUE" -landroid -llog -lm \
             -o staging/lib/arm64-v8a/libds_game.so
 
-          "$TOOLCHAIN/armv7a-linux-androideabi29-clang" -O3 -s -fPIC -shared \
+          "$TOOLCHAIN/armv7a-linux-androideabi26-clang" -O3 -s -fPIC -shared \
             game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
             -I. -I"$GLUE" -landroid -llog -lm \
             -o staging/lib/armeabi-v7a/libds_game.so
+
+          "$TOOLCHAIN/x86_64-linux-android26-clang" -O3 -s -fPIC -shared \
+            game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
+            -I. -I"$GLUE" -landroid -llog -lm \
+            -o staging/lib/x86_64/libds_game.so
 
       - name: Package and align APK
         run: |
@@ -124,7 +129,7 @@ jobs:
           "$BT/aapt" package -f \
             -M game/AndroidManifest.xml \
             -S game/res \
-            -I "$ANDROID_HOME/platforms/android-34/android.jar" \
+            -I "$ANDROID_HOME/platforms/android-35/android.jar" \
             --version-code "$VERSION_CODE" \
             --version-name "$VERSION_NAME" \
             -F unsigned.apk ./staging/
@@ -167,6 +172,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Game-APK-Android10-14-arm64-arm32
+          name: Game-APK-Android8-15-arm64-arm32-x86_64
           path: Game.apk
           if-no-files-found: error
