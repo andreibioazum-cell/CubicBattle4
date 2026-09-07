@@ -275,11 +275,13 @@ function draw_online()
     draw_controls()
     draw_chat()
     number st=net_status(), sy=chat_btn_y()+btn_h+12
-    if st==4
-        ctext(tr_no_connection(),sy,0xFFFFFF)
-        ctext(tr_reconnecting(),sy+32,0xFFFFFF)
-    else if st==1
-        ctext(tr_connecting(),sy,0xFFFFFF)
+    if chat_open==0
+        if st==4
+            ctext(tr_no_connection(),sy,0xFFFFFF)
+            ctext(tr_reconnecting(),sy+32,0xFFFFFF)
+        else if st==1
+            ctext(tr_connecting(),sy,0xFFFFFF)
+        end
     end
     if finished==2
         draw_result(tr_defeat())

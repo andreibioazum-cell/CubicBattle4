@@ -225,9 +225,6 @@ function achievement_toast_text()
     if ach_toast_bit == ACH_FIRST_WIN
         return tr_achievement_first_win()
     end
-    if ach_toast_bit == ACH_FIRST_BUY
-        return tr_achievement_first_buy()
-    end
     if ach_toast_bit == ACH_ALL_CHARACTERS
         return tr_achievement_grass()
     end

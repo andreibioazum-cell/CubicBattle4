@@ -19,12 +19,12 @@ function draw_stun()
     if af<=0
         return
     end
-    number half=enemy.size+6
+    number half=enemy.size+14
     number fill=(((unsigned)(int)af)<<24)|0x00F9A825
     number ar=floor(fa*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x00FFD54F
     circle(enemy.x,enemy.y,half,fill)
-    ring(enemy.x,enemy.y,half,5,rim)
+    ring(enemy.x,enemy.y,half,2,rim)
 end
 
 function draw_player_stun()
@@ -35,12 +35,12 @@ function draw_player_stun()
     if af<=0
         return
     end
-    number half=player.size+6
+    number half=player.size+14
     number fill=(((unsigned)(int)af)<<24)|0x00F9A825
     number ar=floor(pstun_a*255*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x00FFD54F
     circle(player.x,player.y,half,fill)
-    ring(player.x,player.y,half,5,rim)
+    ring(player.x,player.y,half,2,rim)
 end
 
 function draw_freeze()
@@ -52,12 +52,12 @@ function draw_freeze()
     if af<=0
         return
     end
-    number half=enemy.size+6
+    number half=enemy.size+14
     number fill=(((unsigned)(int)af)<<24)|0x001E88E5
     number ar=floor(fa*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
     circle(enemy.x,enemy.y,half,fill)
-    ring(enemy.x,enemy.y,half,5,rim)
+    ring(enemy.x,enemy.y,half,2,rim)
 end
 
 function draw_poison()
@@ -69,12 +69,12 @@ function draw_poison()
     if af<=0
         return
     end
-    number half=enemy.size+6
+    number half=enemy.size+14
     number fill=(((unsigned)(int)af)<<24)|0x001E88E5
     number ar=floor(fa*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
     circle(enemy.x,enemy.y,half,fill)
-    ring(enemy.x,enemy.y,half,5,rim)
+    ring(enemy.x,enemy.y,half,2,rim)
 end
 
 function draw_player_freeze()
@@ -85,12 +85,12 @@ function draw_player_freeze()
     if af<=0
         return
     end
-    number half=player.size+6
+    number half=player.size+14
     number fill=(((unsigned)(int)af)<<24)|0x001E88E5
     number ar=floor(pfreeze_a*255*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
     circle(player.x,player.y,half,fill)
-    ring(player.x,player.y,half,5,rim)
+    ring(player.x,player.y,half,2,rim)
 end
 
 function draw_player_poison()
@@ -101,12 +101,12 @@ function draw_player_poison()
     if af<=0
         return
     end
-    number half=player.size+6
+    number half=player.size+14
     number fill=(((unsigned)(int)af)<<24)|0x001E88E5
     number ar=floor(ppoison_a*255*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
     circle(player.x,player.y,half,fill)
-    ring(player.x,player.y,half,5,rim)
+    ring(player.x,player.y,half,2,rim)
 end
 
 function update_remote_snow()
@@ -414,47 +414,14 @@ function draw_result(string title)
     ctext_scaled(tr_tap_to_return(),y+188,0xFFFFFF,0.62)
 end
 
-// Шлейф своего рывка: жёлтая полоса от точки старта до текущей позиции.
+// Шлейф своего рывка: убран — эффект во время рывка больше не рисуется.
 function draw_dash_streak()
-    if dash_active==0
-        return
-    end
-    number left=dash_t/azum_dash_time
-    number a=floor(clamp(1.6*(1-left),0,1)*110)
-    if a<=0
-        return
-    end
-    line(dash_x0,dash_y0,player.x,player.y,12,(((unsigned)(int)a)<<24)|0x00FFE082)
+    return
 end
 
-// Чужой рывок (онлайн): рисуем по опубликованному старту и направлению.
+// Чужой рывок (онлайн): эффект шлейфа убран — больше не рисуется.
 function draw_remote_dash()
-    if net_slot()<0
-        return
-    end
-    number s=0
-    loop s<max_players
-        number b=s*dash_fields
-        if s!=net_slot()&&arr_get(remote_dash,b+1)==1
-            number x0=arr_get(remote_dash,b+2)
-            number y0=arr_get(remote_dash,b+3)
-            number dx=arr_get(remote_dash,b+4)
-            number dy=arr_get(remote_dash,b+5)
-            number t=arr_get(remote_dash,b+6)
-            number done=azum_dash_time-t
-            if done<0
-                done=0
-            end
-            if done>azum_dash_time
-                done=azum_dash_time
-            end
-            number ex=x0+dx*azum_dash_speed*done
-            number ey=y0+dy*azum_dash_speed*done
-            number a=floor(clamp(0.5+done/azum_dash_time,0,1)*120)
-            line(x0,y0,ex,ey,12,(((unsigned)(int)a)<<24)|0x00FFE082)
-        end
-        s=s+1
-    end
+    return
 end
 
 function draw_game()

@@ -241,7 +241,7 @@ end
 // Список наград экрана: индекс → бит, название, описание. Одна таблица на
 // отрисовку и на статус: чтобы добавить награду, нужна одна строка здесь.
 function achievement_count()
-    return 4
+    return 3
 end
 
 function achievement_bit(number i)
@@ -249,9 +249,6 @@ function achievement_bit(number i)
         return ACH_FIRST_WIN
     end
     if i == 2
-        return ACH_FIRST_BUY
-    end
-    if i == 3
         return ACH_ALL_CHARACTERS
     end
     return ACH_LEGENDS
@@ -262,9 +259,6 @@ function achievement_title(number i)
         return tr_achievement_first_win()
     end
     if i == 2
-        return tr_achievement_first_buy()
-    end
-    if i == 3
         return tr_achievement_grass()
     end
     return tr_achievement_legends()
@@ -275,9 +269,6 @@ function achievement_desc(number i)
         return tr_achievement_first_win_desc()
     end
     if i == 2
-        return tr_achievement_first_buy_desc()
-    end
-    if i == 3
         return tr_achievement_grass_desc()
     end
     return tr_achievement_legends_desc()

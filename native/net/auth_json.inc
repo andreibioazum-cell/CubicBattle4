@@ -80,6 +80,20 @@ void net_mark_achievement_flag(double flag) {
     r = ach_revives;
     ds_mutex_unlock(ach_lock);
     achievements_write(f, r);
+    /* Синхронизация достижений в Firebase: PATCH в профиль игрока. */
+    char nick[LOGIN_NICK_MAX + 1] = "";
+    lg_lock();
+    if (lg.status == NET_LOGIN_OK && lg.session_nick[0]) {
+        snprintf(nick, sizeof(nick), "%s", lg.session_nick);
+    }
+    lg_unlock();
+    if (nick[0] && net.base[0]) {
+        char url[URL], body[BODY];
+        snprintf(url, sizeof(url), "%s/users/%s.json", net.base, nick);
+        snprintf(body, sizeof(body),
+                 "{\"ach_flags\":%u,\"ach_revives\":%u}", f, r);
+        http_patch_async(url, body);
+    }
 }
 
 /* Счётчик возрождений за Азума — второе число в achievements.dat. Лежит рядом
@@ -100,6 +114,20 @@ void net_save_azum_revives(double revives) {
     ach_loaded = 1;
     ds_mutex_unlock(ach_lock);
     achievements_write(f, r);
+    /* Синхронизация счётчика возрождений в Firebase. */
+    char nick[LOGIN_NICK_MAX + 1] = "";
+    lg_lock();
+    if (lg.status == NET_LOGIN_OK && lg.session_nick[0]) {
+        snprintf(nick, sizeof(nick), "%s", lg.session_nick);
+    }
+    lg_unlock();
+    if (nick[0] && net.base[0]) {
+        char url[URL], body[BODY];
+        snprintf(url, sizeof(url), "%s/users/%s.json", net.base, nick);
+        snprintf(body, sizeof(body),
+                 "{\"ach_flags\":%u,\"ach_revives\":%u}", f, r);
+        http_patch_async(url, body);
+    }
 }
 
 void net_set_class(double cls) {
