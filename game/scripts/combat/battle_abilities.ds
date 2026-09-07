@@ -403,7 +403,6 @@ function update_game()
                 return
             end
         end
-        end
     end
     update_dust()
     update_gift()
