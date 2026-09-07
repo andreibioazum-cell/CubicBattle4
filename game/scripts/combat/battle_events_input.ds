@@ -19,11 +19,10 @@ end
 
 function update_event()
     event_mode=net_event()
-    // Ивент 3 «плиты и кубик» целиком про леденцы: пока конфеты отключены
-    // (candy_enabled==0), ивент не запускается вовсе — ни плит, ни кубика.
-    if event_mode==3&&candy_enabled==0
-        event_mode=0
-    end
+    // Ивент 3 «плиты и кубик» от candy_enabled не зависит: даже с выключенными
+    // конфетами кубик швыряет леденцы и подобранные леденцы начисляются
+    // (dice_collect в combat/battle_event_plates.ds). Параметр гасит только
+    // пикапы в соло, награду за победу и счётчик в лобби.
     event_t=event_t+dt
     if event_t>100000
         event_t=0

@@ -93,8 +93,11 @@ static void event_write_async(const char *url, const char *body) {
 
 void net_event_set(double mode) {
     int m = (int)mode;
-    if (m<0) m=0;
-    if (m>2) m=2;
+    /* Обрезаем только по реально существующим режимам (NET_EVENT_MAX = 3,
+     * «плиты и кубик»). Прежняя граница m>2 тихонько превращала «event 3»
+     * в снегопад: и в базу, и в net.event уходила двойка. */
+    if (m<NET_EVENT_OFF) m=NET_EVENT_OFF;
+    if (m>NET_EVENT_MAX) m=NET_EVENT_MAX;
     if (!net.base[0]) return;
     char url[URL], body[32];
     snprintf(url, sizeof(url), "%s/event.json", net.base);
