@@ -346,6 +346,13 @@ void net_save_progress(double cups, double candies, double cls, double azum, dou
                           ol,ou,al,au,sl,su,el,eu,bp,sk);
 }
 
+/* Переменные достижений (используются и здесь для сохранения в Firebase, и
+ * в auth_json.inc для чтения/записи локального файла). */
+static DSMutex ach_lock = DS_MUTEX_INIT;
+static int ach_loaded = 0;
+static unsigned int ach_flags = 0;
+static unsigned int ach_revives = 0;
+
 void net_save_progress_all(double cups, double candies, double cls, double azum, double santa, double ebuc,
                            double level, double levels_unlocked,
                            double ordinary_level, double ordinary_levels_unlocked,
@@ -398,19 +405,21 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     }
     lg_unlock();
     if (nick[0] && net.base[0]) {
-        char url[URL], body[BODY*2];
+        char url[URL], body[BODY*3];
+        /* Достижения тоже уходят в облако: каждый раз при сохранении прогресса
+         * битмаск наград и счётчик возрождений пишутся в профиль игрока. */
+        unsigned int af = 0, ar = 0;
+        ds_mutex_lock(ach_lock);
+        af = ach_flags; ar = ach_revives;
+        ds_mutex_unlock(ach_lock);
         snprintf(url, sizeof(url), "%s/users/%s.json", net.base, nick);
         snprintf(body, sizeof(body),
-                 "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"ebuc\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d,\"ebuc_level\":%d,\"ebuc_levels\":%d,\"bp\":%d,\"azum_skin\":%d}",
-                 c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
+                 "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"ebuc\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d,\"ebuc_level\":%d,\"ebuc_levels\":%d,\"bp\":%d,\"azum_skin\":%d,\"ach_flags\":%u,\"ach_revives\":%u}",
+                 c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk, af, ar);
         http_patch_async(url, body);
     }
 }
 /* Достижения — отдельный маленький файл с единым битмаском: ACH_FLAG_* задают
  * отдельные награды. Добавление нового бита не ломает старые записи. Путь
  * хранится рядом с аккаунтом и прогрессом. Реализация функций — в
- * auth_json.inc, здесь только общие для файла статические переменные. */
-static DSMutex ach_lock = DS_MUTEX_INIT;
-static int ach_loaded = 0;
-static unsigned int ach_flags = 0;
-static unsigned int ach_revives = 0;
+ * auth_json.inc. */

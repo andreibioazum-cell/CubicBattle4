@@ -89,7 +89,7 @@ number skin_msg_t=0
 // «Легенды не умирают...» — 25 возрождений за Азума, награда — скин «Зомби».
 number achievement_mask=0
 number ACH_FIRST_WIN=2, ACH_FIRST_BUY=4, ACH_ALL_CHARACTERS=8, ACH_LEGENDS=16
-number ACH_LEGENDS_NEED=25
+number ACH_LEGENDS_NEED=7
 // Счётчик возрождений за Азума: второе число в achievements.dat (см. net.c).
 number azum_revive_count=0
 // Тост поверх экрана при получении достижения. Живёт тремя фазами: быстрый
@@ -136,7 +136,7 @@ number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 // восьми отдельных переменных: класс добавляется одной строкой данных.
 number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
 number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
-number azum_cost=50, santa_candy_cost=100, ebuc_candy_cost=150
+number azum_cost=65, santa_candy_cost=100, ebuc_candy_cost=150
 
 // ── Уровни классов ────────────────────────────────────────────────────────
 // Уровни 1..3 у каждого класса свои; player_level/levels_unlocked — зеркало
@@ -213,8 +213,8 @@ number ebuc_station_cd=5
 // Вторая кнопка (как ульта) у Азума — рывок: игрок проносится вперёд, по пути
 // нанося урон и оглушая противника. Во время рывка можно поворачиваться
 // джойстиком, но направление рывка не меняется (задаётся в момент старта).
-number azum_dash_cd=5.0, azum_dash_time=0.24, azum_dash_speed=780
-number azum_dash_damage=2, azum_dash_stun=1.0, dash_hit_r=34
+number azum_dash_cd=7.0, azum_dash_time=0.45, azum_dash_speed=850
+number azum_dash_damage=2, azum_dash_stun=1.8, dash_hit_r=34
 
 // ── Эффекты ───────────────────────────────────────────────────────────────
 // Непрозрачность тени ~19% (48/255): вдвое слабее прежних 0x60.

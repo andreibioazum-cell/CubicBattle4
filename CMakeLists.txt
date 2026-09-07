@@ -23,7 +23,7 @@ if(NOT ANDROID)
     message(FATAL_ERROR
         "Cubic Battle собирается только под Android. Запусти CMake через инструментальный "
         "файл NDK, например: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake "
-        "-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared. "
+        "-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_shared. "
         "Готовый APK проще собрать workflow в GitHub Actions.")
 endif()
 

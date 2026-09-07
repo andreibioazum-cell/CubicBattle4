@@ -235,6 +235,32 @@ static void apply_user_json(const char *resp) {
                    santa_level, santa_levels_unlocked,
                    ebuc_level, ebuc_levels_unlocked,
                    bp_level, azum_skin);
+    /* Достижения из облака: если в записи пользователя есть ach_flags,
+     * загружаем их в локальный файл (облако — источник правды). */
+    int cloud_ach_flags = (int)num(resp, "ach_flags", -1);
+    int cloud_ach_revives = (int)num(resp, "ach_revives", -1);
+    if (cloud_ach_flags >= 0) {
+        ds_mutex_lock(ach_lock);
+        /* Облачные достижения перетирают локальные только если они «новее»
+         * (больше битов установлено) или если локальных ещё нет. */
+        unsigned int local_f = ach_flags;
+        unsigned int local_r = ach_revives;
+        int loaded_local = ach_loaded;
+        ds_mutex_unlock(ach_lock);
+        unsigned int cf = (unsigned int)cloud_ach_flags;
+        unsigned int cr = cloud_ach_revives >= 0 ? (unsigned int)cloud_ach_revives : 0;
+        int cloud_is_newer = !loaded_local || (cf | local_f) != local_f || cr > local_r;
+        if (cloud_is_newer) {
+            ds_mutex_lock(ach_lock);
+            ach_flags = cf | ach_flags; /* объединяем биты: ничего не теряется */
+            if (cr > ach_revives) ach_revives = cr;
+            unsigned int wf = ach_flags, wr = ach_revives;
+            ach_loaded = 1;
+            ds_mutex_unlock(ach_lock);
+            achievements_write(wf, wr);
+            LOG("cloud achievements merged: flags=%u revives=%u", wf, wr);
+        }
+    }
 }
 
 /* Протолкнуть текущий локальный прогресс в облако (только после того, как
@@ -301,7 +327,8 @@ static int put_default_user(const char *req_url, const char *nick, const char *p
              "{\"nick\":\"%s\",\"cups\":0,\"candies\":0,\"cls\":0,\"azum\":0,\"santa\":0,\"ebuc\":0,"
              "\"level\":0,\"levels\":0,\"ordinary_level\":0,\"ordinary_levels\":0,"
              "\"azum_level\":0,\"azum_levels\":0,\"santa_level\":0,\"santa_levels\":0,"
-             "\"ebuc_level\":0,\"ebuc_levels\":0,\"bp\":0,\"azum_skin\":0%s%s}",
+             "\"ebuc_level\":0,\"ebuc_levels\":0,\"bp\":0,\"azum_skin\":0,"
+             "\"ach_flags\":0,\"ach_revives\":0%s%s}",
              enick, fb_enabled() ? "" : ",\"pass\":\"", fb_enabled() ? "" : epass);
     return fb_http("PUT", req_url, body, NULL, 0);
 }

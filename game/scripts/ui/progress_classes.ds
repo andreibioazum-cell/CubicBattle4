@@ -362,6 +362,4 @@ function pick_class(number cls)
     set_class_owned(cls, 1)
     select_class(cls)
     ds_log("bought class %g", cls)
-    // Первая покупка класса открывает достижение «Покупка».
-    grant_achievement(ACH_FIRST_BUY)
 end
