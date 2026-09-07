@@ -342,7 +342,27 @@ function punch_resolve_target(number px, number py, number pdx, number pdy, numb
     return best
 end
 
-// Дистанция от точки до отрезка [sx,sy]→[sx+dx*len, sy+dy*len] (dx,dy — единичные).
+// Локальный бой иногда должен проверить турель отдельно от игрока-владельца.
+function punch_turret_target(number px, number py, number pdx, number pdy)
+    number best=-1, bfw=0, i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            number hx=arr_get(turret_x,i)-px, hy=arr_get(turret_y,i)-py
+            number tf=hx*pdx+hy*pdy, ts=hy*pdx-hx*pdy
+            number th=punch_width/2+turret_hit_r
+            if tf>=0&&tf<=punch_reach+turret_hit_r&&ts*ts<=th*th
+                if best==-1||tf<bfw
+                    best=i+1
+                    bfw=tf
+                end
+            end
+        end
+        i=i+1
+    end
+    return best
+end
+
+// Дистанция от точки до отрезка [sx,sy]→[sx+dx*len,sy+dy*len] (dx,dy — единичные).
 function seg_dist(number sx, number sy, number dx, number dy, number len, number tx, number ty)
     number ex=sx+dx*len, ey=sy+dy*len
     number wx=tx-sx, wy=ty-sy

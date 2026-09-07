@@ -366,7 +366,19 @@ function update_game()
     tick_super_windup()
     tick_santa_follow()
     if punch_left>0&&punch.active==1&&punch.hit==0
-        if enemy_in_punch()==1
+        number turret_target=punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
+        if turret_target>=1
+            punch.hit=1
+            damage_turret(turret_target-1,class_punch_damage(player_class))
+            // Удар по турели одновременно ранит стоящего за ней бука.
+            enemy.hp=enemy.hp-class_punch_damage(player_class)
+            heal_after_attack()
+            if enemy.hp<=0
+                enemy.hp=0
+                finish_game(1)
+                return
+            end
+        else if enemy_in_punch()==1
             punch.hit=1
             if player_class==2&&santa_follow>0
                 if player_level>=3
@@ -390,6 +402,7 @@ function update_game()
                 finish_game(1)
                 return
             end
+        end
         end
     end
     update_dust()

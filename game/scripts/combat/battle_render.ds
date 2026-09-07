@@ -287,7 +287,8 @@ function draw_fighter_body(number x, number y, number ang, number cls, number pu
             tex(sx,sy,t,sprite_a(ang),ps)
             return
         end
-        tex_tint(sx,sy,t,sprite_a(ang),ps,zombie_tint)
+        // Закрытый скин не должен превращать обычного Азума в зелёный силуэт.
+        tex(sx,sy,t,sprite_a(ang),ps)
         return
     end
     tex(sx,sy,t,sprite_a(ang),ps)
