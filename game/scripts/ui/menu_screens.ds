@@ -110,7 +110,7 @@ function draw_class_card(number vi)
         if zombie_tex_ok() == 1
             tex(sx, class_sprite_y(), AZUM_ZOMBIE_TEX, 0, scale)
         else
-            tex_tint(sx, class_sprite_y(), class_idle_tex(cls), 0, scale, zombie_tint)
+            tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)
         end
     else
         tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)

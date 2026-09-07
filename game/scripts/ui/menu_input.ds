@@ -157,7 +157,9 @@ function studio_rgb(number rgb)
 end
 
 function draw_studio()
-    rect(0, 0, screen_w, screen_h, studio_rgb(0))
+    // Чёрный фон не затухает вместе с логотипом: после предупреждения
+    // остаётся цельный чёрный экран, исчезает только надпись.
+    rect(0, 0, screen_w, screen_h, 0xFF000000)
     color body = studio_rgb(text_color)
     number y = screen_h / 2 - 30
     ctext_scaled(STUDIO_NAME, y, body, 1.1)
