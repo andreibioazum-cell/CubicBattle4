@@ -349,7 +349,9 @@ static void *reader_thread(void *arg) {
         if(start>=next_event) {
             if(pull_event(event_resp,sizeof(event_resp))) {
                 int ev=(int)num(event_resp,"",0);
-                if(ev<0) ev=0;
+                /* Те же границы, что в net_event_set(): 0..NET_EVENT_MAX. */
+                if(ev<NET_EVENT_OFF) ev=NET_EVENT_OFF;
+                if(ev>NET_EVENT_MAX) ev=NET_EVENT_MAX;
                 lock(); net.event=ev; unlock();
             }
             next_event=now_ms()+EVENT_TICK;

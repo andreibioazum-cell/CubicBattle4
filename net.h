@@ -15,6 +15,18 @@
 #define NET_LOGIN_WRONG_PASS 6
 #define NET_LOGIN_BAD_PASS 7
 
+/* Режимы ивента (узел /event в базе, см. game/scripts/core/config.ds):
+ * 0 — ивента нет, 1 — «диско», 2 — снегопад, 3 — «плиты и кубик».
+ * NET_EVENT_MAX обязан совпадать с верхней границей в firebase.rules.json
+ * (".validate": newData.val() <= 3) и с количеством режимов в скриптах:
+ * раньше здесь не было константы, net_event_set() прижимала всё >2 к 2, и
+ * команда админа «event 3» вместо плит включала снегопад. */
+#define NET_EVENT_OFF    0
+#define NET_EVENT_DISCO  1
+#define NET_EVENT_SNOW   2
+#define NET_EVENT_PLATES 3
+#define NET_EVENT_MAX    NET_EVENT_PLATES
+
 #ifdef __ANDROID__
 void net_set_java_vm(JavaVM *vm);
 #endif
