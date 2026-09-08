@@ -282,40 +282,78 @@ static void push_pg_to_cloud(void) {
                           lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
 }
 
-/* Раньше правила Firebase не пропускали поля ebuc / ebuc_level / ebuc_levels и
- * cls=3, поэтому покупка бука не попадала в облако: после перезахода облачная
- * запись «стирала» локально купленный класс. Теперь, если на устройстве бук
- * уже куплен (progress.dat), а облачная запись его не знает, возвращаем
- * локальную покупку. Возврат 1 — облако нужно обновить после логина. */
+/* Облачная запись может отставать от локального устройства: записи в облако
+ * асинхронные (http_patch_async), и покупка могла потеряться (сбой сети,
+ * старые правила, не пускавшие поля ebuc / ebuc_level / ebuc_levels и cls=3).
+ * После перезахода такая облачная запись «стирала» купленный локально класс.
+ * Теперь возвращаем локальное состояние для каждого купленного класса
+ * (Азум/Дед Мороз/бук + уровни) и выбранный класс: облако может добавлять,
+ * но никогда не отнимает то, что уже есть на устройстве. Возврат 1 — облако
+ * нужно обновить после логина (push_pg_to_cloud в net_auth). */
 static int apply_user_json_keep_local(const char *resp) {
-    int had = 0, local_ebuc = 0, local_cls = 0, local_el = 0, local_eu = 0;
+    int had = 0, restored = 0;
+    int local_azum = 0, local_santa = 0, local_ebuc = 0, local_cls = 0;
+    int local_al = 0, local_au = 0, local_sl = 0, local_su = 0, local_el = 0, local_eu = 0;
     progress_read();
     pg_lock();
-    if (pg.loaded) { had = 1; local_ebuc = pg.ebuc; local_cls = pg.cls;
-                    local_el = pg.ebuc_level; local_eu = pg.ebuc_levels_unlocked; }
+    if (pg.loaded) {
+        had = 1;
+        local_azum = pg.azum; local_santa = pg.santa; local_ebuc = pg.ebuc;
+        local_cls = pg.cls;
+        local_al = pg.azum_level; local_au = pg.azum_levels_unlocked;
+        local_sl = pg.santa_level; local_su = pg.santa_levels_unlocked;
+        local_el = pg.ebuc_level; local_eu = pg.ebuc_levels_unlocked;
+    }
     pg_unlock();
     apply_user_json(resp);
-    if (!had || local_ebuc != 1) return 0;
+    if (!had) return 0;
+    int cloud_azum, cloud_santa, cloud_ebuc;
     pg_lock();
-    if (pg.ebuc != 0) { pg_unlock(); return 0; }
-    pg.ebuc = 1;
-    if (local_cls == 3) pg.cls = 3;
-    if (local_el > pg.ebuc_level) pg.ebuc_level = local_el;
-    if (local_eu > pg.ebuc_levels_unlocked) pg.ebuc_levels_unlocked = local_eu;
+    cloud_azum = pg.azum; cloud_santa = pg.santa; cloud_ebuc = pg.ebuc;
+    if (local_azum == 1 && pg.azum == 0) { pg.azum = 1; restored = 1; }
+    if (local_santa == 1 && pg.santa == 0) { pg.santa = 1; restored = 1; }
+    if (local_ebuc == 1 && pg.ebuc == 0) { pg.ebuc = 1; restored = 1; }
+    if (local_al > pg.azum_level) { pg.azum_level = local_al; restored = 1; }
+    if (local_au > pg.azum_levels_unlocked) { pg.azum_levels_unlocked = local_au; restored = 1; }
+    if (local_sl > pg.santa_level) { pg.santa_level = local_sl; restored = 1; }
+    if (local_su > pg.santa_levels_unlocked) { pg.santa_levels_unlocked = local_su; restored = 1; }
+    if (local_el > pg.ebuc_level) { pg.ebuc_level = local_el; restored = 1; }
+    if (local_eu > pg.ebuc_levels_unlocked) { pg.ebuc_levels_unlocked = local_eu; restored = 1; }
+    /* Выбранный класс возвращаем только если облако «забыло» именно его
+     * (куплен локально, в облаке нет): тогда cloud cls уже сломан
+     * (apply_user_json свёл его на обычный), и выбор игрока теряется.
+     * Если облако знает класс — его выбор (cls) свежее локального файла. */
+    if (local_cls > 0 && local_cls < 4) {
+        int local_owned = 0, was_in_cloud = 0;
+        if (local_cls == 1) { local_owned = local_azum; was_in_cloud = cloud_azum; }
+        else if (local_cls == 2) { local_owned = local_santa; was_in_cloud = cloud_santa; }
+        else { local_owned = local_ebuc; was_in_cloud = cloud_ebuc; }
+        if (local_owned && !was_in_cloud && pg.cls != local_cls) { pg.cls = local_cls; restored = 1; }
+    }
+    /* Зеркало «уровень выбранного класса» пересобираем под финальный cls. */
+    if (pg.cls == 0) { pg.level = pg.ordinary_level; pg.levels_unlocked = pg.ordinary_levels_unlocked; }
+    else if (pg.cls == 1) { pg.level = pg.azum_level; pg.levels_unlocked = pg.azum_levels_unlocked; }
+    else if (pg.cls == 2) { pg.level = pg.santa_level; pg.levels_unlocked = pg.santa_levels_unlocked; }
+    else { pg.level = pg.ebuc_level; pg.levels_unlocked = pg.ebuc_levels_unlocked; }
     int cups = pg.cups, candies = pg.candies, cls = pg.cls;
-    int azum = pg.azum, santa = pg.santa, lv = pg.level, lu = pg.levels_unlocked;
+    int azum = pg.azum, santa = pg.santa, ebuc = pg.ebuc, lv = pg.level, lu = pg.levels_unlocked;
     int ol = pg.ordinary_level, ou = pg.ordinary_levels_unlocked;
     int al = pg.azum_level, au = pg.azum_levels_unlocked;
     int sl = pg.santa_level, su = pg.santa_levels_unlocked;
     int el = pg.ebuc_level, eul = pg.ebuc_levels_unlocked;
     int bp = pg.bp_level, sk = pg.azum_skin;
     pg_unlock();
-    pending_cls = cls; pending_level = lv; pending_skin = sk;
-    progress_write(cups, candies, cls, azum, santa, 1, lv, lu,
-                   ol, ou, al, au, sl, su, el, eul, bp, sk);
-    LOG("restored locally bought ebuc (cloud sync after login)");
-    return 1;
+    if (restored) {
+        pending_cls = cls; pending_level = lv; pending_skin = sk;
+        progress_write(cups, candies, cls, azum, santa, ebuc, lv, lu,
+                       ol, ou, al, au, sl, su, el, eul, bp, sk);
+        LOG("restored locally bought progress over cloud (azum=%d santa=%d ebuc=%d cls=%d)",
+            azum, santa, ebuc, cls);
+        return 1;
+    }
+    return 0;
 }
+
 
 /* Создание записи нового игрока. with_pass — только для старого режима без
  * Firebase Auth: там пароль хранится в базе (и это плохо). */
@@ -352,7 +390,8 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
         sl = pg.santa_level; su = pg.santa_levels_unlocked;
         el = pg.ebuc_level; eul = pg.ebuc_levels_unlocked;
         bp = pg.bp_level; sk = pg.azum_skin;
-        if (cups > 0 || candies > 0 || azum || santa || ebuc || cls != 0 || bp > 0) keep = 1;
+        if (cups > 0 || candies > 0 || azum || santa || ebuc || cls != 0 || bp > 0 ||
+            lu > 0 || ou > 0 || au > 0 || su > 0 || eul > 0) keep = 1;
     }
     pg_unlock();
     if (keep) {

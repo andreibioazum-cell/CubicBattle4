@@ -165,6 +165,13 @@ function reset_battle()
         arr_push(remote_dust_cd,0)
         i=i+1
     end
+    thud_seq=0
+    arr_clear(remote_thuds)
+    i=0
+    loop i<max_players
+        arr_push(remote_thuds,0)
+        i=i+1
+    end
 end
 
 function init_game()

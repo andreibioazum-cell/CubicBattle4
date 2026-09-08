@@ -243,6 +243,13 @@ function update_enemy()
                         end
                     else
                         damage_turret(target-1,enemy_damage)
+                        // Турель-щит мстит: удар по ней ранит бота в ответ.
+                        enemy.hp=enemy.hp-turret_counter_damage
+                        if enemy.hp<=0
+                            enemy.hp=0
+                            finish_game(1)
+                            return
+                        end
                         ds_log("enemy punch! turret hp %g",arr_get(turret_hp,target-1))
                     end
                 else

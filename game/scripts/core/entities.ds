@@ -72,6 +72,13 @@ array remote_universe=arr_new()
 array remotes=arr_new(), remote_punches=arr_new()
 array remote_snow=arr_new()
 array remote_dash=arr_new()
+// Контрудар турели бука в онлайне: thud_seq — счётчик событий «турель
+// получила удар», который бук публикует в снимке слота (поле thud); увидев
+// новый счётчик, клиент бившего игрока сам у себя списывает HP (каждый
+// клиент авторитетен только над своим бойцом). remote_thuds — последний
+// увиденный счётчик по каждому слоту (max_players чисел).
+number thud_seq=0
+array remote_thuds=arr_new()
 array candy_x=arr_new(), candy_y=arr_new()
 array dust=arr_new()
 // Кулдаун спавна пыли для каждого сетевого соперника (0..3).

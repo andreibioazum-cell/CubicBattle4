@@ -45,6 +45,7 @@ BUILTINS = frozenset({
     'net_player_universe', 'net_publish_turrets', 'net_publish_dash',
     'net_player_dash', 'net_player_dash_x', 'net_player_dash_y',
     'net_player_dash_dx', 'net_player_dash_dy',
+    'net_publish_thud', 'net_player_thud',
     'net_player_class', 'net_player_level', 'net_player_prime_level',
     'net_set_level', 'net_set_prime_level', 'net_set_skin', 'net_player_skin', 'net_event', 'net_event_set',
     'net_chat_send',

@@ -224,14 +224,19 @@ function update_remote_dashes()
                     number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5))
                     if target==0
                         arr_set(remote_dash,b+7,1)
-                        take_damage(azum_dash_damage)
-                        stun_player(azum_dash_stun)
-                        ds_log("remote dash hit player")
-                        if player.hp<=0
-                            player.hp=0
-                            if try_revive()==0
-                                finish_game(2)
-                                return
+                        // В защите после возрождения рывок проходит насквозь
+                        // (как удар бота в соло): игрок не умирает в ту же
+                        // секунду, что только что возродился.
+                        if revive_prot<=0
+                            take_damage(azum_dash_damage)
+                            stun_player(azum_dash_stun)
+                            ds_log("remote dash hit player")
+                            if player.hp<=0
+                                player.hp=0
+                                if try_revive()==0
+                                    finish_game(2)
+                                    return
+                                end
                             end
                         end
                     else if target>=1&&target<=turret_max

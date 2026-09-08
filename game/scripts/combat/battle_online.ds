@@ -72,16 +72,26 @@ function update_remote_punches()
                 if target==0||(target>=1&&target<=turret_max)
                     number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
                     if target==0
-                        take_damage(class_punch_damage_for(rcls,rlevel))
-                        if rcls==CLASS_SANTA
-                            if player_poison<=0
-                                player_poison_tick=santa_poison_tick_interval
+                        // Как и в соло: в защите после возрождения удар
+                        // проскакивает насквозь — Азум не умирает снова в ту
+                        // же секунду, особенно в момент достижения легенды.
+                        if revive_prot<=0
+                            take_damage(class_punch_damage_for(rcls,rlevel))
+                            if rcls==CLASS_SANTA
+                                if player_poison<=0
+                                    player_poison_tick=santa_poison_tick_interval
+                                end
+                                player_poison=santa_poison_time_for(rlevel)
+                                player_poison_damage=santa_poison_damage_for(rlevel)
                             end
-                            player_poison=santa_poison_time_for(rlevel)
-                            player_poison_damage=santa_poison_damage_for(rlevel)
                         end
                     else
                         damage_turret(target-1,class_punch_damage_for(rcls,rlevel))
+                        // Турель-щит мстит: публикуем событие «турель
+                        // получила удар» — бивший клиент сам у себя
+                        // списывает небольшой урон (update_remote_thuds).
+                        thud_seq=thud_seq+1
+                        net_publish_thud(thud_seq)
                         ds_log("remote punch hit turret %g, hp %g",target-1,arr_get(turret_hp,target-1))
                     end
                     clear_remote_punch(s)
@@ -94,6 +104,39 @@ function update_remote_punches()
                     end
                 else if t>punch_time
                     clear_remote_punch(s)
+                end
+            end
+        end
+        s=s+1
+    end
+end
+
+// Контрудары чужих турелей: соперник-бук публикует новый счётчик thud, когда
+// по его турели попал наш удар, — и мы у себя списываем небольшой урон.
+// Счётчик меняется один раз на событие (как punch/dash), поэтому урон не
+// дублируется. В защите после возрождения контрудар не бьёт.
+function update_remote_thuds()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_thuds,s,0)
+        else
+            number gen=net_player_thud(s)
+            number prev=arr_get(remote_thuds,s)
+            if gen!=prev
+                arr_set(remote_thuds,s,gen)
+                if gen>0&&revive_prot<=0&&finished==0
+                    take_damage(turret_counter_damage)
+                    ds_log("turret thud from %g, hp %g",s,player.hp)
+                    if player.hp<=0
+                        player.hp=0
+                        if try_revive()==0
+                            finish_game(2)
+                        end
+                    end
                 end
             end
         end
@@ -281,6 +324,7 @@ function update_online()
         read_remotes()
         smooth_remotes()
         update_remote_punches()
+        update_remote_thuds()
         update_remote_snow()
         update_remote_dashes()
         update_remote_station()

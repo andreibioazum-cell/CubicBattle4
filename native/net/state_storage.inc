@@ -69,6 +69,7 @@ typedef struct {
     double station3_x,station3_y,station3_hp;
     double dash_x,dash_y,dash_dx,dash_dy,dash;
     double universe_x,universe_y,universe;
+    double thud;
     double cls, level, skin;
     int online;
     char nick[24];
@@ -304,22 +305,47 @@ double net_load_ebuc_levels_unlocked(void) { double v; progress_read(); pg_lock(
 double net_load_bp_level(void) { double v; progress_read(); pg_lock(); v = (double)pg.bp_level; pg_unlock(); return v; }
 double net_load_azum_skin(void) { double v; progress_read(); pg_lock(); v = (double)pg.azum_skin; pg_unlock(); return v; }
 
-typedef struct { char url[FB_URL_MAX]; char body[BODY*2]; } HttpJob;
+typedef struct { char plain[URL]; char url[FB_URL_MAX]; char body[BODY*2]; } HttpJob;
 static int fb_enabled(void);
 static void fb_url(char *dst, size_t cap, const char *url);
+static int fb_ensure_token(void);
+static int fb_refresh_token_now(void);
+static int net_log_ok(void);
 static int http(const char *method,const char *url,const char *body,char *out,size_t cap);
 static void *http_delete_job(void *arg);
 static void room_slot_delete_async(int slot);
+/* Облачные записи (прогресс, достижения) уходят PATCH'ем из фоновой нити.
+ * Надёжность важна: раньше токен перед записью не обновлялся, и через час
+ * после входа idToken протухал — PATCH уходил со старым токеном, Firebase
+ * отвечал 401, а ответ нигде не проверялся. Покупка так и не доходила до
+ * облака, и после перезахода (особенно с другого телефона) класс «исчезал».
+ * Теперь: токен обновляем до записи, при 401 — форсируем refresh и
+ * повторяем один раз. */
 static void *http_patch_job(void *arg) {
     HttpJob *j = (HttpJob*)arg;
-    if (j) { http("PATCH", j->url, j->body, NULL, 0); free(j); }
+    if (!j) return NULL;
+    int code;
+    if (fb_enabled()) {
+        fb_ensure_token();
+        fb_url(j->url, sizeof(j->url), j->plain);
+        code = http("PATCH", j->url, j->body, NULL, 0);
+        if (code == 401 && fb_refresh_token_now()) {
+            fb_url(j->url, sizeof(j->url), j->plain);
+            code = http("PATCH", j->url, j->body, NULL, 0);
+        }
+    } else {
+        code = http("PATCH", j->url, j->body, NULL, 0);
+    }
+    if (code != 200 && net_log_ok()) LOGERR("cloud PATCH failed: HTTP %d", code);
+    free(j);
     return NULL;
 }
 static void http_patch_async(const char *url, const char *body) {
     HttpJob *j = (HttpJob*)malloc(sizeof(*j));
     DSThread t;
     if (!j) return;
-    fb_url(j->url, sizeof(j->url), url);
+    snprintf(j->plain, sizeof(j->plain), "%s", url);
+    snprintf(j->url, sizeof(j->url), "%s", url);
     snprintf(j->body, sizeof(j->body), "%s", body);
     t = ds_thread_start(http_patch_job, j);
     if (t) { ds_thread_detach(t); return; }
