@@ -38,6 +38,15 @@ void net_publish_universe(double x, double y, double counter) {
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
     unlock();
 }
+/* Контрудар турели: новый счётчик уезжает в снимок слота; клиенты, бившие по
+ * турели, сами у себя списывают урон (см. update_remote_thuds в
+ * battle_online.ds). */
+void net_publish_thud(double counter) {
+    lock();
+    net.me.thud=counter;
+    if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
+    unlock();
+}
 void net_chat_send(const char *text){
     if(!net.started || !text || !*text) return;
     if(!net.run) return;
@@ -168,6 +177,7 @@ READER(net_player_dash, net.players[i].dash)
 READER(net_player_universe_x, net.players[i].universe_x)
 READER(net_player_universe_y, net.players[i].universe_y)
 READER(net_player_universe, net.players[i].universe)
+READER(net_player_thud, net.players[i].thud)
 READER(net_player_class, net.players[i].cls)
 #undef READER
 double net_player_level(double slot) {

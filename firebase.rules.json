@@ -92,6 +92,7 @@
             "uzx": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
             "uzy": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
             "universe": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+            "thud": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
             "cls": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
             "level": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
             "skin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },

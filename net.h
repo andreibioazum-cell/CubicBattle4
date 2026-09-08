@@ -53,6 +53,10 @@ void net_publish_turrets(double x1, double y1, double hp1,
  * на каждом рывке — получатели ловят по нему начало рывка. */
 void net_publish_dash(double x, double y, double dx, double dy, double dash);
 void net_publish_universe(double x, double y, double counter);
+/* Контрудар турели бука: счётчик событий «по моей турели ударили». Каждый
+ * клиент, увидевший новый счётчик у соперника, сам у себя списывает небольшой
+ * урон (каждый авторитетен только над своим бойцом, см. net_player_thud). */
+void net_publish_thud(double counter);
 void net_set_class(double cls);
 double net_status(void);
 double net_slot(void);
@@ -90,6 +94,9 @@ double net_player_station(double slot);
 double net_player_universe_x(double slot);
 double net_player_universe_y(double slot);
 double net_player_universe(double slot);
+/* Счётчик контрударов турелей у игрока (0 у старых клиентов — поле просто
+ * не присылается, и смешанные версии в онлайне работают). */
+double net_player_thud(double slot);
 double net_player_dash(double slot);
 double net_player_dash_x(double slot);
 double net_player_dash_y(double slot);

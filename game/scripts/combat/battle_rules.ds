@@ -2,12 +2,16 @@ include graphics
 
 // Упрощённый бой без праймов, с человечным врагом и админкой
 
-// Пока azum.png не лежит в game/assets, Азум играет силуэтом обычного класса:
-// невидимый боец хуже «чужого» силуэта. Как только файл появится, флаг
-// включится сам (engine.ds выставляет его из png_load) и менять ничего не надо.
+// Пока azum.png не лежит в game/assets, Азум играет своей же зомби-текстурой:
+// зелёный куб обычного класса без «моей» текстуры выглядит хуже настоящего
+// Азума. Как только azum*.png появятся, флаг включится сам (engine.ds
+// выставляет его из png_load) и менять ничего не надо.
 function azum_idle_tex()
     if azum_tex_ok==1
         return AZUM_TEX
+    end
+    if azum_zombie_tex_ok==1
+        return AZUM_ZOMBIE_TEX
     end
     return ORDINARY_TEX
 end
@@ -15,6 +19,9 @@ end
 function azum_punch_tex()
     if azum_tex_ok==1
         return AZUM_PUNCH_TEX
+    end
+    if azum_zombie_punch_tex_ok==1
+        return AZUM_ZOMBIE_PUNCH_TEX
     end
     return PUNCH_TEX
 end
@@ -499,10 +506,11 @@ function try_revive()
     ds_log("azum revived (%g/%g)",azum_revive_count,ACH_LEGENDS_NEED)
     if azum_revive_count>=ACH_LEGENDS_NEED
         grant_achievement(ACH_LEGENDS)
-        if has_achievement(ACH_LEGENDS)==1&&azum_skin==SKIN_NORMAL
-            azum_skin=SKIN_ZOMBIE
-            save_progress()
-        end
+        // Скин «Зомби» при этом не надеваем автоматически: достижение только
+        // открывает его в меню скинов, а выбирает игрок сам. Раньше скин
+        // включался прямо посреди боя в момент смерти, и казалось, что Азум
+        // «умирает сразу же» — на деле его только что убило то же самое
+        // попадание, а защита от возрождения в онлайне проскакивала.
     end
     return 1
 end
