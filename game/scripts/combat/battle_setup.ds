@@ -104,6 +104,11 @@ function reset_battle()
     universe_hit=0
     universe_id=0
     universe_a=0
+    event_mode=0
+    event_t=0
+    disco_t=0
+    snow_t=0
+    plates_prev_mode=0
     plates_event_reset()
     joy.x=130
     joy.y=screen_h-150

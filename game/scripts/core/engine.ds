@@ -95,6 +95,10 @@ end
 // ── Запуск ────────────────────────────────────────────────────────────────
 function load_textures()
     png_load(GRASS)
+    snow_tex_ok = 0
+    if candy_enabled == 1
+        snow_tex_ok = png_load(SNOW_TEX)
+    end
     png_load(ORDINARY_TEX)
     png_load(PUNCH_TEX)
     // azum_tex_ok — есть ли своя текстура у Азума: пока файла нет в ассетах,
@@ -112,7 +116,6 @@ function load_textures()
     png_load(DESPENSER_TEX)
     png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
-    dice_tex_ok=png_load(DICE_TEX)
 end
 
 function start_music()
@@ -291,6 +294,7 @@ function update()
     else if game_state == ST_MODS
         update_mods()
     end
+    update_weather()
 end
 
 function draw_screen()
