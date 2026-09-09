@@ -176,15 +176,18 @@ function draw_online()
         i=i+1
     end
     draw_player_hitbox_layer()
-    i=0
-    loop i<max_players
-        b=i*remote_fields
-        rb=i*punch_fields
-        if arr_get(remotes,b+5)==1&&arr_get(remote_punches,rb)==1
-            draw_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1)
+    if show_hitboxes==1
+        i=0
+        loop i<max_players
+            b=i*remote_fields
+            rb=i*punch_fields
+            if arr_get(remotes,b+5)==1&&arr_get(remote_punches,rb)==1
+                draw_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1)
+            end
+            i=i+1
         end
-        i=i+1
     end
+    draw_ability_hitboxes()
     draw_gift()
     draw_boom()
     draw_remote_snow()

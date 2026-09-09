@@ -109,69 +109,7 @@ function draw_player_poison()
     ring(player.x,player.y,half,2,rim)
 end
 
-function update_remote_snow()
-    if net_slot()<0
-        return
-    end
-    number s=0
-    loop s<max_players
-        number b=s*snow_fields
-        if s==net_slot()||net_player_online(s)!=1
-            arr_set(remote_snow,b+1,0)
-            arr_set(remote_snow,b+5,0)
-        else
-            number cnt=net_player_snow(s)
-            number prev=arr_get(remote_snow,b)
-            if cnt!=prev&&cnt>0
-                arr_set(remote_snow,b,cnt)
-                arr_set(remote_snow,b+1,1)
-                arr_set(remote_snow,b+2,0)
-                arr_set(remote_snow,b+3,net_player_snow_x(s)*screen_w)
-                arr_set(remote_snow,b+4,net_player_snow_y(s)*screen_h)
-            end
-            if arr_get(remote_snow,b+1)==1
-                number t=arr_get(remote_snow,b+2)+dt
-                number x=arr_get(remote_snow,b+3)+net_player_snow_dx(s)*super_speed*dt
-                number y=arr_get(remote_snow,b+4)+net_player_snow_dy(s)*super_speed*dt
-                arr_set(remote_snow,b+2,t)
-                arr_set(remote_snow,b+3,x)
-                arr_set(remote_snow,b+4,y)
-                number hit=0
-                if dist(x,y,player.x,player.y)<player.size*0.65+24
-                    hit=1
-                end
-                if t>super_range/super_speed
-                    hit=1
-                end
-                if hit==1
-                    arr_set(remote_snow,b+1,0)
-                    arr_set(remote_snow,b+5,boom_time)
-                    arr_set(remote_snow,b+6,x)
-                    arr_set(remote_snow,b+7,y)
-                    if dist(x,y,player.x,player.y)<=super_radius
-                        number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
-                        if rcls==CLASS_SANTA
-                            freeze_time=santa_freeze_time_for(rlevel)
-                        end
-                        if player_freeze<freeze_time
-                            player_freeze=freeze_time
-                            player_freeze_slow=super_freeze_slow
-                        end
-                    end
-                end
-            end
-            if arr_get(remote_snow,b+5)>0
-                number bt=arr_get(remote_snow,b+5)-dt
-                if bt<0
-                    bt=0
-                end
-                arr_set(remote_snow,b+5,bt)
-            end
-        end
-        s=s+1
-    end
-end
-
+// Логика чужих снежинок — в battle_online.ds, здесь только отрисовка.
 function draw_remote_snow()
     number s=0
     loop s<max_players
@@ -205,6 +143,13 @@ function finish_game(number result)
     dash_t=0
     dash_hit=0
     dash_pub=0
+    enemy_gift.active=0
+    enemy_boom_t=0
+    enemy_dash_active=0
+    enemy_dash_t=0
+    enemy_dash_hit=0
+    enemy_super_windup=0
+    enemy_super_kind=0
     // Взрывы турелей не обрываем на экране результата: они доигрывают под
     // полупрозрачной плашкой и гаснут сами (очистка — в reset_battle).
     turret_heal_t=0
@@ -323,6 +268,9 @@ function draw_player_shadow_layer()
 end
 
 function draw_player_hitbox_layer()
+    if show_hitboxes==0
+        return
+    end
     if aim_a>0&&finished==0
         draw_punch_box(player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a)
     end
@@ -336,11 +284,21 @@ function draw_player_body_layer()
     end
 end
 
-function enemy_battle_tex()
+function enemy_punching_now()
     if enemy.state==1||enemy.state==2
-        return PUNCH_TEX
+        return 1
     end
-    return ORDINARY_TEX
+    if enemy_super_windup>0
+        return 1
+    end
+    return 0
+end
+
+function enemy_battle_tex()
+    if enemy_punching_now()==1
+        return class_punch_tex(enemy_class)
+    end
+    return class_idle_tex(enemy_class)
 end
 
 function draw_enemy_shadow()
@@ -349,6 +307,9 @@ function draw_enemy_shadow()
 end
 
 function draw_enemy_hitbox()
+    if show_hitboxes==0
+        return
+    end
     if (enemy.state==1||enemy.state==2)&&finished==0
         draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1)
     end
@@ -422,10 +383,14 @@ function draw_game()
     draw_candies()
     draw_player_hitbox_layer()
     draw_enemy_hitbox()
+    draw_ability_hitboxes()
     draw_gift()
     draw_boom()
+    draw_enemy_gift()
+    draw_enemy_boom()
     draw_universe()
     draw_station()
+    draw_enemy_turrets()
     draw_player_body_layer()
     draw_enemy_body()
     draw_freeze()

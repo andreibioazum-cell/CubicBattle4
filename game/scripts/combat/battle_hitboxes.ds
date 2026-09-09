@@ -1,0 +1,216 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// battle_hitboxes.ds — хитбоксы всех способностей с уроном.
+//
+// Удары рисуются чёрным (draw_punch_box в battle_render.ds), а способности —
+// своими цветами: снежинка голубая, рывок оранжевый, турели и вселенная
+// зелёные. Всё прячется одним переключателем show_hitboxes из настроек.
+// Слой вызывается из draw_game/draw_online сразу после хитбоксов ударов,
+// поэтому лежит поверх тени, но никогда не закрывает самих бойцов.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Залитый круг + контур: заливка едва видна, контур читается чётко.
+function draw_hit_circle(number x, number y, number r, number rgb)
+    if show_hitboxes==0
+        return
+    end
+    if r<=0
+        return
+    end
+    number fa=hitbox_fill_alpha, la=hitbox_line_alpha
+    circle(x,y,r,(((unsigned)(int)fa)<<24)|((unsigned)(int)rgb))
+    ring(x,y,r,3,(((unsigned)(int)la)<<24)|((unsigned)(int)rgb))
+end
+
+function draw_hit_line(number x1, number y1, number x2, number y2, number w, number rgb)
+    if show_hitboxes==0
+        return
+    end
+    if w<=0
+        return
+    end
+    number la=hitbox_line_alpha
+    line(x1,y1,x2,y2,w,(((unsigned)(int)la)<<24)|((unsigned)(int)rgb))
+end
+
+// ── Снежинки: летящий снаряд + радиус взрыва ──────────────────────────────
+function draw_hit_snowball(number x, number y, number dx, number dy, number t)
+    draw_hit_circle(x,y,24,hitbox_snow_rgb)
+    number left=super_range-t*super_speed
+    if left>0
+        draw_hit_line(x,y,x+dx*left,y+dy*left,48,hitbox_snow_rgb)
+    end
+end
+
+function draw_hit_snow()
+    if finished!=0
+        return
+    end
+    if gift.active==1
+        draw_hit_snowball(gift.x,gift.y,gift.dx,gift.dy,gift.t)
+    end
+    if boom_t>0
+        draw_hit_circle(boom_x,boom_y,super_radius,hitbox_snow_rgb)
+    end
+    if game_state==ST_SOLO
+        if enemy_gift.active==1
+            draw_hit_snowball(enemy_gift.x,enemy_gift.y,enemy_gift.dx,enemy_gift.dy,enemy_gift.t)
+        end
+        if enemy_boom_t>0
+            draw_hit_circle(enemy_boom_x,enemy_boom_y,super_radius,hitbox_snow_rgb)
+        end
+    end
+    if game_state!=ST_ONLINE
+        return
+    end
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*snow_fields
+        if arr_get(remote_snow,b+1)==1
+            draw_hit_circle(arr_get(remote_snow,b+3),arr_get(remote_snow,b+4),24,hitbox_snow_rgb)
+        end
+        if arr_get(remote_snow,b+5)>0
+            draw_hit_circle(arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),super_radius,hitbox_snow_rgb)
+        end
+        s=s+1
+    end
+end
+
+// ── Рывки: весь путь + текущее пятно попадания ────────────────────────────
+function draw_hit_dash_path(number sx, number sy, number dx, number dy, number cx, number cy, number pr)
+    number len=azum_dash_speed*azum_dash_time
+    draw_hit_line(sx,sy,sx+dx*len,sy+dy*len,pr*2,hitbox_dash_rgb)
+    draw_hit_circle(cx,cy,pr,hitbox_dash_rgb)
+    draw_hit_circle(sx,sy,10,hitbox_dash_rgb)
+end
+
+function draw_hit_dash()
+    if finished!=0
+        return
+    end
+    if dash_active==1
+        // В соло рывок бьёт по дистанции до врага, в онлайне — по отрезку пути.
+        number dpr=player.size*0.65+14
+        if game_state==ST_SOLO
+            dpr=player.size*0.65+enemy.size*0.65+12
+        end
+        draw_hit_dash_path(dash_x0,dash_y0,dash_dx,dash_dy,player.x,player.y,dpr)
+    end
+    if game_state==ST_SOLO&&enemy_dash_active==1
+        draw_hit_dash_path(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,enemy.x,enemy.y,player.size*0.65+enemy.size*0.65+12)
+    end
+    if game_state!=ST_ONLINE
+        return
+    end
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*dash_fields
+        if s!=net_slot()&&arr_get(remote_dash,b+1)==1
+            number rx=arr_get(remote_dash,b+2), ry=arr_get(remote_dash,b+3)
+            number rdx=arr_get(remote_dash,b+4), rdy=arr_get(remote_dash,b+5)
+            number gone=azum_dash_speed*(azum_dash_time-arr_get(remote_dash,b+6))
+            draw_hit_dash_path(rx,ry,rdx,rdy,rx+rdx*gone,ry+rdy*gone,player.size*0.65+14)
+        end
+        s=s+1
+    end
+end
+
+// ── Турели: круг попадания по каждой живой турели ─────────────────────────
+function draw_hit_turrets()
+    if finished!=0
+        return
+    end
+    number i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            draw_hit_circle(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb)
+        end
+        i=i+1
+    end
+    if game_state==ST_SOLO
+        i=0
+        loop i<turret_max
+            if enemy_turret_alive(i)==1
+                draw_hit_circle(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb)
+            end
+            i=i+1
+        end
+    end
+    if game_state!=ST_ONLINE
+        return
+    end
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*station_fields
+        if s!=net_slot()
+            number o=b+1, k=0
+            loop k<turret_max
+                if arr_get(remote_station,o)==1
+                    draw_hit_circle(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb)
+                end
+                o=o+5
+                k=k+1
+            end
+        end
+        s=s+1
+    end
+end
+
+// ── Вселенная: бьёт по всей арене, поэтому рамка по краям экрана ──────────
+function draw_hit_universe_frame()
+    number w=7
+    draw_hit_line(0,0,screen_w,0,w,hitbox_universe_rgb)
+    draw_hit_line(0,screen_h,screen_w,screen_h,w,hitbox_universe_rgb)
+    draw_hit_line(0,0,0,screen_h,w,hitbox_universe_rgb)
+    draw_hit_line(screen_w,0,screen_w,screen_h,w,hitbox_universe_rgb)
+end
+
+function draw_hit_universe()
+    if finished!=0
+        return
+    end
+    if universe_active==1
+        draw_hit_universe_frame()
+        draw_hit_circle(universe_x,universe_y,60,hitbox_universe_rgb)
+    end
+    if game_state!=ST_ONLINE
+        return
+    end
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*universe_fields
+        if s!=net_slot()&&arr_get(remote_universe,b+1)==1
+            draw_hit_universe_frame()
+            draw_hit_circle(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),60,hitbox_universe_rgb)
+        end
+        s=s+1
+    end
+end
+
+// Общий слой хитбоксов способностей: вызывается из draw_game/draw_online
+// сразу после хитбоксов ударов. При show_hitboxes==0 ничего не рисует.
+function draw_ability_hitboxes()
+    if show_hitboxes==0
+        return
+    end
+    if finished!=0
+        return
+    end
+    draw_hit_snow()
+    draw_hit_dash()
+    draw_hit_turrets()
+    draw_hit_universe()
+end

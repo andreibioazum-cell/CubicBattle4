@@ -144,6 +144,70 @@ function update_remote_thuds()
     end
 end
 
+// Чужие снежинки: летят по снимку, взрываются заморозкой без урона.
+function update_remote_snow()
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        number b=s*snow_fields
+        if s==net_slot()||net_player_online(s)!=1
+            arr_set(remote_snow,b+1,0)
+            arr_set(remote_snow,b+5,0)
+        else
+            number cnt=net_player_snow(s)
+            number prev=arr_get(remote_snow,b)
+            if cnt!=prev&&cnt>0
+                arr_set(remote_snow,b,cnt)
+                arr_set(remote_snow,b+1,1)
+                arr_set(remote_snow,b+2,0)
+                arr_set(remote_snow,b+3,net_player_snow_x(s)*screen_w)
+                arr_set(remote_snow,b+4,net_player_snow_y(s)*screen_h)
+            end
+            if arr_get(remote_snow,b+1)==1
+                number t=arr_get(remote_snow,b+2)+dt
+                number x=arr_get(remote_snow,b+3)+net_player_snow_dx(s)*super_speed*dt
+                number y=arr_get(remote_snow,b+4)+net_player_snow_dy(s)*super_speed*dt
+                arr_set(remote_snow,b+2,t)
+                arr_set(remote_snow,b+3,x)
+                arr_set(remote_snow,b+4,y)
+                number hit=0
+                if dist(x,y,player.x,player.y)<player.size*0.65+24
+                    hit=1
+                end
+                if t>super_range/super_speed
+                    hit=1
+                end
+                if hit==1
+                    arr_set(remote_snow,b+1,0)
+                    arr_set(remote_snow,b+5,boom_time)
+                    arr_set(remote_snow,b+6,x)
+                    arr_set(remote_snow,b+7,y)
+                    if dist(x,y,player.x,player.y)<=super_radius
+                        number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
+                        if rcls==CLASS_SANTA
+                            freeze_time=santa_freeze_time_for(rlevel)
+                        end
+                        if player_freeze<freeze_time
+                            player_freeze=freeze_time
+                            player_freeze_slow=super_freeze_slow
+                        end
+                    end
+                end
+            end
+            if arr_get(remote_snow,b+5)>0
+                number bt=arr_get(remote_snow,b+5)-dt
+                if bt<0
+                    bt=0
+                end
+                arr_set(remote_snow,b+5,bt)
+            end
+        end
+        s=s+1
+    end
+end
+
 function smooth_remotes()
     number s=0
     loop s<max_players

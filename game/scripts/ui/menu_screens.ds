@@ -86,6 +86,7 @@ function draw_settings()
     draw_menu_button(1, "English")
     draw_menu_button(2, "Русский")
     draw_menu_button(3, tr_mods())
+    draw_menu_button(4, tr_hitboxes_toggle())
 end
 
 // ── Экран классов ─────────────────────────────────────────────────────────

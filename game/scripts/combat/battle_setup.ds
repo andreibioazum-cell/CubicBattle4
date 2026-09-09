@@ -33,6 +33,7 @@ function reset_battle()
     enemy.aim_err=0
     enemy.hesit=0
     enemy.feint=0
+    enemy_reset_class_state()
     finished=0
     finish_t=0
     punch.active=0
@@ -238,6 +239,8 @@ function spawn_enemy()
     else
         enemy.strafe=1
     end
+    // Случайный класс врага: спрайт, HP и способности — от него.
+    enemy_pick_random_class()
     ds_log("enemy spawned instantly")
 end
 

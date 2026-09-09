@@ -199,6 +199,16 @@ function update_gift()
         if hd<enemy.size*0.65+24
             touched=1
         end
+        // Снежинка взрывается и о турели врага.
+        number gti=0
+        loop gti<turret_max
+            if touched==0&&enemy_turret_alive(gti)==1
+                if dist(gift.x,gift.y,arr_get(enemy_turret_x,gti),arr_get(enemy_turret_y,gti))<turret_hit_r+20
+                    touched=1
+                end
+            end
+            gti=gti+1
+        end
         if gift.t>super_range/super_speed
             touched=1
         end
@@ -210,13 +220,20 @@ function update_gift()
     boom_x=gift.x
     boom_y=gift.y
     boom_t=boom_time
-    if game_state!=ST_ONLINE&&dist(gift.x,gift.y,enemy.x,enemy.y)<=super_radius
-        freeze_enemy(santa_freeze_time_for(player_level),super_freeze_slow)
-        enemy.hp=enemy.hp-santa_super_damage
-        if enemy.hp<=0
-            enemy.hp=0
-            finish_game(1)
-            return
+    if game_state!=ST_ONLINE
+        // Взрыв ломает и турели врага в радиусе (у AoE нет щита).
+        number bei=0
+        loop bei<turret_max
+            if enemy_turret_alive(bei)==1
+                if dist(boom_x,boom_y,arr_get(enemy_turret_x,bei),arr_get(enemy_turret_y,bei))<=super_radius+turret_hit_r
+                    enemy_damage_turret(bei,santa_super_damage)
+                end
+            end
+            bei=bei+1
+        end
+        if dist(boom_x,boom_y,enemy.x,enemy.y)<=super_radius&&enemy_revive_prot<=0
+            freeze_enemy(santa_freeze_time_for(player_level),super_freeze_slow)
+            enemy_apply_damage(santa_super_damage)
         end
     end
 end

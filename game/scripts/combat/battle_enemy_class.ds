@@ -1,0 +1,449 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// battle_enemy_class.ds — случайный класс врага в соло и его способности.
+//
+// Враг получает случайный класс (0..3) при спавне и играет им честно:
+//   Обычный — как раньше, без ульты;
+//   Азум — рывок в игрока + одно возрождение за бой;
+//   Дед Мороз — удары травят ядом, снежинка летит в игрока и морозит;
+//   буК — ставит до turret_max турелей-щитов, они прикрывают врага.
+// Уровень врага всегда 0: бонусов ветки у него нет.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Сброс и выбор класса ──────────────────────────────────────────────────
+function enemy_reset_class_state()
+    enemy_class=CLASS_ORDINARY
+    enemy_level=0
+    enemy_super_cd=0
+    enemy_super_windup=0
+    enemy_super_kind=0
+    enemy_revived=0
+    enemy_revive_prot=0
+    enemy_gift.active=0
+    enemy_gift.t=0
+    enemy_gift.shot=0
+    enemy_boom_t=0
+    enemy_boom_x=0
+    enemy_boom_y=0
+    enemy_dash_active=0
+    enemy_dash_t=0
+    enemy_dash_dx=0
+    enemy_dash_dy=0
+    enemy_dash_hit=0
+    enemy_dash_cd=0
+    enemy_dash_x0=0
+    enemy_dash_y0=0
+    arr_clear(enemy_turret_x)
+    arr_clear(enemy_turret_y)
+    arr_clear(enemy_turret_hp)
+    arr_clear(enemy_turret_maxhp)
+    arr_clear(enemy_turret_spawn_t)
+    number i=0
+    loop i<turret_max
+        arr_push(enemy_turret_x,0)
+        arr_push(enemy_turret_y,0)
+        arr_push(enemy_turret_hp,0)
+        arr_push(enemy_turret_maxhp,0)
+        arr_push(enemy_turret_spawn_t,0)
+        i=i+1
+    end
+end
+
+function enemy_pick_random_class()
+    enemy_class=rand()%4
+    enemy_level=0
+    enemy_revived=0
+    enemy_revive_prot=0
+    enemy_super_cd=enemy_first_super_min+(rand()%100)/100.0*(enemy_first_super_max-enemy_first_super_min)
+    enemy_super_windup=0
+    enemy_super_kind=0
+    enemy_dash_cd=enemy_first_super_min+(rand()%100)/100.0*2.0
+    enemy_dash_active=0
+    enemy.max_hp=player_max_hp_for(enemy_class)
+    enemy.hp=enemy.max_hp
+    ds_log("enemy class %g hp %g",enemy_class,enemy.max_hp)
+end
+
+// Урон по врагу с учётом защиты после возрождения и самого возрождения.
+// Возвращает 1, если бой закончен победой (враг мёртв), иначе 0.
+function enemy_apply_damage(number dmg)
+    if finished!=0
+        return 1
+    end
+    if enemy_revive_prot>0
+        return 0
+    end
+    enemy.hp=enemy.hp-dmg
+    if enemy.hp<0
+        enemy.hp=0
+    end
+    if enemy.hp<=0
+        if enemy_try_revive()==1
+            return 0
+        end
+        finish_game(1)
+        return 1
+    end
+    return 0
+end
+
+function enemy_try_revive()
+    if enemy.hp>0
+        return 0
+    end
+    if enemy_class!=CLASS_AZUM
+        return 0
+    end
+    if enemy_revived==1
+        return 0
+    end
+    enemy_revived=1
+    enemy.hp=enemy.max_hp
+    enemy_revive_prot=enemy_revive_prot_time
+    number k=0
+    loop k<50
+        number rx=70+rand()%(screen_w-140), ry=70+rand()%(screen_h-140)
+        if dist(rx,ry,player.x,player.y)>200
+            k=50
+            enemy.x=rx
+            enemy.y=ry
+        else
+            k=k+1
+        end
+    end
+    enemy.state=0
+    enemy.state_time=0
+    enemy.cooldown=0.5
+    enemy_dash_active=0
+    enemy_dash_t=0
+    enemy_dash_hit=0
+    enemy_super_windup=0
+    enemy_super_kind=0
+    ds_log("enemy azum revived")
+    return 1
+end
+
+// Турели врага — в battle_enemy_turrets.ds (щит, контрудар, отрисовка).
+// ── Снежинка врага (Дед Мороз) ────────────────────────────────────────────
+function enemy_start_snow()
+    enemy_gift.x=enemy.x
+    enemy_gift.y=enemy.y
+    number a=atan2(player.y-enemy.y,player.x-enemy.x)
+    enemy_gift.dx=cos(a)
+    enemy_gift.dy=sin(a)
+    enemy_gift.active=1
+    enemy_gift.t=0
+    enemy_gift.shot=enemy_gift.shot+1
+    ds_log("enemy snow thrown")
+end
+
+function enemy_snow_explode()
+    enemy_gift.active=0
+    enemy_boom_x=enemy_gift.x
+    enemy_boom_y=enemy_gift.y
+    enemy_boom_t=boom_time
+    // Взрыв бьёт и игрока, и его турели в радиусе (у AoE нет щита).
+    number i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            if dist(enemy_boom_x,enemy_boom_y,arr_get(turret_x,i),arr_get(turret_y,i))<=super_radius+turret_hit_r
+                damage_turret(i,santa_super_damage)
+            end
+        end
+        i=i+1
+    end
+    if dist(enemy_boom_x,enemy_boom_y,player.x,player.y)<=super_radius
+        if revive_prot<=0
+            if player_freeze<santa_freeze_time_for(enemy_level)
+                player_freeze=santa_freeze_time_for(enemy_level)
+                player_freeze_slow=super_freeze_slow
+            end
+            take_damage(santa_super_damage)
+            if player.hp<=0
+                player.hp=0
+                if try_revive()==0
+                    finish_game(2)
+                end
+            end
+        end
+    end
+end
+
+function tick_enemy_gift()
+    if enemy_boom_t>0
+        enemy_boom_t=enemy_boom_t-dt
+        if enemy_boom_t<0
+            enemy_boom_t=0
+        end
+    end
+    if enemy_gift.active==0
+        return
+    end
+    if finished!=0
+        enemy_gift.active=0
+        return
+    end
+    enemy_gift.t=enemy_gift.t+dt
+    enemy_gift.x=enemy_gift.x+enemy_gift.dx*super_speed*dt
+    enemy_gift.y=enemy_gift.y+enemy_gift.dy*super_speed*dt
+    number touched=0
+    if dist(enemy_gift.x,enemy_gift.y,player.x,player.y)<player.size*0.65+24
+        touched=1
+    end
+    number i=0
+    loop i<turret_max
+        if touched==0&&turret_alive(i)==1
+            if dist(enemy_gift.x,enemy_gift.y,arr_get(turret_x,i),arr_get(turret_y,i))<turret_hit_r+20
+                touched=1
+            end
+        end
+        i=i+1
+    end
+    if enemy_gift.t>super_range/super_speed
+        touched=1
+    end
+    if touched==1
+        enemy_snow_explode()
+    end
+end
+
+function draw_enemy_gift()
+    if enemy_gift.active==0
+        return
+    end
+    number hw=16, rot=enemy_gift.t*3
+    tex(enemy_gift.x-hw,enemy_gift.y-hw,SNOWFLAKE_TEX,rot,0.5)
+end
+
+function draw_enemy_boom()
+    draw_boom_at(enemy_boom_x,enemy_boom_y,enemy_boom_t)
+end
+
+// ── Рывок врага (Азум) ────────────────────────────────────────────────────
+function enemy_start_dash()
+    number a=atan2(player.y-enemy.y,player.x-enemy.x)
+    enemy_dash_dx=cos(a)
+    enemy_dash_dy=sin(a)
+    enemy_dash_x0=enemy.x
+    enemy_dash_y0=enemy.y
+    enemy_dash_active=1
+    enemy_dash_t=azum_dash_time
+    enemy_dash_hit=0
+    enemy_dash_cd=enemy_dash_cd_time
+    enemy.angle=a
+    ds_log("enemy dash started")
+end
+
+function tick_enemy_dash()
+    if enemy_dash_cd>0
+        enemy_dash_cd=enemy_dash_cd-dt
+        if enemy_dash_cd<0
+            enemy_dash_cd=0
+        end
+    end
+    if enemy_dash_active==0
+        return
+    end
+    enemy_dash_t=enemy_dash_t-dt
+    if enemy_dash_t<=0
+        enemy_dash_t=0
+        enemy_dash_active=0
+        enemy_dash_hit=0
+        return
+    end
+    if finished!=0
+        enemy_dash_active=0
+        return
+    end
+    // Оглушённый враг замирает: таймер идёт, движения нет (как у игрока).
+    if enemy.stun>0
+        return
+    end
+    enemy.x=enemy.x+enemy_dash_dx*azum_dash_speed*dt
+    enemy.y=enemy.y+enemy_dash_dy*azum_dash_speed*dt
+    if enemy.x<enemy.size
+        enemy.x=enemy.size
+        enemy_dash_active=0
+        enemy_dash_t=0
+        return
+    end
+    if enemy.x>screen_w-enemy.size
+        enemy.x=screen_w-enemy.size
+        enemy_dash_active=0
+        enemy_dash_t=0
+        return
+    end
+    if enemy.y<enemy.size
+        enemy.y=enemy.size
+        enemy_dash_active=0
+        enemy_dash_t=0
+        return
+    end
+    if enemy.y>screen_h-enemy.size
+        enemy.y=screen_h-enemy.size
+        enemy_dash_active=0
+        enemy_dash_t=0
+        return
+    end
+    tick_enemy_dust(enemy_dash_dx*azum_dash_speed,enemy_dash_dy*azum_dash_speed)
+    if enemy_dash_hit==1
+        return
+    end
+    // Рывок бьёт по текущей позиции (как рывок игрока в соло): сначала щит
+    // из турелей, потом сам игрок. Бьёт в момент пролёта, а не на старте.
+    number dti=0
+    loop dti<turret_max
+        if enemy_dash_hit==0&&turret_alive(dti)==1
+            if dist(enemy.x,enemy.y,arr_get(turret_x,dti),arr_get(turret_y,dti))<=enemy.size*0.65+turret_hit_r+14
+                enemy_dash_hit=1
+                damage_turret(dti,azum_dash_damage)
+                // Турель-щит мстит за рывок, как за удар.
+                enemy_apply_damage(turret_counter_damage)
+            end
+        end
+        dti=dti+1
+    end
+    if enemy_dash_hit==1||finished!=0
+        return
+    end
+    if revive_prot>0
+        return
+    end
+    number dpr=player.size*0.65+enemy.size*0.65+12
+    if dist(enemy.x,enemy.y,player.x,player.y)<=dpr
+        enemy_dash_hit=1
+        take_damage(azum_dash_damage)
+        stun_player(azum_dash_stun)
+        ds_log("enemy dash hit player")
+        if player.hp<=0
+            player.hp=0
+            if try_revive()==0
+                finish_game(2)
+            end
+        end
+    end
+end
+
+// Рывок игрока: бьёт врага и его турели-щиты (сначала щит, потом враг).
+function tick_dash_solo_hit()
+    if dash_active==0||dash_hit==1||finished!=0
+        return
+    end
+    number ti=0
+    loop ti<turret_max
+        if dash_hit==0&&enemy_turret_alive(ti)==1
+            if dist(player.x,player.y,arr_get(enemy_turret_x,ti),arr_get(enemy_turret_y,ti))<=player.size*0.65+turret_hit_r+14
+                dash_hit=1
+                enemy_damage_turret(ti,azum_dash_damage)
+                if revive_prot<=0
+                    take_damage(turret_counter_damage)
+                    ds_log("dash hit enemy turret")
+                    if player.hp<=0
+                        player.hp=0
+                        if try_revive()==0
+                            finish_game(2)
+                        end
+                    end
+                end
+            end
+        end
+        ti=ti+1
+    end
+    if dash_hit==1||finished!=0
+        return
+    end
+    if enemy_revive_prot>0
+        return
+    end
+    number pr=player.size*0.65+enemy.size*0.65+12
+    if dist(player.x,player.y,enemy.x,enemy.y)<=pr
+        dash_hit=1
+        stun_enemy(azum_dash_stun)
+        ds_log("dash hit enemy, hp %g",enemy.hp)
+        enemy_apply_damage(azum_dash_damage)
+    end
+end
+
+// ── Общий тик врага-класса: вызывается из update_game ─────────────────────
+function tick_enemy_class()
+    if game_state!=ST_SOLO
+        return
+    end
+    if enemy_super_cd>0
+        enemy_super_cd=enemy_super_cd-dt
+        if enemy_super_cd<0
+            enemy_super_cd=0
+        end
+    end
+    if enemy_revive_prot>0
+        enemy_revive_prot=enemy_revive_prot-dt
+        if enemy_revive_prot<0
+            enemy_revive_prot=0
+        end
+    end
+    enemy_tick_turrets()
+    tick_enemy_gift()
+    tick_enemy_dash()
+end
+
+// ── Решения: когда враг жмёт ульту ────────────────────────────────────────
+// Вызывается из update_enemy после оглушения. Возвращает 1, если враг занят
+// (рывок летит или идёт замах): обычному ИИ в этом кадре делать нечего.
+function enemy_tick_class_abilities()
+    if game_state!=ST_SOLO
+        return 0
+    end
+    if finished!=0
+        return 0
+    end
+    if enemy_dash_active==1
+        return 1
+    end
+    if enemy_super_windup>0
+        enemy_face_player()
+        enemy_super_windup=enemy_super_windup-dt
+        if enemy_super_windup<=0
+            enemy_super_windup=0
+            if enemy_super_kind==1
+                enemy_start_snow()
+            else if enemy_super_kind==2
+                enemy_place_turret()
+            end
+            enemy_super_kind=0
+        end
+        return 1
+    end
+    // Ульта только в спокойных состояниях: не в замахе/ударе и не в увороте.
+    if enemy.state==1||enemy.state==2||enemy.state==4
+        return 0
+    end
+    number d=dist(enemy.x,enemy.y,player.x,player.y)
+    if enemy_class==CLASS_SANTA
+        if enemy_super_cd<=0&&d<=enemy_santa_range
+            enemy_super_kind=1
+            enemy_super_windup=enemy_super_windup_time
+            enemy_super_cd=enemy_santa_cd_time
+            enemy.state=0
+            enemy.state_time=0
+            return 1
+        end
+    else if enemy_class==CLASS_EBUC
+        if enemy_super_cd<=0&&enemy_turret_count_alive()<turret_max
+            enemy_super_kind=2
+            enemy_super_windup=enemy_super_windup_time
+            enemy_super_cd=enemy_station_cd_time
+            enemy.state=0
+            enemy.state_time=0
+            return 1
+        end
+    else if enemy_class==CLASS_AZUM
+        if enemy_dash_cd<=0&&d>=enemy_dash_min_range&&d<=enemy_dash_max_range
+            enemy.state=0
+            enemy.state_time=0
+            enemy_start_dash()
+            return 1
+        end
+    end
+    return 0
+end

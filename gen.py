@@ -29,9 +29,12 @@ def find_ds_files(directory):
         "combat/battle_setup.ds",  # запуск боя, спавн и движение игрока
         "combat/battle_movement.ds", # прицеливание и движение бота
         "combat/battle_ai.ds",     # решения и атаки бота, статусы
+        "combat/battle_enemy_class.ds", # случайный класс врага и его ульты
+        "combat/battle_enemy_turrets.ds", # турели-щиты врага-буКа
         "combat/battle_abilities.ds", # способности и основной update боя
         "combat/battle_online.ds", # сетевые снимки и завершение матча
         "combat/battle_actions_fx.ds", # атаки и эффекты способностей
+        "combat/battle_hitboxes.ds", # хитбоксы способностей с уроном
         "combat/battle_render.ds", # поле, бойцы и интерфейс боя
         "combat/battle_event_plates.ds", # ивент «плиты и Дед Мороз»
         "combat/battle_events_input.ds", # события, баннеры и ввод

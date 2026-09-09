@@ -29,6 +29,24 @@ Player player=new Player()
 Enemy enemy=new Enemy()
 Punch punch=new Punch()
 Gift gift=new Gift()
+// Случайный класс врага в соло (0..3) и его уровень (всегда 0 — честно).
+// super_cd — общий кулдаун снежинки/турели, windup — замах перед ними
+// (kind: 1 — снежинка, 2 — турель). Рывок Азума на своём кулдауне.
+number enemy_class=0, enemy_level=0, enemy_super_cd=0, enemy_super_windup=0, enemy_super_kind=0
+number enemy_revived=0, enemy_revive_prot=0
+// Снежинка врага (Дед Мороз): летит в игрока, взрывается с заморозкой.
+Gift enemy_gift=new Gift()
+number enemy_boom_t=0, enemy_boom_x=0, enemy_boom_y=0
+// Рывок врага (Азум): летит строго вдоль dash_dx/dash_dy, как у игрока.
+number enemy_dash_active=0, enemy_dash_t=0, enemy_dash_dx=0, enemy_dash_dy=0
+number enemy_dash_hit=0, enemy_dash_cd=0, enemy_dash_x0=0, enemy_dash_y0=0
+// Турели врага (буК): до turret_max штук, щит врага. Взрывы общие
+// (station_boom_*), поэтому отдельно их хранить не нужно.
+array enemy_turret_x=arr_new()
+array enemy_turret_y=arr_new()
+array enemy_turret_hp=arr_new()
+array enemy_turret_maxhp=arr_new()
+array enemy_turret_spawn_t=arr_new()
 
 number aim_tx=0, aim_ty=0
 number finished=0, atk_x=0, atk_y=0, atk2_x=0, atk2_y=0, joy_id=-1, aim_id=-1, super_id=-1

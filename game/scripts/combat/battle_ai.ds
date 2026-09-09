@@ -142,13 +142,10 @@ function update_enemy()
             if player_level>=3&&enemy.poison_damage>0
                 tick_dmg=enemy.poison_damage
             end
-            enemy.hp=enemy.hp-tick_dmg
             enemy.poison=0
             enemy.poison_tick=0
             enemy.poison_damage=0
-            if enemy.hp<=0
-                enemy.hp=0
-                finish_game(1)
+            if enemy_apply_damage(tick_dmg)==1
                 return
             end
         end
@@ -188,6 +185,12 @@ function update_enemy()
     stun_a=stun_a-dt/freeze_fade_out
     if stun_a<0
         stun_a=0
+    end
+
+    // Способности класса врага (рывок, замах снежинки/турели): пока враг
+    // занят ультой, обычный ИИ пропускает кадр.
+    if enemy_tick_class_abilities()==1
+        return
     end
 
     number dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
@@ -231,7 +234,15 @@ function update_enemy()
                     enemy.hit=1
                     if target==0
                         if revive_prot<=0
-                            take_damage(enemy_damage)
+                            take_damage(class_punch_damage_for(enemy_class,enemy_level))
+                            // Удары Деда Мороза травят ядом, как у игрока.
+                            if enemy_class==CLASS_SANTA
+                                if player_poison<=0
+                                    player_poison_tick=santa_poison_tick_interval
+                                end
+                                player_poison=santa_poison_time_for(enemy_level)
+                                player_poison_damage=santa_poison_damage_for(enemy_level)
+                            end
                             ds_log("enemy punch! hp %g",player.hp)
                             if player.hp<=0
                                 player.hp=0
@@ -242,12 +253,9 @@ function update_enemy()
                             end
                         end
                     else
-                        damage_turret(target-1,enemy_damage)
+                        damage_turret(target-1,class_punch_damage_for(enemy_class,enemy_level))
                         // Турель-щит мстит: удар по ней ранит бота в ответ.
-                        enemy.hp=enemy.hp-turret_counter_damage
-                        if enemy.hp<=0
-                            enemy.hp=0
-                            finish_game(1)
+                        if enemy_apply_damage(turret_counter_damage)==1
                             return
                         end
                         ds_log("enemy punch! turret hp %g",arr_get(turret_hp,target-1))

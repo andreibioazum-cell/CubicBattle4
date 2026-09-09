@@ -1,7 +1,5 @@
 include graphics
-
 // Упрощённый бой без праймов, с человечным врагом и админкой
-
 // Пока azum.png не лежит в game/assets, Азум играет своей же зомби-текстурой:
 // зелёный куб обычного класса без «моей» текстуры выглядит хуже настоящего
 // Азума. Как только azum*.png появятся, флаг включится сам (engine.ds
@@ -15,7 +13,6 @@ function azum_idle_tex()
     end
     return ORDINARY_TEX
 end
-
 function azum_punch_tex()
     if azum_tex_ok==1
         return AZUM_PUNCH_TEX
@@ -206,7 +203,9 @@ function destroy_turret(number i)
     arr_set(turret_spawn_t,i,0)
 end
 
-// Урон по турели: если HP кончилось — турель ломается.
+// Урон по турели: если HP кончилось — взрыв на её месте и слот свободен.
+// Взрыв ставим прямо здесь, а не через destroy_turret: та ждёт живую турель,
+// а урон уже обнулил HP — через неё взрыва бы не было вовсе.
 function damage_turret(number i, number dmg)
     if i<0||i>=turret_max
         return
@@ -216,12 +215,13 @@ function damage_turret(number i, number dmg)
     end
     number h=arr_get(turret_hp,i)-dmg
     if h<=0
-        h=0
+        push_station_boom(arr_get(turret_x,i),arr_get(turret_y,i))
+        arr_set(turret_hp,i,0)
+        arr_set(turret_maxhp,i,0)
+        arr_set(turret_spawn_t,i,0)
+        return
     end
     arr_set(turret_hp,i,h)
-    if h<=0
-        destroy_turret(i)
-    end
 end
 
 // Новая турель: встаёт в свободный (сломанный) слот; если все заняты —
@@ -455,7 +455,7 @@ end
 
 // ── Оглушение (рывок Азума) ──────────────────────────────────────────────
 // Оглушённый враг не двигается и не атакует. В отличие от заморозки Деда
-// Мороза (freeze), оглушение обрывает и текущий замах/удар.
+// Мороза (freeze), оглушение обрывает и текущий замах/удар, и замах ульты.
 function stun_enemy(number t)
     if t>enemy.stun
         enemy.stun=t
@@ -466,6 +466,8 @@ function stun_enemy(number t)
         enemy.cooldown=0.25
         enemy.think=0.15
     end
+    enemy_super_windup=0
+    enemy_super_kind=0
 end
 
 function stun_player(number t)
