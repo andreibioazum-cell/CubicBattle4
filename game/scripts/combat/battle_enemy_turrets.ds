@@ -1,0 +1,139 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// battle_enemy_turrets.ds — турели-щиты врага-буКа в соло.
+//
+// Как турели игрока (battle_rules.ds), но принадлежат врагу: прикрывают его
+// от ударов и рывка, мстят контрударом, ломаются от взрывов снежинок.
+// Взрывы общие (station_boom_*), луч тянется от турели к врагу.
+// ══════════════════════════════════════════════════════════════════════════
+
+function enemy_turret_alive(number i)
+    if i<0||i>=turret_max
+        return 0
+    end
+    if arr_get(enemy_turret_hp,i)>0
+        return 1
+    end
+    return 0
+end
+
+function enemy_turret_count_alive()
+    number n=0, i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==1
+            n=n+1
+        end
+        i=i+1
+    end
+    return n
+end
+
+function enemy_destroy_turret(number i)
+    if enemy_turret_alive(i)==0
+        return
+    end
+    push_station_boom(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i))
+    arr_set(enemy_turret_hp,i,0)
+    arr_set(enemy_turret_maxhp,i,0)
+    arr_set(enemy_turret_spawn_t,i,0)
+end
+
+function enemy_damage_turret(number i, number dmg)
+    if enemy_turret_alive(i)==0
+        return
+    end
+    number h=arr_get(enemy_turret_hp,i)-dmg
+    if h<=0
+        push_station_boom(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i))
+        arr_set(enemy_turret_hp,i,0)
+        arr_set(enemy_turret_maxhp,i,0)
+        arr_set(enemy_turret_spawn_t,i,0)
+        return
+    end
+    arr_set(enemy_turret_hp,i,h)
+end
+
+function enemy_place_turret()
+    number slot=-1, i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==0
+            slot=i
+            i=turret_max
+        end
+        i=i+1
+    end
+    if slot<0
+        i=0
+        loop i<turret_max
+            if enemy_turret_alive(i)==1
+                slot=i
+                i=turret_max
+            end
+            i=i+1
+        end
+        if slot<0
+            return
+        end
+        enemy_destroy_turret(slot)
+    end
+    arr_set(enemy_turret_x,slot,enemy.x)
+    arr_set(enemy_turret_y,slot,enemy.y)
+    number mh=ebuc_station_hp
+    arr_set(enemy_turret_maxhp,slot,mh)
+    arr_set(enemy_turret_hp,slot,mh)
+    arr_set(enemy_turret_spawn_t,slot,station_spawn_time)
+    ds_log("enemy turret placed, alive %g/%g",enemy_turret_count_alive(),turret_max)
+end
+
+// Удар из точки (px,py) вдоль (pdx,pdy) по турелям врага: номер слота
+// 1..turret_max или -1 (мимо). Как punch_turret_target, но для врага.
+function enemy_punch_turret_target(number px, number py, number pdx, number pdy)
+    number best=-1, bfw=0, i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==1
+            number hx=arr_get(enemy_turret_x,i)-px, hy=arr_get(enemy_turret_y,i)-py
+            number tf=hx*pdx+hy*pdy, ts=hy*pdx-hx*pdy
+            number th=punch_width/2+turret_hit_r
+            if tf>=0&&tf<=punch_reach+turret_hit_r&&ts*ts<=th*th
+                if best==-1||tf<bfw
+                    best=i+1
+                    bfw=tf
+                end
+            end
+        end
+        i=i+1
+    end
+    return best
+end
+
+function enemy_tick_turrets()
+    number i=0
+    loop i<turret_max
+        if arr_get(enemy_turret_spawn_t,i)>0
+            number t=arr_get(enemy_turret_spawn_t,i)-dt
+            if t<0
+                t=0
+            end
+            arr_set(enemy_turret_spawn_t,i,t)
+        end
+        i=i+1
+    end
+end
+
+function draw_enemy_turrets()
+    number i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==1
+            draw_station_beam(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),enemy.x,enemy.y)
+        end
+        i=i+1
+    end
+    i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==1
+            draw_turret_at(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),arr_get(enemy_turret_hp,i),arr_get(enemy_turret_maxhp,i),arr_get(enemy_turret_spawn_t,i))
+        end
+        i=i+1
+    end
+end

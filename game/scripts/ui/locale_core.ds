@@ -423,3 +423,17 @@ end
 function tr_class_ebuc_desc()
     return "The universe's chaos!"
 end
+
+// Переключатель хитбоксов в настройках: «Хитбоксы: ВКЛ/ВЫКЛ».
+function tr_hitboxes_toggle()
+    if language == 1
+        if show_hitboxes == 1
+            return "Хитбоксы: ВКЛ"
+        end
+        return "Хитбоксы: ВЫКЛ"
+    end
+    if show_hitboxes == 1
+        return "Hitboxes: ON"
+    end
+    return "Hitboxes: OFF"
+end

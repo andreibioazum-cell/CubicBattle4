@@ -7,9 +7,16 @@ function universe_collapse(number dmg)
         return
     end
     if game_state!=ST_ONLINE
-        enemy.hp=enemy.hp-dmg
-        if enemy.hp<0
-            enemy.hp=0
+        number ei=0
+        loop ei<turret_max
+            enemy_damage_turret(ei,dmg)
+            ei=ei+1
+        end
+        if enemy_revive_prot<=0
+            enemy.hp=enemy.hp-dmg
+            if enemy.hp<0
+                enemy.hp=0
+            end
         end
     end
     // Все турели бука ломаются вселенной.
@@ -32,7 +39,9 @@ function universe_collapse(number dmg)
         end
     end
     if finished==0&&game_state!=ST_ONLINE&&enemy.hp<=0
-        finish_game(1)
+        if enemy_try_revive()==0
+            finish_game(1)
+        end
     end
 end
 
@@ -278,23 +287,7 @@ function flush_queued_action()
     end
 end
 
-// Рывок Азума в соло: каждый кадр рывка проверяем, не задели ли врага.
-function tick_dash_solo_hit()
-    if dash_active==0||dash_hit==1||finished!=0
-        return
-    end
-    number pr=player.size*0.65+enemy.size*0.65+12
-    if dist(player.x,player.y,enemy.x,enemy.y)<=pr
-        dash_hit=1
-        enemy.hp=enemy.hp-azum_dash_damage
-        stun_enemy(azum_dash_stun)
-        ds_log("dash hit enemy, hp %g",enemy.hp)
-        if enemy.hp<=0
-            enemy.hp=0
-            finish_game(1)
-        end
-    end
-end
+// Попадание рывка игрока по врагу — в battle_enemy_class.ds (щит из турелей).
 
 // Тикеры рывка: таймер рывка (движение уже в move_player) и кулдаун кнопки.
 function tick_dash()
@@ -322,6 +315,7 @@ function update_game()
     tick_player_poison()
     tick_turrets()
     tick_universe()
+    tick_enemy_class()
     update_aim()
     if finished!=0
         return
@@ -371,41 +365,58 @@ function update_game()
     tick_super_windup()
     tick_santa_follow()
     if punch_left>0&&punch.active==1&&punch.hit==0
-        number turret_target=punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
-        if turret_target>=1
+        // Турели врага — щит: удар по ним не достаёт самого врага, а щит мстит.
+        number enemy_turret_target=enemy_punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
+        if enemy_turret_target>=1
             punch.hit=1
-            damage_turret(turret_target-1,class_punch_damage(player_class))
-            // Удар по турели одновременно ранит стоящего за ней бука.
-            enemy.hp=enemy.hp-class_punch_damage(player_class)
-            heal_after_attack()
-            if enemy.hp<=0
-                enemy.hp=0
-                finish_game(1)
-                return
-            end
-        else if enemy_in_punch()==1
-            punch.hit=1
-            if player_class==2&&santa_follow>0
-                if player_level>=3
-                    if enemy.poison<=0
-                        enemy.poison_tick=santa_poison_tick_interval
-                        enemy.poison_damage=santa_poison_damage_for(player_level)
-                    else
-                        enemy.poison_damage=enemy.poison_damage+santa_poison_damage_for(player_level)
+            enemy_damage_turret(enemy_turret_target-1,class_punch_damage(player_class))
+            if revive_prot<=0
+                take_damage(turret_counter_damage)
+                if player.hp<=0
+                    player.hp=0
+                    if try_revive()==0
+                        finish_game(2)
+                        return
                     end
-                    enemy.poison=santa_poison_time_for(player_level)
-                else
-                    if enemy.poison<=0
-                        enemy.poison_tick=santa_poison_tick_interval
-                    end
-                    enemy.poison=santa_poison_time_for(player_level)
                 end
             end
-            enemy.hp=enemy.hp-class_punch_damage(player_class)
             heal_after_attack()
-            if enemy.hp<=0
-                finish_game(1)
-                return
+        else
+            number turret_target=punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
+            if turret_target>=1
+                punch.hit=1
+                damage_turret(turret_target-1,class_punch_damage(player_class))
+                // Удар по турели одновременно ранит стоящего за ней бука.
+                heal_after_attack()
+                if enemy_revive_prot<=0
+                    if enemy_apply_damage(class_punch_damage(player_class))==1
+                        return
+                    end
+                end
+            else if enemy_in_punch()==1
+                punch.hit=1
+                if enemy_revive_prot<=0
+                    if player_class==2&&santa_follow>0
+                        if player_level>=3
+                            if enemy.poison<=0
+                                enemy.poison_tick=santa_poison_tick_interval
+                                enemy.poison_damage=santa_poison_damage_for(player_level)
+                            else
+                                enemy.poison_damage=enemy.poison_damage+santa_poison_damage_for(player_level)
+                            end
+                            enemy.poison=santa_poison_time_for(player_level)
+                        else
+                            if enemy.poison<=0
+                                enemy.poison_tick=santa_poison_tick_interval
+                            end
+                            enemy.poison=santa_poison_time_for(player_level)
+                        end
+                    end
+                    heal_after_attack()
+                    if enemy_apply_damage(class_punch_damage(player_class))==1
+                        return
+                    end
+                end
             end
         end
     end

@@ -253,6 +253,10 @@ function touch_settings(number x, number y)
     end
     if hit_menu_row(x, y, 3) == 1
         start_transition(ST_MODS)
+        return
+    end
+    if hit_menu_row(x, y, 4) == 1
+        show_hitboxes = 1 - show_hitboxes
     end
 end
 
