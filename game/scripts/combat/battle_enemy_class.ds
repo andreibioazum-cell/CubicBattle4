@@ -39,6 +39,7 @@ function enemy_reset_class_state()
     arr_clear(enemy_turret_hp)
     arr_clear(enemy_turret_maxhp)
     arr_clear(enemy_turret_spawn_t)
+    arr_clear(enemy_turret_box_a)
     number i=0
     loop i<turret_max
         arr_push(enemy_turret_x,0)
@@ -46,6 +47,7 @@ function enemy_reset_class_state()
         arr_push(enemy_turret_hp,0)
         arr_push(enemy_turret_maxhp,0)
         arr_push(enemy_turret_spawn_t,0)
+        arr_push(enemy_turret_box_a,0)
         i=i+1
     end
 end
@@ -78,12 +80,17 @@ end
 
 // Урон по врагу с учётом защиты после возрождения и самого возрождения.
 // Возвращает 1, если бой закончен победой (враг мёртв), иначе 0.
+// Турели врага-буКа — щит: урон сначала уходит в них (enemy_shield_absorb),
+// и только остаток бьёт самого врага.
 function enemy_apply_damage(number dmg)
     if finished!=0
         return 1
     end
     if enemy_revive_prot>0
         return 0
+    end
+    if enemy_class==CLASS_EBUC
+        dmg=enemy_shield_absorb(dmg)
     end
     enemy.hp=enemy.hp-dmg
     if enemy.hp<0
@@ -146,6 +153,7 @@ function enemy_start_snow()
     enemy_gift.active=1
     enemy_gift.t=0
     enemy_gift.shot=enemy_gift.shot+1
+    enemy_gift.pierce=0
     ds_log("enemy snow thrown")
 end
 
@@ -154,16 +162,8 @@ function enemy_snow_explode()
     enemy_boom_x=enemy_gift.x
     enemy_boom_y=enemy_gift.y
     enemy_boom_t=boom_time
-    // Взрыв бьёт и игрока, и его турели в радиусе (у AoE нет щита).
-    number i=0
-    loop i<turret_max
-        if turret_alive(i)==1
-            if dist(enemy_boom_x,enemy_boom_y,arr_get(turret_x,i),arr_get(turret_y,i))<=super_radius+turret_hit_r
-                damage_turret(i,santa_super_damage)
-            end
-        end
-        i=i+1
-    end
+    // Урон по игроку принимает щит из его турелей (take_damage сам направляет
+    // урон в турели бука), отдельного урона турелям радиуса нет.
     if dist(enemy_boom_x,enemy_boom_y,player.x,player.y)<=super_radius
         if revive_prot<=0
             if player_freeze<santa_freeze_time_for(enemy_level)
@@ -198,18 +198,12 @@ function tick_enemy_gift()
     enemy_gift.t=enemy_gift.t+dt
     enemy_gift.x=enemy_gift.x+enemy_gift.dx*super_speed*dt
     enemy_gift.y=enemy_gift.y+enemy_gift.dy*super_speed*dt
+    // Турели игрока-бука снежинка не останавливают: она задевает их на лету
+    // (по разу за полёт) и летит дальше, до самого игрока.
+    snow_chip_player_turrets()
     number touched=0
     if dist(enemy_gift.x,enemy_gift.y,player.x,player.y)<player.size*0.65+24
         touched=1
-    end
-    number i=0
-    loop i<turret_max
-        if touched==0&&turret_alive(i)==1
-            if dist(enemy_gift.x,enemy_gift.y,arr_get(turret_x,i),arr_get(turret_y,i))<turret_hit_r+20
-                touched=1
-            end
-        end
-        i=i+1
     end
     if enemy_gift.t>super_range/super_speed
         touched=1

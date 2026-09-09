@@ -31,6 +31,7 @@ def find_ds_files(directory):
         "combat/battle_ai.ds",     # решения и атаки бота, статусы
         "combat/battle_enemy_class.ds", # случайный класс врага и его ульты
         "combat/battle_enemy_turrets.ds", # турели-щиты врага-буКа
+        "combat/battle_shield.ds", # щит турелей бука и пронзание снежинок
         "combat/battle_abilities.ds", # способности и основной update боя
         "combat/battle_online.ds", # сетевые снимки и завершение матча
         "combat/battle_actions_fx.ds", # атаки и эффекты способностей

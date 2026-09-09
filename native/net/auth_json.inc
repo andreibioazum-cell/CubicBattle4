@@ -33,14 +33,10 @@ static void achievements_read(void) {
 }
 
 static void achievements_write(unsigned int flags, unsigned int revives) {
-    char path[320];
-    FILE *f;
+    char path[320], text[96];
     data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
-    f = fopen(path, "w");
-    if (f) {
-        fprintf(f, "%u %u\n", flags, revives);
-        fclose(f);
-    }
+    snprintf(text, sizeof(text), "%u %u\n", flags, revives);
+    file_write_atomic(path, text);
 }
 
 double net_load_achievement_flags(void) {
@@ -189,15 +185,12 @@ static int pass_valid(const char *p) {
 }
 
 static void session_save(const char *nick, const char *pass) {
-    char path[320]; FILE *f;
+    char path[320], text[256];
     if (lg.path[0]) snprintf(path, sizeof(path), "%s/%s", lg.path, SESSION_FILE);
     else snprintf(path, sizeof(path), "%s", SESSION_FILE);
-    f = fopen(path, "w");
-    if (f) {
-        if (pass && *pass) fprintf(f, "%s %s\n", nick, pass);
-        else fprintf(f, "%s\n", nick);
-        fclose(f);
-    }
+    if (pass && *pass) snprintf(text, sizeof(text), "%s %s\n", nick, pass);
+    else snprintf(text, sizeof(text), "%s\n", nick);
+    file_write_atomic(path, text);
 }
 static long long now_ms(void) {
     struct timespec t;

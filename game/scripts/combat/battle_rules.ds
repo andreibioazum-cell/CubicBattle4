@@ -378,10 +378,11 @@ function seg_dist(number sx, number sy, number dx, number dy, number len, number
     return sqrt((tx-px)*(tx-px)+(ty-py)*(ty-py))
 end
 
-// Кого задевает рывок по отрезку: 0 — игрока, 1..turret_max — турель, -1 —
-// никого. Турель-щит имеет приоритет, пока стоит на пути или рядом с игроком.
-function dash_resolve_target(number sx, number sy, number dx, number dy)
-    number len=azum_dash_speed*azum_dash_time
+// Кого задевает рывок по уже проеханному отрезку [sx,sy]→[sx+dx*len,sy+dy*len]:
+// 0 — игрока, 1..turret_max — турель, -1 — никого. len — сколько рывок уже
+// проехал: урон считается только там, где боец реально пролетел (хитбокс
+// «живого» пятна рывка, а не весь будущий путь).
+function dash_resolve_target(number sx, number sy, number dx, number dy, number len)
     number best=-1, bd=0
     number pr=player.size*0.65+14
     number d=seg_dist(sx,sy,dx,dy,len,player.x,player.y)
@@ -416,8 +417,13 @@ function dash_resolve_target(number sx, number sy, number dx, number dy)
 end
 
 // Урон по самому игроку (после всех поглощений). Скидка Азума после
-// возрождения работает как раньше.
+// возрождения работает как раньше. Турели бука — щит от всего входящего
+// урона: сначала снимают её HP (ближайшая), остаток бьёт самого бука
+// (player_shield_absorb в battle_shield.ds).
 function take_damage(number dmg)
+    if player_class==CLASS_EBUC
+        dmg=player_shield_absorb(dmg)
+    end
     number reduction=0
     if player_class==CLASS_AZUM&&azum_revived==1&&player_level>=1
         reduction=azum_second_life_damage_reduction

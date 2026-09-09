@@ -172,6 +172,14 @@ number hitbox_gray_rgb=0x00808080
 number hitbox_snow_rgb=hitbox_gray_rgb, hitbox_dash_rgb=hitbox_gray_rgb
 number hitbox_turret_rgb=hitbox_gray_rgb, hitbox_universe_rgb=hitbox_gray_rgb
 number hitbox_fill_alpha=36, hitbox_line_alpha=170
+// «Живая» заливка хитбоксов способностей: снежинка (круг снаряда, линия пути
+// и круг взрыва) и пятно рывка рисуются сплошь залитыми, а не только
+// контуром — зона урона видна целиком (hitbox_solid_alpha).
+number hitbox_solid_alpha=140
+// Плавное появление и пропадание хитбоксов способностей (рывок, снежинка,
+// турели, вселенная): альфа каждого эффекта добирается до 1 за hitbox_fade_in
+// и плавно гаснет за hitbox_fade_out после конца эффекта — как полоса удара.
+number hitbox_fade_in=0.1, hitbox_fade_out=0.18
 
 // ── Бой: игрок ────────────────────────────────────────────────────────────
 number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
@@ -312,11 +320,14 @@ number plates_xa=0.22, plates_xb=0.78, plates_yy=0.5
 number plates_santa_size=112, plates_santa_spin=2.2, plates_throw_interval=0.45
 number plates_candy_flight=0.85, plates_candy_max=14, plates_candy_fields=6
 // Предупреждение об эпилепсии: полный чёрный экран на warn_hold секунд, без
-// кнопки, оба языка сразу, красный заголовок, затем плавно тает.
+// кнопки, оба языка сразу, красный заголовок, затем тает только сам текст —
+// чёрный экран остаётся и сразу переходит в заставку студии.
 number warn_open=1, warn_t=0, warn_a=1, warn_hold=2.5, warn_fade=0.6
-// Заставка студии: показывается сразу после предупреждения об эпилепсии.
-// Плавно проявляется (studio_in), висит studio_hold секунд и тает studio_fade.
-number studio_open=0, studio_t=0, studio_a=0
+// Заставка студии: показывается сразу после предупреждения об эпилепсии на
+// том же чёрном экране. Логотип плавно проявляется (studio_in), висит
+// studio_hold секунд и в конце тает вместе с чёрным экраном (studio_fade) —
+// меню под ним проявляется плавно, без резкого переключения.
+number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 number studio_in=0.5, studio_hold=1.6, studio_fade=0.7
 string STUDIO_NAME="CUBIC CORPORATION"
 

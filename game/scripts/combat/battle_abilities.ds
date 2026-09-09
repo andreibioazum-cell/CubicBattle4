@@ -1,34 +1,32 @@
 // ── Ульта бука: вселенная ──────────────────────────────────────────────────
-// Прямой урон от вселенной: он бьёт самого бука, все его турели и врага
-// отдельно, поэтому турели не «спасают» бука от собственной вселенной.
-// Вторая ульта отключена, но функция оставлена для совместимости со старыми клиентами.
+// Взрыв вселенной выжигает турели-щиты и бука, и врага: урон (dmg) сначала
+// поглощается их турелями (каждая турель держит урон, пока не разрушится),
+// и только остаток бьёт самого бойца — щит работает против всего урона,
+// как обещает карточка класса. Вторая ульта отключена, но функция оставлена
+// для совместимости со старыми клиентами.
 function universe_collapse(number dmg)
     if finished!=0
         return
     end
     if game_state!=ST_ONLINE
-        number ei=0
-        loop ei<turret_max
-            enemy_damage_turret(ei,dmg)
-            ei=ei+1
+        number left=dmg
+        if enemy_class==CLASS_EBUC
+            left=enemy_shield_absorb(dmg)
         end
         if enemy_revive_prot<=0
-            enemy.hp=enemy.hp-dmg
+            enemy.hp=enemy.hp-left
             if enemy.hp<0
                 enemy.hp=0
             end
         end
     end
-    // Все турели бука ломаются вселенной.
+    // Своя вселенная бьёт и самого бука: урон принимают его турели, остаток
+    // доходит до него (поэтому ульта всё ещё может убить бука без турелей).
+    number own=dmg
     if player_class==CLASS_EBUC
-        number i=0
-        loop i<turret_max
-            damage_turret(i,dmg)
-            i=i+1
-        end
+        own=player_shield_absorb(dmg)
     end
-    // Сам бук тоже может погибнуть от своей ульты.
-    player.hp=player.hp-dmg
+    player.hp=player.hp-own
     if player.hp<0
         player.hp=0
     end
@@ -45,19 +43,17 @@ function universe_collapse(number dmg)
     end
 end
 
-// Чужая вселенная в онлайне: ломает самого получателя и все его турели.
+// Чужая вселенная в онлайне: урон принимают турели получателя, остаток бьёт
+// его самого.
 function universe_collapse_remote(number dmg)
     if finished!=0
         return
     end
+    number left=dmg
     if player_class==CLASS_EBUC
-        number i=0
-        loop i<turret_max
-            damage_turret(i,dmg)
-            i=i+1
-        end
+        left=player_shield_absorb(dmg)
     end
-    player.hp=player.hp-dmg
+    player.hp=player.hp-left
     if player.hp<0
         player.hp=0
     end
@@ -229,8 +225,19 @@ function update_remote_dashes()
                     arr_set(remote_dash,b+1,0)
                     arr_set(remote_dash,b+7,0)
                 else if arr_get(remote_dash,b+7)==0&&finished==0
+                    // Рывок бьёт только там, где реально пролетел: урон
+                    // считается по уже проеханному отрезку (хитбокс совпадает
+                    // с серыми кубиками и живым пятном, а не со всем путём).
+                    number total_len=azum_dash_speed*azum_dash_time
+                    number gone=total_len-azum_dash_speed*t
+                    if gone<0
+                        gone=0
+                    end
+                    if gone>total_len
+                        gone=total_len
+                    end
                     // рывок режется по пути: кого задел — игрока или турель
-                    number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5))
+                    number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5),gone)
                     if target==0
                         arr_set(remote_dash,b+7,1)
                         // В защите после возрождения рывок проходит насквозь
@@ -316,6 +323,7 @@ function update_game()
     tick_turrets()
     tick_universe()
     tick_enemy_class()
+    tick_hitbox_fades()
     update_aim()
     if finished!=0
         return

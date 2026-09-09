@@ -182,6 +182,22 @@ static void normalize_level_pair(int *level, int *unlocked) {
     *level = clamp_level_value(*level);
     if (*level > *unlocked) *level = 0;
 }
+/* Атомарная запись: временный файл + rename. Убийство посреди записи не
+ * обнуляет прогресс/достижения обрывком файла — старый файл остаётся цел. */
+static void file_write_atomic(const char *path, const char *text) {
+    char tmp[400]; FILE *f;
+    size_t n = strlen(text);
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    f = fopen(tmp, "w");
+    if (f && (n == 0 || fwrite(text, 1, n, f) == n)) {
+        fclose(f);
+        rename(tmp, path);
+        return;
+    }
+    if (f) fclose(f);
+    remove(tmp);
+}
+
 static void progress_write(int cups, int candies, int cls, int azum, int santa, int ebuc,
                            int level, int levels_unlocked,
                            int ordinary_level, int ordinary_levels_unlocked,
@@ -189,19 +205,16 @@ static void progress_write(int cups, int candies, int cls, int azum, int santa, 
                            int santa_level, int santa_levels_unlocked,
                            int ebuc_level, int ebuc_levels_unlocked,
                            int bp_level, int azum_skin) {
-    char path[320]; FILE *f;
+    char path[320], text[512];
     data_file_path(path, sizeof(path), PROGRESS_FILE);
-    f = fopen(path, "w");
-    if (f) {
-        fprintf(f, "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
-                cups, cls, azum, santa, candies, level, levels_unlocked,
-                ordinary_level, ordinary_levels_unlocked,
-                azum_level, azum_levels_unlocked,
-                santa_level, santa_levels_unlocked,
-                ebuc_level, ebuc_levels_unlocked, ebuc,
-                bp_level, azum_skin);
-        fclose(f);
-    }
+    snprintf(text, sizeof(text), "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+             cups, cls, azum, santa, candies, level, levels_unlocked,
+             ordinary_level, ordinary_levels_unlocked,
+             azum_level, azum_levels_unlocked,
+             santa_level, santa_levels_unlocked,
+             ebuc_level, ebuc_levels_unlocked, ebuc,
+             bp_level, azum_skin);
+    file_write_atomic(path, text);
 }
 static void progress_read(void) {
     char path[320]; FILE *f;

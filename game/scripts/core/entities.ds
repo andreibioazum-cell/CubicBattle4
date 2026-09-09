@@ -23,6 +23,9 @@ end
 
 object Gift
     number x=0, y=0, dx=0, dy=0, active=0, t=0, shot=0
+    // Битовая маска турелей, уже «пронзённых» этим полётом снежинки: снежинка
+    // задевает каждую турель на своём пути ровно один раз и летит дальше.
+    number pierce=0
 end
 
 Player player=new Player()
@@ -90,6 +93,15 @@ array remote_universe=arr_new()
 array remotes=arr_new(), remote_punches=arr_new()
 array remote_snow=arr_new()
 array remote_dash=arr_new()
+// Плавное появление/пропадание хитбоксов способностей: «живая» альфа (0..1)
+// каждого эффекта (рывок, снежинка и её взрыв, вселенная, круги турелей).
+// Свои — отдельными числами, враг в соло — с приставкой e, сетевые соперники —
+// массивами на слот (tick_hitbox_fades в combat/battle_hitboxes.ds).
+number dash_box_a=0, snow_ball_a=0, snow_boom_a=0, universe_box_a=0
+number edash_box_a=0, esnow_ball_a=0, esnow_boom_a=0
+array rdash_box_a=arr_new(), rsnow_ball_a=arr_new(), rsnow_boom_a=arr_new()
+array runiverse_box_a=arr_new(), rstation_box_a=arr_new()
+array turret_box_a=arr_new(), enemy_turret_box_a=arr_new()
 // Контрудар турели бука в онлайне: thud_seq — счётчик событий «турель
 // получила удар», который бук публикует в снимке слота (поле thud); увидев
 // новый счётчик, клиент бившего игрока сам у себя списывает HP (каждый
