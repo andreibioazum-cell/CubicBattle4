@@ -179,15 +179,19 @@ function update_warning()
     if warn_a <= 0
         warn_a = 0
         warn_open = 0
-        // Сразу за предупреждением — заставка студии.
+        // Сразу за предупреждением — заставка студии. Чёрный экран при этом
+        // не гаснет: предупреждение растворяется в нём, и заставка начинает
+        // проявляться на том же сплошном чёрном фоне.
         studio_open = 1
         studio_t = 0
         studio_a = 0
+        studio_bg_a = 1
     end
 end
 
-// Заставка студии: проявление, пауза, затухание. Считается той же альфой,
-// что и предупреждение, поэтому обе картинки гаснут одинаково.
+// Заставка студии: проявление, пауза, затухание. Пока логотип проявляется и
+// висит, чёрный фон цельный (studio_bg_a = 1); в конце вместе с надписью
+// плавно гаснет и сам чёрный экран — меню под ним проявляется без рывка.
 function update_studio()
     if studio_open != 1
         return
@@ -199,11 +203,14 @@ function update_studio()
     end
     if studio_t <= studio_in + studio_hold
         studio_a = 1
+        studio_bg_a = 1
         return
     end
     studio_a = 1 - (studio_t - studio_in - studio_hold) / studio_fade
+    studio_bg_a = studio_a
     if studio_a <= 0
         studio_a = 0
+        studio_bg_a = 0
         studio_open = 0
     end
 end

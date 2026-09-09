@@ -4,44 +4,119 @@ include graphics
 // battle_hitboxes.ds — хитбоксы всех способностей с уроном.
 //
 // Все хитбоксы (и удары, и способности) рисуются одним серым цветом, как
-// полосы удара (draw_punch_box в battle_render.ds): снежинка, рывок, турели
-// и вселенная больше не различаются по цвету. Всё прячется одним
+// полосы удара (draw_punch_box в battle_render.ds). Всё прячется одним
 // переключателем show_hitboxes из настроек. Слой вызывается из
-// draw_game/draw_online сразу после хитбоксов ударов, поэтому лежит поверх
-// тени, но никогда не закрывает самих бойцов.
+// draw_game/draw_online сразу после хитбоксов ударов.
+//
+// Хитбоксы способностей не мигают и не обрываются: альфа каждого эффекта
+// плавно набирается при появлении (hitbox_fade_in) и плавно гаснет после
+// конца (hitbox_fade_out) — как полоса удара. «Живые» альфы ведёт
+// tick_hitbox_fades() из update_game/update_online.
+//
+// Рисуются реальные зоны урона: у снежинки — круг контакта (размером с
+// проверку попадания), линия пути и круг взрыва, у рывка — уже проеханный
+// путь кубиками и живое пятно в текущей точке (онлайн-рывок бьёт ровно по
+// этому проеханному отрезку, см. dash_resolve_target). Залитые участки —
+// сплошные, чтобы зона читалась целиком, а не только контуром.
 // ══════════════════════════════════════════════════════════════════════════
 
-// Залитый круг + контур: заливка едва видна, контур читается чётко.
-function draw_hit_circle(number x, number y, number r, number rgb)
-    if show_hitboxes==0
-        return
+// ── Альфа: плавное появление/пропадание ──────────────────────────────────
+function fade_up_a(number a, number t)
+    if t<=0
+        return 1
     end
-    if r<=0
-        return
+    a=a+dt/t
+    if a>1
+        a=1
     end
-    number fa=hitbox_fill_alpha, la=hitbox_line_alpha
-    circle(x,y,r,(((unsigned)(int)fa)<<24)|((unsigned)(int)rgb))
-    ring(x,y,r,3,(((unsigned)(int)la)<<24)|((unsigned)(int)rgb))
+    return a
 end
 
-function draw_hit_line(number x1, number y1, number x2, number y2, number w, number rgb)
+function fade_down_a(number a, number t)
+    if t<=0
+        return 0
+    end
+    a=a-dt/t
+    if a<0
+        a=0
+    end
+    return a
+end
+
+// Текущая альфа эффекта с учётом плавности (0..1).
+function hb_env(number a)
+    if a<0
+        a=0
+    end
+    if a>1
+        a=1
+    end
+    return a
+end
+
+// Итоговые альфы серого цвета: контур и заливка масштабируются плавностью.
+function hb_line_alpha(number env)
+    return floor(hitbox_line_alpha*hb_env(env))
+end
+
+function hb_fill_alpha(number env)
+    return floor(hitbox_fill_alpha*hb_env(env))
+end
+
+function hb_solid_alpha(number env)
+    return floor(hitbox_solid_alpha*hb_env(env))
+end
+
+// ── Примитивы ─────────────────────────────────────────────────────────────
+// Контурный круг: заливка едва видна, контур читается чётко.
+function draw_hit_circle(number x, number y, number r, number rgb, number env)
     if show_hitboxes==0
         return
     end
-    if w<=0
+    if r<=0||env<=0
         return
     end
-    number la=hitbox_line_alpha
-    line(x1,y1,x2,y2,w,(((unsigned)(int)la)<<24)|((unsigned)(int)rgb))
+    circle(x,y,r,(((unsigned)(int)hb_fill_alpha(env))<<24)|((unsigned)(int)rgb))
+    ring(x,y,r,3,(((unsigned)(int)hb_line_alpha(env))<<24)|((unsigned)(int)rgb))
+end
+
+// Залитый круг: вся зона урона залита серым (снежинка, взрыв, пятно рывка),
+// контур остаётся поверх заливки.
+function draw_hit_circle_solid(number x, number y, number r, number rgb, number env)
+    if show_hitboxes==0
+        return
+    end
+    if r<=0||env<=0
+        return
+    end
+    circle(x,y,r,(((unsigned)(int)hb_solid_alpha(env))<<24)|((unsigned)(int)rgb))
+    ring(x,y,r,3,(((unsigned)(int)hb_line_alpha(env))<<24)|((unsigned)(int)rgb))
+end
+
+function draw_hit_line(number x1, number y1, number x2, number y2, number w, number rgb, number env)
+    if show_hitboxes==0
+        return
+    end
+    if w<=0||env<=0
+        return
+    end
+    line(x1,y1,x2,y2,w,(((unsigned)(int)hb_line_alpha(env))<<24)|((unsigned)(int)rgb))
 end
 
 // ── Снежинки: летящий снаряд + радиус взрыва ──────────────────────────────
-function draw_hit_snowball(number x, number y, number dx, number dy, number t)
-    draw_hit_circle(x,y,24,hitbox_snow_rgb)
+// Круг снаряда — реальная зона контакта (как проверка попадания), линия —
+// оставшийся путь, ширина линии равна диаметру круга. Всё залито целиком.
+function draw_hit_snowball(number x, number y, number dx, number dy, number t, number r, number env)
+    draw_hit_circle_solid(x,y,r,hitbox_snow_rgb,env)
     number left=super_range-t*super_speed
     if left>0
-        draw_hit_line(x,y,x+dx*left,y+dy*left,48,hitbox_snow_rgb)
+        draw_hit_line(x,y,x+dx*left,y+dy*left,r*2,hitbox_snow_rgb,env)
     end
+end
+
+// Радиус контакта снежинки: размер цели + запас 24 (как в проверках урона).
+function snow_hit_radius(number target_size)
+    return target_size*0.65+24
 end
 
 function draw_hit_snow()
@@ -49,17 +124,22 @@ function draw_hit_snow()
         return
     end
     if gift.active==1
-        draw_hit_snowball(gift.x,gift.y,gift.dx,gift.dy,gift.t)
+        number r=snow_hit_radius(enemy.size)
+        if game_state==ST_ONLINE
+            r=snow_hit_radius(player.size)
+        end
+        draw_hit_snowball(gift.x,gift.y,gift.dx,gift.dy,gift.t,r,snow_ball_a)
     end
     if boom_t>0
-        draw_hit_circle(boom_x,boom_y,super_radius,hitbox_snow_rgb)
+        draw_hit_circle_solid(boom_x,boom_y,super_radius,hitbox_snow_rgb,snow_boom_a)
     end
     if game_state==ST_SOLO
         if enemy_gift.active==1
-            draw_hit_snowball(enemy_gift.x,enemy_gift.y,enemy_gift.dx,enemy_gift.dy,enemy_gift.t)
+            number er=snow_hit_radius(player.size)
+            draw_hit_snowball(enemy_gift.x,enemy_gift.y,enemy_gift.dx,enemy_gift.dy,enemy_gift.t,er,esnow_ball_a)
         end
         if enemy_boom_t>0
-            draw_hit_circle(enemy_boom_x,enemy_boom_y,super_radius,hitbox_snow_rgb)
+            draw_hit_circle_solid(enemy_boom_x,enemy_boom_y,super_radius,hitbox_snow_rgb,esnow_boom_a)
         end
     end
     if game_state!=ST_ONLINE
@@ -72,29 +152,29 @@ function draw_hit_snow()
     loop s<max_players
         number b=s*snow_fields
         if arr_get(remote_snow,b+1)==1
-            draw_hit_circle(arr_get(remote_snow,b+3),arr_get(remote_snow,b+4),24,hitbox_snow_rgb)
+            number rr=snow_hit_radius(player.size)
+            draw_hit_snowball(arr_get(remote_snow,b+3),arr_get(remote_snow,b+4),net_player_snow_dx(s),net_player_snow_dy(s),arr_get(remote_snow,b+2),rr,arr_get(rsnow_ball_a,s))
         end
         if arr_get(remote_snow,b+5)>0
-            draw_hit_circle(arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),super_radius,hitbox_snow_rgb)
+            draw_hit_circle_solid(arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),super_radius,hitbox_snow_rgb,arr_get(rsnow_boom_a,s))
         end
         s=s+1
     end
 end
 
 // ── Рывки: путь проявляется кубиками + текущее пятно ─────────────────────
-// Весь путь рывка (от старта до конца) не рисуется сразу. По мере полёта
-// серые кубики проявляются от точки старта до текущего положения бойца:
-// каждый кубик — зона, которую рывок уже проехал. Живое пятно попадания
-// кружком едет вместе с бойцом.
-function draw_hit_dash_cube(number x, number y, number side)
-    if side<=0
+// Весь путь рывка не рисуется сразу: по мере полёта серые кубики проявляются
+// от точки старта до текущего положения бойца — каждый кубик это зона,
+// которую рывок уже проехал (именно по ней режется урон). Живое пятно
+// попадания, залитое серым, едет вместе с бойцом.
+function draw_hit_dash_cube(number x, number y, number side, number env)
+    if side<=0||env<=0
         return
     end
-    number la=hitbox_line_alpha
-    rect(x-side/2,y-side/2,side,side,(((unsigned)(int)la)<<24)|((unsigned)(int)hitbox_dash_rgb))
+    rect(x-side/2,y-side/2,side,side,(((unsigned)(int)hb_line_alpha(env))<<24)|((unsigned)(int)hitbox_dash_rgb))
 end
 
-function draw_hit_dash_path(number sx, number sy, number dx, number dy, number cx, number cy, number pr)
+function draw_hit_dash_path(number sx, number sy, number dx, number dy, number cx, number cy, number pr, number env)
     // Сколько уже проехали вдоль направления рывка: от старта до текущего
     // положения (текущая точка всегда лежит на прямой рывка).
     number travel=(cx-sx)*dx+(cy-sy)*dy
@@ -117,10 +197,10 @@ function draw_hit_dash_path(number sx, number sy, number dx, number dy, number c
     end
     number off=0
     loop off<=travel
-        draw_hit_dash_cube(sx+dx*off,sy+dy*off,side)
+        draw_hit_dash_cube(sx+dx*off,sy+dy*off,side,env)
         off=off+step
     end
-    draw_hit_circle(cx,cy,pr,hitbox_dash_rgb)
+    draw_hit_circle_solid(cx,cy,pr,hitbox_dash_rgb,env)
 end
 
 function draw_hit_dash()
@@ -133,10 +213,11 @@ function draw_hit_dash()
         if game_state==ST_SOLO
             dpr=player.size*0.65+enemy.size*0.65+12
         end
-        draw_hit_dash_path(dash_x0,dash_y0,dash_dx,dash_dy,player.x,player.y,dpr)
+        draw_hit_dash_path(dash_x0,dash_y0,dash_dx,dash_dy,player.x,player.y,dpr,dash_box_a)
     end
     if game_state==ST_SOLO&&enemy_dash_active==1
-        draw_hit_dash_path(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,enemy.x,enemy.y,player.size*0.65+enemy.size*0.65+12)
+        number epr=player.size*0.65+enemy.size*0.65+12
+        draw_hit_dash_path(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,enemy.x,enemy.y,epr,edash_box_a)
     end
     if game_state!=ST_ONLINE
         return
@@ -151,7 +232,8 @@ function draw_hit_dash()
             number rx=arr_get(remote_dash,b+2), ry=arr_get(remote_dash,b+3)
             number rdx=arr_get(remote_dash,b+4), rdy=arr_get(remote_dash,b+5)
             number gone=azum_dash_speed*(azum_dash_time-arr_get(remote_dash,b+6))
-            draw_hit_dash_path(rx,ry,rdx,rdy,rx+rdx*gone,ry+rdy*gone,player.size*0.65+14)
+            number pr=player.size*0.65+14
+            draw_hit_dash_path(rx,ry,rdx,rdy,rx+rdx*gone,ry+rdy*gone,pr,arr_get(rdash_box_a,s))
         end
         s=s+1
     end
@@ -165,7 +247,7 @@ function draw_hit_turrets()
     number i=0
     loop i<turret_max
         if turret_alive(i)==1
-            draw_hit_circle(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb)
+            draw_hit_circle(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(turret_box_a,i))
         end
         i=i+1
     end
@@ -173,7 +255,7 @@ function draw_hit_turrets()
         i=0
         loop i<turret_max
             if enemy_turret_alive(i)==1
-                draw_hit_circle(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb)
+                draw_hit_circle(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(enemy_turret_box_a,i))
             end
             i=i+1
         end
@@ -191,7 +273,7 @@ function draw_hit_turrets()
             number o=b+1, k=0
             loop k<turret_max
                 if arr_get(remote_station,o)==1
-                    draw_hit_circle(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb)
+                    draw_hit_circle(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb,arr_get(rstation_box_a,s*turret_max+k))
                 end
                 o=o+5
                 k=k+1
@@ -202,12 +284,12 @@ function draw_hit_turrets()
 end
 
 // ── Вселенная: бьёт по всей арене, поэтому рамка по краям экрана ──────────
-function draw_hit_universe_frame()
+function draw_hit_universe_frame(number env)
     number w=7
-    draw_hit_line(0,0,screen_w,0,w,hitbox_universe_rgb)
-    draw_hit_line(0,screen_h,screen_w,screen_h,w,hitbox_universe_rgb)
-    draw_hit_line(0,0,0,screen_h,w,hitbox_universe_rgb)
-    draw_hit_line(screen_w,0,screen_w,screen_h,w,hitbox_universe_rgb)
+    draw_hit_line(0,0,screen_w,0,w,hitbox_universe_rgb,env)
+    draw_hit_line(0,screen_h,screen_w,screen_h,w,hitbox_universe_rgb,env)
+    draw_hit_line(0,0,0,screen_h,w,hitbox_universe_rgb,env)
+    draw_hit_line(screen_w,0,screen_w,screen_h,w,hitbox_universe_rgb,env)
 end
 
 function draw_hit_universe()
@@ -215,8 +297,8 @@ function draw_hit_universe()
         return
     end
     if universe_active==1
-        draw_hit_universe_frame()
-        draw_hit_circle(universe_x,universe_y,60,hitbox_universe_rgb)
+        draw_hit_universe_frame(universe_box_a)
+        draw_hit_circle(universe_x,universe_y,60,hitbox_universe_rgb,universe_box_a)
     end
     if game_state!=ST_ONLINE
         return
@@ -228,8 +310,8 @@ function draw_hit_universe()
     loop s<max_players
         number b=s*universe_fields
         if s!=net_slot()&&arr_get(remote_universe,b+1)==1
-            draw_hit_universe_frame()
-            draw_hit_circle(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),60,hitbox_universe_rgb)
+            draw_hit_universe_frame(arr_get(runiverse_box_a,s))
+            draw_hit_circle(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),60,hitbox_universe_rgb,arr_get(runiverse_box_a,s))
         end
         s=s+1
     end
@@ -248,4 +330,108 @@ function draw_ability_hitboxes()
     draw_hit_dash()
     draw_hit_turrets()
     draw_hit_universe()
+end
+
+// ── «Живые» альфы хитбоксов ──────────────────────────────────────────────
+// Вызывается каждый кадр из update_game и update_online: пока эффект активен,
+// альфа плавно набирается, после конца — плавно гаснет (рывок, снежинка и её
+// взрыв, вселенная и круги турелей — свои, врага и сетевых соперников).
+function tick_hitbox_fades()
+    if dash_active==1
+        dash_box_a=fade_up_a(dash_box_a,hitbox_fade_in)
+    else
+        dash_box_a=fade_down_a(dash_box_a,hitbox_fade_out)
+    end
+    if gift.active==1
+        snow_ball_a=fade_up_a(snow_ball_a,hitbox_fade_in)
+    else
+        snow_ball_a=fade_down_a(snow_ball_a,hitbox_fade_out)
+    end
+    if boom_t>0
+        snow_boom_a=fade_up_a(snow_boom_a,hitbox_fade_in)
+    else
+        snow_boom_a=fade_down_a(snow_boom_a,hitbox_fade_out)
+    end
+    if universe_active==1
+        universe_box_a=fade_up_a(universe_box_a,hitbox_fade_in)
+    else
+        universe_box_a=fade_down_a(universe_box_a,hitbox_fade_out)
+    end
+    number i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            arr_set(turret_box_a,i,fade_up_a(arr_get(turret_box_a,i),hitbox_fade_in))
+        else
+            arr_set(turret_box_a,i,fade_down_a(arr_get(turret_box_a,i),hitbox_fade_out))
+        end
+        i=i+1
+    end
+    if game_state==ST_SOLO
+        if enemy_dash_active==1
+            edash_box_a=fade_up_a(edash_box_a,hitbox_fade_in)
+        else
+            edash_box_a=fade_down_a(edash_box_a,hitbox_fade_out)
+        end
+        if enemy_gift.active==1
+            esnow_ball_a=fade_up_a(esnow_ball_a,hitbox_fade_in)
+        else
+            esnow_ball_a=fade_down_a(esnow_ball_a,hitbox_fade_out)
+        end
+        if enemy_boom_t>0
+            esnow_boom_a=fade_up_a(esnow_boom_a,hitbox_fade_in)
+        else
+            esnow_boom_a=fade_down_a(esnow_boom_a,hitbox_fade_out)
+        end
+        i=0
+        loop i<turret_max
+            if enemy_turret_alive(i)==1
+                arr_set(enemy_turret_box_a,i,fade_up_a(arr_get(enemy_turret_box_a,i),hitbox_fade_in))
+            else
+                arr_set(enemy_turret_box_a,i,fade_down_a(arr_get(enemy_turret_box_a,i),hitbox_fade_out))
+            end
+            i=i+1
+        end
+    end
+    if game_state!=ST_ONLINE
+        return
+    end
+    number s=0
+    loop s<max_players
+        if s!=net_slot()
+            number b=s*dash_fields
+            if arr_get(remote_dash,b+1)==1
+                arr_set(rdash_box_a,s,fade_up_a(arr_get(rdash_box_a,s),hitbox_fade_in))
+            else
+                arr_set(rdash_box_a,s,fade_down_a(arr_get(rdash_box_a,s),hitbox_fade_out))
+            end
+            b=s*snow_fields
+            if arr_get(remote_snow,b+1)==1
+                arr_set(rsnow_ball_a,s,fade_up_a(arr_get(rsnow_ball_a,s),hitbox_fade_in))
+            else
+                arr_set(rsnow_ball_a,s,fade_down_a(arr_get(rsnow_ball_a,s),hitbox_fade_out))
+            end
+            if arr_get(remote_snow,b+5)>0
+                arr_set(rsnow_boom_a,s,fade_up_a(arr_get(rsnow_boom_a,s),hitbox_fade_in))
+            else
+                arr_set(rsnow_boom_a,s,fade_down_a(arr_get(rsnow_boom_a,s),hitbox_fade_out))
+            end
+            b=s*universe_fields
+            if arr_get(remote_universe,b+1)==1
+                arr_set(runiverse_box_a,s,fade_up_a(arr_get(runiverse_box_a,s),hitbox_fade_in))
+            else
+                arr_set(runiverse_box_a,s,fade_down_a(arr_get(runiverse_box_a,s),hitbox_fade_out))
+            end
+            number k=0
+            loop k<turret_max
+                number stb=s*station_fields
+                if arr_get(remote_station,stb+1+k*5)==1
+                    arr_set(rstation_box_a,s*turret_max+k,fade_up_a(arr_get(rstation_box_a,s*turret_max+k),hitbox_fade_in))
+                else
+                    arr_set(rstation_box_a,s*turret_max+k,fade_down_a(arr_get(rstation_box_a,s*turret_max+k),hitbox_fade_out))
+                end
+                k=k+1
+            end
+        end
+        s=s+1
+    end
 end

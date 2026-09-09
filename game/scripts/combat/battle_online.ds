@@ -336,6 +336,7 @@ function update_online()
     tick_player_poison()
     tick_turrets()
     tick_universe()
+    tick_hitbox_fades()
     update_aim()
     if finished!=0
         return

@@ -70,9 +70,12 @@ function draw_poison()
         return
     end
     number half=enemy.size+14
-    number fill=(((unsigned)(int)af)<<24)|0x001E88E5
+    // Яд — зелёный (fill 0x00C853, ободок 0x69F0AE), чтобы не сливался с
+    // голубой заморозкой: враг может быть отравлен и заморожен одновременно,
+    // и два одинаково голубых круга выглядели как «двойная заморозка».
+    number fill=(((unsigned)(int)af)<<24)|0x0000C853
     number ar=floor(fa*0.7)
-    number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+    number rim=(((unsigned)(int)ar)<<24)|0x0069F0AE
     circle(enemy.x,enemy.y,half,fill)
     ring(enemy.x,enemy.y,half,2,rim)
 end
@@ -102,9 +105,10 @@ function draw_player_poison()
         return
     end
     number half=player.size+14
-    number fill=(((unsigned)(int)af)<<24)|0x001E88E5
+    // Яд — зелёный, заморозка — голубая: эффекты больше не сливаются.
+    number fill=(((unsigned)(int)af)<<24)|0x0000C853
     number ar=floor(ppoison_a*255*0.7)
-    number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
+    number rim=(((unsigned)(int)ar)<<24)|0x0069F0AE
     circle(player.x,player.y,half,fill)
     ring(player.x,player.y,half,2,rim)
 end

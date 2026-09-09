@@ -80,11 +80,20 @@ function reset_battle()
     dash_x0=0
     dash_y0=0
     dash_cd=0
+    // Плавность хитбоксов способностей: всё с нуля.
+    dash_box_a=0
+    snow_ball_a=0
+    snow_boom_a=0
+    universe_box_a=0
+    edash_box_a=0
+    esnow_ball_a=0
+    esnow_boom_a=0
     arr_clear(turret_x)
     arr_clear(turret_y)
     arr_clear(turret_hp)
     arr_clear(turret_maxhp)
     arr_clear(turret_spawn_t)
+    arr_clear(turret_box_a)
     number i=0
     loop i<turret_max
         arr_push(turret_x,0)
@@ -92,6 +101,7 @@ function reset_battle()
         arr_push(turret_hp,0)
         arr_push(turret_maxhp,0)
         arr_push(turret_spawn_t,0)
+        arr_push(turret_box_a,0)
         i=i+1
     end
     turret_heal_t=0
@@ -127,6 +137,11 @@ function reset_battle()
     arr_clear(remote_station)
     arr_clear(remote_universe)
     arr_clear(remote_dash)
+    arr_clear(rdash_box_a)
+    arr_clear(rsnow_ball_a)
+    arr_clear(rsnow_boom_a)
+    arr_clear(runiverse_box_a)
+    arr_clear(rstation_box_a)
     i=0
     loop i<max_players*remote_fields
         arr_push(remotes,0)
@@ -155,6 +170,19 @@ function reset_battle()
     i=0
     loop i<max_players*dash_fields
         arr_push(remote_dash,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players
+        arr_push(rdash_box_a,0)
+        arr_push(rsnow_ball_a,0)
+        arr_push(rsnow_boom_a,0)
+        arr_push(runiverse_box_a,0)
+        i=i+1
+    end
+    i=0
+    loop i<max_players*turret_max
+        arr_push(rstation_box_a,0)
         i=i+1
     end
     arr_clear(dust)

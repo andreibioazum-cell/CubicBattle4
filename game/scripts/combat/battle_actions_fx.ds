@@ -170,6 +170,7 @@ function tick_super_windup()
         gift.active=1
         gift.t=0
         gift.shot=gift.shot+1
+        gift.pierce=0
         if game_state==ST_ONLINE
             net_publish_snow(gift.x/screen_w,gift.y/screen_h,gift.dx,gift.dy,gift.shot)
         end
@@ -195,19 +196,12 @@ function update_gift()
             touched=1
         end
     else
+        // Снежинка пронзает турели врага-буКа: задевает их по разу за полёт
+        // (snow_chip_enemy_turrets) и летит дальше, до самого врага.
+        snow_chip_enemy_turrets()
         number hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
         if hd<enemy.size*0.65+24
             touched=1
-        end
-        // Снежинка взрывается и о турели врага.
-        number gti=0
-        loop gti<turret_max
-            if touched==0&&enemy_turret_alive(gti)==1
-                if dist(gift.x,gift.y,arr_get(enemy_turret_x,gti),arr_get(enemy_turret_y,gti))<turret_hit_r+20
-                    touched=1
-                end
-            end
-            gti=gti+1
         end
         if gift.t>super_range/super_speed
             touched=1
@@ -221,16 +215,8 @@ function update_gift()
     boom_y=gift.y
     boom_t=boom_time
     if game_state!=ST_ONLINE
-        // Взрыв ломает и турели врага в радиусе (у AoE нет щита).
-        number bei=0
-        loop bei<turret_max
-            if enemy_turret_alive(bei)==1
-                if dist(boom_x,boom_y,arr_get(enemy_turret_x,bei),arr_get(enemy_turret_y,bei))<=super_radius+turret_hit_r
-                    enemy_damage_turret(bei,santa_super_damage)
-                end
-            end
-            bei=bei+1
-        end
+        // Урон по врагу принимает щит из его турелей (enemy_apply_damage
+        // сам направляет его в турели бука), заморозка действует как раньше.
         if dist(boom_x,boom_y,enemy.x,enemy.y)<=super_radius&&enemy_revive_prot<=0
             freeze_enemy(santa_freeze_time_for(player_level),super_freeze_slow)
             enemy_apply_damage(santa_super_damage)

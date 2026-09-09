@@ -1,0 +1,155 @@
+// ══════════════════════════════════════════════════════════════════════════
+// battle_shield.ds — турель-щит бука и «пронзающие» снежинки.
+//
+// Турель бука защищает хозяина от ЛЮБОГО входящего урона, как обещает карточка
+// класса: урон сначала снимает HP ближайшей живой турели, и только если урон
+// больше её HP (или турелей не осталось) — остаток бьёт самого бука.
+// Снежинка Деда Мороза больше не останавливается о турель: она задевает
+// турель (снимает santa_super_damage) и летит дальше, до самого бойца — способности
+// «проходят» по врагу-буку, а его турель при этом работает щитом от урона.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Проверка бита pierce (турель уже пронзена этим полётом снежинки):
+// побитовых операций нет, бит достаётся делением на вес и проверкой чётности.
+function pierce_has(number mask, number bit)
+    number shifted=floor(mask/bit)
+    return shifted-floor(shifted*0.5)*2
+end
+
+// Ближайшая к игроку живая турель игрока: -1, если таких нет.
+function nearest_own_turret()
+    number best=-1, bd=0, i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            number d=dist(arr_get(turret_x,i),arr_get(turret_y,i),player.x,player.y)
+            if best==-1||d<bd
+                best=i
+                bd=d
+            end
+        end
+        i=i+1
+    end
+    return best
+end
+
+// Ближайшая к врагу живая турель врага: -1, если таких нет.
+function nearest_enemy_turret()
+    number best=-1, bd=0, i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==1
+            number d=dist(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),enemy.x,enemy.y)
+            if best==-1||d<bd
+                best=i
+                bd=d
+            end
+        end
+        i=i+1
+    end
+    return best
+end
+
+// Поглощение урона турелями игрока (бук): урон по очереди уходит в ближайшие
+// живые турели, разрушенная турель взрывается и уступает место следующей.
+// Возвращает урон, который не поместился в турели и бьёт самого бука.
+function player_shield_absorb(number dmg)
+    if player_class!=CLASS_EBUC
+        return dmg
+    end
+    if dmg<=0
+        return 0
+    end
+    number left=dmg
+    loop left>0
+        number best=nearest_own_turret()
+        if best<0
+            return left
+        end
+        number hp=arr_get(turret_hp,best)
+        number take=hp
+        if left<take
+            take=left
+        end
+        damage_turret(best,take)
+        left=left-take
+    end
+    return 0
+end
+
+// Поглощение урона турелями врага-буКа (соло). Возвращает остаток на врага.
+function enemy_shield_absorb(number dmg)
+    if enemy_class!=CLASS_EBUC
+        return dmg
+    end
+    if dmg<=0
+        return 0
+    end
+    number left=dmg
+    loop left>0
+        number best=nearest_enemy_turret()
+        if best<0
+            return left
+        end
+        number hp=arr_get(enemy_turret_hp,best)
+        number take=hp
+        if left<take
+            take=left
+        end
+        enemy_damage_turret(best,take)
+        left=left-take
+    end
+    return 0
+end
+
+// ── Пронзание снежинки ────────────────────────────────────────────────────
+// Снежинка игрока (соло): каждая турель врага, в которую она влетела,
+// получает урон один раз за полёт (бит в gift.pierce), сама снежинка летит дальше.
+function snow_chip_enemy_turrets()
+    if gift.active==0
+        return
+    end
+    number zone=turret_hit_r+20, i=0
+    loop i<turret_max
+        if enemy_turret_alive(i)==1
+            number bit=1
+            if i==1
+                bit=2
+            else if i==2
+                bit=4
+            end
+            if pierce_has(gift.pierce,bit)==0
+                if dist(gift.x,gift.y,arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i))<zone
+                    gift.pierce=gift.pierce+bit
+                    enemy_damage_turret(i,santa_super_damage)
+                    ds_log("snow pierced enemy turret %g",i)
+                end
+            end
+        end
+        i=i+1
+    end
+end
+
+// Снежинка врага (соло): задевает турели игрока на своём пути и летит дальше.
+function snow_chip_player_turrets()
+    if enemy_gift.active==0
+        return
+    end
+    number zone=turret_hit_r+20, i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            number bit=1
+            if i==1
+                bit=2
+            else if i==2
+                bit=4
+            end
+            if pierce_has(enemy_gift.pierce,bit)==0
+                if dist(enemy_gift.x,enemy_gift.y,arr_get(turret_x,i),arr_get(turret_y,i))<zone
+                    enemy_gift.pierce=enemy_gift.pierce+bit
+                    damage_turret(i,santa_super_damage)
+                    ds_log("enemy snow pierced turret %g",i)
+                end
+            end
+        end
+        i=i+1
+    end
+end
