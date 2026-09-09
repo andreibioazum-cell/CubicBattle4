@@ -19,8 +19,8 @@ end
 
 function update_event()
     event_mode=net_event()
-    // Ивент 3 «плиты и кубик» целиком про леденцы: пока конфеты отключены
-    // (candy_enabled==0), ивент не запускается вовсе — ни плит, ни кубика.
+    // Ивент 3 «плиты и Дед Мороз» целиком про леденцы: пока конфеты отключены
+    // (candy_enabled==0), ивент не запускается вовсе — ни плит, ни Деда Мороза.
     if event_mode==3&&candy_enabled==0
         event_mode=0
     end
@@ -33,7 +33,7 @@ function update_event()
     else
         disco_t=0
     end
-    // Ивент 3 «плиты и кубик»: своя машина состояний, см. модуль.
+    // Ивент 3 «плиты и Дед Мороз»: своя машина состояний, см. модуль.
     tick_plates_event()
 end
 
@@ -137,45 +137,6 @@ function draw_banner()
     text_scaled(txt,x,y,((((unsigned)(int)alpha)<<24)|col),sc)
 end
 
-function hash01(number i)
-    number v=sin(i*127.1+11.7)*43758.5453
-    return v-floor(v)
-end
-
-function frac01(number v)
-    return v-floor(v)
-end
-
-function draw_snow()
-    if event_mode!=2
-        return
-    end
-    number i=0
-    loop i<event_flakes
-        // Каждая снежинка живёт свой цикл: появляется в случайной точке,
-        // со случайным размером (не больше самой png-снежинки, 64px = scale 1)
-        // и, не двигаясь, постепенно уменьшается до нуля. Потом рождается
-        // заново в новом месте с новым размером.
-        number h1=hash01(i), h2=hash01(i+91)
-        number life=2.2+2.6*h1
-        number ph=frac01(event_t/life+h2)
-        number cyc=floor(event_t/life+h2)
-        number hx=hash01(i*7+cyc*131+1)
-        number hy=hash01(i*13+cyc*197+2)
-        number hs=hash01(i*29+cyc*57+3)
-        number hr=hash01(i*17+cyc*83+4)
-        number s0=0.3+0.7*hs
-        number s=s0*(1-ph)
-        if s>0.02
-            number xx=36+hx*(screen_w-72)
-            number yy=36+hy*(screen_h-72)
-            number hw=32*s
-            tex(xx-hw,yy-hw,SNOWFLAKE_TEX,hr*2*pi,s)
-        end
-        i=i+1
-    end
-end
-
 // Ник над персонажем: центрируем и по горизонтали, и по вертикали с учётом
 // реальных границ глифов, а не базовой линии — иначе надпись «улетает» выше
 // головы. Нижний край текста в 12px над верхушкой спрайта.
@@ -187,11 +148,11 @@ function draw_overhead_nick(string nick, number cx, number top_y, color col)
 end
 
 function draw_online()
-    draw_grass()
+    draw_arena_background()
     draw_disco()
     draw_field()
-    // Ивент «плиты и кубик»: плиты лежат на земле под бойцами, туда же —
-    // разбросанные кубиком леденцы (как пикапы в соло).
+    // Ивент «плиты и Дед Мороз»: плиты лежат на земле под бойцами, туда же —
+    // разбросанные Дедом Морозом леденцы (как пикапы в соло).
     draw_event_plates()
     draw_event_candies()
     draw_dust()
@@ -263,8 +224,8 @@ function draw_online()
         end
         i=i+1
     end
-    // Кубик ивента рисуется поверх бойцов: это центральный объект события.
-    draw_event_dice()
+    // Дед Мороз ивента рисуется поверх бойцов: это центральный объект события.
+    draw_event_santa()
     draw_player_freeze()
     draw_player_poison()
     draw_player_stun()

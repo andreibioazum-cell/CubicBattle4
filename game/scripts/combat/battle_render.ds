@@ -310,18 +310,6 @@ function draw_remote_body(number x, number y, number ang, number cls, number pun
     draw_fighter_body(x,y,ang,cls,punching,skin)
 end
 
-function draw_grass()
-    number y=0
-    loop y<screen_h
-        number x=0
-        loop x<screen_w
-            tex(x,y,GRASS,0,1)
-            x=x+256
-        end
-        y=y+256
-    end
-end
-
 function draw_field()
     rect(0,0,screen_w,screen_h,0x33000000)
 end
@@ -426,7 +414,7 @@ function draw_remote_dash()
 end
 
 function draw_game()
-    draw_grass()
+    draw_arena_background()
     draw_field()
     draw_dust()
     draw_player_shadow_layer()
@@ -444,6 +432,7 @@ function draw_game()
     draw_poison()
     draw_stun()
     draw_dash_streak()
+    draw_snow()
     number w=screen_w/4
     hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
     hud_bar(screen_w-w-20,20,w,28,enemy.hp,enemy.max_hp,0xE94560,1)
