@@ -3,11 +3,12 @@ include graphics
 // ══════════════════════════════════════════════════════════════════════════
 // battle_hitboxes.ds — хитбоксы всех способностей с уроном.
 //
-// Удары рисуются чёрным (draw_punch_box в battle_render.ds), а способности —
-// своими цветами: снежинка голубая, рывок оранжевый, турели и вселенная
-// зелёные. Всё прячется одним переключателем show_hitboxes из настроек.
-// Слой вызывается из draw_game/draw_online сразу после хитбоксов ударов,
-// поэтому лежит поверх тени, но никогда не закрывает самих бойцов.
+// Все хитбоксы (и удары, и способности) рисуются одним серым цветом, как
+// полосы удара (draw_punch_box в battle_render.ds): снежинка, рывок, турели
+// и вселенная больше не различаются по цвету. Всё прячется одним
+// переключателем show_hitboxes из настроек. Слой вызывается из
+// draw_game/draw_online сразу после хитбоксов ударов, поэтому лежит поверх
+// тени, но никогда не закрывает самих бойцов.
 // ══════════════════════════════════════════════════════════════════════════
 
 // Залитый круг + контур: заливка едва видна, контур читается чётко.
@@ -80,12 +81,46 @@ function draw_hit_snow()
     end
 end
 
-// ── Рывки: весь путь + текущее пятно попадания ────────────────────────────
+// ── Рывки: путь проявляется кубиками + текущее пятно ─────────────────────
+// Весь путь рывка (от старта до конца) не рисуется сразу. По мере полёта
+// серые кубики проявляются от точки старта до текущего положения бойца:
+// каждый кубик — зона, которую рывок уже проехал. Живое пятно попадания
+// кружком едет вместе с бойцом.
+function draw_hit_dash_cube(number x, number y, number side)
+    if side<=0
+        return
+    end
+    number la=hitbox_line_alpha
+    rect(x-side/2,y-side/2,side,side,(((unsigned)(int)la)<<24)|((unsigned)(int)hitbox_dash_rgb))
+end
+
 function draw_hit_dash_path(number sx, number sy, number dx, number dy, number cx, number cy, number pr)
+    // Сколько уже проехали вдоль направления рывка: от старта до текущего
+    // положения (текущая точка всегда лежит на прямой рывка).
+    number travel=(cx-sx)*dx+(cy-sy)*dy
+    if travel<0
+        travel=0
+    end
     number len=azum_dash_speed*azum_dash_time
-    draw_hit_line(sx,sy,sx+dx*len,sy+dy*len,pr*2,hitbox_dash_rgb)
+    if travel>len
+        travel=len
+    end
+    number step=pr*2
+    if step<=0
+        step=2
+    end
+    // Кубик чуть меньше шага — между кубиками остаётся зазор, и видно,
+    // что хитбокс «вырастает» отдельными кубиками, а не сплошной полосой.
+    number side=step*0.8
+    if side<=0
+        side=2
+    end
+    number off=0
+    loop off<=travel
+        draw_hit_dash_cube(sx+dx*off,sy+dy*off,side)
+        off=off+step
+    end
     draw_hit_circle(cx,cy,pr,hitbox_dash_rgb)
-    draw_hit_circle(sx,sy,10,hitbox_dash_rgb)
 end
 
 function draw_hit_dash()

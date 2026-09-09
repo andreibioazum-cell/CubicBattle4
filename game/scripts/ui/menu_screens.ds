@@ -188,9 +188,10 @@ function draw_levels()
 end
 
 // ── Экран скинов (пока только Азум) ───────────────────────────────────────
-// Карточка скина: превью, название и статус. Закрытый скин темнее на 25% —
-// и плашка, и текст, и само превью (locked_shade): превью закрытого зомби —
-// тёмно-зелёный силуэт его формы, открытый — настоящая текстура.
+// Карточка скина: превью, название и статус. Превью всегда рисует настоящую
+// текстуру скина (у зомби — zombie_azum.png, а не силуэт), закрытый скин
+// отличается только плашкой: фон карточки и текст темнеют на 25%
+// (locked_shade).
 function draw_skin_card(number skin)
     number x = skins_card_x(skin)
     number w = skin_card_w
@@ -204,13 +205,10 @@ function draw_skin_card(number skin)
     number sprite = 50 * scale
     number sx = x + (w - sprite) / 2
     if skin == SKIN_ZOMBIE
-        if locked == 1
-            tex_tint(sx, skin_preview_y(), zombie_idle_tex(), 0, scale, shade(zombie_tint, locked_shade))
-        else if zombie_tex_ok() == 1
-            tex(sx, skin_preview_y(), AZUM_ZOMBIE_TEX, 0, scale)
-        else
-            tex_tint(sx, skin_preview_y(), azum_idle_tex(), 0, scale, zombie_tint)
-        end
+        // Всегда показываем настоящую текстуру скина (tex_tint рисует силуэт,
+        // поэтому для превью не годится — из-за него зомби выглядел зелёной
+        // перекраской обычного куба). Закрытость передаёт затемнённая плашка.
+        tex(sx, skin_preview_y(), zombie_idle_tex(), 0, scale)
     else
         tex(sx, skin_preview_y(), azum_idle_tex(), 0, scale)
     end

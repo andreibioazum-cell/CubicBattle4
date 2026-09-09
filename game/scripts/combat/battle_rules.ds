@@ -1,15 +1,13 @@
 include graphics
 // Упрощённый бой без праймов, с человечным врагом и админкой
-// Пока azum.png не лежит в game/assets, Азум играет своей же зомби-текстурой:
-// зелёный куб обычного класса без «моей» текстуры выглядит хуже настоящего
-// Азума. Как только azum*.png появятся, флаг включится сам (engine.ds
-// выставляет его из png_load) и менять ничего не надо.
+// Пока azum.png не лежит в game/assets, Азум (игрок и враг) выглядит как
+// обычный куб — играет текстурами ordinary*.png. Скин «Зомби» ходит своими
+// zombie_azum*.png; если они не загрузились, скин откатывается на обычный
+// вид Азума. Как только azum*.png появятся в ассетах, Азум включит свою
+// текстуру сам (флаг azum_tex_ok выставляет engine.ds из png_load).
 function azum_idle_tex()
     if azum_tex_ok==1
         return AZUM_TEX
-    end
-    if azum_zombie_tex_ok==1
-        return AZUM_ZOMBIE_TEX
     end
     return ORDINARY_TEX
 end
@@ -17,15 +15,12 @@ function azum_punch_tex()
     if azum_tex_ok==1
         return AZUM_PUNCH_TEX
     end
-    if azum_zombie_punch_tex_ok==1
-        return AZUM_ZOMBIE_PUNCH_TEX
-    end
     return PUNCH_TEX
 end
 
 // Есть ли у скина «Зомби» обе свои текстуры (idle и удар). Ходит по текстурам
 // только тогда, когда и то, и другое загрузились: половинчатый скин, где
-// удар — чужой силуэт, выглядит хуже зелёного силуэта целиком.
+// удар — чужой силуэт, выглядит хуже, чем откат на обычный вид целиком.
 function zombie_tex_ok()
     if azum_zombie_tex_ok==1&&azum_zombie_punch_tex_ok==1
         return 1
@@ -33,9 +28,8 @@ function zombie_tex_ok()
     return 0
 end
 
-// Спрайт скина «Зомби»: zombie_azum*.png. Если они не
-// загрузились, возвращается обычная текстура Азума — её назовут зелёным
-// силуэтом (zombie_tint) в draw_fighter_body.
+// Спрайт скина «Зомби»: zombie_azum*.png. Если они не загрузились,
+// возвращается обычная текстура Азума (обычный куб).
 function zombie_idle_tex()
     if azum_zombie_tex_ok==1
         return AZUM_ZOMBIE_TEX
