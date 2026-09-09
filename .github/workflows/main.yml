@@ -1,148 +1,176 @@
-name: 🤖 Android Builds
+name: Build DS Game (Android APK)
+
 on:
-  workflow_call:
-    secrets:
-      SERVICE_ACCOUNT_KEY:
-        required: true
+  push:
   workflow_dispatch:
 
-env:
-  SCONS_CACHE_LIMIT: 4096
-  SCONS_FLAGS: >-
-    target=editor
-    dev_build=no
-    production=yes
-    scu_build=yes
-    scu_limit=64
-    optimize=none
-    debug_symbols=no
-    separate_debug_symbols=no
-    lto=none
-    progress=no
-    verbose=no
-    warnings=moderate
-    werror=no
-    tests=no
-    fast_unsafe=yes
-    vsproj=no
-    use_static_cpp=no
-    disable_exceptions=yes
-    deprecated=no
-    minizip=yes
-    brotli=no
-    vulkan=yes
-    opengl3=yes
-    use_volk=yes
-    module_text_server_fb_enabled=yes
-    swappy=no
-    generate_android_binaries=yes
-    builtin_msdfgen=yes
-    builtin_harfbuzz=no
-    builtin_icu4c=no
-    builtin_graphite=no
-    builtin_brotli=no
-    num_jobs=4
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build-android:
-    runs-on: ubuntu-24.04
-    name: Editor (SCU, arm64, ultra-fast)
-    timeout-minutes: 15
+    name: Build Android APK (Android 8-15 arm64+arm32+x86_64)
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
+      - uses: actions/checkout@v4
+
+      - name: Check package name consistency
+        run: |
+          grep -q 'package="com.cb4"' game/AndroidManifest.xml
+          grep -q 'android:versionCode="[0-9]\+"' game/AndroidManifest.xml
+          grep -q 'android:versionName="[^"]\+"' game/AndroidManifest.xml
+          grep -q 'android:name="com.cb4.GameActivity"' game/AndroidManifest.xml
+          grep -q '^package com.cb4;' game/java/com/dimscript/gamedemo/GameActivity.java
+          grep -q 'Java_com_cb4_GameActivity_nativeReplaceText' runtime.c
+          grep -q 'Java_com_cb4_GameActivity_nativeSubmitText' runtime.c
+          grep -q 'Java_com_cb4_GameActivity_nativeKeyboardHidden' runtime.c
+          ! grep -rn 'dimscript\.gamedemo\|Java_com_dimscript\|com\.CB4\|Java_com_CB4' \
+            game/AndroidManifest.xml game/java runtime.c
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
-      - name: Restore ccache
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ccache-android-editor-fast|${{ runner.os }}|${{ hashFiles('**/SCsub', '**/SCU*', 'SConstruct', 'methods.py') }}
-          restore-keys: ccache-android-editor-fast|${{ runner.os }}|
-        continue-on-error: true
-      - name: Restore Godot build cache
-        uses: ./.github/actions/godot-cache-restore
-        with:
-          cache-name: android-editor-fast
-        continue-on-error: true
-      - name: Setup Python and SCons
-        uses: ./.github/actions/godot-deps
-      - name: Restore Godot build cache (post-deps)
-        uses: ./.github/actions/godot-cache-restore
-        with:
-          cache-name: android-editor-fast
-        continue-on-error: true
-      - name: Compilation
-        uses: ./.github/actions/godot-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
-          platform: android
-          target: editor
-      - name: Make gradlew executable
-        shell: bash
-        run: chmod +x platform/android/java/gradlew
-      - name: Generate APK via Gradle (explicit)
-        shell: bash
+          java-version: '17'
+
+      - name: Restore signing key from Secrets
+        env:
+          CB4_P12_BASE64: ${{ secrets.CB4_P12_BASE64 }}
+          CB4_P12_PASSWORD: ${{ secrets.CB4_P12_PASSWORD }}
         run: |
-          cd platform/android/java
-          ./gradlew --version
-          ./gradlew generateGodotEditor --info --stacktrace
+          set -euo pipefail
 
-          # NOTE: Diagnostics below must never fail the job.
-          # `run:` blocks execute under `bash -eo pipefail`, so a command piped into
-          # `head` kills the step once `head` stops reading: the producer dies on the
-          # broken pipe and pipefail propagates its status (`ls` -> exit code 2).
-          # Redirect to a file first, then truncate the *file* (no pipe involved).
-          echo "=== APK files ==="
-          find . -name "*.apk" > "$RUNNER_TEMP/apks.txt" 2>&1 || true
-          head -n 100 "$RUNNER_TEMP/apks.txt" || true
+          if [[ -z "$CB4_P12_BASE64" || -z "$CB4_P12_PASSWORD" ]]; then
+            echo "::error::Add CB4_P12_BASE64 and CB4_P12_PASSWORD repository secrets."
+            exit 1
+          fi
 
-          echo "=== editor/build tree (first 500 lines) ==="
-          ls -R editor/build > "$RUNNER_TEMP/editor_build.txt" 2>&1 || true
-          head -n 500 "$RUNNER_TEMP/editor_build.txt" || true
+          umask 077
+          KEY_DIR="$RUNNER_TEMP/cb4-signing"
+          mkdir -p "$KEY_DIR"
+          chmod 700 "$KEY_DIR"
 
-          echo "=== app/build tree (first 200 lines) ==="
-          ls -R app/build > "$RUNNER_TEMP/app_build.txt" 2>&1 || true
-          head -n 200 "$RUNNER_TEMP/app_build.txt" || true
-      - name: List outputs
-        shell: bash
-        run: |
-          echo "=== lib (tools/debug) ==="
-          ls -lh platform/android/java/lib/libs/tools/debug/arm64-v8a/ || true
-          echo "=== find apk/aab/so ==="
-          find platform/android -type f \( -name "*.apk" -o -name "*.aab" -o -name "*.so" \) > "$RUNNER_TEMP/android_outputs.txt" 2>&1 || true
-          head -n 100 "$RUNNER_TEMP/android_outputs.txt" || true
-          echo "=== bin ==="
-          ls -lh bin/ || true
-          ls -lh bin/android_editor_builds/ || true
-          echo "=== editor/build ==="
-          ls -R platform/android/java/editor/build > "$RUNNER_TEMP/editor_build_full.txt" 2>&1 || true
-          head -n 300 "$RUNNER_TEMP/editor_build_full.txt" || true
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+          if ! printf '%s' "$CB4_P12_BASE64" \
+            | tr -d '[:space:]' \
+            | base64 --decode > "$KEY_DIR/CB4.p12"; then
+            echo "::error::CB4_P12_BASE64 is not valid Base64."
+            exit 1
+          fi
+
+          chmod 600 "$KEY_DIR/CB4.p12"
+
+          if ! keytool -list -storetype PKCS12 \
+            -keystore "$KEY_DIR/CB4.p12" \
+            -storepass:env CB4_P12_PASSWORD > /dev/null; then
+            echo "::error::Cannot open the P12. Check the key and its password."
+            exit 1
+          fi
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;34.0.0"
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
         with:
-          name: android-editor-apk
-          path: |
-            platform/android/java/editor/build/outputs/apk/**/*.apk
-            platform/android/java/editor/build/outputs/bundle/**/*.aab
-            bin/android_editor_builds/**/*.apk
-            bin/android_editor_builds/**/*.aab
-            bin/*.apk
-            bin/*.aab
+          ndk-version: r25c
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate game.c
+        run: python3 gen.py
+
+      - name: Stage assets
+        run: python3 stage_assets.py game/assets staging/assets
+
+      - name: Build native libraries
+        env:
+          NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GLUE="$NDK_ROOT/sources/android/native_app_glue"
+
+          mkdir -p staging/lib/arm64-v8a staging/lib/armeabi-v7a staging/lib/x86_64
+
+          "$TOOLCHAIN/aarch64-linux-android26-clang" -O3 -s -fPIC -shared \
+            game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
+            -I. -I"$GLUE" -landroid -llog -lm \
+            -o staging/lib/arm64-v8a/libds_game.so
+
+          "$TOOLCHAIN/armv7a-linux-androideabi26-clang" -O3 -s -fPIC -shared \
+            game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
+            -I. -I"$GLUE" -landroid -llog -lm \
+            -o staging/lib/armeabi-v7a/libds_game.so
+
+          "$TOOLCHAIN/x86_64-linux-android26-clang" -O3 -s -fPIC -shared \
+            game/game.c runtime.c main.c "$GLUE/android_native_app_glue.c" \
+            -I. -I"$GLUE" -landroid -llog -lm \
+            -o staging/lib/x86_64/libds_game.so
+
+      - name: Package and align APK
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+
+          VERSION_CODE="$(sed -n 's/.*android:versionCode="\([0-9]\+\)".*/\1/p' game/AndroidManifest.xml | head -n1)"
+          VERSION_NAME="$(sed -n 's/.*android:versionName="\([^"]\+\)".*/\1/p' game/AndroidManifest.xml | head -n1)"
+          echo "versionCode=$VERSION_CODE versionName=$VERSION_NAME"
+
+          "$BT/aapt" package -f \
+            -M game/AndroidManifest.xml \
+            -S game/res \
+            -I "$ANDROID_HOME/platforms/android-35/android.jar" \
+            --version-code "$VERSION_CODE" \
+            --version-name "$VERSION_NAME" \
+            -F unsigned.apk ./staging/
+
+          "$BT/zipalign" -v 4 unsigned.apk aligned.apk
+
+      - name: Sign APK
+        env:
+          CB4_P12_PASSWORD: ${{ secrets.CB4_P12_PASSWORD }}
+          CB4_KEY_ALIAS: ${{ secrets.CB4_KEY_ALIAS }}
+          CB4_KEY_PASSWORD: ${{ secrets.CB4_KEY_PASSWORD || secrets.CB4_P12_PASSWORD }}
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+
+          SIGN_ARGS=(
+            --ks "$RUNNER_TEMP/cb4-signing/CB4.p12"
+            --ks-type PKCS12
+            --ks-pass env:CB4_P12_PASSWORD
+            --key-pass env:CB4_KEY_PASSWORD
+          )
+
+          if [[ -n "$CB4_KEY_ALIAS" ]]; then
+            SIGN_ARGS+=(--ks-key-alias "$CB4_KEY_ALIAS")
+          fi
+
+          "$BT/apksigner" sign "${SIGN_ARGS[@]}" \
+            --out Game.apk aligned.apk
+
+      - name: Verify APK metadata and signature
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          "$BT/aapt" dump badging Game.apk | head -n 5
+          "$BT/aapt" dump badging Game.apk | grep -q "versionCode='[0-9]\+'" \
+            || { echo "::error::APK has no versionCode - RuStore will reject it."; exit 1; }
+          "$BT/apksigner" verify --verbose --print-certs Game.apk
+
+      - name: Delete temporary signing key
+        if: ${{ always() }}
+        run: rm -rf -- "${RUNNER_TEMP:?}/cb4-signing"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Game-APK-Android8-15-arm64-arm32-x86_64
+          path: Game.apk
           if-no-files-found: error
-      - name: Save ccache
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ccache-android-editor-fast|${{ runner.os }}|${{ github.sha }}
-        continue-on-error: true
-      - name: Save Godot build cache
-        uses: ./.github/actions/godot-cache-save
-        with:
-          cache-name: android-editor-fast
-        continue-on-error: true
