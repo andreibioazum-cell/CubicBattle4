@@ -51,7 +51,18 @@ function enemy_reset_class_state()
 end
 
 function enemy_pick_random_class()
-    enemy_class=rand()%4
+    // Классы врага выпадают с разным весом: Азум и буК — по 20%, остальные
+    // 60% делят Обычный (30%) и Дед Мороз (30%).
+    number roll=rand()%100
+    if roll<20
+        enemy_class=CLASS_AZUM
+    else if roll<40
+        enemy_class=CLASS_EBUC
+    else if roll<70
+        enemy_class=CLASS_SANTA
+    else
+        enemy_class=CLASS_ORDINARY
+    end
     enemy_level=0
     enemy_revived=0
     enemy_revive_prot=0
@@ -297,7 +308,7 @@ function tick_enemy_dash()
         if enemy_dash_hit==0&&turret_alive(dti)==1
             if dist(enemy.x,enemy.y,arr_get(turret_x,dti),arr_get(turret_y,dti))<=enemy.size*0.65+turret_hit_r+14
                 enemy_dash_hit=1
-                damage_turret(dti,azum_dash_damage)
+                damage_turret(dti,enemy_dash_damage)
                 // Турель-щит мстит за рывок, как за удар.
                 enemy_apply_damage(turret_counter_damage)
             end
@@ -313,7 +324,7 @@ function tick_enemy_dash()
     number dpr=player.size*0.65+enemy.size*0.65+12
     if dist(enemy.x,enemy.y,player.x,player.y)<=dpr
         enemy_dash_hit=1
-        take_damage(azum_dash_damage)
+        take_damage(enemy_dash_damage)
         stun_player(azum_dash_stun)
         ds_log("enemy dash hit player")
         if player.hp<=0

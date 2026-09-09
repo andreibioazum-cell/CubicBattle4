@@ -195,7 +195,7 @@ end
 function draw_punch_box(number x, number y, number dx, number dy, number reach, number width, number alpha)
     number aa=floor(clamp(alpha,0,1)*aim_max_alpha)
     if aa>0
-        line(x,y,x+dx*reach,y+dy*reach,width,aa*0x1000000)
+        line(x,y,x+dx*reach,y+dy*reach,width,(((unsigned)(int)aa)<<24)|((unsigned)(int)hitbox_gray_rgb))
     end
 end
 
@@ -203,7 +203,7 @@ end
 // рисуются одинаково, поэтому спрайт, размер и цвет тени не могут разъехаться.
 // skin — номер скина бойца (у игрока azum_skin, у соперника net_player_skin).
 // Скин «Зомби» ходит своими текстурами (zombie_azum*.png); если они не
-// загрузились, остаётся зелёный силуэт (zombie_tint).
+// загрузились, остаётся обычная текстура Азума (обычный куб).
 function fighter_sprite(number cls, number punching, number skin)
     if skin_is_active(cls,skin)==1
         if punching==1
@@ -226,16 +226,6 @@ function draw_fighter_body(number x, number y, number ang, number cls, number pu
     number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
     number sx=x-hw, sy=y-hw
     string t=fighter_sprite(cls,punching,skin)
-    if skin_is_active(cls,skin)==1
-        if zombie_tex_ok()==1
-            // Текстура зомби уже зелёная — тон не нужен.
-            tex(sx,sy,t,sprite_a(ang),ps)
-            return
-        end
-        // Закрытый скин не должен превращать обычного Азума в зелёный силуэт.
-        tex(sx,sy,t,sprite_a(ang),ps)
-        return
-    end
     tex(sx,sy,t,sprite_a(ang),ps)
 end
 

@@ -147,13 +147,13 @@ number max_level=3, level_base_cost=30, level_cost_step=10
 // ── Скины ─────────────────────────────────────────────────────────────────
 // Скины есть только у Азума: 0 — обычный, 1 — «Зомби». «Зомби» выдаёт
 // достижение «Легенды не умирают...» (25 возрождений за Азума). У зомби свои
-// текстуры (zombie_azum*.png); если их не загрузить, скин откатывается на
-// зелёный силуэт (zombie_tint).
+// текстуры (zombie_azum*.png); если они не загрузились, скин играет обычной
+// текстурой Азума (см. zombie_idle_tex в combat/battle_rules.ds).
 number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2
 // Выставляются из png_load() при старте: есть ли у Азума своя текстура и
 // свои текстуры скина «Зомби» (idle и удар).
 number azum_tex_ok=0, azum_zombie_tex_ok=0, azum_zombie_punch_tex_ok=0
-number azum_skin=SKIN_NORMAL, zombie_tint=0xFF66BB33
+number azum_skin=SKIN_NORMAL
 
 // ── Бой: фон и погода ─────────────────────────────────────────────────────
 // snow.png в game/assets — плитка 256×256 вместо травы при включённых
@@ -163,11 +163,14 @@ number arena_tile_size=256, snow_tex_ok=0, snow_t=0
 // ── Хитбоксы: показ в бою ─────────────────────────────────────────────────
 // show_hitboxes — видны ли хитбоксы ударов и способностей (1 — да, 0 — нет).
 // Переключается в настройках, действует сразу в соло и в онлайне.
-// Удары рисуются чёрным (draw_punch_box), способности — своими цветами:
-// снежинка голубая, рывок оранжевый, турели и вселенная зелёные.
+// Все хитбоксы — ударов и способностей — рисуются одним серым цветом
+// (как полосы удара), чтобы зоны читались одинаково и не спорили с
+// цветами скиллов: снежинка, рывок, турели и вселенная больше не
+// различаются по цвету.
 number show_hitboxes=1
-number hitbox_snow_rgb=0x004FC3F7, hitbox_dash_rgb=0x00FF9800
-number hitbox_turret_rgb=0x0000E676, hitbox_universe_rgb=0x0076FF03
+number hitbox_gray_rgb=0x00808080
+number hitbox_snow_rgb=hitbox_gray_rgb, hitbox_dash_rgb=hitbox_gray_rgb
+number hitbox_turret_rgb=hitbox_gray_rgb, hitbox_universe_rgb=hitbox_gray_rgb
 number hitbox_fill_alpha=36, hitbox_line_alpha=170
 
 // ── Бой: игрок ────────────────────────────────────────────────────────────
@@ -207,10 +210,12 @@ number enemy_human_speed_var=0.22, enemy_human_dodge_fail=0.25
 // буК ставит турели-щиты. Обычный класс играет как раньше, без ульты.
 // Кулдауны врага свои (не зависят от кнопок игрока), замах перед снежинкой
 // и турелью телеграфит атаку (враг замирает и доворачивается на игрока).
-number enemy_santa_cd_time=4.0, enemy_dash_cd_time=6.0, enemy_station_cd_time=6.0
+number enemy_santa_cd_time=4.0, enemy_dash_cd_time=9.0, enemy_station_cd_time=6.0
 number enemy_super_windup_time=0.25, enemy_santa_range=340
 number enemy_dash_min_range=90, enemy_dash_max_range=420
-number enemy_revive_prot_time=1.2, enemy_first_super_min=2.0, enemy_first_super_max=4.0
+// Рывок врага-Азума слабее игроковского: урон 3 HP (у игрока azum_dash_damage=7)
+// и перезарядка 9 c (у игрока azum_dash_cd=5.5).
+number enemy_dash_damage=3, enemy_revive_prot_time=1.2, enemy_first_super_min=2.0, enemy_first_super_max=4.0
 
 // ── Бой: Дед Мороз, яд и снежинка ─────────────────────────────────────────
 number santa_damage=0.25, santa_poison_time=2.4, santa_poison_tick_interval=0.6, santa_poison_dps=1.0
@@ -242,9 +247,10 @@ number turret_counter_damage=0.5
 // нанося урон и оглушая противника. Во время рывка можно поворачиваться
 // джойстиком, но направление рывка не меняется (задаётся в момент старта).
 // Дальность сохраняется прежней: 850 * 0.45 = 225 * 1.70.
-// Рывок заметно медленнее, а попадание ощутимее.
-number azum_dash_cd=7.0, azum_dash_time=1.70, azum_dash_speed=225
-number azum_dash_damage=5, azum_dash_stun=1.8, dash_hit_r=34
+// Рывок игрока усилен: урон 7 HP (раньше 5) и перезарядка 5.5 c (раньше 7).
+// Урон врага-Азума считается отдельно (enemy_dash_damage ниже).
+number azum_dash_cd=5.5, azum_dash_time=1.70, azum_dash_speed=225
+number azum_dash_damage=7, azum_dash_stun=1.8, dash_hit_r=34
 
 // ── Эффекты ───────────────────────────────────────────────────────────────
 // Непрозрачность тени ~19% (48/255): вдвое слабее прежних 0x60.

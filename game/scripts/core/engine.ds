@@ -101,12 +101,14 @@ function load_textures()
     end
     png_load(ORDINARY_TEX)
     png_load(PUNCH_TEX)
-    // azum_tex_ok — есть ли своя текстура у Азума: пока файла нет в ассетах,
-    // бой играет силуэтом обычного класса (см. azum_idle_tex в combat/battle_rules.ds).
+    // azum_tex_ok — есть ли своя текстура у Азума: пока azum.png нет в
+    // ассетах, Азум (игрок и враг) выглядит обычным кубом (см. azum_idle_tex
+    // в combat/battle_rules.ds).
     azum_tex_ok = png_load(AZUM_TEX)
     png_load(AZUM_PUNCH_TEX)
     // Скину «Зомби» — своя пара текстур; если файл не загрузился, скин
-    // откатится на зелёный силуэт (см. zombie_tex_ok в combat/battle_rules.ds).
+    // откатывается на обычную текстуру Азума (см. zombie_tex_ok
+    // в combat/battle_rules.ds).
     azum_zombie_tex_ok = png_load(AZUM_ZOMBIE_TEX)
     azum_zombie_punch_tex_ok = png_load(AZUM_ZOMBIE_PUNCH_TEX)
     png_load(SANTA_TEX)
