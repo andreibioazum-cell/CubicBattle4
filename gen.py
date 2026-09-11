@@ -25,17 +25,24 @@ def find_ds_files(directory):
         "ui/menu_screens.ds",      # отрисовка экранов меню
         "ui/menu_input.ds",        # переходы и обработка нажатий меню
         "ui/mods.ds",              # экран модов (импорт и удаление)
-        "combat/battle_rules.ds",  # классы, урон, турель и сброс боя
+        "combat/battle_rules.ds",  # данные классов: текстуры, HP, урон, яд
+        "combat/battle_turrets.ds", # турели-деспенсеры бука
+        "combat/battle_hitscan.ds", # геометрия попаданий удара и рывка
+        "combat/battle_damage.ds", # урон, лечение, оглушение, возрождение
         "combat/battle_setup.ds",  # запуск боя, спавн и движение игрока
         "combat/battle_movement.ds", # прицеливание и движение бота
-        "combat/battle_ai.ds",     # решения и атаки бота, статусы
+        "combat/battle_ai.ds",     # решения и атаки бота
+        "combat/battle_status.ds", # заморозка, оглушение и яд
         "combat/battle_enemy_class.ds", # случайный класс врага и его ульты
+        "combat/battle_enemy_dash.ds", # рывок врага и рывок игрока в соло
         "combat/battle_enemy_turrets.ds", # турели-щиты врага-буКа
         "combat/battle_shield.ds", # щит турелей бука и пронзание снежинок
         "combat/battle_abilities.ds", # способности и основной update боя
         "combat/battle_online.ds", # сетевые снимки и завершение матча
-        "combat/battle_actions_fx.ds", # атаки и эффекты способностей
+        "combat/battle_actions_fx.ds", # запуск атак и способности
+        "combat/battle_super_render.ds", # рисунок турелей, луча и вселенной
         "combat/battle_hitboxes.ds", # хитбоксы способностей с уроном
+        "combat/battle_hitbox_fades.ds", # плавные альфы этих хитбоксов
         "combat/battle_render.ds", # поле, бойцы и интерфейс боя
         "combat/battle_event_plates.ds", # ивент «плиты и Дед Мороз»
         "combat/battle_events_input.ds", # события, баннеры и ввод

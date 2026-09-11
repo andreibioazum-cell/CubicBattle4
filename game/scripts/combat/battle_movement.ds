@@ -98,8 +98,13 @@ function enemy_in_punch()
 end
 
 function update_aim()
+    // Полоса удара появляется и пропадает плавно — как хитбоксы способностей
+    // (hitbox_fade_in/hitbox_fade_out): резких вспышек зоны урона нет.
     if punch_left>0&&super_windup<=0&&finished==0
-        aim_a=1
+        aim_a=aim_a+dt/aim_fade_in
+        if aim_a>1
+            aim_a=1
+        end
     else
         aim_a=aim_a-dt/aim_fade_out
         if aim_a<0

@@ -141,7 +141,7 @@ double net_player_class(double s) { (void)s; return 0; }
 double net_player_level(double s) { (void)s; return 0; }
 
 /* Draw capture: remember every primitive call. */
-typedef struct { char kind; float x, y, w, h, r; uint32_t color; } DrawCall;
+typedef struct { char kind; float x, y, w, h, r, t; uint32_t color; } DrawCall;
 static DrawCall calls[2048];
 static int call_count;
 static void record(char kind, float x, float y, float w, float h, uint32_t color) {
@@ -154,7 +154,10 @@ static void record(char kind, float x, float y, float w, float h, uint32_t color
 }
 void circle(float x, float y, float r, uint32_t c) { record('c', x, y, r, 0, c); }
 void ring(float x, float y, float r, float t, uint32_t c) { record('r', x, y, r, t, c); }
-void line(float x1, float y1, float x2, float y2, float t, uint32_t c) { record('l', x1, y1, x2, y2, c); (void)t; }
+void line(float x1, float y1, float x2, float y2, float t, uint32_t c) {
+    record('l', x1, y1, x2, y2, c);
+    calls[call_count - 1].t = t;   /* толщина полосы — она и есть ширина зоны */
+}
 void rect(float x, float y, float w, float h, uint32_t c) { record('q', x, y, w, h, c); }
 
 static int count_kind_color(char kind, uint32_t color) {
@@ -385,14 +388,45 @@ static void test_hitbox_drawing(void) {
     ds_fn_draw_ability_hitboxes();
     assert(count_kind_color('c', (70u << 24) | gray) >= 1);
     gift->active = 0; boom_t = 0;
-    /* Рывок: серые кубики по проеханному пути + залитое пятно. */
+    /* Рывок: зона урона рисуется как полоса удара (та же альфа aim_max_alpha)
+     * плюс плотная цепочка кубиков по проеханному пути. Серого круга под
+     * бойцом больше нет — зона рывка это отрезок, а не пятно под кубиком. */
     dash_active = 1; dash_box_a = 1;
     dash_x0 = 300; dash_y0 = 400; dash_dx = 1; dash_dy = 0;
     player->x = 700; player->y = 400;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('q', line_c) >= 5);  /* кубики пути */
-    assert(count_kind_color('c', solid) >= 1);   /* живое пятно залито */
+    uint32_t aim_c = (102u << 24) | gray;        /* aim_max_alpha=102 */
+    double pr = ds_fn_dash_hit_radius_solo();    /* тот же радиус, что и урон */
+    int cubes = count_kind_color('q', aim_c);
+    double want_step = pr * dash_hitbox_step;
+    double travel = azum_dash_speed * azum_dash_time;   /* 382.5 из 400 пути */
+    /* Кубиков больше, чем шагов: они ставятся каждые dash_hitbox_step радиусов. */
+    assert(cubes >= (int)(travel / want_step));
+    assert(cubes >= 15);
+    /* Полоса зоны — от старта до текущего положения, шириной в диаметр зоны. */
+    int zone = count_kind_color('l', aim_c);
+    assert(zone >= 1);
+    int zi = -1;
+    for (int i = 0; i < call_count; i++)
+        if (calls[i].kind == 'l' && calls[i].color == aim_c) { zi = i; break; }
+    near(calls[zi].x, 300); near(calls[zi].y, 400);
+    near(calls[zi].w, 300 + travel);
+    near(calls[zi].t, pr * dash_hitbox_zone_scale);
+    /* Ни одного залитого круга рывка: пятно под бойцом убрано. */
+    assert(count_kind_color('c', aim_c) == 0);
+    assert(count_kind_color('c', solid) == 0);
+    /* Рывок бота в соло рисуется тем же радиусом, которым он бьёт. */
+    dash_active = 0;
+    enemy_dash_active = 1; edash_box_a = 1;
+    enemy_dash_x0 = 1100; enemy_dash_y0 = 400; enemy_dash_dx = -1; enemy_dash_dy = 0;
+    enemy->x = 800; enemy->y = 400;
+    call_count = 0;
+    ds_fn_draw_ability_hitboxes();
+    assert(count_kind_color('l', aim_c) >= 1);
+    assert(count_kind_color('q', aim_c) >= 10);
+    assert(count_kind_color('c', aim_c) == 0);
+    enemy_dash_active = 0;
     /* Турель: контурный круг своего радиуса. */
     dash_active = 0;
     own_turret(0, 500, 460, 10);

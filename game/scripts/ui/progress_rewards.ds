@@ -120,6 +120,33 @@ function progress_from_storage()
     check_achievements()
 end
 
+// ── Настройки: язык, хитбоксы и моды ──────────────────────────────────────
+// Всё, что игрок меняет в настройках, хранится так же, как прогресс: на
+// устройстве (settings.dat, его ведёт net.c) и в профиле облака. Читаются
+// настройки при старте одним вызовом, пишутся сразу при изменении — поэтому
+// язык, хитбоксы и список модов переживают перезапуск игры.
+function settings_from_storage()
+    language = net_load_language()
+    show_hitboxes = net_load_hitboxes()
+    mods_count = net_load_mod_count()
+    mod_1 = net_load_mod(0)
+    mod_2 = net_load_mod(1)
+    mod_3 = net_load_mod(2)
+    mod_4 = net_load_mod(3)
+    mod_5 = net_load_mod(4)
+    mod_6 = net_load_mod(5)
+end
+
+// Язык и хитбоксы: устройство + облако одним вызовом нативной функции.
+function save_settings()
+    net_save_settings(language, show_hitboxes)
+end
+
+// Список модов: шесть слотов уходят целиком, пустые хвосты не сохраняются.
+function save_mods()
+    net_save_mods(mods_count, mod_1, mod_2, mod_3, mod_4, mod_5, mod_6)
+end
+
 // ── Моды ──────────────────────────────────────────────────────────────────
 // Установленные моды живут в шести строковых слотах (mod_1..mod_6 из
 // core/config.ds): строковых массивов в DimScript нет. Слоты всегда идут
@@ -176,6 +203,7 @@ function mod_import(string name)
     mods_count = mods_count + 1
     mods_msg_kind = 3
     mods_msg_t = msg_time
+    save_mods()
     return 1
 end
 
@@ -193,6 +221,7 @@ function mod_delete(number idx)
     mods_count = mods_count - 1
     mods_msg_kind = 4
     mods_msg_t = msg_time
+    save_mods()
 end
 
 function mods_msg_text()
