@@ -51,6 +51,17 @@ void arr_free(DSArray* a);
 double clamp(double v, double lo, double hi);
 double lerp(double a, double b, double t);
 double dist(double x1, double y1, double x2, double y2);
+/* Математика для скриптов (реализация в native/runtime/core.inc): минимум,
+ * максимум, модуль, округление до целого, знак, остаток от деления и отбрасывание
+ * дробной части. В DimScript они пишутся без префикса ds_: min, max, abs, round,
+ * sign, mod, trunc (см. BUILTINS в ds_compiler.py и LANGUAGE.md). */
+double ds_min(double a, double b);
+double ds_max(double a, double b);
+double ds_abs(double v);
+double ds_round(double v);
+double ds_sign(double v);
+double ds_mod(double a, double b);
+double ds_trunc(double v);
 double str_len(const char *s);
 int str_eq(const char *a, const char *b);
 int str_contains(const char *hay, const char *needle);

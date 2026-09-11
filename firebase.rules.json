@@ -54,6 +54,10 @@
         "azum_skin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
         "ach_flags": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 255" },
         "ach_revives": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" },
+        "lang": { ".validate": "newData.isNumber() && (newData.val() == 0 || newData.val() == 1)" },
+        "hitboxes": { ".validate": "newData.isNumber() && (newData.val() == 0 || newData.val() == 1)" },
+        "mods_n": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6" },
+        "mods": { ".validate": "newData.isString() && newData.val().length <= 400" },
         "$other": { ".validate": false }
       }
     },

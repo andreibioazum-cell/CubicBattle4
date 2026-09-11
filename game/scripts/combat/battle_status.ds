@@ -1,0 +1,82 @@
+include graphics
+
+// ══════════════════════════════════════════════════════════════════════════
+// battle_status.ds — состояния бойцов: заморозка, оглушение и яд
+//
+// Тики заморозки (снежинка Деда Мороза), оглушения (рывок Азума) и яда
+// (посох Деда Мороза) — у игрока и у врага. Решения и атаки бота —
+// в combat/battle_ai.ds.
+//
+// ══════════════════════════════════════════════════════════════════════════
+
+function tick_freeze()
+    if player_freeze>0
+        player_freeze=player_freeze-dt
+        if player_freeze<0
+            player_freeze=0
+        end
+    end
+    if player_freeze>0
+        pfreeze_a=pfreeze_a+dt/freeze_fade_in
+    else
+        pfreeze_a=pfreeze_a-dt/freeze_fade_out
+    end
+    if pfreeze_a<0
+        pfreeze_a=0
+    end
+    if pfreeze_a>1
+        pfreeze_a=1
+    end
+end
+
+function tick_player_stun()
+    if player_stun>0
+        player_stun=player_stun-dt
+        if player_stun<0
+            player_stun=0
+        end
+    end
+    if player_stun>0
+        pstun_a=pstun_a+dt/freeze_fade_in
+        if pstun_a>1
+            pstun_a=1
+        end
+    else
+        pstun_a=pstun_a-dt/freeze_fade_out
+        if pstun_a<0
+            pstun_a=0
+        end
+    end
+end
+
+function tick_player_poison()
+    if player_poison>0
+        if player_poison_tick<=0
+            player_poison_tick=santa_poison_tick_interval
+        end
+        player_poison=player_poison-dt
+        player_poison_tick=player_poison_tick-dt
+        if player_poison_tick<=0
+            take_damage(player_poison_damage)
+            player_poison=0
+            player_poison_tick=0
+            player_poison_damage=0
+        end
+        if player_poison<=0
+            player_poison=0
+            player_poison_tick=0
+            player_poison_damage=0
+        end
+    end
+    if player_poison>0
+        ppoison_a=ppoison_a+dt/freeze_fade_in
+    else
+        ppoison_a=ppoison_a-dt/freeze_fade_out
+    end
+    if ppoison_a<0
+        ppoison_a=0
+    end
+    if ppoison_a>1
+        ppoison_a=1
+    end
+end

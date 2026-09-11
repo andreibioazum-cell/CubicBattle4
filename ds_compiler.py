@@ -71,6 +71,8 @@ BUILTINS = frozenset({
     'net_save_progress', 'net_save_progress_all', 'net_load_achievement_flags',
     'net_save_achievement_flags', 'net_has_achievement_flag',
     'net_mark_achievement_flag', 'net_load_azum_revives', 'net_save_azum_revives',
+    'net_load_language', 'net_load_hitboxes', 'net_load_mod_count',
+    'net_load_mod', 'net_save_settings', 'net_save_mods',
     'keyboard_show',
     'keyboard_hide', 'keyboard_get_text', 'keyboard_get_raw', 'keyboard_clear',
     'keyboard_enter_pressed', 'keyboard_type', 'keyboard_visible', 'str_len',
@@ -79,7 +81,22 @@ BUILTINS = frozenset({
     'ds_log', 'console_count', 'console_line', 'console_type',
     'console_clear', 'arr_new', 'arr_push', 'arr_get', 'arr_set', 'arr_len',
     'arr_clear', 'clamp', 'lerp', 'dist',
+    # Математика для скриптов. В C у этих имён префикс ds_ (см. FUNCTION_MAP и
+    # native/runtime/core.inc), чтобы не спорить с libc: abs(), round() и т.п.
+    # уже есть в stdlib с другими сигнатурами.
+    'min', 'max', 'abs', 'round', 'sign', 'mod', 'trunc',
 })
+
+# Имена скрипта -> имена в C. Пусто = имя совпадает.
+FUNCTION_MAP = {
+    'min': 'ds_min',
+    'max': 'ds_max',
+    'abs': 'ds_abs',
+    'round': 'ds_round',
+    'sign': 'ds_sign',
+    'mod': 'ds_mod',
+    'trunc': 'ds_trunc',
+}
 
 ENGINE_VARS = {
     'screen_w': 'num',
@@ -91,6 +108,7 @@ ENGINE_VARS = {
 
 STR_BUILTINS = frozenset({
     'console_line',
+    'net_load_mod',
     'keyboard_get_text',
     'keyboard_get_raw',
     'net_chat_text',
@@ -116,6 +134,43 @@ _FUNC_RE = re.compile(r'^function\s+(' + _NAME + r')(?:\s*(.*))?$')
 _NUM_RE = re.compile(r'^(?:[-+]?\d+(?:\.\d+)?|0[xX][0-9a-fA-F]+)$')
 _CALL_RE = re.compile(r'^(' + _NAME + r')(?:\s+(.*))?$')
 _LHS_RE = re.compile(r'^(' + _NAME + r')(?:\.(' + _NAME + r'))?$')
+# for <переменная> = <от> to <до> [step <шаг>] — русские слова-синонимы тоже
+# принимаются, чтобы цикл можно было писать и по-русски.
+_FOR_RE = re.compile(
+    r'^for\s+(' + _NAME + r')\s*=\s*(.+?)\s+(?:to|до)\s+(.+?)'
+    r'(?:\s+(?:step|шаг)\s+(.+))?$', re.IGNORECASE)
+_COMPOUND_OPS = ('+=', '-=', '*=', '/=')
+
+
+def num_value(text):
+    """Числовое значение литерала или None, если это не просто число.
+
+    Принимает и десятичные, и шестнадцатеричные записи (0xFF00FF), потому что
+    цвета в скриптах пишутся именно так.
+    """
+    text = text.strip()
+    if not _NUM_RE.match(text):
+        return None
+    try:
+        # У float() нет системы счисления, поэтому 0x... разбираем через int().
+        return float(int(text, 16)) if text[:2].lower() == '0x' else float(text)
+    except ValueError:
+        return None
+
+
+def find_compound(line):
+    """Позиция составного оператора (+=, -=, *=, /=) вне строк и скобок.
+
+    Ищется раньше обычного '=': иначе 'hp += 5' разрезалось бы по '=' и левая
+    часть 'hp +' тихо пропадала.
+    """
+    depth, quoted = scan(line)
+    for i, c in enumerate(line):
+        if quoted[i] or depth[i] or i + 1 >= len(line):
+            continue
+        if line[i + 1] == '=' and c in '+-*/':
+            return i
+    return -1
 
 
 def strip_comment(line):
@@ -136,6 +191,10 @@ def strip_comment(line):
             in_str = True
             out.append(c)
         elif c == '/' and i + 1 < len(line) and line[i + 1] == '/':
+            break
+        elif c == '#':
+            # Альтернативный маркер комментария: '#' привычнее, чем '//'
+            # (вне строковых литералов — внутри строк '#' остаётся символом).
             break
         else:
             out.append(c)
@@ -169,6 +228,25 @@ def scan(text):
             lvl = max(0, lvl - 1)
         depth[i] = lvl
     return depth, quoted
+
+
+def open_parens(text):
+    """Сколько '(' остались незакрытыми (вне строковых литералов).
+
+    Нужно для склейки переносов: вызов, разбитый на несколько строк, компилятор
+    раньше принимал по частям и МОЛЧА терял — так из game.c пропало
+    сохранение прогресса (net_save_progress_all на восемь строк).
+    """
+    _, quoted = scan(text)
+    balance = 0
+    for i, c in enumerate(text):
+        if quoted[i]:
+            continue
+        if c == '(':
+            balance += 1
+        elif c == ')':
+            balance -= 1
+    return balance
 
 
 def split_top(text, sep):
@@ -259,16 +337,27 @@ class DimScriptCompiler:
 
     def _load(self, paths):
         for p in paths:
+            pending = ''
             try:
                 with open(p, 'r', encoding='utf-8-sig') as f:
                     for raw in f:
                         line = strip_comment(raw).strip()
                         if not line:
                             continue
+                        # Перенос вызова: пока скобки не закрыты, строка ещё не
+                        # закончилась — следующая физическая строка продолжает её.
+                        if pending:
+                            line = pending + ' ' + line
+                        if open_parens(line) > 0:
+                            pending = line
+                            continue
+                        pending = ''
                         self.lines.extend(q for q in map(str.strip, split_top(line, ';')) if q)
             except OSError as e:
                 self._error(f"cannot read '{p}': {e}")
                 return False
+            if pending:
+                self._error(f"unfinished call in '{p}' (unclosed parenthesis): {pending}")
         return True
 
     def _decl_list(self, line):
@@ -418,9 +507,9 @@ class DimScriptCompiler:
                 if depth == 0:
                     return body, i + 1
                 depth -= 1
-            elif line.startswith('if ') or line.startswith('loop '):
+            elif line.startswith(('if ', 'loop ', 'while ', 'for ')):
                 depth += 1
-            elif line == 'else' or line.startswith('else if '):
+            elif line == 'else' or line.startswith(('else if ', 'elif ')):
                 if depth == 0:
                     self._error(f"{what}: 'else' without 'if'")
                     return body, i + 1
@@ -482,7 +571,7 @@ class DimScriptCompiler:
         return ENGINE_VARS.get(expr, 'num')
 
     def expr(self, e):
-        e = e.strip()
+        e = self._logic(e)
         if e == 'true':
             return '1'
         if e == 'false':
@@ -495,6 +584,19 @@ class DimScriptCompiler:
             return out
         return self._fields(e)
 
+    def _logic(self, e):
+        """Слова-операторы: and / or / not -> && / || / !.
+
+        Так условие читается как обычный текст: 'if alive and hp <= 0'. Старый
+        синтаксис с '&&' продолжает работать — замена применяется только вне
+        строковых литералов, поэтому строки вида "and" не затрагиваются.
+        """
+        e = e.strip()
+        e = sub_unquoted(e, re.compile(r'\band\b'), '&&')
+        e = sub_unquoted(e, re.compile(r'\bor\b'), '||')
+        e = sub_unquoted(e, re.compile(r'\bnot\b\s*'), '!')
+        return e
+
     def _fields(self, e):
         names = [n for n in self.vars if self.vars[n][0] in self.objects] + [
             n for n, t in self.scope.items() if t in self.objects
@@ -504,16 +606,24 @@ class DimScriptCompiler:
         return self._calls(e)
 
     def _calls(self, e):
-        if not self.functions:
+        if not self.functions and not FUNCTION_MAP:
             return e
         _, quoted = scan(e)
         out = []
         start = 0
         for m in re.finditer(r'\b(' + _NAME + r')\s*\(', e):
-            if quoted[m.start()] or m.group(1) not in self.functions:
+            if quoted[m.start()]:
                 continue
-            out.append(e[start:m.start()])
-            out.append('ds_fn_' + m.group(1) + '(')
+            name = m.group(1)
+            if name in self.functions:
+                out.append(e[start:m.start()])
+                out.append('ds_fn_' + name + '(')
+            elif name in FUNCTION_MAP:
+                # min/max/abs/... в C называются ds_min/ds_max/ds_abs/...
+                out.append(e[start:m.start()])
+                out.append(FUNCTION_MAP[name] + '(')
+            else:
+                continue
             start = m.end()
         out.append(e[start:])
         return ''.join(out)
@@ -534,21 +644,43 @@ class DimScriptCompiler:
             if not self.blocks:
                 self._error("unexpected 'end'")
                 return
-            self.blocks.pop()
+            _header, footer = self.blocks.pop()
             self.indent -= 1
+            if footer:
+                self._out(footer)
             self._out('}')
             return
         if line.startswith('if '):
             self._open_block(f'if ({self.expr(strip_kw(line[3:].strip(), "then"))})')
             return
-        if line.startswith('loop '):
-            self._open_block(f'while ({self.expr(strip_kw(line[5:].strip(), "do"))})')
+        if line.startswith('loop ') or line.startswith('while '):
+            cond = line.split(' ', 1)[1].strip()
+            self._open_block(f'while ({self.expr(strip_kw(cond, "do"))})')
             return
-        if line == 'else' or line.startswith('else if '):
+        if line.startswith('for '):
+            self._open_for(line)
+            return
+        if line in ('break', 'continue'):
+            # Выйти из цикла / перейти к следующему шагу. Имеют смысл только
+            # внутри loop/while/for — снаружи это ошибка, а не тихий пропуск.
+            if not any(h.startswith('while (') for h, _f in self.blocks):
+                self._error(f"'{line}' outside of a loop: {line}")
+                return
+            self._out(line + ';')
+            return
+        if line == 'else' or line.startswith(('else if ', 'elif ')):
             if not self.blocks:
                 self._error("'else' without 'if'")
                 return
-            header = 'else' if line == 'else' else f'else if ({self.expr(line[8:])})'
+            if line == 'else':
+                header = 'else'
+            else:
+                # 'else if <условие>' -> условие начинается с 8-го символа,
+                # 'elif <условие>' -> с 5-го. Одинаковое split(' ', 1) здесь
+                # ломало обычное 'else if': остаток 'if i == 1' уезжал внутрь
+                # скобок и game.c не собирался.
+                rest = line[8:] if line.startswith('else if ') else line[5:]
+                header = 'else if (' + self.expr(strip_kw(rest.strip(), 'then')) + ')'
             self.indent -= 1
             self._out(f'}} {header} {{')
             self.indent += 1
@@ -571,10 +703,43 @@ class DimScriptCompiler:
             return
         self._emit_statement(line)
 
-    def _open_block(self, header):
-        self.blocks.append(header)
+    def _open_block(self, header, footer=None):
+        """Начать блок. footer — строка, которая дописывается перед '}'.
+
+        Footer нужен циклу for: приращение счётчика ставится в самый конец тела,
+        чтобы 'continue' не пропускал его (иначе цикл не двигался бы вперёд).
+        """
+        self.blocks.append((header, footer))
         self._out(header + ' {')
         self.indent += 1
+
+    def _open_for(self, line):
+        """for i = 1 to 10 [step 2] -> объявление + while + приращение в конце.
+
+        Если обе границы — числа и первая больше второй, цикл идёт вниз:
+        сравнение становится >=, а шаг по умолчанию -1.
+        """
+        m = _FOR_RE.match(line)
+        if not m:
+            self._error(
+                "invalid for-loop, expected 'for <var> = <from> to <to> [step <n>]': " + line)
+            return
+        var, lo, hi, step = m.group(1), m.group(2), m.group(3), (m.group(4) or '').strip()
+        nums = [num_value(lo), num_value(hi)]
+        down = all(v is not None for v in nums) and nums[0] > nums[1]
+        op = '>=' if down else '<='
+        step_expr = self.expr(step) if step else ('-1' if down else '1')
+        if var in self.scope or var in self.vars:
+            self._out(f'{self._fields(var)} = {self.expr(lo)};')
+            ctype = None
+        else:
+            self.scope[var] = 'num'
+            ctype = self.c_type('num')
+            self._out(f'{ctype} {var} = {self.expr(lo)};')
+        hi_expr = self.expr(hi)
+        self._open_block(
+            f'while ({var} {op} {hi_expr})',
+            footer=f'{self._fields(var)} += {step_expr};')
 
     def _split_call(self, line):
         m = re.match(r'^(' + _NAME + r')\s*\((.*)\)\s*$', line, re.S)
@@ -586,12 +751,20 @@ class DimScriptCompiler:
         return None, None
 
     def _emit_statement(self, line):
+        ci = find_compound(line)
+        if ci >= 0:
+            self._emit_compound(line[:ci].strip(), line[ci], line[ci + 2:].strip())
+            return
         i = find_assign(line)
         if i >= 0:
             self._emit_assign(line[:i].strip(), line[i + 1:].strip())
             return
         name, rest = self._split_call(line)
         if not name:
+            # Раньше такая строка просто исчезала из game.c без единого слова:
+            # так пропало сохранение прогресса. Теперь это предупреждение, а
+            # тесты компиляции требуют нуля предупреждений.
+            self._warn(f"unrecognized statement, dropped: {line}")
             return
         args = split_top(rest, ',') if rest else []
         if name in self.functions:
@@ -603,7 +776,7 @@ class DimScriptCompiler:
                 return
             fn = f'ds_fn_{name}'
         elif name in BUILTINS:
-            fn = name
+            fn = FUNCTION_MAP.get(name, name)
         else:
             # Ни функция скрипта, ни нативная функция: в C такой вызов
             # перенести некуда. Раньше строка просто исчезала из game.c.
@@ -613,6 +786,19 @@ class DimScriptCompiler:
             )
             return
         self._out(f'{fn}({", ".join(self.expr(a) for a in args)});')
+
+    def _emit_compound(self, lhs, op, rhs):
+        """hp += 5  ->  hp = hp + 5;  (в C остаётся тот же '+=')."""
+        m = _LHS_RE.match(lhs)
+        if not m:
+            self._warn(f"cannot assign to '{lhs}': {lhs} {op}= {rhs}")
+            return
+        name = m.group(1)
+        if name not in self.scope and name not in self.vars and name not in ENGINE_VARS:
+            self._warn(f"unknown variable in '{lhs} {op}= {rhs}'")
+            return
+        target = self._fields(lhs)
+        self._out(f'{target} {op}= {self.expr(rhs)};')
 
     def _emit_assign(self, lhs, rhs):
         m = _LHS_RE.match(lhs)

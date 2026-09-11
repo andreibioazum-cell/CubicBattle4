@@ -25,7 +25,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ds_compiler import BUILTINS, ENGINE_VARS, STR_BUILTINS, strip_comment, split_top  # noqa: E402
+from ds_compiler import (  # noqa: E402
+    BUILTINS, ENGINE_VARS, STR_BUILTINS, open_parens, split_top, strip_comment,
+)
 from gen import find_ds_files  # noqa: E402
 
 _NAME = r'[A-Za-z_]\w*'
@@ -235,7 +237,7 @@ class Lint:
                 if fields and m.group(2) not in fields:
                     self.error(where, f"функция '{fn}': у объекта '{holder}' нет поля '{m.group(2)}'")
 
-    def check_call(self, where, fn, name, args_text, scope):
+    def check_call(self, where, fn, name, args_text, scope, check_args=True):
         if name in self.functions:
             args = split_top(args_text, ',') if args_text.strip() else []
             want = len(self.functions[name])
@@ -244,6 +246,11 @@ class Lint:
                                   f"аргумент(а), передано {len(args)}")
         elif name not in BUILTINS and name not in _RAW_C_WORDS and name not in _NATIVE_MATH:
             self.error(where, f"функция '{fn}': неизвестный вызов '{name}'")
+        # Аргументы вызова-инструкции тоже проверяются: раньше опечатка в имени
+        # внутри скобок не ловилась вообще (ни у своих, ни у нативных функций).
+        if check_args and args_text.strip():
+            for arg in split_top(args_text, ','):
+                self.check_expression(where, fn, arg, scope)
 
 
 def find_assign(line):
@@ -272,13 +279,26 @@ def lint_dir(scripts):
     """Проверяет каталог со скриптами, возвращает список строк-ошибок."""
     sources = find_ds_files(scripts)
     modules = {}
+    unfinished = []
     for path in sources:
         lines = []
+        pending = ''
         with open(path, encoding='utf-8-sig') as fh:
             for raw in fh:
                 line = strip_comment(raw).strip()
-                if line:
-                    lines.extend(q for q in (p.strip() for p in split_top(line, ';')) if q)
+                if not line:
+                    continue
+                # Перенос вызова на несколько строк склеивается так же, как это
+                # делает компилятор: иначе линтер проверяет обрывки вызова.
+                if pending:
+                    line = pending + ' ' + line
+                if open_parens(line) > 0:
+                    pending = line
+                    continue
+                pending = ''
+                lines.extend(q for q in (p.strip() for p in split_top(line, ';')) if q)
+        if pending:
+            unfinished.append(f"{path}: незакрытая скобка: {pending}")
         modules[path] = lines
 
     lint = Lint()
@@ -297,7 +317,7 @@ def lint_dir(scripts):
         for kind, name, params, body in iter_blocks(lines):
             lint.check_function(path, name, params, body)
 
-    return lint.errors
+    return unfinished + lint.errors
 
 
 def main():

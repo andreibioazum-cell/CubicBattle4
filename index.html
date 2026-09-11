@@ -181,7 +181,10 @@ const USER_REQ  = ["nick","cups","candies","cls","azum","santa","level","levels"
  * после удаления батл-пасса) — иначе панель предлагает удалить живой прогресс. */
 const USER_OPT  = ["ordinary_level","ordinary_levels","azum_level","azum_levels",
                    "santa_level","santa_levels","ebuc","ebuc_level","ebuc_levels",
-                   "bp","azum_skin"];
+                   "bp","azum_skin","ach_flags","ach_revives",
+                   /* Настройки игрока (settings_storage.inc): язык, хитбоксы и
+                      список модов. mods — строка "a.zip|b.zip", остальные числа. */
+                   "lang","hitboxes","mods_n","mods"];
 const ROOM_OK   = ["players","chat"];
 const SLOT_REQ  = ["uid","nick","x","y","angle","hp","alive","seq"];
 const SLOT_OPT  = ["px","py","pdx","pdy","punch","sx","sy","sdx","sdy","snow",
@@ -504,6 +507,10 @@ function analyze(){
         add("unknown_field", `users/${nick}/${f}`, "поле не используется игрой", JSON.stringify(v).slice(0,80));
       } else if(f === "nick" && typeof v === "string" && spamHit(v)){
         add("unknown_field", `users/${nick}/nick`, "в нике спам-текст", String(v).slice(0,80));
+      } else if(f === "mods"){
+        /* Список модов — единственная строка в профиле ("a.zip|b.zip"). */
+        if(typeof v !== "string" || v.length > 400)
+          add("unknown_field", `users/${nick}/mods`, "список модов не строка или длиннее 400", JSON.stringify(v).slice(0,60));
       } else if(f !== "nick" && !num(v, 0, 10000000)){
         add("unknown_field", `users/${nick}/${f}`, "значение не число / вне диапазона (накрутка)", JSON.stringify(v).slice(0,60));
       }

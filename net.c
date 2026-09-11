@@ -1,7 +1,11 @@
 /* Network implementation kept in one translation unit; parts are grouped by role. */
 #include "native/net/state_storage.inc"
+#include "native/net/progress_file.inc"
 #include "native/net/auth_json.inc"
+#include "native/net/settings_storage.inc"
+#include "native/net/profile_apply.inc"
 #include "native/net/auth_session.inc"
+#include "native/net/net_auth_flow.inc"
 #include "native/net/moderation.inc"
 #include "native/net/room_control.inc"
 #include "native/net/room_sync.inc"

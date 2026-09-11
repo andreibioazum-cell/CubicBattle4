@@ -107,8 +107,10 @@ function login_do()
     keyboard_clear()
     // Прогресс этого ника читаем одним вызовом: та же функция, что и при
     // старте игры (engine.init), поэтому расхождений между «зашёл» и
-    // «перезапустил» больше не бывает.
+    // «перезапустил» больше не бывает. Настройки — следом: на новом
+    // устройстве они как раз пришли из облака вместе с профилем.
     progress_from_storage()
+    settings_from_storage()
     start_transition(login_after)
 end
 
@@ -249,12 +251,16 @@ function touch_settings(number x, number y)
         start_transition(ST_LOBBY)
         return
     end
+    // Язык и хитбоксы сохраняются сразу же: settings.dat на устройстве и
+    // профиль в облаке (net_save_settings делает и то, и другое).
     if hit_menu_row(x, y, 1) == 1
         language = 0
+        save_settings()
         return
     end
     if hit_menu_row(x, y, 2) == 1
         language = 1
+        save_settings()
         return
     end
     if hit_menu_row(x, y, 3) == 1
@@ -263,6 +269,7 @@ function touch_settings(number x, number y)
     end
     if hit_menu_row(x, y, 4) == 1
         show_hitboxes = 1 - show_hitboxes
+        save_settings()
     end
 end
 
