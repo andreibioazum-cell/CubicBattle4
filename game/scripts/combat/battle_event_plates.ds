@@ -2,8 +2,15 @@ include graphics
 number plates_phase=0, plates_t=0, plates_prev_mode=0
 number plate_a_lit=0, plate_b_lit=0
 number plates_santa_t=0, plates_santa_angle=0, plates_throw_cd=0, plates_next_candy=0
+number plates_thrown=0, plates_santa_out=0, plates_santa_gone=0
+number plates_collect_t=0, plates_vanish_cd=0, plates_dirty=0, plates_save_cd=0
 array plates_candies=arr_new()
 function plates_event_reset()
+    if plates_dirty==1
+        plates_dirty=0
+        save_progress()
+    end
+    plates_save_cd=0
     plates_phase=0
     plates_t=0
     plate_a_lit=0
@@ -12,6 +19,12 @@ function plates_event_reset()
     plates_santa_angle=0
     plates_throw_cd=0
     plates_next_candy=0
+    plates_thrown=0
+    plates_santa_out=0
+    plates_santa_gone=0
+    plates_collect_t=0
+    plates_vanish_cd=0
+    plates_lock_me=0
     arr_clear(plates_candies)
     number i=0
     loop i<plates_candy_max*plates_candy_fields
@@ -31,8 +44,14 @@ end
 function plate_by()
     return screen_h*plates_yy
 end
-function fighter_on_plate(number px, number py)
+function me_on_plate(number px, number py)
     if player.hp>0&&dist(player.x,player.y,px,py)<plates_stand_r
+        return 1
+    end
+    return 0
+end
+function fighter_on_plate(number px, number py)
+    if me_on_plate(px,py)==1
         return 1
     end
     number s=0
@@ -48,6 +67,9 @@ function fighter_on_plate(number px, number py)
     return 0
 end
 function plates_throw_candy()
+    if plates_next_candy>=plates_candy_max
+        return
+    end
     number b=plates_next_candy*plates_candy_fields
     number m=candy_margin+16
     number tx=m+rand()%(int)(screen_w-2*m)
@@ -58,10 +80,19 @@ function plates_throw_candy()
     arr_set(plates_candies,b+3,screen_h/2)
     arr_set(plates_candies,b+4,tx)
     arr_set(plates_candies,b+5,ty)
+    arr_set(plates_candies,b+6,0)
     plates_next_candy=plates_next_candy+1
-    if plates_next_candy>=plates_candy_max
-        plates_next_candy=0
+    plates_thrown=plates_thrown+1
+end
+function plates_candies_left()
+    number n=0, i=0
+    loop i<plates_candy_max
+        if arr_get(plates_candies,i*plates_candy_fields)==1
+            n=n+1
+        end
+        i=i+1
     end
+    return n
 end
 function plates_collect_candies()
     number i=0
@@ -69,11 +100,18 @@ function plates_collect_candies()
         number b=i*plates_candy_fields
         if arr_get(plates_candies,b)==1
             number t=arr_get(plates_candies,b+1)
+            number v=arr_get(plates_candies,b+6)
             if t<plates_candy_flight
                 arr_set(plates_candies,b+1,t+dt)
+            else if v>0
+                v=v+dt
+                arr_set(plates_candies,b+6,v)
+                if v>=plates_candy_vanish_time
+                    arr_set(plates_candies,b,0)
+                end
             else if dist(arr_get(plates_candies,b+4),arr_get(plates_candies,b+5),player.x,player.y)<player.size*0.65+18
                 candies=candies+candy_give
-                save_progress()
+                plates_dirty=1
                 arr_set(plates_candies,b,0)
                 ds_log("event candy picked -> %g",candies)
             end
@@ -81,15 +119,62 @@ function plates_collect_candies()
         i=i+1
     end
 end
+function plates_start_vanish_one()
+    number i=0
+    loop i<plates_candy_max
+        number b=i*plates_candy_fields
+        if arr_get(plates_candies,b)==1&&arr_get(plates_candies,b+6)<=0&&arr_get(plates_candies,b+1)>=plates_candy_flight
+            arr_set(plates_candies,b+6,0.0001)
+            return 1
+        end
+        i=i+1
+    end
+    return 0
+end
+function plates_time_left()
+    number left=plates_collect_time-plates_collect_t
+    if left<0
+        left=0
+    end
+    return left
+end
 function tick_event_santa()
     plates_santa_t=plates_santa_t+dt
-    plates_santa_angle=plates_santa_angle+dt*(plates_santa_spin+0.9*sin(plates_santa_t*1.7))
-    plates_throw_cd=plates_throw_cd-dt
-    if plates_throw_cd<=0
-        plates_throw_cd=plates_throw_interval
-        plates_throw_candy()
+    plates_collect_t=plates_collect_t+dt
+    if plates_santa_gone==0
+        plates_santa_angle=plates_santa_angle+dt*(plates_santa_spin+0.9*sin(plates_santa_t*1.7))
+        if plates_thrown<plates_candy_total
+            plates_throw_cd=plates_throw_cd-dt
+            if plates_throw_cd<=0
+                plates_throw_cd=plates_throw_interval
+                plates_throw_candy()
+            end
+        else
+            plates_santa_out=plates_santa_out+dt
+            if plates_santa_out>=plates_santa_out_time
+                plates_santa_gone=1
+                ds_log("plates event: Santa left")
+            end
+        end
+    end
+    if plates_collect_t>=plates_collect_time
+        plates_vanish_cd=plates_vanish_cd-dt
+        if plates_vanish_cd<=0
+            plates_vanish_cd=plates_candy_vanish_stagger
+            plates_start_vanish_one()
+        end
     end
     plates_collect_candies()
+    plates_save_cd=plates_save_cd-dt
+    if plates_dirty==1&&plates_save_cd<=0
+        plates_dirty=0
+        plates_save_cd=plates_save_interval
+        save_progress()
+    end
+    if plates_santa_gone==1&&plates_candies_left()==0
+        ds_log("plates event: round over, plates are back")
+        plates_event_reset()
+    end
 end
 function tick_plates_event()
     if event_mode!=3
@@ -109,15 +194,32 @@ function tick_plates_event()
         if plate_a_lit==1&&plate_b_lit==1
             plates_phase=1
             plates_t=0
-            ds_log("plates event: both plates occupied, shrinking")
+            if me_on_plate(plate_ax(),plate_ay())==1||me_on_plate(plate_bx(),plate_by())==1
+                plates_lock_me=1
+                drop_joy()
+            end
+            ds_log("plates event: both plates occupied, beam")
         end
     else if plates_phase==1
         plates_t=plates_t+dt
-        if plates_t>=plates_shrink_time
+        if plates_t>=plates_beam_time
             plates_phase=2
+            plates_t=0
+            plates_lock_me=0
+            ds_log("plates event: beam gone, shrinking")
+        end
+    else if plates_phase==2
+        plates_t=plates_t+dt
+        if plates_t>=plates_shrink_time
+            plates_phase=3
             plates_santa_t=0
             plates_santa_angle=0
             plates_throw_cd=0.3
+            plates_collect_t=0
+            plates_thrown=0
+            plates_next_candy=0
+            plates_santa_out=0
+            plates_santa_gone=0
             ds_log("plates event: Santa appeared")
         end
     else
@@ -145,18 +247,56 @@ function draw_plate(number cx, number cy, number k, number lit)
     ring(cx,cy,rr,3*k,hint)
 end
 function draw_event_plates()
-    if event_mode!=3||plates_phase==2
+    if event_mode!=3||plates_phase>=3
         return
     end
     number k=1
-    if plates_phase==1
+    if plates_phase==2
         k=1-plates_t/plates_shrink_time
     end
     draw_plate(plate_ax(),plate_ay(),k,plate_a_lit)
     draw_plate(plate_bx(),plate_by(),k,plate_b_lit)
 end
+function plates_beam_k()
+    if plates_phase==1
+        return clamp(plates_t/plates_beam_grow,0,1)
+    end
+    if plates_phase==2
+        return 1
+    end
+    return 0
+end
+function plates_beam_alpha()
+    if plates_phase==1
+        return 1
+    end
+    if plates_phase==2
+        return clamp(1-plates_t/(plates_shrink_time*0.6),0,1)
+    end
+    return 0
+end
+function draw_event_beam()
+    if event_mode!=3||plates_phase<1||plates_phase>2
+        return
+    end
+    number k=plates_beam_k(), a=plates_beam_alpha()
+    if k<=0||a<=0
+        return
+    end
+    number x1=plate_ax(), y1=plate_ay(), x2=plate_bx(), y2=plate_by()
+    number ex=x1+(x2-x1)*k, ey=y1+(y2-y1)*k
+    number pulse=0.75+0.25*sin(event_t*14)
+    number w1=18*pulse, w2=7
+    color outer=(((unsigned)(int)floor(a*150))<<24)|0x00FF5A4C
+    color inner=(((unsigned)(int)floor(a*240))<<24)|0x00FFF1C8
+    line(x1,y1,ex,ey,w1,outer)
+    line(x1,y1,ex,ey,w2,inner)
+    color glow=(((unsigned)(int)floor(a*190))<<24)|0x00FFFFFF
+    ring(x1,y1,28+6*pulse,4,glow)
+    ring(ex,ey,28+6*pulse,4,glow)
+end
 function draw_event_candies()
-    if event_mode!=3||plates_phase!=2
+    if event_mode!=3||plates_phase!=3
         return
     end
     number i=0
@@ -168,18 +308,24 @@ function draw_event_candies()
             if k>1
                 k=1
             end
-            number e=1-(1-k)*(1-k)
-            number xx=arr_get(plates_candies,b+2)+(arr_get(plates_candies,b+4)-arr_get(plates_candies,b+2))*e
-            number yy=arr_get(plates_candies,b+3)+(arr_get(plates_candies,b+5)-arr_get(plates_candies,b+3))*e
-            number sc=candy_scale*(1+0.45*sin(pi*k))
-            number hw=25*sc
-            tex(xx-hw,yy-hw,CANDY_TEX,i*1.7+k*5,sc)
+            number v=1
+            if arr_get(plates_candies,b+6)>0
+                v=1-arr_get(plates_candies,b+6)/plates_candy_vanish_time
+            end
+            if v>0.02
+                number e=1-(1-k)*(1-k)
+                number xx=arr_get(plates_candies,b+2)+(arr_get(plates_candies,b+4)-arr_get(plates_candies,b+2))*e
+                number yy=arr_get(plates_candies,b+3)+(arr_get(plates_candies,b+5)-arr_get(plates_candies,b+3))*e
+                number sc=candy_scale*(1+0.45*sin(pi*k))*v
+                number hw=25*sc
+                tex(xx-hw,yy-hw,CANDY_TEX,i*1.7+k*5+(1-v)*4,sc)
+            end
         end
         i=i+1
     end
 end
 function draw_event_santa()
-    if event_mode!=3||plates_phase!=2
+    if event_mode!=3||plates_phase!=3||plates_santa_gone==1
         return
     end
     number cx=screen_w/2, cy=screen_h/2
@@ -187,6 +333,9 @@ function draw_event_santa()
     if plates_santa_t<0.4
         number p=plates_santa_t/0.4
         pop=1-(1-p)*(1-p)
+    end
+    if plates_santa_out>0
+        pop=pop*clamp(1-plates_santa_out/plates_santa_out_time,0,1)
     end
     number sc=plates_santa_size/50*pop
     if sc<=0.01
@@ -203,4 +352,20 @@ function draw_event_santa()
             ring(cx,cy,rr,6,aa*0x1000000)
         end
     end
+end
+function draw_plates_hud()
+    if event_mode!=3||plates_phase!=3
+        return
+    end
+    number left=plates_candies_left()
+    if left==0&&plates_santa_gone==1
+        return
+    end
+    number secs=floor(plates_time_left()+0.999)
+    string s=tr_candy_timer()+": "+secs
+    color c=0xFFFFFFFF
+    if secs<=10
+        c=0xFFFF6E63
+    end
+    ctext_scaled(s,back_y+btn_h+6,c,0.5)
 end

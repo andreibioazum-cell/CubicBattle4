@@ -131,5 +131,8 @@ void init(AAssetManager *assets);
 void update(void);
 void draw(Buffer *buffer);
 void touch(float x, float y, int action, int pointer_id);
+/* Системная кнопка «Назад»: 1 - скрипт обработал (закрыл чат/вернулся на
+ * прошлый экран), 0 - пусть Android закрывает активити. */
+int back_pressed(void);
 void reset(void);
 #endif

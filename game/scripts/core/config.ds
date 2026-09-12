@@ -122,8 +122,12 @@ number music_volume=70, music_vol_step=10, music_btn_gap=16
 number event_mode=0, disco_t=0, event_t=0, event_flakes=44
 number plates_size=150, plates_shrink_time=0.9, plates_stand_r=80
 number plates_xa=0.22, plates_xb=0.78, plates_yy=0.5
-number plates_santa_size=112, plates_santa_spin=2.2, plates_throw_interval=0.45
-number plates_candy_flight=0.85, plates_candy_max=14, plates_candy_fields=6
+number plates_santa_size=112, plates_santa_spin=2.2, plates_throw_interval=0.35
+number plates_candy_flight=0.85, plates_candy_max=30, plates_candy_fields=7
+number plates_candy_total=30, plates_collect_time=50
+number plates_candy_vanish_time=0.7, plates_candy_vanish_stagger=0.12
+number plates_beam_time=2.0, plates_beam_grow=0.45, plates_santa_out_time=0.5
+number plates_lock_me=0, plates_save_interval=4
 number warn_open=1, warn_t=0, warn_a=1, warn_hold=2.5, warn_fade=0.6
 number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 number studio_in=0.5, studio_hold=1.6, studio_fade=0.7

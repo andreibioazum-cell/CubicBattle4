@@ -257,9 +257,13 @@ function draw_screen()
     end
 end
 function draw()
-    draw_screen()
-    if t_fade > 0
-        rect(0, 0, screen_w, screen_h, (1 + floor(t_fade * 254)) * 0x1000000)
+    if t_fade >= 1
+        rect(0, 0, screen_w, screen_h, 0xFF000000)
+    else
+        draw_screen()
+        if t_fade > 0
+            rect(0, 0, screen_w, screen_h, (1 + floor(t_fade * 254)) * 0x1000000)
+        end
     end
     if warn_open == 1
         draw_warning()
@@ -268,6 +272,49 @@ function draw()
         draw_studio()
     end
     draw_achievement_toast()
+end
+function back_pressed()
+    if warn_open == 1 || studio_open == 1
+        return 1
+    end
+    if t_dir != 0
+        return 1
+    end
+    if game_state == ST_ONLINE && chat_open == 1
+        chat_open = 0
+        keyboard_hide()
+        return 1
+    end
+    if game_state == ST_SOLO || game_state == ST_ONLINE
+        if finished != 0 && finish_t < alert_hold
+            return 1
+        end
+        start_transition(ST_LOBBY)
+        return 1
+    end
+    if game_state == ST_LEVELS || game_state == ST_SKINS
+        start_transition(ST_CLASSES)
+        return 1
+    end
+    if game_state == ST_LEADERBOARD
+        start_transition(ST_MODES)
+        return 1
+    end
+    if game_state == ST_LOGIN
+        keyboard_hide()
+        keyboard_clear()
+        if login_after == ST_ONLINE
+            start_transition(ST_MODES)
+        else
+            start_transition(ST_LOBBY)
+        end
+        return 1
+    end
+    if game_state != ST_LOBBY
+        start_transition(ST_LOBBY)
+        return 1
+    end
+    return 0
 end
 function touch(number x, number y, number action, number id)
     if t_dir != 0

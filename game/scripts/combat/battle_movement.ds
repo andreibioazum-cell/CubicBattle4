@@ -1,5 +1,5 @@
 function move_player()
-    if player_stun>0
+    if player_stun>0||plates_lock_me==1
         return
     end
     if dash_active>0
