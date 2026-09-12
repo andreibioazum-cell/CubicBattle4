@@ -19,9 +19,9 @@ include graphics
 // Рисуются реальные зоны урона: у снежинки — круг контакта (размером с
 // проверку попадания), линия пути и круг взрыва; у рывка — уже проеханный
 // отрезок, разложенный на квадратные большие хитбоксы (один слой: онлайн-рывок
-// бьёт ровно по этому отрезку, см. dash_resolve_target); у турели — квадрат
-// зоны попадания, как её спрайт и тень. Залитые участки сплошные, чтобы зона
-// читалась целиком, а не только контуром.
+// бьёт ровно по этому отрезку, см. dash_resolve_target). Квадрат зоны турели
+// больше не рисуется (у деспенсера осталась только тень). Залитые участки
+// сплошные, чтобы зона читалась целиком, а не только контуром.
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Альфа: плавное появление/пропадание ──────────────────────────────────
@@ -271,63 +271,10 @@ function draw_hit_dash()
     end
 end
 
-// ── Турели: квадрат зоны попадания по каждой живой турели ─────────────────
-// Зона турели — квадрат, как и её спрайт с тенью: половина стороны равна
-// turret_hit_r (combat/battle_hitscan.ds, проверки идут по тому же квадрату).
-// Круглой зоны у деспенсера больше нет.
-function draw_hit_square(number x, number y, number half, number rgb, number env)
-    if show_hitboxes==0
-        return
-    end
-    if half<=0||env<=0
-        return
-    end
-    rect(x-half,y-half,half*2,half*2,(((unsigned)(int)hb_fill_alpha(env))<<24)|((unsigned)(int)rgb))
-    draw_hit_line(x-half,y-half,x+half,y-half,3,rgb,env)
-    draw_hit_line(x+half,y-half,x+half,y+half,3,rgb,env)
-    draw_hit_line(x+half,y+half,x-half,y+half,3,rgb,env)
-    draw_hit_line(x-half,y+half,x-half,y-half,3,rgb,env)
-end
-
-function draw_hit_turrets()
-    number i=0
-    loop i<turret_max
-        if arr_get(turret_box_a,i)>0
-            draw_hit_square(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(turret_box_a,i))
-        end
-        i=i+1
-    end
-    if game_state==ST_SOLO
-        i=0
-        loop i<turret_max
-            if arr_get(enemy_turret_box_a,i)>0
-                draw_hit_square(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(enemy_turret_box_a,i))
-            end
-            i=i+1
-        end
-    end
-    if game_state!=ST_ONLINE
-        return
-    end
-    if net_slot()<0
-        return
-    end
-    number s=0
-    loop s<max_players
-        number b=s*station_fields
-        if s!=net_slot()
-            number o=b+1, k=0
-            loop k<turret_max
-                if arr_get(rstation_box_a,s*turret_max+k)>0
-                    draw_hit_square(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb,arr_get(rstation_box_a,s*turret_max+k))
-                end
-                o=o+5
-                k=k+1
-            end
-        end
-        s=s+1
-    end
-end
+// ── Турели ────────────────────────────────────────────────────────────────
+// Квадрат зоны попадания вокруг деспенсера больше не рисуется: игрок просил
+// убрать его, оставив только тень (тень — в battle_super_render.ds). Сама
+// зона попадания (turret_hit_r) и поглощение урона не меняются.
 
 // ── Вселенная: бьёт по всей арене, поэтому рамка по краям экрана ──────────
 function draw_hit_universe_frame(number env)
@@ -368,6 +315,5 @@ function draw_ability_hitboxes()
     end
     draw_hit_snow()
     draw_hit_dash()
-    draw_hit_turrets()
     draw_hit_universe()
 end

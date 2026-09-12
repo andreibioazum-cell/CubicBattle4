@@ -94,7 +94,7 @@ static void event_write_async(const char *url, const char *body) {
 void net_event_set(double mode) {
     int m = (int)mode;
     if (m<0) m=0;
-    if (m>2) m=2;
+    if (m>3) m=3;
     if (!net.base[0]) return;
     char url[URL], body[32];
     snprintf(url, sizeof(url), "%s/event.json", net.base);

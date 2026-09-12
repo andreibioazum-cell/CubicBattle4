@@ -472,23 +472,17 @@ static void test_hitbox_drawing(void) {
     assert(count_kind_color('l', aim_c) == 0);
     assert(count_kind_color('c', aim_c) == 0);
     enemy_dash_active = 0;
-    /* Турель: квадрат зоны (заливка + четыре стороны), круга больше нет. */
+    /* Квадрат зоны вокруг деспенсера больше не рисуется: ни заливки, ни
+     * контура — у турели остаётся только тень-спрайт. */
     dash_active = 0; enemy_dash_active = 0; edash_box_a = 0;
     own_turret(0, 500, 460, 10);
     arr_set(turret_box_a, 0, 1);
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('q', (36u << 24) | gray) == 1);  /* заливка квадрата */
-    assert(count_kind_color('l', line_c) == 4);              /* контур по сторонам */
+    assert(count_kind_color('q', (36u << 24) | gray) == 0);  /* без заливки квадрата */
+    assert(count_kind_color('l', line_c) == 0);              /* без контура */
     assert(count_kind_color('r', line_c) == 0);              /* без круглого контура */
     assert(count_kind_color('c', (36u << 24) | gray) == 0);  /* без круглой заливки */
-    int qi = -1;
-    for (int i = 0; i < call_count; i++)
-        if (calls[i].kind == 'q' && calls[i].color == ((36u << 24) | gray)) { qi = i; break; }
-    near(calls[qi].x, 500 - turret_hit_r);
-    near(calls[qi].y, 460 - turret_hit_r);
-    near(calls[qi].w, turret_hit_r * 2);
-    near(calls[qi].h, turret_hit_r * 2);
     puts("hitboxes: real geometry drawn, snowflake solid-filled, dash is big squares only");
 }
 
@@ -721,6 +715,45 @@ static void test_enemy_shield_front_only(void) {
     puts("shield: enemy despenser covers only from the front, face punches land");
 }
 
+static void test_online_turret_punch_death(void) {
+    /* Онлайн-буК: удар соперника бьёт по турели напрямую (damage_turret), а
+     * удар по самому игроку поглощается щитом из турелей — в обоих случаях
+     * турель теряет HP и в итоге умирает (взрыв попадает в очередь). */
+    ds_fn_reset_battle();
+    game_state = ST_ONLINE;
+    player_class = CLASS_EBUC;
+    dt = 0.05;
+    player->x = 500; player->y = 400; player->size = 25;
+    player->hp = 20; player->max_hp = 20;
+    /* Слот 1 — живой соперник (обычный класс, урон 1). */
+    arr_set(remotes, 1*remote_fields+5, 1);
+    arr_set(remotes, 1*remote_fields+10, CLASS_ORDINARY);
+    double rb = 1*punch_fields;
+    /* 1) Удар точно по игроку (турель далеко от полосы): щит поглощает урон. */
+    own_turret(0, 500, 560, 9);
+    arr_set(remote_punches, rb, 1);
+    arr_set(remote_punches, rb+1, 420);
+    arr_set(remote_punches, rb+2, 400);
+    arr_set(remote_punches, rb+3, 1);
+    arr_set(remote_punches, rb+4, 0);
+    ds_fn_update_remote_punches();
+    near(player->hp, 20);                      /* игрок цел */
+    near(arr_get(turret_hp, 0), 8);            /* щит забрал удар */
+    assert(arr_get(remote_punches, rb) == 0);  /* удар обработан */
+    /* 2) Прямое попадание по турели: чип за чипом, после девяти ударов смерть. */
+    arr_set(turret_x, 0, 500); arr_set(turret_y, 0, 460); arr_set(turret_hp, 0, 9);
+    arr_set(remote_punches, rb, 1);
+    ds_fn_update_remote_punches();
+    near(arr_get(turret_hp, 0), 8);
+    for (int i = 0; i < 8; i++) {
+        arr_set(remote_punches, rb, 1);
+        ds_fn_update_remote_punches();
+    }
+    near(arr_get(turret_hp, 0), 0);
+    assert(arr_len(station_boom_ts) == 1);
+    puts("online: friend punch chips and kills buk turret (shield absorb + direct hit)");
+}
+
 static void test_turret_shadow_square(void) {
     /* Тень деспенсера — тем же спрайтом (tex_tint), что и сам деспенсер:
      * ни кругов, ни колец под турелью. Хитбокс турели — квадрат. */
@@ -736,9 +769,8 @@ static void test_turret_shadow_square(void) {
     arr_set(turret_box_a, 0, 1);
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    for (int i = 0; i < call_count; i++)
-        assert(calls[i].kind == 'q' || calls[i].kind == 'l');   /* без кругов */
-    puts("turret: square sprite shadow and square hit zone, no round shadow left");
+    assert(call_count == 0);   /* квадрат зоны вокруг деспенсера убран */
+    puts("turret: square sprite shadow stays, no hit square around the despenser");
 }
 
 static void test_universe_fade(void) {
@@ -798,6 +830,7 @@ int main(void) {
     test_dash_zone_narrow();
     test_own_punch_spares_own_turret();
     test_enemy_shield_front_only();
+    test_online_turret_punch_death();
     test_turret_shadow_square();
     test_universe_fade();
     test_enemy_class_chances();

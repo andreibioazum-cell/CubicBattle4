@@ -144,17 +144,27 @@ function draw_turret_boom(number x, number y, number bt)
     end
 end
 
-// Свои турели: каждая со своим лучом, спрайтом и HP. Взрывы разрушенных
-// турелей доигрывают на своих местах.
+// Свои турели: луч — только от последней поставленной турели (если она
+// сломана — от самой свежей из оставшихся), каждая со своим спрайтом и HP.
+// Взрывы разрушенных турелей доигрывают на своих местах.
 function draw_station()
-    number i=0
-    loop i<turret_max
-        if turret_alive(i)==1
-            draw_station_beam(arr_get(turret_x,i),arr_get(turret_y,i),player.x,player.y)
+    number beam=-1
+    if turret_alive(last_turret_slot)==1
+        beam=last_turret_slot
+    else
+        number j=0
+        loop j<turret_max
+            if turret_alive(j)==1
+                beam=j
+                j=turret_max
+            end
+            j=j+1
         end
-        i=i+1
     end
-    i=0
+    if beam>=0
+        draw_station_beam(arr_get(turret_x,beam),arr_get(turret_y,beam),player.x,player.y)
+    end
+    number i=0
     loop i<turret_max
         if turret_alive(i)==1
             draw_turret_at(arr_get(turret_x,i),arr_get(turret_y,i),arr_get(turret_hp,i),arr_get(turret_maxhp,i),arr_get(turret_spawn_t,i))
@@ -269,20 +279,32 @@ function draw_remote_station()
             number owner_alive=arr_get(remotes,rb+5)
             number ox=arr_get(remotes,rb+1)
             number oy=arr_get(remotes,rb+2)
-            number o=b+1, st=0
-            number i=0
-            loop i<turret_max
-                st=arr_get(remote_station,o)
-                if st==1
-                    // Луч рисуем под спрайтом, чтобы он «выходил из центра».
-                    if owner_alive==1
-                        draw_station_beam(arr_get(remote_station,o+1),arr_get(remote_station,o+2),ox,oy)
-                    end
+            // Луч — только от последней поставленной турели соперника (номер
+            // слота 1..turret_max хранится в remote_station[b]); если она
+            // сломана, луч отходит к самой свежей из оставшихся живых.
+            number beam=-1
+            number lslot=arr_get(remote_station,b)
+            if lslot>=1&&lslot<=turret_max
+                if arr_get(remote_station,b+1+(lslot-1)*5)==1
+                    beam=lslot-1
                 end
-                o=o+5
-                i=i+1
             end
-            o=b+1
+            number i=0
+            if beam<0
+                loop i<turret_max
+                    if arr_get(remote_station,b+1+i*5)==1
+                        beam=i
+                        i=turret_max
+                    end
+                    i=i+1
+                end
+            end
+            if beam>=0&&owner_alive==1
+                number bo=b+1+beam*5
+                // Луч рисуем под спрайтом, чтобы он «выходил из центра».
+                draw_station_beam(arr_get(remote_station,bo+1),arr_get(remote_station,bo+2),ox,oy)
+            end
+            number o=b+1, st=0
             i=0
             loop i<turret_max
                 st=arr_get(remote_station,o)

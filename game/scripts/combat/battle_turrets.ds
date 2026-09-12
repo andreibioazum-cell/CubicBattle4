@@ -14,6 +14,10 @@ include graphics
 // Настоящие турели: до turret_max штук, каждая стоит на своём месте со своим
 // HP. Слот считается занятым, пока hp>0. Анимация появления у каждой своя
 // (turret_spawn_t), чтобы новая турель не «перезаписывала» чужую анимацию.
+// last_turret_slot — слот последней поставленной турели: от него рисуется
+// луч к буку (см. draw_station в battle_super_render.ds).
+number last_turret_slot=0
+
 function turret_alive(number i)
     if arr_get(turret_hp,i)>0
         return 1
@@ -125,6 +129,7 @@ function place_turret()
     arr_set(turret_maxhp,slot,mh)
     arr_set(turret_hp,slot,mh)
     arr_set(turret_spawn_t,slot,station_spawn_time)
+    last_turret_slot=slot
     // Уровень 2: установка турели лечит бука.
     if player_level>=2
         player.hp=clamp(player.hp+ebuc_place_heal,0,player.max_hp)

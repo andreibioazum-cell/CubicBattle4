@@ -34,6 +34,7 @@ function enemy_reset_class_state()
     enemy_dash_cd=0
     enemy_dash_x0=0
     enemy_dash_y0=0
+    enemy_last_turret_slot=0
     arr_clear(enemy_turret_x)
     arr_clear(enemy_turret_y)
     arr_clear(enemy_turret_hp)
