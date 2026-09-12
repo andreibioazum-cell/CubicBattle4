@@ -1,12 +1,8 @@
 function move_player()
-    // Оглушение: игрок не двигается и не поворачивается.
     if player_stun>0
         return
     end
     if dash_active>0
-        // Рывок Азума: игрок летит строго вдоль dash_dx/dash_dy (направление
-        // зафиксировано в момент старта), джойстиком можно только
-        // поворачиваться — направление рывка от этого не меняется.
         number jm2=sqrt(joy.dx*joy.dx+joy.dy*joy.dy)
         if jm2>0.15
             player.angle=atan2(joy.dy,joy.dx)
@@ -67,7 +63,6 @@ function move_player()
     end
     tick_dust(joy.dx,joy.dy,jm)
 end
-
 function in_punch_box(number px, number py, number pdx, number pdy, number tx, number ty)
     number rx=tx-px, ry=ty-py, fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy
     if fw>=0&&fw<=punch_reach&&side*side<=punch_width*punch_width/4
@@ -75,7 +70,6 @@ function in_punch_box(number px, number py, number pdx, number pdy, number tx, n
     end
     return 0
 end
-
 function enemy_in_punch()
     number ex=enemy.x, ey=enemy.y, hs=enemy.size*0.65
     number fx=cos(enemy.angle)*hs, fy=sin(enemy.angle)*hs, sx=-sin(enemy.angle)*hs, sy=cos(enemy.angle)*hs
@@ -96,10 +90,7 @@ function enemy_in_punch()
     end
     return 0
 end
-
 function update_aim()
-    // Полоса удара появляется и пропадает плавно — как хитбоксы способностей
-    // (hitbox_fade_in/hitbox_fade_out): резких вспышек зоны урона нет.
     if punch_left>0&&super_windup<=0&&finished==0
         aim_a=aim_a+dt/aim_fade_in
         if aim_a>1
@@ -118,7 +109,6 @@ function update_aim()
         end
     end
 end
-
 function follow_punch()
     if punch_left<=0
         return
@@ -128,21 +118,18 @@ function follow_punch()
     punch.dx=cos(player.angle)
     punch.dy=sin(player.angle)
 end
-
 function enemy_freeze_factor()
     if enemy.freeze>0
         return enemy.freeze_slow
     end
     return 1
 end
-
 function freeze_enemy(number t, number slow)
     if t>enemy.freeze
         enemy.freeze=t
         enemy.freeze_slow=slow
     end
 end
-
 function enemy_move(number vx, number vy)
     number f=enemy_freeze_factor()*enemy.speed_var
     enemy.mvx=vx*f
@@ -163,10 +150,8 @@ function enemy_move(number vx, number vy)
     if enemy.y>screen_h-enemy.size
         enemy.y=screen_h-enemy.size
     end
-    // Враг тоже оставляет шлейф пыли за спиной — как и игрок.
     tick_enemy_dust(enemy.mvx,enemy.mvy)
 end
-
 function enemy_face_motion()
     number sp=sqrt(enemy.mvx*enemy.mvx+enemy.mvy*enemy.mvy)
     if sp<10
@@ -179,13 +164,11 @@ function enemy_face_motion()
     if da<0-pi
         da=da+2*pi
     end
-    // человечная неровность поворота
     number wob = sin(enemy.wobble_t*2.3)*0.15
     da = da + wob
     number turn=da*clamp(dt*enemy_face_speed,0,1), maxturn=enemy_face_max_speed*dt
     enemy.angle=enemy.angle+clamp(turn,0-maxturn,maxturn)
 end
-
 function enemy_track_player()
     if enemy.seen==0
         enemy.px=player.x
@@ -205,7 +188,6 @@ function enemy_track_player()
         vx=vx/sp*joy_speed
         vy=vy/sp*joy_speed
     end
-    // добавляем шум в оценку скорости — человек не идеально предсказывает
     vx = vx + (rand()%100-50)/100.0*12
     vy = vy + (rand()%100-50)/100.0*12
     enemy.pvx=lerp(enemy.pvx,vx,0.25)
@@ -213,15 +195,12 @@ function enemy_track_player()
     enemy.px=player.x
     enemy.py=player.y
 end
-
 function enemy_predict(number lead)
-    // упреждение с ошибкой
     number errx = (rand()%100-50)/100.0*18
     number erry = (rand()%100-50)/100.0*18
     aim_tx=clamp(player.x+enemy.pvx*lead+errx,player.size,screen_w-player.size)
     aim_ty=clamp(player.y+enemy.pvy*lead+erry,player.size,screen_h-player.size)
 end
-
 function enemy_turn_prediction()
     enemy_predict(enemy_lead)
     number ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x)+enemy.aim_err, da=ta-enemy.angle
@@ -234,7 +213,6 @@ function enemy_turn_prediction()
     number step=enemy_attack_turn_speed*dt
     enemy.angle=enemy.angle+clamp(da,0-step,step)
 end
-
 function player_in_enemy_punch()
     number pdx=cos(enemy.angle), pdy=sin(enemy.angle), rx=player.x-enemy.x, ry=player.y-enemy.y
     number fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy, pr=player.size*0.65, half=enemy_punch_width/2+pr
@@ -243,7 +221,6 @@ function player_in_enemy_punch()
     end
     return 0
 end
-
 function enemy_would_hit()
     enemy_predict(enemy_lead)
     number rx=aim_tx-enemy.x, ry=aim_ty-enemy.y, fd=sqrt(rx*rx+ry*ry)
@@ -257,7 +234,6 @@ function enemy_would_hit()
     end
     return 0
 end
-
 function enemy_in_danger()
     number pdx=cos(player.angle), pdy=sin(player.angle), rx=enemy.x-player.x, ry=enemy.y-player.y
     number fw=rx*pdx+ry*pdy, side=ry*pdx-rx*pdy, er=enemy.size*0.65, half=punch_width/2+er
@@ -266,14 +242,12 @@ function enemy_in_danger()
     end
     return 0
 end
-
 function enemy_free_window()
     if punch_left<=0&&punch_cd>enemy_punish_react
         return 1
     end
     return 0
 end
-
 function enemy_pick_flank()
     number side=(enemy.y-player.y)*cos(player.angle)-(enemy.x-player.x)*sin(player.angle)
     if side>=0
@@ -281,15 +255,12 @@ function enemy_pick_flank()
     else
         enemy.strafe=-1
     end
-    // иногда человек меняет решение
     if rand()%100 < 22
         enemy.strafe = 0 - enemy.strafe
     end
 end
-
 function enemy_roll_cooldown()
     number r=enemy_cooldown_min+(rand()%1000)/1000.0*(enemy_cooldown_max-enemy_cooldown_min)
-    // вариация скорости
     enemy.speed_var=0.85 + (rand()%100)/100.0*enemy_human_speed_var
     if r<enemy_cooldown_min
         r=enemy_cooldown_min

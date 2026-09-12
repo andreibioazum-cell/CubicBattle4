@@ -1,15 +1,4 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// engine.ds — главный цикл: запуск, переходы между экранами, update/draw/touch
-// и всплывающее уведомление о достижении.
-//
-// Номера экранов — именованные константы ST_* из core/config.ds: по коду
-// больше не разбросаны «game_state == 8», из-за которых нельзя было понять,
-// что за экран и куда ведёт переход.
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── Переходы между экранами ───────────────────────────────────────────────
 function start_transition(number target)
     if t_dir != 0
         return
@@ -17,8 +6,6 @@ function start_transition(number target)
     t_target = target
     t_dir = 1
 end
-
-// Что нужно сделать, покидая экран (закрыть клавиатуру, выйти из комнаты).
 function leave_screen(number state)
     if state == ST_LOGIN
         keyboard_hide()
@@ -30,16 +17,10 @@ function leave_screen(number state)
         event_mode = 0
         event_t = 0
     end
-    // Выход из боя (кнопка «Назад», а не только экран победы) тоже сохраняет
-    // прогресс: подобранные в бою леденцы и кубки не должны теряться.
     if state == ST_SOLO || state == ST_ONLINE
         save_progress()
     end
 end
-
-// Что нужно сделать, входя на экран (инициализация боя, формы входа).
-// Возвращает 0, если переход отменён: например, в онлайн не пускает бан —
-// тогда экран и направление перехода уже исправлены внутри функции.
 function enter_screen(number state)
     if state == ST_SOLO
         init_game()
@@ -54,7 +35,6 @@ function enter_screen(number state)
         return 1
     end
     if state == ST_ONLINE
-        // Проверка бана перед онлайном: забаненного возвращаем в лобби.
         if net_is_banned(net_login_nick()) == 1
             banned_msg = tr_banned()
             game_state = ST_LOBBY
@@ -66,7 +46,6 @@ function enter_screen(number state)
     end
     return 1
 end
-
 function update_transition()
     if t_dir == 1
         t_fade = t_fade + dt / transition_duration
@@ -92,8 +71,6 @@ function update_transition()
         end
     end
 end
-
-// ── Запуск ────────────────────────────────────────────────────────────────
 function load_textures()
     png_load(GRASS)
     snow_tex_ok = 0
@@ -102,14 +79,8 @@ function load_textures()
     end
     png_load(ORDINARY_TEX)
     png_load(PUNCH_TEX)
-    // azum_tex_ok — есть ли своя текстура у Азума: пока azum.png нет в
-    // ассетах, Азум (игрок и враг) выглядит обычным кубом (см. azum_idle_tex
-    // в combat/battle_rules.ds).
     azum_tex_ok = png_load(AZUM_TEX)
     png_load(AZUM_PUNCH_TEX)
-    // Скину «Зомби» — своя пара текстур; если файл не загрузился, скин
-    // откатывается на обычную текстуру Азума (см. zombie_tex_ok
-    // в combat/battle_rules.ds).
     azum_zombie_tex_ok = png_load(AZUM_ZOMBIE_TEX)
     azum_zombie_punch_tex_ok = png_load(AZUM_ZOMBIE_PUNCH_TEX)
     png_load(SANTA_TEX)
@@ -120,7 +91,6 @@ function load_textures()
     png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
 end
-
 function start_music()
     music_ok = snd_load(LOBBY_MUSIC)
     if music_ok == 0
@@ -132,28 +102,20 @@ function start_music()
     snd_loop(LOBBY_MUSIC)
     ds_log("init: lobby music on")
 end
-
 function init()
     ds_log("init: loading textures")
     load_textures()
     net_set_firebase_key(FB_KEY)
     net_autologin(FIREBASE)
     start_music()
-    // Валюты, классы, уровни, скины и достижения читаются одним вызовом: он
-    // же приводит их к допустимым значениям и отдаёт сети класс, уровень и
-    // скин своего бойца.
     progress_from_storage()
-    // Настройки (язык и хитбоксы) живут в своём файле settings.dat и в том же
-    // профиле облака — читаются сразу за прогрессом.
     settings_from_storage()
     ds_log("init: ready")
 end
-
 function update_music()
     if music_ok == 0
         return
     end
-    // В бою музыка лобби плавно затихает, в меню — снова играет по кругу.
     if game_state == ST_SOLO || game_state == ST_ONLINE
         music_level = clamp(music_level - dt / music_fade_out_time, 0, 1)
         snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
@@ -169,7 +131,6 @@ function update_music()
     music_level = clamp(music_level + dt / music_fade_in_time, 0, 1)
     snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
 end
-
 function update_warning()
     if warn_open != 1
         return
@@ -183,19 +144,12 @@ function update_warning()
     if warn_a <= 0
         warn_a = 0
         warn_open = 0
-        // Сразу за предупреждением — заставка студии. Чёрный экран при этом
-        // не гаснет: предупреждение растворяется в нём, и заставка начинает
-        // проявляться на том же сплошном чёрном фоне.
         studio_open = 1
         studio_t = 0
         studio_a = 0
         studio_bg_a = 1
     end
 end
-
-// Заставка студии: проявление, пауза, затухание. Пока логотип проявляется и
-// висит, чёрный фон цельный (studio_bg_a = 1); в конце вместе с надписью
-// плавно гаснет и сам чёрный экран — меню под ним проявляется без рывка.
 function update_studio()
     if studio_open != 1
         return
@@ -218,25 +172,9 @@ function update_studio()
         studio_open = 0
     end
 end
-
-// ── Всплывающее уведомление о новом достижении ────────────────────────────
-// Тост висит всегда в конце draw(): поверх любого экрана, но ПОД
-// предупреждением об эпилепсии. Выглядит как обычная кнопка — та же
-// фиолетовая плашка ui_purple и белый текст, без рамки и полупрозрачности.
-//
-// Движение строго вертикальное, тремя фазами:
-//   1. ACH_TOAST_FADE_IN — быстрый выезд сверху: плашка стартует целиком за
-//      верхним краем и с торможением встаёт на место (home_y);
-//   2. ACH_TOAST_HOLD — висит на месте ~1.5 секунды;
-//   3. ACH_TOAST_EXIT — уезжает с разгоном прямо вверх и исчезает только
-//      тогда, когда полностью ушла за верхний край экрана.
-// Альфа не анимируется вовсе: тост не «испаряется» у самого верха, а уходит
-// вверх и пропадает там, где его уже не видно.
 function tick_achievement_toast()
     ach_toast_t = tick_down(ach_toast_t)
 end
-
-// Название награды для тоста по её биту.
 function achievement_toast_text()
     if ach_toast_bit == ACH_FIRST_WIN
         return tr_achievement_first_win()
@@ -246,41 +184,29 @@ function achievement_toast_text()
     end
     return tr_achievement_legends()
 end
-
 function draw_achievement_toast()
     if ach_toast_bit <= 0 || ach_toast_t <= 0
         return
     end
     number elapsed = ACH_TOAST_DURATION - ach_toast_t
-    // Ширина подстраивается под экран, чтобы на узких ландшафтных
-    // устройствах плашка не вылезала за края.
     number w = fit_w(460)
     number h = 70
     number x = center_x(w)
     number home_y = 64
-    // Сколько пикселей нужно пройти вверх, чтобы плашка целиком ушла за край.
     number off = home_y + h + 8
     number y = home_y
     if elapsed < ACH_TOAST_FADE_IN
-        // Фаза 1: выезд сверху с торможением (ease-out).
         number k = elapsed / ACH_TOAST_FADE_IN
         number ease = 1 - (1 - k) * (1 - k)
         y = home_y - off * (1 - ease)
     else if elapsed > ACH_TOAST_FADE_IN + ACH_TOAST_HOLD
-        // Фаза 3: уход строго вверх с разгоном (ease-in), без затухания цвета.
         number k2 = (elapsed - ACH_TOAST_FADE_IN - ACH_TOAST_HOLD) / ACH_TOAST_EXIT
         y = home_y - off * clamp(k2, 0, 1) * clamp(k2, 0, 1)
     end
-    // Плашку не рисуем, пока она полностью за верхним краем — ни на входе,
-    // ни на выходе: исчезновение выглядит как уход вверх, а не испарение.
     if y + h <= 0
         return
     end
     roundrect(x, y, w, h, btn_radius, ui_purple)
-    // Две строки белого текста: заголовок «ДОСТИЖЕНИЕ» и название награды.
-    // Центрируем их одним блоком по реальным границам глифов (как text_in_box
-    // в core/ui.ds), а не по базовой линии — иначе в английском и русском
-    // плашка выглядит по-разному.
     string head = tr_achievement_toast_title()
     string body = achievement_toast_text()
     number hs = 0.42, bs = 0.62, gap = 6
@@ -290,8 +216,6 @@ function draw_achievement_toast()
     ctext_scaled(head, top - ht, text_color, hs)
     ctext_scaled(body, top + hh + gap - bt, text_color, bs)
 end
-
-// ── Главные хуки ──────────────────────────────────────────────────────────
 function update()
     update_warning()
     update_studio()
@@ -307,7 +231,6 @@ function update()
     end
     update_weather()
 end
-
 function draw_screen()
     if game_state == ST_LOBBY
         draw_lobby()
@@ -333,30 +256,23 @@ function draw_screen()
         draw_online()
     end
 end
-
 function draw()
     draw_screen()
     if t_fade > 0
         rect(0, 0, screen_w, screen_h, (1 + floor(t_fade * 254)) * 0x1000000)
     end
-    // Полноэкранное предупреждение поверх всего, включая фейд перехода.
     if warn_open == 1
         draw_warning()
     end
-    // Заставка студии — сразу после предупреждения, тоже поверх всего.
     if studio_open == 1
         draw_studio()
     end
-    // Уведомление о достижении — над всем, но под предупреждением.
     draw_achievement_toast()
 end
-
 function touch(number x, number y, number action, number id)
     if t_dir != 0
         return
     end
-    // Пока висит предупреждение, нажатия в меню не проходят и не закрывают его:
-    // экран сам тает через warn_hold секунд, кнопки OK нет.
     if warn_open == 1 || studio_open == 1
         return
     end

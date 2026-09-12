@@ -1,19 +1,4 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_damage.ds — урон, лечение, оглушение и возрождение
-//
-// Входящий урон по игроку и врагу, лечение после атаки, оглушение от рывка
-// Азума, возрождение Азума и алерт победы/поражения.
-//
-// Выделен из combat/battle_rules.ds: файл разросся так, что в нём соседствовали
-// классы, турели, попадания и урон.
-// ══════════════════════════════════════════════════════════════════════════
-
-// Урон по самому игроку (после всех поглощений). Скидка Азума после
-// возрождения работает как раньше. Турели бука — щит от всего входящего
-// урона: сначала снимают её HP (ближайшая), остаток бьёт самого бука
-// (player_shield_absorb в battle_shield.ds).
 function take_damage(number dmg)
     if player_class==CLASS_EBUC
         dmg=player_shield_absorb(dmg)
@@ -34,7 +19,6 @@ function take_damage(number dmg)
         player.hp=0
     end
 end
-
 function heal_after_attack()
     number amount=0
     if player_class==CLASS_AZUM&&player_level>=3
@@ -46,10 +30,6 @@ function heal_after_attack()
         player.hp=clamp(player.hp+amount,0,player.max_hp)
     end
 end
-
-// ── Оглушение (рывок Азума) ──────────────────────────────────────────────
-// Оглушённый враг не двигается и не атакует. В отличие от заморозки Деда
-// Мороза (freeze), оглушение обрывает и текущий замах/удар, и замах ульты.
 function stun_enemy(number t)
     if t>enemy.stun
         enemy.stun=t
@@ -63,13 +43,11 @@ function stun_enemy(number t)
     enemy_super_windup=0
     enemy_super_kind=0
 end
-
 function stun_player(number t)
     if t>player_stun
         player_stun=t
     end
 end
-
 function try_revive()
     if player.hp>0
         return 0
@@ -94,23 +72,14 @@ function try_revive()
             k=k+1
         end
     end
-    // Каждое возрождение за Азума копит достижение «Легенды не умирают...».
-    // Счётчик живёт в achievements.dat (второе число), поэтому переживает
-    // перезаход и не зависит от прогресса-файла.
     azum_revive_count=azum_revive_count+1
     net_save_azum_revives(azum_revive_count)
     ds_log("azum revived (%g/%g)",azum_revive_count,ACH_LEGENDS_NEED)
     if azum_revive_count>=ACH_LEGENDS_NEED
         grant_achievement(ACH_LEGENDS)
-        // Скин «Зомби» при этом не надеваем автоматически: достижение только
-        // открывает его в меню скинов, а выбирает игрок сам. Раньше скин
-        // включался прямо посреди боя в момент смерти, и казалось, что Азум
-        // «умирает сразу же» — на деле его только что убило то же самое
-        // попадание, а защита от возрождения в онлайне проскакивала.
     end
     return 1
 end
-
 function tick_revive()
     if revive_prot>0
         revive_prot=revive_prot-dt
@@ -119,9 +88,6 @@ function tick_revive()
         end
     end
 end
-
-// Алерт победы/поражения нельзя закрыть в первые alert_hold секунд: таймер
-// finish_t тикает, пока бой закончен, и разблокирует тап «на выход».
 function tick_alert_hold()
     if finished!=0&&finish_t<alert_hold
         finish_t=finish_t+dt

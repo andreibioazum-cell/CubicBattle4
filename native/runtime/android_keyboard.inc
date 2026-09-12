@@ -111,7 +111,7 @@ static int kb_call_void_method(const char *name) {
 
 void ds_set_activity(void *act) { kb_activity = (ANativeActivity *)act; }
 
-/* Единственный источник правды для текста — системный редактор в Java.
+/* Единственный источник правды для текста - системный редактор в Java.
  * Любое изменение буфера на стороне игры немедленно зеркалим обратно в него,
  * иначе редактор помнит уже стёртые символы и дописывает их к новому вводу
  * ("Q" + "qwerty" -> "Qqwerty"). */
@@ -203,7 +203,7 @@ void keyboard_type(const char *text) {
 }
 
 /* Стираем целый UTF-8 символ, а не один байт.
- * Зажатый Backspace: подряд идущие вызовы с малым интервалом — это автоповтор
+ * Зажатый Backspace: подряд идущие вызовы с малым интервалом - это автоповтор
  * клавиши; после шести таких подряд стираем всё разом (см. тот же приём в
  * GameActivity.java для экранной клавиатуры). */
 #define KB_DEL_STREAK_GAP_MS 150
@@ -267,7 +267,7 @@ int keyboard_handle_key(int keycode, int action, int meta) {
      * без composing) приходят СЮДА, а не в EditText. Если проглотить их из-за
      * wantKeyboard, поле Ник открывает клавиатуру, но буквы не появляются.
      * JNI nativeReplaceText по-прежнему заменяет буфер целиком, если IME
-     * всё же доставила символ в редактор — тогда append ниже просто дублирует
+     * всё же доставила символ в редактор - тогда append ниже просто дублирует
      * уже стоящую букву, и мы это пропускаем. */
     if (keycode==AKEYCODE_DEL || keycode==AKEYCODE_FORWARD_DEL) { keyboard_backspace(); return 1; }
     if (keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER) {

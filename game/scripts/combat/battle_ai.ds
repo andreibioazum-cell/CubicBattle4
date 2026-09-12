@@ -6,15 +6,11 @@ function start_enemy_attack()
     if da<0-pi
         da=da+2*pi
     end
-    // человечный промах по углу
     number err = (rand()%100-50)/100.0 * enemy_human_wobble * pi/180
     if rand()%100 < enemy_human_miss*100
         err = err + (rand()%100-50)/100.0 * 0.35
     end
     enemy.aim_err = err
-    // Раньше здесь угол мгновенно выставлялся на игрока — враг дёргался.
-    // Теперь он доворачивается плавно во время замаха (enemy_turn_prediction),
-    // поэтому атаку начинаем только если успеем довернуться за замах.
     number turn_budget = enemy_attack_turn_speed * (enemy_windup - enemy_lock_time)
     if fabs(da) > turn_budget
         return 0
@@ -25,8 +21,6 @@ function start_enemy_attack()
     enemy.react=enemy_human_react_min + (rand()%100)/100.0*(enemy_human_react_max-enemy_human_react_min)
     return 1
 end
-
-// Плавный доворот на игрока: тот же лимит скорости, что и у доворота в замахе.
 function enemy_face_player()
     enemy_predict(enemy_lead)
     number ta=atan2(aim_ty-enemy.y,aim_tx-enemy.x), da=ta-enemy.angle
@@ -39,35 +33,29 @@ function enemy_face_player()
     number step=enemy_attack_turn_speed*dt
     enemy.angle=enemy.angle+clamp(da,0-step,step)
 end
-
 function enemy_engage(number desired)
     number dx=aim_tx-enemy.x, dy=aim_ty-enemy.y, d=sqrt(dx*dx+dy*dy)
     if d<1
         d=1
     end
-    // добавляем кривизну ходьбы
     enemy.wobble_t = enemy.wobble_t + dt* (1.2 + (rand()%100)/100.0)
     number wobble_off = sin(enemy.wobble_t*2.7)*14 + cos(enemy.wobble_t*1.3)*9
-    // желаемая дистанция с рандомом
     desired = desired + (rand()%100-50)/100.0*18
     number radial=clamp((d-desired)*enemy_close_gain,-bot_speed,bot_speed)
     number orbit=bot_strafe_speed*enemy.strafe*0.5
     if d>desired+110
         orbit=orbit*0.4
     end
-    // иногда идёт не идеально ровно — добавляем боковой шум
     number perp_x = 0 - dy/d * wobble_off
     number perp_y = dx/d * wobble_off
     number vx=dx/d*radial - dy/d*orbit + perp_x*0.3
     number vy=dy/d*radial + dx/d*orbit + perp_y*0.3
-    // скорость как у игрока, но с вариацией
     number cap=bot_speed*enemy.speed_var
     number sp=sqrt(vx*vx+vy*vy)
     if sp>cap&&sp>0.001
         vx=vx/sp*cap
         vy=vy/sp*cap
     end
-    // иногда человек спотыкается — резко меняет скорость
     if rand()%1000 < 8
         vx = vx*0.4
         vy = vy*0.4
@@ -86,21 +74,17 @@ function enemy_engage(number desired)
     enemy.svy=lerp(enemy.svy,vy,ms)
     enemy_move(enemy.svx,enemy.svy)
 end
-
 function update_enemy()
     enemy_track_player()
     enemy.mvx=0
     enemy.mvy=0
     enemy.wobble_t = enemy.wobble_t + dt
-
     if enemy.freeze>0
         enemy.freeze=enemy.freeze-dt
         if enemy.freeze<0
             enemy.freeze=0
         end
     end
-    // Альфа круга заморозки ведётся в tick_status_fades (combat/battle_status.ds):
-    // там же круги игрока, поэтому все состояния гаснут одинаково плавно.
     if enemy.cooldown>0
         enemy.cooldown=enemy.cooldown-dt*enemy_freeze_factor()
         if enemy.cooldown<0
@@ -146,11 +130,6 @@ function update_enemy()
             enemy.poison_damage=0
         end
     end
-    // Альфа круга яда — тоже в tick_status_fades.
-
-    // Оглушение от рывка Азума: враг замирает — не двигается, не атакует и
-    // его таймеры не идут. Ореол-подсветка гаснет плавно после конца
-    // (tick_status_fades в combat/battle_status.ds).
     if enemy.stun>0
         enemy.stun=enemy.stun-dt
         if enemy.stun<0
@@ -158,20 +137,14 @@ function update_enemy()
         end
         return
     end
-
-    // Способности класса врага (рывок, замах снежинки/турели): пока враг
-    // занят ультой, обычный ИИ пропускает кадр.
     if enemy_tick_class_abilities()==1
         return
     end
-
     number dx=player.x-enemy.x, dy=player.y-enemy.y, d=sqrt(dx*dx+dy*dy)
     if d<1
         d=1
     end
     number pr=player.size*0.65, reach=enemy_punch_reach+pr
-
-    // замах
     if enemy.state==1
         enemy.state_time=enemy.state_time-dt
         if enemy.state_time>enemy_lock_time
@@ -192,22 +165,16 @@ function update_enemy()
         end
         return
     end
-
     if enemy.state==2
         enemy.state_time=enemy.state_time-dt
         if enemy.hit==0
-            // Удар бота бьёт по тому, кто ближе к нему вдоль направления:
-            // игрока (0) или живую турель бука (номер слота). Турель перед
-            // игроком работает щитом — её HP при этом честно убывает.
             number target=punch_resolve_target(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),player.size*0.65)
             if target==0||(target>=1&&target<=turret_max)
-                // иногда человек промахивается даже в упор
                 if rand()%100 >= enemy_human_miss*100 || rand()%100 < 30
                     enemy.hit=1
                     if target==0
                         if revive_prot<=0
                             take_damage(class_punch_damage_for(enemy_class,enemy_level))
-                            // Удары Деда Мороза травят ядом, как у игрока.
                             if enemy_class==CLASS_SANTA
                                 if player_poison<=0
                                     player_poison_tick=santa_poison_tick_interval
@@ -226,7 +193,6 @@ function update_enemy()
                         end
                     else
                         damage_turret(target-1,class_punch_damage_for(enemy_class,enemy_level))
-                        // Турель-щит мстит: удар по ней ранит бота в ответ.
                         if enemy_apply_damage(turret_counter_damage)==1
                             return
                         end
@@ -250,15 +216,12 @@ function update_enemy()
         end
         return
     end
-
     if enemy.state==3
         enemy.state_time=enemy.state_time-dt
         if enemy_free_window()==0&&d<reach*0.85
             enemy_predict(0)
             enemy_engage(reach*0.95)
         end
-        // После удара не отворачиваемся в сторону движения: враг остаётся
-        // лицом к игроку и сразу готов бить снова.
         enemy_face_player()
         if enemy.state_time<=0
             enemy.state=0
@@ -269,11 +232,9 @@ function update_enemy()
         end
         return
     end
-
     if enemy.state==4
         enemy.state_time=enemy.state_time-dt
         number dpx=cos(player.angle), dpy=sin(player.angle)
-        // кривой уворот
         number dodge_err = (rand()%100-50)/100.0*0.6
         number dvx=-dpy*enemy.strafe*bot_dodge_speed*(0.7+dodge_err)-dpx*bot_speed*0.25
         number dvy=dpx*enemy.strafe*bot_dodge_speed*(0.7+dodge_err)-dpy*bot_speed*0.25
@@ -287,11 +248,8 @@ function update_enemy()
         end
         return
     end
-
-    // реакция на удар игрока — не всегда уклоняется, иногда криво
     if punch_left>0&&punch_left<=punch_time-enemy.react&&enemy.dodge_cd<=0&&enemy_in_danger()==1
         if enemy.react<=0
-            // шанс не увернуться
             if rand()%100 < enemy_human_dodge_fail*100
                 ds_log("enemy dodge fail (human)")
             else
@@ -301,7 +259,6 @@ function update_enemy()
                 else
                     enemy.strafe=-1
                 end
-                // иногда выбирает не ту сторону
                 if rand()%100 < 18
                     enemy.strafe = 0 - enemy.strafe
                 end
@@ -312,11 +269,9 @@ function update_enemy()
             end
         end
     end
-
     if enemy_free_window()==1
         enemy.think=0
         if enemy.cooldown<=0&&(d<=reach||enemy_would_hit()==1)
-            // иногда фейнт вместо атаки
             if rand()%100 < 12
                 enemy_pick_flank()
                 enemy.flank=enemy_flank_time
@@ -328,7 +283,6 @@ function update_enemy()
             if start_enemy_attack()==1
                 return
             end
-            // Ещё не довернулся: плавно разворачиваемся, не замирая на месте.
             enemy_predict(enemy_lead)
             enemy_engage(reach*0.55)
             enemy_face_player()
@@ -336,8 +290,6 @@ function update_enemy()
         end
         enemy_predict(enemy_lead)
         enemy_engage(reach*0.55)
-        // Вплотную смотрим на игрока (иначе он крутится спиной перед ударом),
-        // издалека — в сторону движения.
         if d<=reach
             enemy_face_player()
         else
@@ -345,16 +297,13 @@ function update_enemy()
         end
         return
     end
-
     if enemy.cooldown<=0&&enemy.think<=0&&(d<=reach*0.95||enemy_would_hit()==1)
-        // человечная задержка — не мгновенно
         if enemy.react<=0
             if start_enemy_attack()==1
                 return
             end
         end
     end
-
     if enemy.think>0
         enemy.think=enemy.think-dt
     end
@@ -362,7 +311,6 @@ function update_enemy()
         enemy_pick_flank()
         enemy.flank=enemy_flank_time
     end
-
     number desired=reach*0.62
     if d<enemy_min_distance*0.75
         desired=enemy_min_distance*0.75

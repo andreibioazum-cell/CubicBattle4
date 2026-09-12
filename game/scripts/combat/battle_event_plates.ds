@@ -1,26 +1,8 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_event_plates.ds — ивент 3 «Плиты и Дед Мороз» (только онлайн).
-//
-// На арене лежат две красные плиты. Когда на обе одновременно встают два
-// игрока (свой боец и сетевые соперники считаются одинаково), плиты начинают
-// уменьшаться и пропадают. Сразу после этого в центре экрана появляется
-// Дед Мороз (santa.png): он крутится и швыряет по всей карте леденцы.
-// Упавший леденец можно подобрать — он даёт +1 леденец, как пикапы в соло.
-//
-// Координаты плит считаются из долей экрана и у всех клиентов одинаковые,
-// занятость видна по сетевым снимкам позиций, поэтому фазы ивента наступают
-// у каждого клиента сами — отдельная синхронизация по сети не нужна (как
-// диско, ивент остаётся клиентским визуальным событием).
-// ══════════════════════════════════════════════════════════════════════════
-
-// Фазы: 0 — ждём игроков на плитах, 1 — плиты уменьшаются, 2 — Дед Мороз и леденцы.
 number plates_phase=0, plates_t=0, plates_prev_mode=0
 number plate_a_lit=0, plate_b_lit=0
 number plates_santa_t=0, plates_santa_angle=0, plates_throw_cd=0, plates_next_candy=0
 array plates_candies=arr_new()
-
 function plates_event_reset()
     plates_phase=0
     plates_t=0
@@ -37,24 +19,18 @@ function plates_event_reset()
         i=i+1
     end
 end
-
 function plate_ax()
     return screen_w*plates_xa
 end
-
 function plate_ay()
     return screen_h*plates_yy
 end
-
 function plate_bx()
     return screen_w*plates_xb
 end
-
 function plate_by()
     return screen_h*plates_yy
 end
-
-// Стоит ли хоть один живой боец (свой или сетевой) на точке (px,py).
 function fighter_on_plate(number px, number py)
     if player.hp>0&&dist(player.x,player.y,px,py)<plates_stand_r
         return 1
@@ -71,9 +47,6 @@ function fighter_on_plate(number px, number py)
     end
     return 0
 end
-
-// Дед Мороз швыряет очередной леденец в случайную точку карты. Слоты идут по
-// кругу: когда все заняты, новый бросок заменяет самый старый леденец.
 function plates_throw_candy()
     number b=plates_next_candy*plates_candy_fields
     number m=candy_margin+16
@@ -90,8 +63,6 @@ function plates_throw_candy()
         plates_next_candy=0
     end
 end
-
-// Летящие леденцы доигрывают полёт, упавшие можно подобрать как пикапы.
 function plates_collect_candies()
     number i=0
     loop i<plates_candy_max
@@ -110,8 +81,6 @@ function plates_collect_candies()
         i=i+1
     end
 end
-
-// Дед Мороз крутится (скорость слегка «дышит») и кидает леденцы по расписанию.
 function tick_event_santa()
     plates_santa_t=plates_santa_t+dt
     plates_santa_angle=plates_santa_angle+dt*(plates_santa_spin+0.9*sin(plates_santa_t*1.7))
@@ -122,7 +91,6 @@ function tick_event_santa()
     end
     plates_collect_candies()
 end
-
 function tick_plates_event()
     if event_mode!=3
         if plates_prev_mode==3
@@ -156,11 +124,6 @@ function tick_plates_event()
         tick_event_santa()
     end
 end
-
-// ── Отрисовка ──────────────────────────────────────────────────────────────
-
-// Красная плита: тёмная подложка, светлая верхушка и кольцо-подсказка.
-// k — текущий масштаб (плиты уменьшаются), lit — на плите кто-то стоит.
 function draw_plate(number cx, number cy, number k, number lit)
     if k<=0
         return
@@ -181,7 +144,6 @@ function draw_plate(number cx, number cy, number k, number lit)
     color hint=(((unsigned)(int)floor(aa*0.55))<<24)|0x00FFFFFF
     ring(cx,cy,rr,3*k,hint)
 end
-
 function draw_event_plates()
     if event_mode!=3||plates_phase==2
         return
@@ -193,9 +155,6 @@ function draw_event_plates()
     draw_plate(plate_ax(),plate_ay(),k,plate_a_lit)
     draw_plate(plate_bx(),plate_by(),k,plate_b_lit)
 end
-
-// Леденцы Деда Мороза: в полёте летят по дуге с подрастанием, после посадки
-// лежат как обычные пикапы.
 function draw_event_candies()
     if event_mode!=3||plates_phase!=2
         return
@@ -219,10 +178,6 @@ function draw_event_candies()
         i=i+1
     end
 end
-
-// Дед Мороз в центре экрана: вырастает из точки, крутится,
-// слегка покачивается и оставляет под собой мягкую тень. В момент появления
-// расходится кольцо-всплеск.
 function draw_event_santa()
     if event_mode!=3||plates_phase!=2
         return
@@ -233,8 +188,6 @@ function draw_event_santa()
         number p=plates_santa_t/0.4
         pop=1-(1-p)*(1-p)
     end
-    // santa.png — 50×50, а не 128×128, как прежний кубик. Масштаб и
-    // половина спрайта считаются от него, чтобы Дед Мороз остался в центре.
     number sc=plates_santa_size/50*pop
     if sc<=0.01
         return

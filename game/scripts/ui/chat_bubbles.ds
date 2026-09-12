@@ -1,34 +1,9 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// chat_bubbles.ds — сообщения чата над бойцами в онлайн-бою.
-//
-// Когда игрок отправляет сообщение в чат, оно на несколько секунд появляется
-// над его кубиком в белом окошке (и над кубиками авторов чужих сообщений).
-// Модуль сам следит за новыми сообщениями (chat_bubbles_watch в update_online)
-// и сам рисуется (draw_chat_bubbles в draw_online) — чат для этого открывать
-// не нужно.
-//
-// Константы пузыря живут здесь же, а не в core/config.ds: они нужны только
-// этому модулю, и config.ds упирается в лимит строк на файл.
-// ══════════════════════════════════════════════════════════════════════════
-// Сообщение из чата появляется над кубиком автора на chat_bubble_time секунд
-// (белое окошко, тёмный текст chat_bubble_ink — один из цветов, которые
-// рендерер не перекрашивает в белый, иначе текст слился бы с окошком;
-// см. text_force_white в native/graphics/lifecycle.inc). Последнюю
-// chat_bubble_fade секунд окошко плавно тает.
 number chat_bubble_time=4, chat_bubble_fade=0.6, chat_bubble_alpha=235
 number chat_bubble_pad=10, chat_bubble_h=30, chat_bubble_ink=0x00202020
-
-// ── Пузыри чата над бойцами ───────────────────────────────────────────────
-// Каждое сообщение чата на несколько секунд появляется над кубиком автора в
-// бою: белое окошко с тёмным текстом (chat_bubble_ink — один из цветов,
-// которые рендерер не перекрашивает в белый, иначе текст слился бы с фоном).
-// Своё сообщение и чужие живут в отдельных слотах по номеру сетевого слота.
 string chat_seen_key=""
 string bubble_msg0="", bubble_msg1="", bubble_msg2="", bubble_msg3=""
 number bubble_t0=0, bubble_t1=0, bubble_t2=0, bubble_t3=0
-
 function bubble_set(number s, string m)
     if s==0
         bubble_msg0=m
@@ -44,7 +19,6 @@ function bubble_set(number s, string m)
         bubble_t3=chat_bubble_time
     end
 end
-
 function bubble_msg(number s)
     if s==0
         return bubble_msg0
@@ -55,7 +29,6 @@ function bubble_msg(number s)
     end
     return bubble_msg3
 end
-
 function bubble_left(number s)
     if s==0
         return bubble_t0
@@ -66,9 +39,6 @@ function bubble_left(number s)
     end
     return bubble_t3
 end
-
-// Сообщение uid показывает автор: свой ник — свой слот, иначе ищем слот
-// соперника по нику.
 function chat_bubble_show(string uid, string msg)
     if str_len(msg)==0
         return
@@ -86,10 +56,6 @@ function chat_bubble_show(string uid, string msg)
         i=i+1
     end
 end
-
-// Тикер пузырей: таймеры гаснут, новые сообщения подхватываются по серверному
-// ключу последнего (net_chat_key): указатель не ломается ни от прихода новых
-// сообщений, ни от обрезки старых (ключ остается у хвоста списка).
 function chat_bubbles_watch()
     if bubble_t0>0
         bubble_t0=bubble_t0-dt
@@ -127,8 +93,6 @@ function chat_bubbles_watch()
     if str_eq(lastkey,chat_seen_key)==1
         return
     end
-    // Показываем всё после последнего виденного ключа; если ключ исчез
-    // (список обрезан) — только самое новое сообщение.
     number starti=last
     number k=last-1
     loop k>=0
@@ -146,9 +110,6 @@ function chat_bubbles_watch()
     end
     chat_seen_key=lastkey
 end
-
-// Белое окошко с сообщением над кубиком: ширина по тексту (длинные сообщения
-// ужимаются по ширине экрана), последнюю секунду плавно тает.
 function draw_chat_bubble_at(number x, number y, string msg, number t)
     if t<=0||str_len(msg)==0
         return
@@ -163,8 +124,6 @@ function draw_chat_bubble_at(number x, number y, string msg, number t)
     number bw=tw+2*chat_bubble_pad, bh=chat_bubble_h
     number hw=25*cube_scale*player_scale
     number bx=clamp(x-bw/2,4,screen_w-bw-4)
-    // Отступ 30 px от верха кубика: над бойцом ещё ник (draw_overhead_nick
-    // занимает ~24 px), окошко сообщения висит выше него.
     number by=y-hw-bh-30
     if by<4
         by=4
@@ -178,8 +137,6 @@ function draw_chat_bubble_at(number x, number y, string msg, number t)
     roundrect(bx,by,bw,bh,10,box)
     text_in_box(msg,bx,by,bw,bh,ink,sc)
 end
-
-// Перед входом в бой: старые пузыри и указатель читаемых сообщений сбрасываются.
 function chat_bubbles_reset()
     bubble_msg0=""
     bubble_msg1=""
@@ -191,7 +148,6 @@ function chat_bubbles_reset()
     bubble_t3=0
     chat_seen_key=""
 end
-
 function draw_chat_bubbles()
     if net_slot()<0
         return
@@ -209,4 +165,3 @@ function draw_chat_bubbles()
         i=i+1
     end
 end
-

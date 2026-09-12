@@ -1,41 +1,16 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_hitbox_fades.ds — плавные альфы хитбоксов и вспышки вселенной
-//
-// Одна функция tick_hitbox_fades() ведёт «живые» альфы всех зон урона:
-// пока эффект активен — альфа набирается за hitbox_fade_in, после конца —
-// гаснет за hitbox_fade_out. Сюда же входят полосы ударов врага-бота и сетевых
-// соперников (раньше они вспыхивали и пропадали за один кадр) и альфа самой
-// вспышки вселенной. Вызывается каждый кадр из update_game и update_online,
-// рисунок этих альф — в combat/battle_hitboxes.ds и combat/battle_super_render.ds.
-//
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── «Живые» альфы хитбоксов ──────────────────────────────────────────────
-// Жив ли эффект в этом кадре. В конце боя (finished!=0) таймеры и состояния
-// обнуляются разом, но хитбоксы так не пропадают: они считаются закончившимися
-// и плавно гаснут за hitbox_fade_out под плашкой результата.
 function hb_live(number active)
     if finished!=0
         return 0
     end
     return active
 end
-
-// Универсальный фейд: свои времена появления и пропадания (у вспышки вселенной
-// они свои, universe_fade_in/universe_fade_out, у остальных — hitbox_fade_*).
 function hb_fade(number a, number live, number tin, number tout)
     if live==1
         return fade_up_a(a,tin)
     end
     return fade_down_a(a,tout)
 end
-
-// Вызывается каждый кадр из update_game и update_online: пока эффект активен,
-// альфа плавно набирается, после конца — плавно гаснет (рывок, снежинка и её
-// взрыв, вселенная, круги турелей и полосы ударов — свои, врага и сетевых
-// соперников).
 function tick_hitbox_fades()
     dash_box_a=hb_fade(dash_box_a,hb_live(dash_active),hitbox_fade_in,hitbox_fade_out)
     snow_ball_a=hb_fade(snow_ball_a,hb_live(gift.active),hitbox_fade_in,hitbox_fade_out)
@@ -45,8 +20,6 @@ function tick_hitbox_fades()
     end
     snow_boom_a=hb_fade(snow_boom_a,hb_live(boomlive),hitbox_fade_in,hitbox_fade_out)
     universe_box_a=hb_fade(universe_box_a,hb_live(universe_active),hitbox_fade_in,hitbox_fade_out)
-    // Вспышка вселенной: частицы проявляются плавно и после схлопывания ещё
-    // доигрывают, гаснув (universe_fade_out), а не исчезают за один кадр.
     universe_fx_a=hb_fade(universe_fx_a,hb_live(universe_active),universe_fade_in,universe_fade_out)
     number i=0
     loop i<turret_max
@@ -88,7 +61,6 @@ function tick_hitbox_fades()
     number s=0
     loop s<max_players
         if s!=net_slot()
-            // Полоса удара соперника: та же плавность, что у полосы игрока.
             number rp=0
             if arr_get(remote_punches,s*punch_fields)==1
                 rp=1
@@ -105,8 +77,6 @@ function tick_hitbox_fades()
             arr_set(rsnow_boom_a,s,hb_fade(arr_get(rsnow_boom_a,s),hb_live(rboomlive),hitbox_fade_in,hitbox_fade_out))
             b=s*universe_fields
             arr_set(runiverse_box_a,s,hb_fade(arr_get(runiverse_box_a,s),hb_live(arr_get(remote_universe,b+1)),hitbox_fade_in,hitbox_fade_out))
-            // Вспышка чужой вселенной доигрывает по своим временам: позиция и
-            // сид берутся из того же снимка (он не стирается в момент конца).
             arr_set(runiverse_fx_a,s,hb_fade(arr_get(runiverse_fx_a,s),hb_live(arr_get(remote_universe,b+1)),universe_fade_in,universe_fade_out))
             number k=0
             loop k<turret_max

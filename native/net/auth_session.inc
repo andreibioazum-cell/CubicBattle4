@@ -52,8 +52,8 @@ static void fb_url(char *dst, size_t cap, const char *url) {
 }
 
 /* Все обращения к данным базы идут через fb_http*: без ключа это просто http,
- * с ключом — подписанный запрос плюс один повтор после обновления протухшего
- * токена. 403 — это отказ правил: ретраить такой ответ бессмысленно. */
+ * с ключом - подписанный запрос плюс один повтор после обновления протухшего
+ * токена. 403 - это отказ правил: ретраить такой ответ бессмысленно. */
 static int fb_http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
                       const char *header,const char *value,char *etag,size_t etag_cap) {
     char authed[FB_URL_MAX];
@@ -67,14 +67,14 @@ static int fb_http_ex(const char *method,const char *url,const char *body,char *
         code = http_ex(method, authed, body, out, cap, header, value, etag, etag_cap);
     }
     if (code == 403 && net_log_ok())
-        LOGERR("firebase: HTTP 403 (permission denied) — проверь firebase.rules.json и FB_KEY");
+        LOGERR("firebase: HTTP 403 (permission denied) - проверь firebase.rules.json и FB_KEY");
     return code;
 }
 static int fb_http(const char *method,const char *url,const char *body,char *out,size_t cap) {
     return fb_http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
 }
 
-/* E-mail аккаунта игры: <ник>@cb4.game, всегда в нижнем регистре — правила
+/* E-mail аккаунта игры: <ник>@cb4.game, всегда в нижнем регистре - правила
  * базы сверяют токен с ником в нижнем регистре, а Firebase может
  * нормализовать регистр e-mail по-своему. Ник в /users сохраняет регистр. */
 static void fb_email_of(const char *nick, char *dst, size_t cap) {
@@ -95,7 +95,7 @@ static int fb_err_is(const char *resp, const char *code_name) {
 /* Вход/регистрация в Firebase Auth.
  * 0 = ок (*registered=1, если аккаунт создан сейчас), 1 = неверный пароль,
  * 2 = ошибка сети/сервера. Ник уже проверен nick_valid(): в защищённом
- * режиме допустимы только латиница/цифры/«_» — из них собирается e-mail. */
+ * режиме допустимы только латиница/цифры/«_» - из них собирается e-mail. */
 static int fb_sign_in(const char *nick, const char *pass, int *registered) {
     char url[FB_URL_MAX], body[512], resp[2048];
     char email[96], epass[192], idt[FB_ID_MAX], rt[FB_REFRESH_MAX];
@@ -119,7 +119,7 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
         if (net_log_ok()) LOGERR("firebase auth: network error");
         return 2;
     }
-    /* EMAIL_NOT_FOUND — игрока ещё нет, регистрируем. С включённой защитой от
+    /* EMAIL_NOT_FOUND - игрока ещё нет, регистрируем. С включённой защитой от
      * перебора e-mail тот же ответ приходит и на неверный пароль, поэтому
      * пробуем signUp в обоих случаях: EMAIL_EXISTS означает «аккаунт есть,
      * значит пароль не подошёл». */
@@ -151,7 +151,7 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
     return 2;
 }
 
-/* Создание записи нового игрока. with_pass — только для старого режима без
+/* Создание записи нового игрока. with_pass - только для старого режима без
  * Firebase Auth: там пароль хранится в базе (и это плохо). */
 static int put_default_user(const char *req_url, const char *nick, const char *pass) {
     char body[BODY], epass[128], enick[64];

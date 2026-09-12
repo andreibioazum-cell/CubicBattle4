@@ -13,9 +13,6 @@ function login_error_text()
     end
     return ""
 end
-
-// Одно поле формы: подпись сверху, плашка, текст и курсор, если поле активно
-// и клавиатура открыта. Оба поля (ник и пароль) рисуются одной функцией.
 function draw_login_field(string label, string value, string placeholder, number y, number focused)
     text(label, login_x() + login_lab_ox, y - login_lab, text_color)
     roundrect(login_x(), y, login_w, login_fh, field_radius, card_bg)
@@ -32,7 +29,6 @@ function draw_login_field(string label, string value, string placeholder, number
     end
     text_in_field(shown, login_x() + field_text_pad, y, login_fh, text_color, 0.6)
 end
-
 function draw_login()
     screen_fill()
     draw_login_field(tr_nick(), login_nick, tr_nick_ph(), login_nick_y(), login_field == 1)
@@ -44,7 +40,6 @@ function draw_login()
     end
     draw_back()
 end
-
 function login_sync_field()
     if keyboard_visible() == 0
         return
@@ -55,9 +50,6 @@ function login_sync_field()
         login_pass = keyboard_get_text()
     end
 end
-
-// Перевести фокус в поле: забрать текущий текст из клавиатуры, подставить
-// своё значение и показать клавиатуру заново.
 function login_focus(number field, string value)
     login_sync_field()
     login_field = field
@@ -67,15 +59,12 @@ function login_focus(number field, string value)
     end
     keyboard_show()
 end
-
 function login_focus_nick()
     login_focus(1, login_nick)
 end
-
 function login_focus_pass()
     login_focus(2, login_pass)
 end
-
 function login_open()
     login_field = 1
     login_status = 0
@@ -84,7 +73,6 @@ function login_open()
     keyboard_clear()
     keyboard_hide()
 end
-
 function login_do()
     login_sync_field()
     if str_len(login_nick) == 0
@@ -105,15 +93,10 @@ function login_do()
     login_status = 0
     keyboard_hide()
     keyboard_clear()
-    // Прогресс этого ника читаем одним вызовом: та же функция, что и при
-    // старте игры (engine.init), поэтому расхождений между «зашёл» и
-    // «перезапустил» больше не бывает. Настройки — следом: на новом
-    // устройстве они как раз пришли из облака вместе с профилем.
     progress_from_storage()
     settings_from_storage()
     start_transition(login_after)
 end
-
 function update_login()
     if keyboard_visible() == 1
         login_sync_field()
@@ -126,19 +109,11 @@ function update_login()
         end
     end
 end
-
-// ── Предупреждение об эпилепсии ───────────────────────────────────────────
-// Полноэкранное: чёрный фон, оба языка сразу, белый WARNING/ВНИМАНИЕ, без
-// кнопки. После warn_hold секунд тает ТОЛЬКО текст (альфа warn_a), а чёрный
-// экран остаётся цельным — на нём сразу начинает проявляться заставка
-// студии, поэтому между предупреждением и заставкой нет «вспышки» меню.
 function warn_rgb(number rgb)
     return (1 + floor(warn_a * 254)) * 0x1000000 + rgb
 end
-
 function draw_warning()
     rect(0, 0, screen_w, screen_h, 0xFF000000)
-    // Один цвет на заголовки и строки — отличаются только размером.
     color body = warn_rgb(text_color)
     number y = screen_h / 2 - 196
     ctext_scaled(tr_warn_title_en(), y, body, 1.15)
@@ -152,20 +127,12 @@ function draw_warning()
     ctext_scaled(tr_warn_ru3(), y + 290, body, 0.52)
     ctext_scaled(tr_warn_ru4(), y + 318, body, 0.52)
 end
-
-// ── Заставка студии ───────────────────────────────────────────────────────
-// Чёрный экран, по центру название студии, под ним тонкая линия. Логотип
-// (studio_a) проявляется и висит на цельном чёрном фоне (studio_bg_a = 1),
-// а в самом конце гаснет вместе с чёрным экраном — надпись «уходит» плавно,
-// вместе со всем экраном, и меню под ними проявляется без резкого рывка.
 function studio_rgb(number rgb)
     return (1 + floor(studio_a * 254)) * 0x1000000 + rgb
 end
-
 function studio_bg_rgb(number rgb)
     return (1 + floor(studio_bg_a * 254)) * 0x1000000 + rgb
 end
-
 function draw_studio()
     rect(0, 0, screen_w, screen_h, studio_bg_rgb(0))
     color body = studio_rgb(text_color)
@@ -174,13 +141,6 @@ function draw_studio()
     number lw = fit_w(320)
     rect(center_x(lw), y + 34, lw, 2, body)
 end
-
-// ══════════════════════════════════════════════════════════════════════════
-// Нажатия
-// ══════════════════════════════════════════════════════════════════════════
-
-// Зайти в онлайн: если сессии нет — сначала форма входа, если ник в бане —
-// обратно в лобби с сообщением.
 function open_online()
     if net_login_status() != 2
         login_after = ST_ONLINE
@@ -194,13 +154,11 @@ function open_online()
     end
     start_transition(ST_ONLINE)
 end
-
 function open_leaderboard()
     lb_wait = 0
     net_leaderboard_fetch(FIREBASE)
     start_transition(ST_LEADERBOARD)
 end
-
 function touch_lobby(number x, number y, number action)
     if action != 0
         return
@@ -226,8 +184,6 @@ function touch_lobby(number x, number y, number action)
         start_transition(ST_ACHIEVEMENTS)
     end
 end
-
-// Экраны-колонки (режимы и настройки): одинаковая сетка, разные пункты.
 function touch_modes(number x, number y)
     if hit_menu_row(x, y, 0) == 1
         start_transition(ST_LOBBY)
@@ -245,14 +201,11 @@ function touch_modes(number x, number y)
         open_leaderboard()
     end
 end
-
 function touch_settings(number x, number y)
     if hit_menu_row(x, y, 0) == 1
         start_transition(ST_LOBBY)
         return
     end
-    // Язык и хитбоксы сохраняются сразу же: settings.dat на устройстве и
-    // профиль в облаке (net_save_settings делает и то, и другое).
     if hit_menu_row(x, y, 1) == 1
         language = 0
         save_settings()
@@ -268,8 +221,6 @@ function touch_settings(number x, number y)
         save_settings()
         return
     end
-    // Громкость музыки: тап по «-10%»/«+10%» меняет значение сразу
-    // (устройство + облако + громкость играющей музыки).
     if hit_music_minus(x, y) == 1
         music_volume_step(-music_vol_step)
         return
@@ -278,7 +229,6 @@ function touch_settings(number x, number y)
         music_volume_step(music_vol_step)
     end
 end
-
 function touch_classes(number x, number y, number action)
     if action != 0
         return
@@ -295,8 +245,6 @@ function touch_classes(number x, number y, number action)
         start_transition(ST_SKINS)
         return
     end
-    // Хит-тест идёт по видимой сетке: скрытых карточек (Дед Мороз при
-    // отключённых конфетах) нет ни в отрисовке, ни в нажатиях.
     number vi = 0
     loop vi < classes_visible_count()
         if hit_class_card(x, y, vi) == 1
@@ -306,7 +254,6 @@ function touch_classes(number x, number y, number action)
         vi = vi + 1
     end
 end
-
 function touch_levels(number x, number y, number action)
     if action != 0
         return
@@ -324,7 +271,6 @@ function touch_levels(number x, number y, number action)
         n = n + 1
     end
 end
-
 function touch_skins(number x, number y, number action)
     if action != 0
         return
@@ -342,7 +288,6 @@ function touch_skins(number x, number y, number action)
         skin = skin + 1
     end
 end
-
 function touch_achievements(number x, number y, number action)
     if action != 0
         return
@@ -351,7 +296,6 @@ function touch_achievements(number x, number y, number action)
         start_transition(ST_LOBBY)
     end
 end
-
 function touch_leaderboard(number x, number y, number action)
     if action != 0
         return
@@ -360,7 +304,6 @@ function touch_leaderboard(number x, number y, number action)
         start_transition(ST_MODES)
     end
 end
-
 function touch_login(number x, number y, number action)
     if action != 0
         return
@@ -389,9 +332,6 @@ function touch_login(number x, number y, number action)
         end
     end
 end
-
-// Роутер нажатий для всех экранов, кроме лобби и боя: один экран — одна
-// ветка, никаких общих «if y >= sy + 152» на несколько экранов сразу.
 function touch_menu(number x, number y, number action)
     if action != 0
         return

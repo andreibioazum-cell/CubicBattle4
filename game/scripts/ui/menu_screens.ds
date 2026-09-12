@@ -1,25 +1,7 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// menu_screens.ds — отрисовка экранов меню: лобби, режимы, настройки, классы,
-// уровни, скины, достижения, таблица лидеров и вход по нику.
-//
-// Модуль тонкий намеренно. Каждый экран делает ровно две вещи:
-//   draw_*(...)  — «что нарисовать»;
-//   touch_*(...) — «куда нажали и что вызвать».
-// Всё остальное вынесено:
-//   координаты       → ui/layout.ds   (одни и те же функции в draw_* и touch_*)
-//   покупки/прогресс → ui/progress_classes.ds и ui/progress_rewards.ds (деньги, уровни, скины, достижения)
-//   примитивы        → core/ui.ds     (кнопки, карточки, плашки, текст)
-//   числа            → core/config.ds (размеры, цвета, цены)
-//   переводы         → ui/locale_core.ds и ui/locale_progress.ds   (весь текст обоих языков)
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── Колонка кнопок: лобби, режимы, настройки ──────────────────────────────
 function draw_menu_button(number row, string label)
     button(label, menu_x(), menu_row(row), btn_w, btn_h)
 end
-
 function draw_lobby_nick()
     if net_login_status() != 2
         return
@@ -28,7 +10,6 @@ function draw_lobby_nick()
     if str_len(nick) == 0
         return
     end
-    // Цвет только у ника: «Привет, "» и закрывающая кавычка остаются белыми.
     string pre = tr_hello_pre()
     string post = tr_hello_post()
     number scale = 0.5
@@ -41,21 +22,15 @@ function draw_lobby_nick()
     text_scaled(nick, x + pw, y, admin_color_of(nick, text_color), scale)
     text_scaled(post, x + pw + nw, y, text_color, scale)
 end
-
-// Кошелёк лобби: «Кубки: 120  Леденцы: 7» одной строкой под меню. Формируется
-// из переводов (tr_cups/tr_candies), размер и место — в config.ds и layout.ds.
 function draw_lobby_money()
     string cup_s = tr_cups() + ": " + cups
     if candy_enabled == 0
-        // Конфеты отключены параметром candy_enabled: в кошельке остаются
-        // только кубки. Баланс леденцов в файлах не трогается.
         ctext_scaled(cup_s, lobby_money_y(), text_color, money_scale)
         return
     end
     string cd_s = tr_candies() + ": " + candies
     money_pair(cup_s, cd_s, lobby_money_y(), money_scale, money_gap)
 end
-
 function draw_lobby()
     check_achievements()
     screen_fill()
@@ -71,7 +46,6 @@ function draw_lobby()
         ctext(banned_msg, lobby_msg_y(), text_color)
     end
 end
-
 function draw_modes()
     screen_fill()
     draw_menu_button(0, tr_back())
@@ -79,25 +53,16 @@ function draw_modes()
     draw_menu_button(2, tr_online())
     draw_menu_button(3, tr_leaderboard())
 end
-
 function draw_settings()
     screen_fill()
     draw_menu_button(0, tr_back())
     draw_menu_button(1, "English")
     draw_menu_button(2, "Русский")
     draw_menu_button(3, tr_hitboxes_toggle())
-    // Громкость музыки: подпись со значением в строке 4, под ней −/+ шагом 10%.
     text_in_box(tr_music_vol() + ": " + music_volume + "%", menu_x(), menu_row(4), btn_w, btn_h, text_color, 0.7)
     button_scaled("-" + music_vol_step + "%", music_minus_x(), menu_row(5), music_half_w(), btn_h, 0.7)
     button_scaled("+" + music_vol_step + "%", music_plus_x(), menu_row(5), music_half_w(), btn_h, 0.7)
 end
-
-// ── Экран классов ─────────────────────────────────────────────────────────
-// Карточка класса: спрайт, название, девиз, уровень и кнопка действия.
-// Карточки рисуются по видимой сетке: если конфеты отключены и Дед Мороз ещё
-// не куплен, его карточка исчезает, а остальные сдвигаются по центру.
-// Азум в скине «Зомби» ходит своей текстурой (zombie_azum.png); если
-// файлы не загрузились — прежний зелёный силуэт.
 function draw_class_card(number vi)
     number cls = visible_class_at(vi)
     number x = classes_card_x(vi)
@@ -124,15 +89,10 @@ function draw_class_card(number vi)
     centered_text(tr_level() + " " + class_level_of(cls), x, w, class_level_y(), text_color, 0.45)
     button_scaled(class_pick_label(cls), x + class_pick_inset(), class_pick_y(), class_pick_w(), class_pick_h, 0.55)
 end
-
-// Два бара выбранного класса: здоровье красное, сила голубая. Здоровье —
-// живучесть в бою (у Азума с возрождением жизней вдвое больше), сила —
-// реальный урон удара.
 function draw_stat_row(string label, number x, number y, number w, number h, number cur, number maxv, color c)
     text_scaled(label, x, y - 26, text_color, 0.5)
     hud_bar(x, y, w, h, cur, maxv, c, 0)
 end
-
 function draw_class_stats()
     number w = stat_bar_w()
     number x = center_x(w)
@@ -142,7 +102,6 @@ function draw_class_stats()
     draw_stat_row(tr_hp() + ": " + hp, x, stat_hp_y(), w, stat_bar_h(), hp, 20, stat_hp_color)
     draw_stat_row(tr_strength() + ": " + power, x, stat_power_y(), w, stat_bar_h(), power, 2, stat_power_color)
 end
-
 function draw_classes()
     screen_fill()
     number vi = 0
@@ -150,9 +109,6 @@ function draw_classes()
         draw_class_card(vi)
         vi = vi + 1
     end
-    // Под карточками пара кнопок: слева «Уровни», справа «Скины», середина
-    // пустая. Скины есть только у Азума — у остальных классов правой кнопки
-    // нет вообще, а «Уровни» не переезжают, чтобы не прыгать при смене класса.
     button_scaled(tr_levels(), levels_btn_x(), class_actions_y(), class_action_w(), btn_h, 0.9)
     if skins_btn_visible() == 1
         button_scaled(tr_skins(), skins_btn_x(), class_actions_y(), class_action_w(), btn_h, 0.9)
@@ -162,8 +118,6 @@ function draw_classes()
     draw_class_stats()
     draw_back()
 end
-
-// ── Экран уровней выбранного класса ───────────────────────────────────────
 function draw_level_row(number n)
     number x = levels_x()
     number w = levels_w()
@@ -177,7 +131,6 @@ function draw_level_row(number n)
     centered_text(tr_class_level_effect(player_class, n), x, w, y + 34, text_color, 0.46)
     centered_text(level_status_of(player_class, n), x, w, y + 52, text_color, 0.42)
 end
-
 function draw_levels()
     screen_fill()
     number n = 1
@@ -189,12 +142,6 @@ function draw_levels()
     draw_msg(level_msg_text(), levels_msg_y(), level_msg_t)
     draw_back()
 end
-
-// ── Экран скинов (пока только Азум) ───────────────────────────────────────
-// Карточка скина: превью, название и статус. Превью всегда рисует настоящую
-// текстуру скина (у зомби — zombie_azum.png, а не силуэт), закрытый скин
-// отличается только плашкой: фон карточки и текст темнеют на 25%
-// (locked_shade).
 function draw_skin_card(number skin)
     number x = skins_card_x(skin)
     number w = skin_card_w
@@ -208,9 +155,6 @@ function draw_skin_card(number skin)
     number sprite = 50 * scale
     number sx = x + (w - sprite) / 2
     if skin == SKIN_ZOMBIE
-        // Всегда показываем настоящую текстуру скина (tex_tint рисует силуэт,
-        // поэтому для превью не годится — из-за него зомби выглядел зелёной
-        // перекраской обычного куба). Закрытость передаёт затемнённая плашка.
         tex(sx, skin_preview_y(), zombie_idle_tex(), 0, scale)
     else
         tex(sx, skin_preview_y(), azum_idle_tex(), 0, scale)
@@ -226,7 +170,6 @@ function draw_skin_card(number skin)
     centered_text(skin_name_of(skin), x, w, skin_name_y(), c, 0.8)
     centered_text(status, x, w, skin_status_y(), c, 0.45)
 end
-
 function draw_skins()
     screen_fill()
     number skin = 0
@@ -238,14 +181,9 @@ function draw_skins()
     draw_msg(tr_skins_need_legends(), skins_msg_y(), skin_msg_t)
     draw_back()
 end
-
-// ── Экран достижений ──────────────────────────────────────────────────────
-// Список наград экрана: индекс → бит, название, описание. Одна таблица на
-// отрисовку и на статус: чтобы добавить награду, нужна одна строка здесь.
 function achievement_count()
     return 3
 end
-
 function achievement_bit(number i)
     if i == 1
         return ACH_FIRST_WIN
@@ -255,7 +193,6 @@ function achievement_bit(number i)
     end
     return ACH_LEGENDS
 end
-
 function achievement_title(number i)
     if i == 1
         return tr_achievement_first_win()
@@ -265,7 +202,6 @@ function achievement_title(number i)
     end
     return tr_achievement_legends()
 end
-
 function achievement_desc(number i)
     if i == 1
         return tr_achievement_first_win_desc()
@@ -275,10 +211,6 @@ function achievement_desc(number i)
     end
     return tr_achievement_legends_desc()
 end
-
-// Карточка награды: полученная — яркий фиолетовый, закрытая — тот же цвет на
-// 25% темнее и текст темнее (panel/panel_text из core/ui.ds). Никаких кружков
-// и счётчиков «N из M»: статус виден по яркости и подписи.
 function draw_achievement_card(number i)
     number locked = 1 - has_achievement(achievement_bit(i))
     number x = ach_x()
@@ -293,7 +225,6 @@ function draw_achievement_card(number i)
     text_scaled(achievement_desc(i), x + card_text_pad, y + 46, c, 0.46)
     text_scaled(status, x + card_text_pad, y + 70, c, 0.42)
 end
-
 function draw_achievements()
     check_achievements()
     screen_fill()
@@ -304,10 +235,6 @@ function draw_achievements()
     end
     draw_back()
 end
-
-// ── Таблица лидеров ───────────────────────────────────────────────────────
-// Подиум: 1 — золото, 2 — монохромное серебро, 3 — бронза. Цветной осталась
-// только подложка строки: сам текст (место, ник, кубки) во всей игре белый.
 function lb_place_bg(number i)
     if i == 0
         return 0xFF3D3215
@@ -320,7 +247,6 @@ function lb_place_bg(number i)
     end
     return card_bg
 end
-
 function draw_lb_row(number i)
     number x = lb_x()
     number y = lb_row_y(i)
@@ -338,7 +264,6 @@ function draw_lb_row(number i)
     number cw = text_ink_width(cup_s) * scale
     text_scaled(cup_s, x + w - card_text_pad - cw, ty, text_color, scale)
 end
-
 function draw_leaderboard()
     screen_fill()
     number st = net_leaderboard_status()
@@ -369,5 +294,3 @@ function draw_leaderboard()
     end
     draw_back()
 end
-
-// ── Экран входа ───────────────────────────────────────────────────────────

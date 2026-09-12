@@ -1,18 +1,11 @@
-// ── Достижения ────────────────────────────────────────────────────────────
-// Все награды — один битмаск. Побитовых операций в DimScript нет, поэтому бит
-// достаётся делением на вес бита и проверкой на чётность: 1, 2, 4, 8...
 function has_achievement(number bit)
     number shifted = floor(achievement_mask / bit)
     return shifted - floor(shifted * 0.5) * 2
 end
-
 function show_achievement_toast(number bit)
     ach_toast_bit = bit
     ach_toast_t = ACH_TOAST_DURATION
 end
-
-// Выдать награду: отметить в облаке, добавить бит в маску и показать тост.
-// Повторный вызов ничего не делает — награда выдаётся один раз.
 function grant_achievement(number bit)
     if has_achievement(bit) == 1
         return 0
@@ -22,22 +15,11 @@ function grant_achievement(number bit)
     show_achievement_toast(bit)
     return 1
 end
-
-// Пересчитать награды, которые зависят от текущего прогресса, а не от
-// события. Вызывается из engine.init() и с экранов лобби/достижений, поэтому
-// даже удалённый achievements.dat быстро восстанавливается из прогресса.
 function check_achievements()
-    // Обычный класс доступен сразу, поэтому для «Потрогай траву» нужны три
-    // открываемых: Азум, Дед Мороз и буК.
     if class_owned_of(CLASS_AZUM) == 1 && class_owned_of(CLASS_SANTA) == 1 && class_owned_of(CLASS_EBUC) == 1
         grant_achievement(ACH_ALL_CHARACTERS)
     end
 end
-
-// ── Сохранение и загрузка ─────────────────────────────────────────────────
-// Записать всё облако прогресса и сообщить сети текущий класс/уровень/скин —
-// их видят соперники в онлайне. Параметр bp хэллоуинского батл пасса больше
-// не используется (сам батл пасс убран) и всегда пишется как 0.
 function save_progress()
     net_save_progress_all(cups, candies, player_class,
         class_owned_of(CLASS_AZUM), class_owned_of(CLASS_SANTA), class_owned_of(CLASS_EBUC),
@@ -49,17 +31,11 @@ function save_progress()
         0, azum_skin)
     progress_push_to_net()
 end
-
-// То, что нужно сетевому снимку: класс, уровень и скин своего бойца.
 function progress_push_to_net()
     net_set_class(player_class)
     net_set_level(player_level)
     net_set_skin(azum_skin)
 end
-
-// Привести прогресс к допустимым значениям: уровни в границах ветки, скин —
-// только если открыто достижение «Легенды не умирают...», класс — только
-// купленный.
 function progress_normalize()
     if azum_skin < SKIN_NORMAL || azum_skin >= SKIN_COUNT
         azum_skin = SKIN_NORMAL
@@ -77,7 +53,6 @@ function progress_normalize()
         set_class_progress(cls, lv, un)
         cls = cls + 1
     end
-    // Выбранный класс обязан быть в списке и купленным.
     if player_class < 0 || player_class >= class_count || class_owned_of(player_class) == 0
         player_class = CLASS_ORDINARY
     end
@@ -86,10 +61,6 @@ function progress_normalize()
         player_level = 0
     end
 end
-
-// Прочитать прогресс из локальных файлов (их ведёт net.c): вызывается и при
-// старте игры, и после входа по нику/паролю — раньше это были два одинаковых
-// списка из двадцати строк.
 function progress_from_storage()
     cups = net_load_cups()
     candies = net_load_candies()
@@ -106,39 +77,22 @@ function progress_from_storage()
     set_class_progress(CLASS_SANTA, net_load_santa_level(), net_load_santa_levels_unlocked())
     set_class_progress(CLASS_EBUC, net_load_ebuc_level(), net_load_ebuc_levels_unlocked())
     azum_skin = net_load_azum_skin()
-    // Те, кто получил «Зомби» через хэллоуинский батл пасс (он убран), свою
-    // награду не теряют: скин на месте — считаем достижение открытым.
     if azum_skin == SKIN_ZOMBIE && has_achievement(ACH_LEGENDS) == 0
         grant_achievement(ACH_LEGENDS)
     end
     progress_normalize()
     sync_selected_class()
     progress_push_to_net()
-    // Награды, зависящие от прогресса («Потрогай траву»), пересчитываются
-    // сразу: даже удалённый achievements.dat восстанавливается из того, что
-    // уже куплено.
     check_achievements()
 end
-
-// ── Настройки: язык и хитбоксы ────────────────────────────────────────────
-// Всё, что игрок меняет в настройках, хранится так же, как прогресс: на
-// устройстве (settings.dat, его ведёт net.c) и в профиле облака. Читаются
-// настройки при старте одним вызовом, пишутся сразу при изменении — поэтому
-// язык и положение переключателя хитбоксов переживают перезапуск игры.
 function settings_from_storage()
     language = net_load_language()
     show_hitboxes = net_load_hitboxes()
     music_volume = net_load_music_volume()
 end
-
-// Язык и хитбоксы: устройство + облако одним вызовом нативной функции.
 function save_settings()
     net_save_settings(language, show_hitboxes)
 end
-
-// Шаг громкости музыки (настройки): значение в пределах 0..100, сохранение на
-// устройство и в облако, и мгновенное применение к играющей музыке — игрок
-// слышит результат тапа сразу, не выходя в лобби.
 function music_volume_step(number d)
     music_volume = clamp(music_volume + d, 0, 100)
     net_save_music_volume(music_volume)

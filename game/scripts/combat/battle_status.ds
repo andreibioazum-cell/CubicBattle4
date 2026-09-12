@@ -1,18 +1,4 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_status.ds — состояния бойцов: заморозка, оглушение и яд
-//
-// Тики заморозки (снежинка Деда Мороза), оглушения (рывок Азума) и яда
-// (посох Деда Мороза) — у игрока и у врага. Решения и атаки бота —
-// в combat/battle_ai.ds.
-//
-// Здесь же — плавность кругов состояний: одна функция tick_status_fades()
-// ведёт альфы всех шести кругов (заморозка, яд и оглушение у врага и у
-// игрока), поэтому эффект, который враг наложил на бойца, выглядит ровно тем
-// же кругом, что и эффект на враге, и так же плавно появляется и гаснет.
-// ══════════════════════════════════════════════════════════════════════════
-
 function tick_freeze()
     if player_freeze>0
         player_freeze=player_freeze-dt
@@ -21,7 +7,6 @@ function tick_freeze()
         end
     end
 end
-
 function tick_player_stun()
     if player_stun>0
         player_stun=player_stun-dt
@@ -30,7 +15,6 @@ function tick_player_stun()
         end
     end
 end
-
 function tick_player_poison()
     if player_poison>0
         if player_poison_tick<=0
@@ -51,11 +35,6 @@ function tick_player_poison()
         end
     end
 end
-
-// ── Круги состояний: плавное появление и пропадание ───────────────────────
-// Альфа круга набирается за freeze_fade_in, пока состояние живо, и гаснет за
-// freeze_fade_out после его конца — ни один круг не вспыхивает и не обрывается
-// за один кадр.
 function fade_up_status(number a)
     a=a+dt/freeze_fade_in
     if a>1
@@ -63,7 +42,6 @@ function fade_up_status(number a)
     end
     return a
 end
-
 function fade_down_status(number a)
     a=a-dt/freeze_fade_out
     if a<0
@@ -71,10 +49,6 @@ function fade_down_status(number a)
     end
     return a
 end
-
-// live — живо ли состояние в этом кадре. В конце боя таймеры состояний уже не
-// тикают (update_game/update_online возвращаются раньше), но круги всё равно
-// гаснут плавно: finished принудительно считает состояние закончившимся.
 function status_alpha(number a, number live)
     if finished!=0
         return fade_down_status(a)
@@ -84,10 +58,6 @@ function status_alpha(number a, number live)
     end
     return fade_down_status(a)
 end
-
-// Вызывается каждый кадр из update_game и update_online до проверки finished.
-// Рисунок этих альф — draw_freeze/draw_poison/draw_stun и их «игроковые» пары
-// в combat/battle_render.ds.
 function tick_status_fades()
     number efreeze=0, epoison=0, estun=0
     if game_state==ST_SOLO

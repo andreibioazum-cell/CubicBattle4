@@ -8,7 +8,7 @@ static int push_state(void) {
     Actor a; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
     lock(); a=net.me; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
-    /* Стоим на месте и свежий heartbeat уже был — базу не дёргаем. seq обязан
+    /* Стоим на месте и свежий heartbeat уже был - базу не дёргаем. seq обязан
      * обновляться хотя бы раз в HEARTBEAT_TICK: иначе другие игроки через
      * TIMEOUT сочтут слот мёртвым и заберут его. */
     if (ps_have_last && actor_same(&a,&ps_last) && now_ms()-ps_last_put < HEARTBEAT_TICK) return 1;
@@ -260,7 +260,7 @@ static void wait_ban_list(void) {
     while (net.run && !ban_synced() && now_ms() < deadline) sleep_ms(50);
 }
 /* Пауза после неудач: с каждой следующей ошибкой вдвое длиннее (300 мс …
- * 8 с, плюс джиттер). Раньше потоки бились в базу каждые 300–500 мс даже
+ * 8 с, плюс джиттер). Раньше потоки бились в базу каждые 300-500 мс даже
  * когда она лежала, усиливая аварию. */
 static void net_fail_sleep(int fails) {
     int ms = 300;
@@ -396,7 +396,7 @@ void net_connect(const char *url, const char *room) {
     /* Сбрасываем всё состояние прошлой комнаты: чат, игроков, ивент/баннер и
      * статики наблюдения за слотами. Без этого, пока новый клиент ещё не
      * захватил слот (комната занята «призраками» убитых приложений), на
-     * экране висят сообщения и снимки игроков из прошлой сессии — выглядит
+     * экране висят сообщения и снимки игроков из прошлой сессии - выглядит
      * как «чат прогрузился, а никто не двигается, висит подключение». */
     memset(claim_seen_seq, 0, sizeof(claim_seen_seq));
     memset(claim_seen_at, 0, sizeof(claim_seen_at));
