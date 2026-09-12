@@ -930,6 +930,14 @@ class DimScriptCompiler:
             self._out('ds_fn_draw();')
         self._emit('}')
         self._emit('')
+        self._emit('int back_pressed(void) {')
+        self.indent = 1
+        if 'back_pressed' in self.functions and self.func_ret.get('back_pressed') == 'num':
+            self._out('return ds_fn_back_pressed() != 0;')
+        else:
+            self._out('return 0;')
+        self._emit('}')
+        self._emit('')
         self._emit('void touch(float x, float y, int action, int pointer_id) {')
         self.indent = 1
         self._out('mouse_clicked = (action == 0) ? 1 : 0;')

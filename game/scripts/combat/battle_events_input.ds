@@ -120,6 +120,10 @@ function draw_overhead_nick(string nick, number cx, number top_y, color col)
     text_scaled(nick,cx-w/2,top_y-12-th-tt,col,0.5)
 end
 function draw_online()
+    if chat_open==1
+        draw_chat()
+        return
+    end
     draw_arena_background()
     draw_disco()
     draw_field()
@@ -196,6 +200,7 @@ function draw_online()
         end
         i=i+1
     end
+    draw_event_beam()
     draw_event_santa()
     draw_chat_bubbles()
     draw_player_freeze()
@@ -207,14 +212,13 @@ function draw_online()
     hud_bar(20,20,w,28,player.hp,player.max_hp,0x7ED321,0)
     draw_controls()
     draw_chat()
+    draw_plates_hud()
     number st=net_status(), sy=chat_btn_y()+btn_h+12
-    if chat_open==0
-        if st==4
-            ctext(tr_no_connection(),sy,0xFFFFFF)
-            ctext(tr_reconnecting(),sy+32,0xFFFFFF)
-        else if st==1
-            ctext(tr_connecting(),sy,0xFFFFFF)
-        end
+    if st==4
+        ctext(tr_no_connection(),sy,0xFFFFFF)
+        ctext(tr_reconnecting(),sy+32,0xFFFFFF)
+    else if st==1
+        ctext(tr_connecting(),sy,0xFFFFFF)
     end
     if finished==2
         draw_result(tr_defeat())
@@ -273,14 +277,21 @@ function touch_game(number x, number y, number action, number id)
         drop_joy()
         return
     end
-    if game_state==ST_ONLINE&&touch_chat(x,y,action)==1
-        return
+    if game_state==ST_ONLINE
+        if touch_chat(x,y,action)==1
+            if chat_open==1
+                aim_id=-1
+                super_id=-1
+                drop_joy()
+            end
+            return
+        end
+        if chat_open==1
+            return
+        end
     end
-    if back_hit(x,y)==1&&action!=2
+    if back_hit(x,y)==1&&action==0
         start_transition(0)
-        return
-    end
-    if chat_open==1
         return
     end
     if (player_class==CLASS_AZUM||player_class==CLASS_SANTA||player_class==CLASS_EBUC)&&(game_state==ST_SOLO||game_state==ST_ONLINE)

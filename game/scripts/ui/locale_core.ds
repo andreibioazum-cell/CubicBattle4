@@ -77,6 +77,12 @@ function tr_chat()
     end
     return "Chat"
 end
+function tr_candy_timer()
+    if language == 1
+        return "Собери леденцы"
+    end
+    return "Collect candies"
+end
 function tr_no_messages()
     if language == 1
         return "Нет сообщений"

@@ -31,6 +31,12 @@ static void protected_touch(void *userdata) {
     TouchCall *call = (TouchCall *)userdata;
     touch(call->x, call->y, call->action, call->id);
 }
+static int back_consumed = 0;
+typedef struct { int handled; } BackCall;
+static void protected_back(void *userdata) {
+    BackCall *call = (BackCall *)userdata;
+    call->handled = back_pressed();
+}
 static void mark_script_failed(const char *hook) {
     const char *message = ds_runtime_error_message();
     __android_log_print(ANDROID_LOG_ERROR, "DimScript","script hook '%s' stopped: %s; scheduling a restart",hook?hook:"unknown",message);
@@ -128,7 +134,21 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_MULTIPLE)) {
             if (keyboard_handle_key(key, action, meta)) return 1;
         }
-        if (key == AKEYCODE_BACK && action == AKEY_EVENT_ACTION_UP) return 0;
+        if (key == AKEYCODE_BACK) {
+            /* Системный «Назад» сначала отдаём скрипту: он закрывает чат или
+             * возвращает на прошлый экран. Если скрипт его не взял (лобби),
+             * и DOWN, и UP уходят системе - Android сворачивает игру сам. */
+            if (action == AKEY_EVENT_ACTION_DOWN) {
+                BackCall call = {0};
+                back_consumed = 0;
+                if (!script_active) return 0;
+                if (!ds_call_protected(protected_back, &call, "back_pressed")) { mark_script_failed("back_pressed"); return 1; }
+                back_consumed = call.handled ? 1 : 0;
+                return back_consumed;
+            }
+            if (action == AKEY_EVENT_ACTION_UP) { int c = back_consumed; back_consumed = 0; return c; }
+            return back_consumed;
+        }
         /* Когда текст ведёт системный EditText, клавиши (в том числе Backspace)
          * должны дойти до него, иначе удаление применяется только к буферу игры,
          * редактор остаётся со старым текстом и дописывает его к новому вводу.
