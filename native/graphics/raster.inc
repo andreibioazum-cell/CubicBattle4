@@ -283,14 +283,14 @@ static int ensure_font(void) {
     if (font_tried) return 0;
     font_tried = 1;
     uint8_t *data = NULL; size_t sz = 0;
-    if (!open_asset("fonts/ChillRoundGothic_Heavy.ttf", &data, &sz)) {
-        ds_log_err("font not loaded: fonts/ChillRoundGothic_Heavy.ttf not found");
+    if (!open_asset("fonts/Inter_24pt-Medium.ttf", &data, &sz)) {
+        ds_log_err("font not loaded: fonts/Inter_24pt-Medium.ttf not found");
         return 0;
     }
     font = ds_font_create(data, sz, 32);
     free(data);
     if (!font) { ds_log_err("font not loaded: could not parse TrueType font"); return 0; }
-    ds_log("font loaded: fonts/ChillRoundGothic_Heavy.ttf");
+    ds_log("font loaded: fonts/Inter_24pt-Medium.ttf");
     return 1;
 }
 static int utf8_dec(const char **c) {
