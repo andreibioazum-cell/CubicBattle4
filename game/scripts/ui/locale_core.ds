@@ -162,9 +162,9 @@ end
 
 function tr_achievement_legends_desc()
     if language == 1
-        return "Возродиться за Азума 7 раз за всё время"
+        return "Возродиться за Азума 7 раз не выходя из игры"
     end
-    return "Revive as Azum 7 times in total"
+    return "Revive as Azum 7 times without leaving the game"
 end
 
 function tr_achievement_grass()

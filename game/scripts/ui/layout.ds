@@ -143,15 +143,15 @@ function class_sprite_y()
 end
 
 function class_title_y()
-    return classes_top() + 100
+    return classes_top() + 88
 end
 
 function class_desc_y()
-    return classes_top() + 132
+    return classes_top() + 114
 end
 
 function class_level_y()
-    return classes_top() + 156
+    return classes_top() + 136
 end
 
 function class_pick_inset()

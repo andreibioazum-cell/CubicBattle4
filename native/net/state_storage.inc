@@ -304,6 +304,24 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
     if (k != 1 && k != 2 && k != 3) k = 0;
+    // Владение персонажами — липкое: раз куплен, не теряется даже если
+    // в облаке старая запись без него (фикс бага «буК пропал после перезахода»).
+    pg_lock();
+    if (pg.loaded) {
+        if (pg.azum == 1) a = 1;
+        if (pg.santa == 1) sn = 1;
+        if (pg.ebuc == 1) eu = 1;
+        // Уровни тоже только растут: облако не может откатить открытый уровень.
+        if (pg.ordinary_levels_unlocked > ou) ou = pg.ordinary_levels_unlocked;
+        if (pg.azum_levels_unlocked > au) au = pg.azum_levels_unlocked;
+        if (pg.santa_levels_unlocked > su) su = pg.santa_levels_unlocked;
+        if (pg.ebuc_levels_unlocked > eul) eul = pg.ebuc_levels_unlocked;
+        if (pg.ordinary_level > ol) ol = pg.ordinary_level;
+        if (pg.azum_level > al) al = pg.azum_level;
+        if (pg.santa_level > sl) sl = pg.santa_level;
+        if (pg.ebuc_level > el) el = pg.ebuc_level;
+    }
+    pg_unlock();
     if (k == 1 && !a) k = 0;
     if (k == 2 && !sn) k = 0;
     if (k == 3 && !eu) k = 0;

@@ -69,9 +69,9 @@ end
 
 function class_currency_of(number cls)
     if class_pays_candies(cls) == 1
-        return tr_candies()
+        return tr_candies_unit()
     end
-    return tr_cups()
+    return tr_cups_unit()
 end
 
 function class_name_of(number cls)
@@ -152,8 +152,8 @@ function class_skin_active(number cls)
     return skin_is_active(cls, azum_skin)
 end
 
-// Скин «Зомби» открывает достижение «Легенды не умирают...» (25 возрождений
-// за Азума). Обычный скин доступен всегда.
+// Скин «Зомби» открывает достижение «Легенды не умирают...» (7 возрождений
+// за Азума не выходя из игры). Обычный скин доступен всегда.
 function skin_unlocked(number skin)
     if skin == SKIN_NORMAL
         return 1

@@ -155,11 +155,18 @@ function tr_cups_unit()
     return "cups"
 end
 
+function tr_candies_unit()
+    if language == 1
+        return "конфет"
+    end
+    return "candies"
+end
+
 function tr_level_locked()
     if language == 1
-        return "Сначала откройте предыдущий"
+        return "Купите предыдущий уровень"
     end
-    return "Unlock the previous level first"
+    return "Buy the previous level"
 end
 
 function tr_level_need_cups()
@@ -186,9 +193,9 @@ end
 function tr_buy_for(number cost, string currency)
     string out = ""
     if language == 1
-        out = "Купить · " + cost + " " + currency
+        out = "" + cost + " " + currency
     else
-        out = "Buy · " + cost + " " + currency
+        out = "" + cost + " " + currency
     end
     return out
 end
