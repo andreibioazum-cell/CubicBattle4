@@ -124,6 +124,11 @@ static uint32_t text_force_white(uint32_t c) {
     // Preserve admin nickname colors (red for Dimasi4ek229, blue for qwetyuiopaj1234)
     if (c == 0xFFFF4444u || c == 0xFF4FC3F7u || c == 0xFFFF3333u || c == 0xFF33A8FFu)
         return c;
+    /* Тёмные чернила пузыря чата (chat_bubble_ink из config.ds): белый текст
+     * на белом окошке нечитаем, поэтому тёмный RGB оставляем как есть,
+     * сохраняя альфу плавного затухания. Сверяем только RGB. */
+    if ((c & 0x00ffffffu) == 0x00202020u)
+        return c;
     return (c & 0xff000000u) | 0x00ffffffu;
 }
 void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {

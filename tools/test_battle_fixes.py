@@ -8,7 +8,9 @@ timing (black screen never jumps). Compiles the real DimScript sources with a
 host C harness and asserts on the actual logic/draw calls.
 """
 from pathlib import Path
+import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -806,7 +808,45 @@ int main(void) {
 '''
 
 
+def check_firebase_rules_cover_request_bodies():
+    """Правила RTDB должны объявлять КАЖДЫЙ ключ тел запросов клиента.
+
+    У узлов правил есть "$other": {".validate": false}, поэтому одно новое
+    поле в PUT/PATCH без правила отклоняет всю запись: именно так онлайн
+    когда-то завис на вечном «подключении» (claim слота не проходил
+    валидацию). Проверка ловит рассинхрон firebase.rules.json и native/net.
+    """
+    rules = json.loads((ROOT / "firebase.rules.json").read_text(encoding="utf-8"))["rules"]
+
+    def declared(node):
+        return {k for k in node if not k.startswith((".", "$"))}
+
+    slot = declared(rules["rooms"]["$room"]["players"]["$slot"])
+    user = declared(rules["users"]["$nick"])
+    banner = declared(rules["banner"])
+    msg = declared(rules["rooms"]["$room"]["chat"]["$msg"])
+
+    def body_keys(name):
+        text = (ROOT / "native/net" / name).read_text(encoding="utf-8")
+        return set(re.findall(r'\\"([a-z0-9_]+)\\":', text))
+
+    missing = body_keys("room_sync.inc") - slot
+    assert not missing, f"rooms/$room/players/$slot rules miss: {sorted(missing)}"
+    # auth_session.inc также шлёт тела логина в identitytoolkit — их ключи
+    # не относятся к базе и в проверке не участвуют.
+    auth_only = {"email", "password", "grant_type", "refresh_token"}
+    profile = (body_keys("state_storage.inc") | body_keys("settings_storage.inc")
+               | (body_keys("auth_session.inc") - auth_only))
+    missing = profile - user
+    assert not missing, f"users/$nick rules miss: {sorted(missing)}"
+    missing = body_keys("player_api.inc") - msg
+    assert not missing, f"rooms/$room/chat/$msg rules miss: {sorted(missing)}"
+    missing = body_keys("room_control.inc") - banner
+    assert not missing, f"banner rules miss: {sorted(missing)}"
+
+
 def main():
+    check_firebase_rules_cover_request_bodies()
     with tempfile.TemporaryDirectory(prefix="cubic-fixes-") as directory:
         temp = Path(directory)
         compiler = DimScriptCompiler()
@@ -868,6 +908,36 @@ def main():
         assert "studio_bg_rgb(0)" in "".join(fns["draw_studio"][1])
         studio_body = "".join(fns["update_studio"][1]).replace(" ", "")
         assert "studio_bg_a=studio_a" in studio_body
+
+        # ── Чат: пузыри сообщений над бойцами и кнопка закрытия по центру ──
+        online_body = "".join(fns["draw_online"][1])
+        assert online_body.count("draw_chat_bubbles()") == 1, \
+            "draw_online must draw chat bubbles once"
+        upd_body = "".join(fns["update_online"][1])
+        assert upd_body.count("chat_bubbles_watch()") == 1, \
+            "update_online must tick chat bubbles once"
+        assert "chat_bubbles_reset()" in "".join(fns["init_online"][1])
+        # Закрытие чата — там же, где draw_back: вверху по центру.
+        close_x = "".join(fns["chat_close_x"][1]).replace(" ", "")
+        assert "(screen_w-btn_w)/2" in close_x, \
+            "chat close button must sit centered like every other close button"
+        assert "back_y" in "".join(fns["chat_top_y"][1])
+        # Новые сообщения находятся по серверному ключу (устойчиво к обрезке).
+        watch_body = "".join(fns["chat_bubbles_watch"][1])
+        assert "net_chat_key(" in watch_body and "chat_seen_key" in watch_body
+
+        # ── Настройки: громкость музыки ──
+        settings_body = "".join(fns["draw_settings"][1])
+        assert "tr_music_vol()" in settings_body and "music_half_w()" in settings_body
+        touch_body = "".join(fns["touch_settings"][1])
+        assert touch_body.count("music_volume_step(") == 2, \
+            "touch_settings must handle both - and + buttons"
+        assert "net_load_music_volume()" in "".join(fns["settings_from_storage"][1])
+        assert "net_save_music_volume(" in "".join(fns["music_volume_step"][1])
+
+        # ── Рывок Азума: быстрее при той же дистанции (300 * 1.275 = 382.5) ──
+        config_text = (ROOT / "game/scripts/core/config.ds").read_text(encoding="utf-8")
+        assert "azum_dash_time=1.275" in config_text and "azum_dash_speed=300" in config_text
 
         android = temp / "android"
         android.mkdir()

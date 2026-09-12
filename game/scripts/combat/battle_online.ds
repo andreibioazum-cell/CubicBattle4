@@ -400,5 +400,8 @@ function update_online()
         push_self()
     end
     update_event()
+    // Пузыри чата над бойцами: таймеры и подхват новых сообщений живут здесь,
+    // поэтому сообщение видно над кубиком автора даже с закрытым чатом.
+    chat_bubbles_watch()
     chat_update()
 end

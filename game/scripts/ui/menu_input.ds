@@ -266,6 +266,16 @@ function touch_settings(number x, number y)
     if hit_menu_row(x, y, 3) == 1
         show_hitboxes = 1 - show_hitboxes
         save_settings()
+        return
+    end
+    // Громкость музыки: тап по «-10%»/«+10%» меняет значение сразу
+    // (устройство + облако + громкость играющей музыки).
+    if hit_music_minus(x, y) == 1
+        music_volume_step(-music_vol_step)
+        return
+    end
+    if hit_music_plus(x, y) == 1
+        music_volume_step(music_vol_step)
     end
 end
 

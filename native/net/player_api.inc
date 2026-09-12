@@ -96,6 +96,22 @@ const char* net_chat_text(double idx){
     unlock();
     return s_chat_text_ret;
 }
+/* Серверный ключ сообщения: уникален на каждое сообщение, в отличие от uid
+ * автора. Скрипт использует его, чтобы понимать, какие сообщения чата уже
+ * показаны пузырями над бойцами (chat_bubbles_watch в ui/chat.ds). */
+const char* net_chat_key(double idx){
+    static char ret[28];
+    int i=(int)idx;
+    lock();
+    if(i>=0 && i<net.chat_count && net.chats[i].valid){
+        strncpy(ret, net.chats[i].key, sizeof(ret)-1);
+        ret[sizeof(ret)-1]='\0';
+    }else{
+        ret[0]='\0';
+    }
+    unlock();
+    return ret;
+}
 const char* net_chat_uid(double idx){
     int i=(int)idx;
     lock();

@@ -3,14 +3,14 @@ include graphics
 number chat_open=0
 string chat_input=""
 
+// Кнопка закрытия чата — там же, где все остальные кнопки закрытия/«Назад»
+// (draw_back в core/ui.ds): вверху по центру экрана, а не в правом углу.
 function chat_close_x()
-    return screen_w - btn_w - 16
+    return (screen_w - btn_w) / 2
 end
 
 function chat_top_y()
-    // В полноэкранном чате верхняя панель компактнее обычного меню, поэтому
-    // история сообщений начинается существенно выше.
-    return 8
+    return back_y
 end
 
 function chat_msg_top()

@@ -128,9 +128,21 @@ end
 function settings_from_storage()
     language = net_load_language()
     show_hitboxes = net_load_hitboxes()
+    music_volume = net_load_music_volume()
 end
 
 // Язык и хитбоксы: устройство + облако одним вызовом нативной функции.
 function save_settings()
     net_save_settings(language, show_hitboxes)
+end
+
+// Шаг громкости музыки (настройки): значение в пределах 0..100, сохранение на
+// устройство и в облако, и мгновенное применение к играющей музыке — игрок
+// слышит результат тапа сразу, не выходя в лобби.
+function music_volume_step(number d)
+    music_volume = clamp(music_volume + d, 0, 100)
+    net_save_music_volume(music_volume)
+    if music_ok == 1
+        snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
+    end
 end

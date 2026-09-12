@@ -233,6 +233,8 @@ function draw_online()
     end
     // Дед Мороз ивента рисуется поверх бойцов: это центральный объект события.
     draw_event_santa()
+    // Пузыри чата — поверх бойцов и ивента: сообщение видно над кубиком автора.
+    draw_chat_bubbles()
     draw_player_freeze()
     draw_player_poison()
     draw_player_stun()

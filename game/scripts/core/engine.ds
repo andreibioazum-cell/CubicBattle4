@@ -128,7 +128,7 @@ function start_music()
         return
     end
     music_level = 1
-    snd_volume(LOBBY_MUSIC, 0.7)
+    snd_volume(LOBBY_MUSIC, music_volume / 100)
     snd_loop(LOBBY_MUSIC)
     ds_log("init: lobby music on")
 end
@@ -156,7 +156,7 @@ function update_music()
     // В бою музыка лобби плавно затихает, в меню — снова играет по кругу.
     if game_state == ST_SOLO || game_state == ST_ONLINE
         music_level = clamp(music_level - dt / music_fade_out_time, 0, 1)
-        snd_volume(LOBBY_MUSIC, 0.7 * music_level)
+        snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
         if music_level <= 0 && snd_playing(LOBBY_MUSIC) == 1
             snd_stop(LOBBY_MUSIC)
         end
@@ -167,7 +167,7 @@ function update_music()
         snd_loop(LOBBY_MUSIC)
     end
     music_level = clamp(music_level + dt / music_fade_in_time, 0, 1)
-    snd_volume(LOBBY_MUSIC, 0.7 * music_level)
+    snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
 end
 
 function update_warning()

@@ -225,6 +225,7 @@ function init_online()
     reset_battle()
     chat_open=0
     keyboard_hide()
+    chat_bubbles_reset()
     online_ready=0
     // Баннер: не показываем баннер, который висел до нашего входа в комнату.
     banner_skip=1
