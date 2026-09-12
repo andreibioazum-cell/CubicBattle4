@@ -6,7 +6,11 @@ include graphics
 // Как турели игрока (battle_rules.ds), но принадлежат врагу: прикрывают его
 // от ударов и рывка, мстят контрударом, ломаются от взрывов снежинок.
 // Взрывы общие (station_boom_*), луч тянется от турели к врагу.
+// enemy_last_turret_slot — слот последней поставленной турели врага: только
+// от него рисуется луч (см. draw_enemy_turrets ниже).
 // ══════════════════════════════════════════════════════════════════════════
+
+number enemy_last_turret_slot=0
 
 function enemy_turret_alive(number i)
     if i<0||i>=turret_max
@@ -83,6 +87,7 @@ function enemy_place_turret()
     arr_set(enemy_turret_maxhp,slot,mh)
     arr_set(enemy_turret_hp,slot,mh)
     arr_set(enemy_turret_spawn_t,slot,station_spawn_time)
+    enemy_last_turret_slot=slot
     ds_log("enemy turret placed, alive %g/%g",enemy_turret_count_alive(),turret_max)
 end
 
@@ -131,14 +136,25 @@ function enemy_tick_turrets()
 end
 
 function draw_enemy_turrets()
-    number i=0
-    loop i<turret_max
-        if enemy_turret_alive(i)==1
-            draw_station_beam(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),enemy.x,enemy.y)
+    // Луч тянется только от последней поставленной турели; если она сломана —
+    // от самой свежей из оставшихся живых (ровно один луч, не от всех).
+    number beam=-1
+    if enemy_turret_alive(enemy_last_turret_slot)==1
+        beam=enemy_last_turret_slot
+    else
+        number j=0
+        loop j<turret_max
+            if enemy_turret_alive(j)==1
+                beam=j
+                j=turret_max
+            end
+            j=j+1
         end
-        i=i+1
     end
-    i=0
+    if beam>=0
+        draw_station_beam(arr_get(enemy_turret_x,beam),arr_get(enemy_turret_y,beam),enemy.x,enemy.y)
+    end
+    number i=0
     loop i<turret_max
         if enemy_turret_alive(i)==1
             draw_turret_at(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),arr_get(enemy_turret_hp,i),arr_get(enemy_turret_maxhp,i),arr_get(enemy_turret_spawn_t,i))

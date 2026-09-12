@@ -107,6 +107,7 @@ function reset_battle()
         i=i+1
     end
     turret_heal_t=0
+    last_turret_slot=0
     arr_clear(station_boom_xs)
     arr_clear(station_boom_ys)
     arr_clear(station_boom_ts)

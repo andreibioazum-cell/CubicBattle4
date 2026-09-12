@@ -78,7 +78,7 @@ function tick_universe()
 end
 
 // Сетевые турели соперников. Раскладка слота (station_fields чисел на игрока):
-//   0               — не используется (раньше тут был счётчик);
+//   0               — слот последней поставленной турели (1..turret_max);
 //   i-я турель (0..2): 1+i*5 — состояние (0 нет, 1 стоит, 2 взрыв),
 //                      2+i*5 — x, 3+i*5 — y, 4+i*5 — hp, 5+i*5 — таймер взрыва.
 // Переходы: hp в снимке >0 → турель стоит; hp упало до 0 → на её месте
@@ -115,6 +115,7 @@ function update_remote_station()
                     hy=net_player_station3_y(s)*screen_h
                     hhp=net_player_station3_hp(s)
                 end
+                number st=arr_get(remote_station,o)
                 if hhp>0
                     // живая турель (или только что поставленная/починенная)
                     arr_set(remote_station,o,1)
@@ -122,8 +123,11 @@ function update_remote_station()
                     arr_set(remote_station,o+2,hy)
                     arr_set(remote_station,o+3,hhp)
                     arr_set(remote_station,o+4,0)
+                    if st!=1
+                        // только что появилась — теперь это последняя поставленная
+                        arr_set(remote_station,b,i+1)
+                    end
                 else
-                    number st=arr_get(remote_station,o)
                     if st==1
                         // турель только что сломалась: взрыв доигрывает на её месте
                         arr_set(remote_station,o,2)

@@ -107,7 +107,7 @@ static void test_weather(void) {
                 for (int result = 0; result < 3; result++) {
                     game_state = state; candy_enabled = enabled; event_mode = mode;
                     finished = result; snow_t = 10; event_t = 37;
-                    int active = (state == ST_SOLO && enabled) || (state == ST_ONLINE && mode == 2);
+                    int active = (state == ST_SOLO || state == ST_ONLINE) && enabled;
                     assert(ds_fn_snow_active() == active);
                     ds_fn_update_weather();
                     near(snow_t, active ? 10.1 : 10);
@@ -147,7 +147,7 @@ static void test_weather(void) {
     TextureCall solo[128];
     int count = call_count;
     memcpy(solo, calls, sizeof(calls));
-    game_state = ST_ONLINE; candy_enabled = 0; event_mode = 2;
+    game_state = ST_ONLINE; candy_enabled = 1; event_mode = 2;
     call_count = 0;
     ds_fn_draw_snow();
     assert(call_count == count && count > 0);

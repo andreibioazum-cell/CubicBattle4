@@ -18,14 +18,12 @@ function draw_arena_background()
     end
 end
 
-// Сезонный снег в соло не зависит от Firebase и не включает сетевые ивенты.
-// В онлайне снег по-прежнему запускается только событием 2, даже без конфет.
+// Сезонный снег не зависит от Firebase и не включает сетевые ивенты: в соло
+// и в онлайне снег идёт всегда, пока включены конфеты (candy_enabled==1).
+// Отдельного «снегопада»-ивента больше нет — снежинки и так всегда в игре.
 function snow_active()
-    if game_state==ST_SOLO
+    if game_state==ST_SOLO||game_state==ST_ONLINE
         return candy_enabled==1
-    end
-    if game_state==ST_ONLINE
-        return event_mode==2
     end
     return 0
 end
