@@ -373,6 +373,7 @@ static void json_escape(const char *src, char *dst, size_t cap){
     dst[o]='\0';
 }
 
+/*
  * Firebase Auth: базу могут читать и писать только запросы с ?auth=<idToken>.
  *
  * Раньше правила базы были открыты («users: .read true»), а URL лежал в
@@ -387,6 +388,7 @@ static void json_escape(const char *src, char *dst, size_t cap){
  *
  * Если FB-ключ не задан (config.ds: FB_KEY=""), клиент работает по-старому -
  * это переходный режим для уже собранных версий.
+ */
 #define FB_EMAIL_DOMAIN "@cb4.game"
 /* Пароль Firebase = игровой + суффикс: у Firebase минимум 6 символов, а игра
  * разрешает короткие пароли; суффикс добивает длину и не даёт использовать
