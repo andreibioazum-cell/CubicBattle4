@@ -11,7 +11,10 @@ include graphics
 // Хитбоксы способностей не мигают и не обрываются: альфа каждого эффекта
 // плавно набирается при появлении (hitbox_fade_in) и плавно гаснет после
 // конца (hitbox_fade_out) — как полоса удара. «Живые» альфы ведёт
-// tick_hitbox_fades() из update_game/update_online.
+// tick_hitbox_fades() из update_game/update_online; она же отвечает за полосы
+// ударов врага-бота и сетевых соперников. В конце боя (finished!=0) хитбоксы
+// не исчезают разом: tick_hitbox_fades считает их закончившимися, и все зоны
+// плавно гаснут под плашкой результата.
 //
 // Рисуются реальные зоны урона: у снежинки — круг контакта (размером с
 // проверку попадания), линия пути и круг взрыва, у рывка — уже проеханный
@@ -120,26 +123,26 @@ function snow_hit_radius(number target_size)
     return target_size*0.65+24
 end
 
+// Видимость каждой зоны определяет её альфа, а не флаг эффекта: так хитбокс
+// доигрывает своё плавное пропадание даже после того, как эффект закончился
+// (геометрия при этом не стирается — см. finish_game).
 function draw_hit_snow()
-    if finished!=0
-        return
-    end
-    if gift.active==1
+    if snow_ball_a>0
         number r=snow_hit_radius(enemy.size)
         if game_state==ST_ONLINE
             r=snow_hit_radius(player.size)
         end
         draw_hit_snowball(gift.x,gift.y,gift.dx,gift.dy,gift.t,r,snow_ball_a)
     end
-    if boom_t>0
+    if snow_boom_a>0
         draw_hit_circle_solid(boom_x,boom_y,super_radius,hitbox_snow_rgb,snow_boom_a)
     end
     if game_state==ST_SOLO
-        if enemy_gift.active==1
+        if esnow_ball_a>0
             number er=snow_hit_radius(player.size)
             draw_hit_snowball(enemy_gift.x,enemy_gift.y,enemy_gift.dx,enemy_gift.dy,enemy_gift.t,er,esnow_ball_a)
         end
-        if enemy_boom_t>0
+        if esnow_boom_a>0
             draw_hit_circle_solid(enemy_boom_x,enemy_boom_y,super_radius,hitbox_snow_rgb,esnow_boom_a)
         end
     end
@@ -152,11 +155,11 @@ function draw_hit_snow()
     number s=0
     loop s<max_players
         number b=s*snow_fields
-        if arr_get(remote_snow,b+1)==1
+        if arr_get(rsnow_ball_a,s)>0
             number rr=snow_hit_radius(player.size)
             draw_hit_snowball(arr_get(remote_snow,b+3),arr_get(remote_snow,b+4),net_player_snow_dx(s),net_player_snow_dy(s),arr_get(remote_snow,b+2),rr,arr_get(rsnow_ball_a,s))
         end
-        if arr_get(remote_snow,b+5)>0
+        if arr_get(rsnow_boom_a,s)>0
             draw_hit_circle_solid(arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),super_radius,hitbox_snow_rgb,arr_get(rsnow_boom_a,s))
         end
         s=s+1
@@ -168,8 +171,11 @@ end
 // отрезку от точки старта до текущего положения бойца (по нему режется урон,
 // см. dash_resolve_target и tick_dash_solo_hit).
 //
+// Зона рывка узкая: радиус попадания уменьшен dash_hit_radius_scale
+// (combat/battle_hitscan.ds), а полоса рисуется шириной dash_hitbox_zone_scale
+// радиусов, поэтому рывок больше не накрывает экран широким серым следом.
 // Двумя слоями, оба — настоящая зона урона:
-//   1. полоса шириной в диаметр зоны — тем же примитивом и той же альфой, что
+//   1. полоса шириной в зону урона — тем же примитивом и той же альфой, что
 //      хитбокс удара (draw_punch_box), поэтому рывок выглядит как его удары;
 //   2. цепочка кубиков с шагом dash_hitbox_step радиусов: кубиков много, они
 //      ставятся часто и проявляются по мере полёта — путь «растёт».
@@ -234,10 +240,7 @@ function draw_hit_dash_path(number sx, number sy, number dx, number dy, number c
 end
 
 function draw_hit_dash()
-    if finished!=0
-        return
-    end
-    if dash_active==1
+    if dash_box_a>0
         // Радиус зоны — тот же, которым считается урон: в соло рывок бьёт по
         // врагу, в онлайне чужой рывок бьёт по этому игроку.
         number dpr=dash_hit_radius_remote()
@@ -246,7 +249,7 @@ function draw_hit_dash()
         end
         draw_hit_dash_path(dash_x0,dash_y0,dash_dx,dash_dy,player.x,player.y,dpr,dash_box_a)
     end
-    if game_state==ST_SOLO&&enemy_dash_active==1
+    if game_state==ST_SOLO&&edash_box_a>0
         number epr=dash_hit_radius_solo()
         draw_hit_dash_path(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,enemy.x,enemy.y,epr,edash_box_a)
     end
@@ -259,7 +262,7 @@ function draw_hit_dash()
     number s=0
     loop s<max_players
         number b=s*dash_fields
-        if s!=net_slot()&&arr_get(remote_dash,b+1)==1
+        if s!=net_slot()&&arr_get(rdash_box_a,s)>0
             number rx=arr_get(remote_dash,b+2), ry=arr_get(remote_dash,b+3)
             number rdx=arr_get(remote_dash,b+4), rdy=arr_get(remote_dash,b+5)
             number gone=azum_dash_speed*(azum_dash_time-arr_get(remote_dash,b+6))
@@ -272,12 +275,9 @@ end
 
 // ── Турели: круг попадания по каждой живой турели ─────────────────────────
 function draw_hit_turrets()
-    if finished!=0
-        return
-    end
     number i=0
     loop i<turret_max
-        if turret_alive(i)==1
+        if arr_get(turret_box_a,i)>0
             draw_hit_circle(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(turret_box_a,i))
         end
         i=i+1
@@ -285,7 +285,7 @@ function draw_hit_turrets()
     if game_state==ST_SOLO
         i=0
         loop i<turret_max
-            if enemy_turret_alive(i)==1
+            if arr_get(enemy_turret_box_a,i)>0
                 draw_hit_circle(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(enemy_turret_box_a,i))
             end
             i=i+1
@@ -303,7 +303,7 @@ function draw_hit_turrets()
         if s!=net_slot()
             number o=b+1, k=0
             loop k<turret_max
-                if arr_get(remote_station,o)==1
+                if arr_get(rstation_box_a,s*turret_max+k)>0
                     draw_hit_circle(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb,arr_get(rstation_box_a,s*turret_max+k))
                 end
                 o=o+5
@@ -324,10 +324,7 @@ function draw_hit_universe_frame(number env)
 end
 
 function draw_hit_universe()
-    if finished!=0
-        return
-    end
-    if universe_active==1
+    if universe_box_a>0
         draw_hit_universe_frame(universe_box_a)
         draw_hit_circle(universe_x,universe_y,60,hitbox_universe_rgb,universe_box_a)
     end
@@ -340,7 +337,7 @@ function draw_hit_universe()
     number s=0
     loop s<max_players
         number b=s*universe_fields
-        if s!=net_slot()&&arr_get(remote_universe,b+1)==1
+        if s!=net_slot()&&arr_get(runiverse_box_a,s)>0
             draw_hit_universe_frame(arr_get(runiverse_box_a,s))
             draw_hit_circle(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),60,hitbox_universe_rgb,arr_get(runiverse_box_a,s))
         end
@@ -352,9 +349,6 @@ end
 // сразу после хитбоксов ударов. При show_hitboxes==0 ничего не рисует.
 function draw_ability_hitboxes()
     if show_hitboxes==0
-        return
-    end
-    if finished!=0
         return
     end
     draw_hit_snow()

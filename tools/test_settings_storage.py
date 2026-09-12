@@ -5,10 +5,12 @@ Compiles the REAL net.c (the same translation unit the Android build uses, with
 temporary Android/JNI header stubs — this is not a PC build) and runs it three
 times against a real temporary data directory:
 
-  write  — net_save_settings/net_save_mods must create settings.dat;
+  write  — net_save_settings must create settings.dat;
   read   — a fresh process must read the very same file back (a "restart");
   cloud  — on a device without settings.dat the profile JSON is adopted, and on
-           a device that has one the local file wins (returns 1, keeps its data).
+           a device that has one the local file wins (returns 1, keeps its data);
+  legacy — an old settings.dat with a mod list is read without errors and the
+           next save rewrites it without mods (the mod screen is gone).
 
 Requires a host C compiler (CC).
 """
@@ -84,6 +86,8 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 }
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 
+/* Профиль облака со старыми полями модов (mods_n/mods): клиент их больше не
+ * читает и не пишет, но чужой старый профиль не должен ничего ломать. */
 static const char *CLOUD_PROFILE =
     "{\"nick\":\"tester\",\"cups\":10,\"candies\":5,\"cls\":3,\"azum\":1,\"santa\":0,"
     "\"ebuc\":1,\"level\":1,\"levels\":1,\"lang\":1,\"hitboxes\":0,\"mods_n\":2,"
@@ -92,19 +96,13 @@ static const char *CLOUD_PROFILE =
 static int run_write(const char *dir) {
     net_set_data_path(dir);
     net_save_settings(1, 0);
-    net_save_mods(2, "my mod.zip", "bad|name\".zip", "", "", "", "");
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
-    assert(net_load_mod_count() == 2);
-    assert(strcmp(net_load_mod(0), "my mod.zip") == 0);
-    /* '|' и '"' из имени убираются: ими разделён список в файле и в JSON. */
-    assert(strcmp(net_load_mod(1), "badname.zip") == 0);
-    assert(strcmp(net_load_mod(2), "") == 0);
     /* Устройство уже сохранено — облако ничего не отнимает. */
     assert(settings_sync_with_cloud(CLOUD_PROFILE) == 1);
     assert(net_load_language() == 1);
-    assert(net_load_mod_count() == 2);
-    puts("native write: settings.dat created, names sanitized, local wins over cloud");
+    assert(net_load_hitboxes() == 0);
+    puts("native write: settings.dat created, local wins over cloud");
     return 0;
 }
 
@@ -112,30 +110,32 @@ static int run_read(const char *dir) {
     net_set_data_path(dir);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
-    assert(net_load_mod_count() == 2);
-    assert(strcmp(net_load_mod(0), "my mod.zip") == 0);
-    assert(strcmp(net_load_mod(1), "badname.zip") == 0);
-    /* Два имени держатся одновременно: у каждого слота свой буфер, иначе
-     * settings_from_storage() записал бы в mod_1..mod_6 одно и то же имя. */
-    const char *first = net_load_mod(0);
-    const char *second = net_load_mod(1);
-    assert(strcmp(first, "my mod.zip") == 0 && strcmp(second, "badname.zip") == 0);
-    assert(strcmp(net_load_mod(0), "my mod.zip") == 0);
-    puts("native read: a fresh process restores language, hitboxes and mods");
+    puts("native read: a fresh process restores language and hitboxes");
     return 0;
 }
 
 static int run_cloud(const char *dir) {
     net_set_data_path(dir);
-    /* Чистое устройство: файла нет, поэтому настройки берутся из профиля. */
+    /* Чистое устройство: файла нет, поэтому настройки берутся из профиля.
+     * Старые поля модов в профиле просто игнорируются. */
     assert(settings_sync_with_cloud(CLOUD_PROFILE) == 0);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
-    assert(net_load_mod_count() == 2);
-    assert(strcmp(net_load_mod(0), "winter.zip") == 0);
-    assert(strcmp(net_load_mod(1), "my mod.zip") == 0);
     /* Файл на устройстве проверяет python-обвязка теста. */
     puts("native cloud: profile settings adopted on a device without settings.dat");
+    return 0;
+}
+
+/* Старый settings.dat со списком модов: читается без ошибок, а следующая
+ * запись оставляет в файле только язык и хитбоксы. */
+static int run_legacy(const char *dir) {
+    net_set_data_path(dir);
+    assert(net_load_language() == 1);
+    assert(net_load_hitboxes() == 0);
+    net_save_settings(0, 1);
+    assert(net_load_language() == 0);
+    assert(net_load_hitboxes() == 1);
+    puts("native legacy: an old mod list is ignored and dropped on the next save");
     return 0;
 }
 
@@ -144,6 +144,7 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "write") == 0) return run_write(argv[2]);
     if (strcmp(argv[1], "read") == 0) return run_read(argv[2]);
     if (strcmp(argv[1], "cloud") == 0) return run_cloud(argv[2]);
+    if (strcmp(argv[1], "legacy") == 0) return run_legacy(argv[2]);
     fprintf(stderr, "unknown mode '%s'\n", argv[1]);
     return 2;
 }
@@ -173,14 +174,24 @@ def main():
         run = [str(temp / "test")]
         subprocess.run([*run, "write", str(data)], check=True)
         saved = (data / "settings.dat").read_text(encoding="utf-8")
-        assert "lang 1" in saved and "hitboxes 0" in saved and "mods 2" in saved, saved
-        assert "mod my mod.zip" in saved and "mod badname.zip" in saved, saved
+        assert "lang 1" in saved and "hitboxes 0" in saved, saved
+        assert "mod" not in saved, saved
         subprocess.run([*run, "read", str(data)], check=True)
 
         fresh = temp / "fresh-device"
         fresh.mkdir()
         subprocess.run([*run, "cloud", str(fresh)], check=True)
         assert (fresh / "settings.dat").exists()
+
+        legacy = temp / "legacy-device"
+        legacy.mkdir()
+        (legacy / "settings.dat").write_text(
+            "lang 1\nhitboxes 0\nmods 2\nmod winter.zip\nmod my mod.zip\n",
+            encoding="utf-8")
+        subprocess.run([*run, "legacy", str(legacy)], check=True)
+        rewritten = (legacy / "settings.dat").read_text(encoding="utf-8")
+        assert "lang 0" in rewritten and "hitboxes 1" in rewritten, rewritten
+        assert "mod" not in rewritten, rewritten
     return 0
 
 

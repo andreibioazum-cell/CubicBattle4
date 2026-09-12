@@ -24,7 +24,6 @@ def find_ds_files(directory):
         "ui/chat.ds",              # онлайн-чат
         "ui/menu_screens.ds",      # отрисовка экранов меню
         "ui/menu_input.ds",        # переходы и обработка нажатий меню
-        "ui/mods.ds",              # экран модов (импорт и удаление)
         "combat/battle_rules.ds",  # данные классов: текстуры, HP, урон, яд
         "combat/battle_turrets.ds", # турели-деспенсеры бука
         "combat/battle_hitscan.ds", # геометрия попаданий удара и рывка

@@ -1,74 +1,86 @@
 include graphics
 
 // ══════════════════════════════════════════════════════════════════════════
-// battle_hitbox_fades.ds — плавные альфы хитбоксов способностей
+// battle_hitbox_fades.ds — плавные альфы хитбоксов и вспышки вселенной
 //
 // Одна функция tick_hitbox_fades() ведёт «живые» альфы всех зон урона:
 // пока эффект активен — альфа набирается за hitbox_fade_in, после конца —
-// гаснет за hitbox_fade_out. Вызывается каждый кадр из update_game и
-// update_online, рисунок этих альф — в combat/battle_hitboxes.ds.
+// гаснет за hitbox_fade_out. Сюда же входят полосы ударов врага-бота и сетевых
+// соперников (раньше они вспыхивали и пропадали за один кадр) и альфа самой
+// вспышки вселенной. Вызывается каждый кадр из update_game и update_online,
+// рисунок этих альф — в combat/battle_hitboxes.ds и combat/battle_super_render.ds.
 //
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── «Живые» альфы хитбоксов ──────────────────────────────────────────────
+// Жив ли эффект в этом кадре. В конце боя (finished!=0) таймеры и состояния
+// обнуляются разом, но хитбоксы так не пропадают: они считаются закончившимися
+// и плавно гаснут за hitbox_fade_out под плашкой результата.
+function hb_live(number active)
+    if finished!=0
+        return 0
+    end
+    return active
+end
+
+// Универсальный фейд: свои времена появления и пропадания (у вспышки вселенной
+// они свои, universe_fade_in/universe_fade_out, у остальных — hitbox_fade_*).
+function hb_fade(number a, number live, number tin, number tout)
+    if live==1
+        return fade_up_a(a,tin)
+    end
+    return fade_down_a(a,tout)
+end
+
 // Вызывается каждый кадр из update_game и update_online: пока эффект активен,
 // альфа плавно набирается, после конца — плавно гаснет (рывок, снежинка и её
-// взрыв, вселенная и круги турелей — свои, врага и сетевых соперников).
+// взрыв, вселенная, круги турелей и полосы ударов — свои, врага и сетевых
+// соперников).
 function tick_hitbox_fades()
-    if dash_active==1
-        dash_box_a=fade_up_a(dash_box_a,hitbox_fade_in)
-    else
-        dash_box_a=fade_down_a(dash_box_a,hitbox_fade_out)
-    end
-    if gift.active==1
-        snow_ball_a=fade_up_a(snow_ball_a,hitbox_fade_in)
-    else
-        snow_ball_a=fade_down_a(snow_ball_a,hitbox_fade_out)
-    end
+    dash_box_a=hb_fade(dash_box_a,hb_live(dash_active),hitbox_fade_in,hitbox_fade_out)
+    snow_ball_a=hb_fade(snow_ball_a,hb_live(gift.active),hitbox_fade_in,hitbox_fade_out)
+    number boomlive=0
     if boom_t>0
-        snow_boom_a=fade_up_a(snow_boom_a,hitbox_fade_in)
-    else
-        snow_boom_a=fade_down_a(snow_boom_a,hitbox_fade_out)
+        boomlive=1
     end
-    if universe_active==1
-        universe_box_a=fade_up_a(universe_box_a,hitbox_fade_in)
-    else
-        universe_box_a=fade_down_a(universe_box_a,hitbox_fade_out)
-    end
+    snow_boom_a=hb_fade(snow_boom_a,hb_live(boomlive),hitbox_fade_in,hitbox_fade_out)
+    universe_box_a=hb_fade(universe_box_a,hb_live(universe_active),hitbox_fade_in,hitbox_fade_out)
+    // Вспышка вселенной: частицы проявляются плавно и после схлопывания ещё
+    // доигрывают, гаснув (universe_fade_out), а не исчезают за один кадр.
+    universe_fx_a=hb_fade(universe_fx_a,hb_live(universe_active),universe_fade_in,universe_fade_out)
     number i=0
     loop i<turret_max
+        number talive=0
         if turret_alive(i)==1
-            arr_set(turret_box_a,i,fade_up_a(arr_get(turret_box_a,i),hitbox_fade_in))
-        else
-            arr_set(turret_box_a,i,fade_down_a(arr_get(turret_box_a,i),hitbox_fade_out))
+            talive=1
         end
+        arr_set(turret_box_a,i,hb_fade(arr_get(turret_box_a,i),hb_live(talive),hitbox_fade_in,hitbox_fade_out))
         i=i+1
     end
     if game_state==ST_SOLO
-        if enemy_dash_active==1
-            edash_box_a=fade_up_a(edash_box_a,hitbox_fade_in)
-        else
-            edash_box_a=fade_down_a(edash_box_a,hitbox_fade_out)
+        number epunch=0
+        if enemy.state==1||enemy.state==2
+            epunch=1
         end
-        if enemy_gift.active==1
-            esnow_ball_a=fade_up_a(esnow_ball_a,hitbox_fade_in)
-        else
-            esnow_ball_a=fade_down_a(esnow_ball_a,hitbox_fade_out)
-        end
+        enemy_punch_a=hb_fade(enemy_punch_a,hb_live(epunch),aim_fade_in,aim_fade_out)
+        edash_box_a=hb_fade(edash_box_a,hb_live(enemy_dash_active),hitbox_fade_in,hitbox_fade_out)
+        esnow_ball_a=hb_fade(esnow_ball_a,hb_live(enemy_gift.active),hitbox_fade_in,hitbox_fade_out)
+        number eboomlive=0
         if enemy_boom_t>0
-            esnow_boom_a=fade_up_a(esnow_boom_a,hitbox_fade_in)
-        else
-            esnow_boom_a=fade_down_a(esnow_boom_a,hitbox_fade_out)
+            eboomlive=1
         end
+        esnow_boom_a=hb_fade(esnow_boom_a,hb_live(eboomlive),hitbox_fade_in,hitbox_fade_out)
         i=0
         loop i<turret_max
+            number etalive=0
             if enemy_turret_alive(i)==1
-                arr_set(enemy_turret_box_a,i,fade_up_a(arr_get(enemy_turret_box_a,i),hitbox_fade_in))
-            else
-                arr_set(enemy_turret_box_a,i,fade_down_a(arr_get(enemy_turret_box_a,i),hitbox_fade_out))
+                etalive=1
             end
+            arr_set(enemy_turret_box_a,i,hb_fade(arr_get(enemy_turret_box_a,i),hb_live(etalive),hitbox_fade_in,hitbox_fade_out))
             i=i+1
         end
+    else
+        enemy_punch_a=fade_down_a(enemy_punch_a,hitbox_fade_out)
     end
     if game_state!=ST_ONLINE
         return
@@ -76,37 +88,30 @@ function tick_hitbox_fades()
     number s=0
     loop s<max_players
         if s!=net_slot()
+            // Полоса удара соперника: та же плавность, что у полосы игрока.
+            number rp=0
+            if arr_get(remote_punches,s*punch_fields)==1
+                rp=1
+            end
+            arr_set(rpunch_a,s,hb_fade(arr_get(rpunch_a,s),hb_live(rp),aim_fade_in,aim_fade_out))
             number b=s*dash_fields
-            if arr_get(remote_dash,b+1)==1
-                arr_set(rdash_box_a,s,fade_up_a(arr_get(rdash_box_a,s),hitbox_fade_in))
-            else
-                arr_set(rdash_box_a,s,fade_down_a(arr_get(rdash_box_a,s),hitbox_fade_out))
-            end
+            arr_set(rdash_box_a,s,hb_fade(arr_get(rdash_box_a,s),hb_live(arr_get(remote_dash,b+1)),hitbox_fade_in,hitbox_fade_out))
             b=s*snow_fields
-            if arr_get(remote_snow,b+1)==1
-                arr_set(rsnow_ball_a,s,fade_up_a(arr_get(rsnow_ball_a,s),hitbox_fade_in))
-            else
-                arr_set(rsnow_ball_a,s,fade_down_a(arr_get(rsnow_ball_a,s),hitbox_fade_out))
-            end
+            arr_set(rsnow_ball_a,s,hb_fade(arr_get(rsnow_ball_a,s),hb_live(arr_get(remote_snow,b+1)),hitbox_fade_in,hitbox_fade_out))
+            number rboomlive=0
             if arr_get(remote_snow,b+5)>0
-                arr_set(rsnow_boom_a,s,fade_up_a(arr_get(rsnow_boom_a,s),hitbox_fade_in))
-            else
-                arr_set(rsnow_boom_a,s,fade_down_a(arr_get(rsnow_boom_a,s),hitbox_fade_out))
+                rboomlive=1
             end
+            arr_set(rsnow_boom_a,s,hb_fade(arr_get(rsnow_boom_a,s),hb_live(rboomlive),hitbox_fade_in,hitbox_fade_out))
             b=s*universe_fields
-            if arr_get(remote_universe,b+1)==1
-                arr_set(runiverse_box_a,s,fade_up_a(arr_get(runiverse_box_a,s),hitbox_fade_in))
-            else
-                arr_set(runiverse_box_a,s,fade_down_a(arr_get(runiverse_box_a,s),hitbox_fade_out))
-            end
+            arr_set(runiverse_box_a,s,hb_fade(arr_get(runiverse_box_a,s),hb_live(arr_get(remote_universe,b+1)),hitbox_fade_in,hitbox_fade_out))
+            // Вспышка чужой вселенной доигрывает по своим временам: позиция и
+            // сид берутся из того же снимка (он не стирается в момент конца).
+            arr_set(runiverse_fx_a,s,hb_fade(arr_get(runiverse_fx_a,s),hb_live(arr_get(remote_universe,b+1)),universe_fade_in,universe_fade_out))
             number k=0
             loop k<turret_max
                 number stb=s*station_fields
-                if arr_get(remote_station,stb+1+k*5)==1
-                    arr_set(rstation_box_a,s*turret_max+k,fade_up_a(arr_get(rstation_box_a,s*turret_max+k),hitbox_fade_in))
-                else
-                    arr_set(rstation_box_a,s*turret_max+k,fade_down_a(arr_get(rstation_box_a,s*turret_max+k),hitbox_fade_out))
-                end
+                arr_set(rstation_box_a,s*turret_max+k,hb_fade(arr_get(rstation_box_a,s*turret_max+k),hb_live(arr_get(remote_station,stb+1+k*5)),hitbox_fade_in,hitbox_fade_out))
                 k=k+1
             end
         end

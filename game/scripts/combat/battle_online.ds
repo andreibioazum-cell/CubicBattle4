@@ -1,9 +1,10 @@
+// Гасим только флаг и таймер удара: геометрию (x, y, dx, dy) оставляем, чтобы
+// хитбокс удара соперника плавно догасал на своём месте (rpunch_a), а не
+// уезжал в угол экрана на последнем кадре.
 function clear_remote_punch(number s)
-    number rb=s*punch_fields, k=0
-    loop k<punch_fields
-        arr_set(remote_punches,rb+k,0)
-        k=k+1
-    end
+    number rb=s*punch_fields
+    arr_set(remote_punches,rb,0)
+    arr_set(remote_punches,rb+5,0)
 end
 
 function start_remote_punch(number s)
@@ -337,6 +338,7 @@ function update_online()
     tick_turrets()
     tick_universe()
     tick_hitbox_fades()
+    tick_status_fades()
     update_aim()
     if finished!=0
         return

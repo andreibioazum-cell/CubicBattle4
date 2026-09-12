@@ -164,18 +164,13 @@ void net_mark_achievement_flag(double flag);
 double net_load_azum_revives(void);
 void net_save_azum_revives(double revives);
 
-/* Настройки игрока: язык (0 — English, 1 — русский, как в ui/locale_core.ds),
- * хитбоксы (1 — видны) и список модов (шесть строковых слотов, как в
- * core/config.ds). Живут в
- * settings.dat на устройстве и в профиле /users/<ник> в облаке — то есть
- * сохраняются и там, и там, как прогресс. Реализация — settings_storage.inc. */
+/* Настройки игрока: язык (0 — English, 1 — русский, как в ui/locale_core.ds)
+ * и хитбоксы (1 — видны). Живут в settings.dat на устройстве и в профиле
+ * /users/<ник> в облаке — то есть сохраняются и там, и там, как прогресс.
+ * Реализация — settings_storage.inc. */
 double net_load_language(void);
 double net_load_hitboxes(void);
-double net_load_mod_count(void);
-const char *net_load_mod(double idx);
 void net_save_settings(double language, double hitboxes);
-void net_save_mods(double count, const char *m1, const char *m2, const char *m3,
-                   const char *m4, const char *m5, const char *m6);
 
 /* Бан система */
 double net_banned(void);

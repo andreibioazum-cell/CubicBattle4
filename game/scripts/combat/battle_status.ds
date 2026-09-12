@@ -7,6 +7,10 @@ include graphics
 // (посох Деда Мороза) — у игрока и у врага. Решения и атаки бота —
 // в combat/battle_ai.ds.
 //
+// Здесь же — плавность кругов состояний: одна функция tick_status_fades()
+// ведёт альфы всех шести кругов (заморозка, яд и оглушение у врага и у
+// игрока), поэтому эффект, который враг наложил на бойца, выглядит ровно тем
+// же кругом, что и эффект на враге, и так же плавно появляется и гаснет.
 // ══════════════════════════════════════════════════════════════════════════
 
 function tick_freeze()
@@ -16,17 +20,6 @@ function tick_freeze()
             player_freeze=0
         end
     end
-    if player_freeze>0
-        pfreeze_a=pfreeze_a+dt/freeze_fade_in
-    else
-        pfreeze_a=pfreeze_a-dt/freeze_fade_out
-    end
-    if pfreeze_a<0
-        pfreeze_a=0
-    end
-    if pfreeze_a>1
-        pfreeze_a=1
-    end
 end
 
 function tick_player_stun()
@@ -34,17 +27,6 @@ function tick_player_stun()
         player_stun=player_stun-dt
         if player_stun<0
             player_stun=0
-        end
-    end
-    if player_stun>0
-        pstun_a=pstun_a+dt/freeze_fade_in
-        if pstun_a>1
-            pstun_a=1
-        end
-    else
-        pstun_a=pstun_a-dt/freeze_fade_out
-        if pstun_a<0
-            pstun_a=0
         end
     end
 end
@@ -68,15 +50,71 @@ function tick_player_poison()
             player_poison_damage=0
         end
     end
+end
+
+// ── Круги состояний: плавное появление и пропадание ───────────────────────
+// Альфа круга набирается за freeze_fade_in, пока состояние живо, и гаснет за
+// freeze_fade_out после его конца — ни один круг не вспыхивает и не обрывается
+// за один кадр.
+function fade_up_status(number a)
+    a=a+dt/freeze_fade_in
+    if a>1
+        a=1
+    end
+    return a
+end
+
+function fade_down_status(number a)
+    a=a-dt/freeze_fade_out
+    if a<0
+        a=0
+    end
+    return a
+end
+
+// live — живо ли состояние в этом кадре. В конце боя таймеры состояний уже не
+// тикают (update_game/update_online возвращаются раньше), но круги всё равно
+// гаснут плавно: finished принудительно считает состояние закончившимся.
+function status_alpha(number a, number live)
+    if finished!=0
+        return fade_down_status(a)
+    end
+    if live==1
+        return fade_up_status(a)
+    end
+    return fade_down_status(a)
+end
+
+// Вызывается каждый кадр из update_game и update_online до проверки finished.
+// Рисунок этих альф — draw_freeze/draw_poison/draw_stun и их «игроковые» пары
+// в combat/battle_render.ds.
+function tick_status_fades()
+    number efreeze=0, epoison=0, estun=0
+    if game_state==ST_SOLO
+        if enemy.freeze>0
+            efreeze=1
+        end
+        if enemy.poison>0
+            epoison=1
+        end
+        if enemy.stun>0
+            estun=1
+        end
+    end
+    freeze_a=status_alpha(freeze_a,efreeze)
+    poison_a=status_alpha(poison_a,epoison)
+    stun_a=status_alpha(stun_a,estun)
+    number pfreeze=0, ppoison=0, pstun=0
+    if player_freeze>0
+        pfreeze=1
+    end
     if player_poison>0
-        ppoison_a=ppoison_a+dt/freeze_fade_in
-    else
-        ppoison_a=ppoison_a-dt/freeze_fade_out
+        ppoison=1
     end
-    if ppoison_a<0
-        ppoison_a=0
+    if player_stun>0
+        pstun=1
     end
-    if ppoison_a>1
-        ppoison_a=1
-    end
+    pfreeze_a=status_alpha(pfreeze_a,pfreeze)
+    ppoison_a=status_alpha(ppoison_a,ppoison)
+    pstun_a=status_alpha(pstun_a,pstun)
 end

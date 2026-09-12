@@ -99,17 +99,8 @@ function update_enemy()
             enemy.freeze=0
         end
     end
-    if enemy.freeze>0
-        freeze_a=freeze_a+dt/freeze_fade_in
-    else
-        freeze_a=freeze_a-dt/freeze_fade_out
-    end
-    if freeze_a<0
-        freeze_a=0
-    end
-    if freeze_a>1
-        freeze_a=1
-    end
+    // Альфа круга заморозки ведётся в tick_status_fades (combat/battle_status.ds):
+    // там же круги игрока, поэтому все состояния гаснут одинаково плавно.
     if enemy.cooldown>0
         enemy.cooldown=enemy.cooldown-dt*enemy_freeze_factor()
         if enemy.cooldown<0
@@ -155,36 +146,17 @@ function update_enemy()
             enemy.poison_damage=0
         end
     end
-    if enemy.poison>0
-        poison_a=poison_a+dt/freeze_fade_in
-    else
-        poison_a=poison_a-dt/freeze_fade_out
-    end
-    if poison_a<0
-        poison_a=0
-    end
-    if poison_a>1
-        poison_a=1
-    end
+    // Альфа круга яда — тоже в tick_status_fades.
 
     // Оглушение от рывка Азума: враг замирает — не двигается, не атакует и
-    // его таймеры не идут. Ореол-подсветка гаснет плавно после конца.
+    // его таймеры не идут. Ореол-подсветка гаснет плавно после конца
+    // (tick_status_fades в combat/battle_status.ds).
     if enemy.stun>0
         enemy.stun=enemy.stun-dt
         if enemy.stun<0
             enemy.stun=0
         end
-    end
-    if enemy.stun>0
-        stun_a=stun_a+dt/freeze_fade_in
-        if stun_a>1
-            stun_a=1
-        end
         return
-    end
-    stun_a=stun_a-dt/freeze_fade_out
-    if stun_a<0
-        stun_a=0
     end
 
     // Способности класса врага (рывок, замах снежинки/турели): пока враг

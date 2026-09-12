@@ -95,15 +95,17 @@ end
 // источник правды: его используют и проверки попадания (tick_dash_solo_hit,
 // dash_resolve_target, рывок бота), и рисунок хитбокса (battle_hitboxes.ds),
 // поэтому нарисованная зона не может разъехаться с настоящей.
+// Оба радиуса умножаются на dash_hit_radius_scale: зона рывка узкая — и в
+// уроне, и в рисунке (раньше полоса была шириной в два таких радиуса).
 // В соло рывок игрока бьёт по врагу: зона — сумма половин обоих кубиков.
 function dash_hit_radius_solo()
-    return player.size*0.65+enemy.size*0.65+12
+    return (player.size*0.65+enemy.size*0.65+12)*dash_hit_radius_scale
 end
 
 // В онлайне чужой рывок бьёт по этому игроку: зона — половина своего кубика
 // и запас (см. dash_resolve_target).
 function dash_hit_radius_remote()
-    return player.size*0.65+14
+    return (player.size*0.65+14)*dash_hit_radius_scale
 end
 
 // Кого задевает рывок по уже проеханному отрезку [sx,sy]→[sx+dx*len,sy+dy*len]:
