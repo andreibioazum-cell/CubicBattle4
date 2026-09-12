@@ -58,6 +58,30 @@ function hit_menu_row(number px, number py, number i)
     return hit_rect_pad(px, py, menu_x(), menu_row(i), btn_w, btn_h)
 end
 
+// ── Настройки: громкость музыки ───────────────────────────────────────────
+// Строка 4 колонки — подпись «Музыка: 70%», строка 5 — две полукнопки:
+// левая убавляет на шаг (music_vol_step), правая прибавляет. Ширина —
+// половина колонки минус зазор, чтобы пара влезала в обычную кнопку.
+function music_half_w()
+    return (btn_w - music_btn_gap) / 2
+end
+
+function music_minus_x()
+    return menu_x()
+end
+
+function music_plus_x()
+    return menu_x() + btn_w - music_half_w()
+end
+
+function hit_music_minus(number px, number py)
+    return hit_rect_pad(px, py, music_minus_x(), menu_row(5), music_half_w(), btn_h)
+end
+
+function hit_music_plus(number px, number py)
+    return hit_rect_pad(px, py, music_plus_x(), menu_row(5), music_half_w(), btn_h)
+end
+
 // ── Лобби ─────────────────────────────────────────────────────────────────
 function lobby_title_y()
     return menu_top() - 70

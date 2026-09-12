@@ -93,7 +93,7 @@ static struct {
     double cups, candies, cls, azum, santa, ebuc, level, levels;
     double ol, ou, al, au, sl, su, el, eu, bp, skin;
     double flags, revives;
-    double language, hitboxes;
+    double language, hitboxes, musicvol;
 } store;
 
 void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
@@ -138,6 +138,8 @@ void net_save_settings(double language, double hitboxes) {
 }
 double net_load_language(void) { return store.language; }
 double net_load_hitboxes(void) { return store.hitboxes; }
+double net_load_music_volume(void) { return store.musicvol; }
+void net_save_music_volume(double v) { store.musicvol = v; }
 
 /* Снимок сети (класс/уровень/скин своего бойца) — просто считаем вызовы. */
 void net_set_class(double v) { (void)v; store.cloud_pushes++; }
@@ -153,6 +155,7 @@ static void near(const char *what, double a, double b) {
 static void fresh_device(void) {
     memset(&store, 0, sizeof(store));
     store.hitboxes = 1;  /* как в settings.dat по умолчанию */
+    store.musicvol = 70; /* громкость музыки по умолчанию */
     reset();
 }
 
@@ -221,7 +224,21 @@ static void test_settings_save(void) {
     ds_fn_settings_from_storage();
     near("language, 1", language, 1);
     near("show_hitboxes, 0", show_hitboxes, 0);
-    puts("settings: language and hitboxes survive a restart");
+
+    /* Громкость музыки: читается из «файла», шаг жмётся в 0..100 и сразу сохраняется. */
+    store.musicvol = 45;
+    reset();
+    ds_fn_settings_from_storage();
+    near("music_volume, 45", music_volume, 45);
+    ds_fn_music_volume_step(-10);
+    near("music_volume, 35", music_volume, 35);
+    near("store.musicvol, 35", store.musicvol, 35);
+    ds_fn_music_volume_step(-100);
+    near("music_volume, 0", music_volume, 0);
+    ds_fn_music_volume_step(150);
+    near("music_volume, 100", music_volume, 100);
+    near("store.musicvol, 100", store.musicvol, 100);
+    puts("settings: language, hitboxes and music volume survive a restart");
 }
 
 /* Стартовый путь целиком: init() обязан поднять и прогресс, и настройки. */

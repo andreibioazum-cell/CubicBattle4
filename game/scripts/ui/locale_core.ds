@@ -424,6 +424,14 @@ function tr_class_ebuc_desc()
     return "The universe's chaos!"
 end
 
+// Подпись громкости музыки в настройках (значение «70%» добавляет экран).
+function tr_music_vol()
+    if language == 1
+        return "Музыка"
+    end
+    return "Music"
+end
+
 // Переключатель хитбоксов в настройках: «Хитбоксы: ВКЛ/ВЫКЛ».
 function tr_hitboxes_toggle()
     if language == 1

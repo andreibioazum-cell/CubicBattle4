@@ -31,6 +31,62 @@ function draw_station_beam(number sx, number sy, number px, number py)
     line(x1,y1,x2,y2,6,(((unsigned)(int)a)<<24)|0x00C8FAD6)
 end
 
+// Тень деспенсера — тем же спрайтом и того же размера, что и сам деспенсер
+// (квадратная текстура, tint в shadow_alpha со сдвигом shadow_off), как тени
+// бойцов в battle_render.ds. Круглой тени под турелью больше нет: тень
+// повторяет силуэт спрайта, поэтому читается как сам деспенсер, а не как
+// пятно. Рисуется в слое теней до хитбоксов и спрайтов.
+function draw_turret_shadow_at(number x, number y, number spawn)
+    number scale=station_scale
+    if spawn>0
+        number sp=clamp(spawn/station_spawn_time,0,1)
+        scale=station_scale*(1.0+0.25*sp)
+    end
+    number hw=25*scale
+    tex_tint(x-hw-shadow_off,y-hw+shadow_off,DESPENSER_TEX,0,scale,(((unsigned)(int)shadow_alpha)<<24))
+end
+
+// Тени всех турелей на арене: свои, врага-бота (соло) и сетевых соперников.
+// Раскладка та же, что у draw_station/draw_enemy_turrets/draw_remote_station.
+function draw_turret_shadows()
+    number i=0
+    loop i<turret_max
+        if turret_alive(i)==1
+            draw_turret_shadow_at(arr_get(turret_x,i),arr_get(turret_y,i),arr_get(turret_spawn_t,i))
+        end
+        i=i+1
+    end
+    if game_state==ST_SOLO
+        i=0
+        loop i<turret_max
+            if enemy_turret_alive(i)==1
+                draw_turret_shadow_at(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),arr_get(enemy_turret_spawn_t,i))
+            end
+            i=i+1
+        end
+    end
+    if game_state!=ST_ONLINE
+        return
+    end
+    if net_slot()<0
+        return
+    end
+    number s=0
+    loop s<max_players
+        if s!=net_slot()
+            number b=s*station_fields, o=b+1, k=0
+            loop k<turret_max
+                if arr_get(remote_station,o)==1
+                    draw_turret_shadow_at(arr_get(remote_station,o+1),arr_get(remote_station,o+2),0)
+                end
+                o=o+5
+                k=k+1
+            end
+        end
+        s=s+1
+    end
+end
+
 // Одна турель: спрайт, анимация появления (spawn 0..1) и полоса HP над ней.
 function draw_turret_at(number x, number y, number hp, number max_hp, number spawn)
     number scale=station_scale

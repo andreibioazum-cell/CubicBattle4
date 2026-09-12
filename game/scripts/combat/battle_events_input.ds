@@ -175,6 +175,9 @@ function draw_online()
         end
         i=i+1
     end
+    // Тени деспенсеров (своих и чужих) — в общем слое теней: квадратные, тем же
+    // спрайтом, что и сами турели, а не круглые пятна.
+    draw_turret_shadows()
     draw_player_hitbox_layer()
     if show_hitboxes==1
         // Полосы ударов соперников гаснут плавно (rpunch_a ведёт
@@ -230,6 +233,8 @@ function draw_online()
     end
     // Дед Мороз ивента рисуется поверх бойцов: это центральный объект события.
     draw_event_santa()
+    // Пузыри чата — поверх бойцов и ивента: сообщение видно над кубиком автора.
+    draw_chat_bubbles()
     draw_player_freeze()
     draw_player_poison()
     draw_player_stun()

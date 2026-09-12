@@ -8,7 +8,9 @@ timing (black screen never jumps). Compiles the real DimScript sources with a
 host C harness and asserts on the actual logic/draw calls.
 """
 from pathlib import Path
+import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -22,6 +24,7 @@ from gen import find_ds_files  # noqa: E402
 HARNESS = r'''
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "game.c"
 
 int screen_w = 1280, screen_h = 720;
@@ -63,7 +66,14 @@ char *ds_num_to_string(double value) {
 }
 int png_load(const char *name) { (void)name; return 1; }
 void tex(float x, float y, const char *name, float a, float sc) { (void)x; (void)y; (void)name; (void)a; (void)sc; }
-void tex_tint(float x, float y, const char *name, float a, float sc, uint32_t c) { (void)x; (void)y; (void)name; (void)a; (void)sc; (void)c; }
+/* Тени рисуются tex_tint: считаем вызовы и запоминаем текстуру. */
+static int tint_calls = 0;
+static char tint_last[64] = "";
+void tex_tint(float x, float y, const char *name, float a, float sc, uint32_t c) {
+    (void)x; (void)y; (void)a; (void)sc; (void)c;
+    tint_calls++;
+    snprintf(tint_last, sizeof(tint_last), "%s", name ? name : "");
+}
 void roundrect(float x, float y, float w, float h, float r, uint32_t color) { (void)x; (void)y; (void)w; (void)h; (void)r; (void)color; }
 int text_ink_width(const char *s) { (void)s; return 10; }
 int text_ink_height(const char *s) { (void)s; return 10; }
@@ -107,6 +117,26 @@ void net_save_azum_revives(double) {}
 double net_load_azum_revives(void) { return 0; }
 void net_set_mode(double v) { (void)v; }
 void net_set_room(double v) { (void)v; }
+/* Публикации в сеть: в соло-тестах не нужны, но update_game тянет их в линк. */
+void net_publish(double a, double b, double c, double d, double e) {
+    (void)a; (void)b; (void)c; (void)d; (void)e;
+}
+void net_publish_punch(double a, double b, double c, double d, double e) {
+    (void)a; (void)b; (void)c; (void)d; (void)e;
+}
+void net_publish_snow(double a, double b, double c, double d, double e) {
+    (void)a; (void)b; (void)c; (void)d; (void)e;
+}
+void net_publish_turrets(double a, double b, double c, double d, double e,
+                         double f, double g, double h, double i, double j) {
+    (void)a; (void)b; (void)c; (void)d; (void)e;
+    (void)f; (void)g; (void)h; (void)i; (void)j;
+}
+void net_publish_dash(double a, double b, double c, double d, double e) {
+    (void)a; (void)b; (void)c; (void)d; (void)e;
+}
+void net_publish_universe(double a, double b, double c) { (void)a; (void)b; (void)c; }
+void net_publish_thud(double a) { (void)a; }
 void net_open(double v) { (void)v; }
 void net_connect(const char *a, const char *b) { (void)a; (void)b; }
 void keyboard_hide(void) {}
@@ -402,9 +432,9 @@ static void test_hitbox_drawing(void) {
     gift->active = 0; boom_t = 0;
     /* Зоны рисуются, пока жива их альфа: после полного затухания — ничего. */
     snow_ball_a = 0; snow_boom_a = 0;
-    /* Рывок: зона урона рисуется как полоса удара (та же альфа aim_max_alpha)
-     * плюс плотная цепочка кубиков по проеханному пути. Серого круга под
-     * бойцом больше нет — зона рывка это отрезок, а не пятно под кубиком. */
+    /* Рывок: зона урона — ОДИН слой квадратных больших хитбоксов по уже
+     * проеханному отрезку (клетки мира размером со сторону квадрата).
+     * Второго слоя нет: ни мелких кубиков следом, ни полосы, ни пятна. */
     dash_active = 1; dash_box_a = 1;
     dash_x0 = 300; dash_y0 = 400; dash_dx = 1; dash_dy = 0;
     player->x = 700; player->y = 400;
@@ -412,22 +442,23 @@ static void test_hitbox_drawing(void) {
     ds_fn_draw_ability_hitboxes();
     uint32_t aim_c = (102u << 24) | gray;        /* aim_max_alpha=102 */
     double pr = ds_fn_dash_hit_radius_solo();    /* тот же радиус, что и урон */
-    int cubes = count_kind_color('q', aim_c);
-    double want_step = pr * dash_hitbox_step;
+    double side = pr * dash_hitbox_zone_scale;   /* сторона большого квадрата */
     double travel = azum_dash_speed * azum_dash_time;   /* 382.5 из 400 пути */
-    /* Кубиков больше, чем шагов: они ставятся каждые dash_hitbox_step радиусов. */
-    assert(cubes >= (int)(travel / want_step));
-    assert(cubes >= 15);
-    /* Полоса зоны — от старта до текущего положения, шириной в диаметр зоны. */
-    int zone = count_kind_color('l', aim_c);
-    assert(zone >= 1);
-    int zi = -1;
-    for (int i = 0; i < call_count; i++)
-        if (calls[i].kind == 'l' && calls[i].color == aim_c) { zi = i; break; }
-    near(calls[zi].x, 300); near(calls[zi].y, 400);
-    near(calls[zi].w, 300 + travel);
-    near(calls[zi].t, pr * dash_hitbox_zone_scale);
-    /* Ни одного залитого круга рывка: пятно под бойцом убрано. */
+    int squares = count_kind_color('q', aim_c);
+    assert(squares >= (int)(travel / side));
+    assert(squares >= 8);
+    for (int i = 0; i < call_count; i++) {
+        if (calls[i].kind != 'q' || calls[i].color != aim_c) continue;
+        /* Все квадраты одного большого размера и сидят на сетке мира
+         * (координаты хранятся во float, поэтому допуск 1e-3). */
+        assert(fabs(calls[i].w - side) < 1e-3);
+        assert(fabs(calls[i].h - side) < 1e-3);
+        double gx = calls[i].x / side, gy = calls[i].y / side;
+        assert(fabs(gx - floor(gx + 0.5)) < 1e-3);   /* центр клетки сетки */
+        assert(fabs(gy - floor(gy + 0.5)) < 1e-3);
+    }
+    /* Ни полосы, ни кругов: слой ровно один. */
+    assert(count_kind_color('l', aim_c) == 0);
     assert(count_kind_color('c', aim_c) == 0);
     assert(count_kind_color('c', solid) == 0);
     /* Рывок бота в соло рисуется тем же радиусом, которым он бьёт. */
@@ -437,19 +468,28 @@ static void test_hitbox_drawing(void) {
     enemy->x = 800; enemy->y = 400;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('l', aim_c) >= 1);
-    assert(count_kind_color('q', aim_c) >= 10);
+    assert(count_kind_color('q', aim_c) >= 5);
+    assert(count_kind_color('l', aim_c) == 0);
     assert(count_kind_color('c', aim_c) == 0);
     enemy_dash_active = 0;
-    /* Турель: контурный круг своего радиуса. */
+    /* Турель: квадрат зоны (заливка + четыре стороны), круга больше нет. */
     dash_active = 0; enemy_dash_active = 0; edash_box_a = 0;
     own_turret(0, 500, 460, 10);
     arr_set(turret_box_a, 0, 1);
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('r', line_c) >= 1);
-    assert(count_kind_color('c', (36u << 24) | gray) >= 1); /* тонкая заливка */
-    puts("hitboxes: real geometry drawn, snowflake/dash area solid-filled, fade-aware");
+    assert(count_kind_color('q', (36u << 24) | gray) == 1);  /* заливка квадрата */
+    assert(count_kind_color('l', line_c) == 4);              /* контур по сторонам */
+    assert(count_kind_color('r', line_c) == 0);              /* без круглого контура */
+    assert(count_kind_color('c', (36u << 24) | gray) == 0);  /* без круглой заливки */
+    int qi = -1;
+    for (int i = 0; i < call_count; i++)
+        if (calls[i].kind == 'q' && calls[i].color == ((36u << 24) | gray)) { qi = i; break; }
+    near(calls[qi].x, 500 - turret_hit_r);
+    near(calls[qi].y, 460 - turret_hit_r);
+    near(calls[qi].w, turret_hit_r * 2);
+    near(calls[qi].h, turret_hit_r * 2);
+    puts("hitboxes: real geometry drawn, snowflake solid-filled, dash is big squares only");
 }
 
 static void test_poison_green(void) {
@@ -614,7 +654,91 @@ static void test_dash_zone_narrow(void) {
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == -1);
     player->y = 500 + remote_pr - 1;
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == 0);
-    puts("dash: narrower damage zone, the drawn band follows it");
+    puts("dash: narrower damage zone, the drawn squares follow it");
+}
+
+static void test_own_punch_spares_own_turret(void) {
+    /* Свой деспенсер не перехватывает свой удар: турель стоит прямо на буке,
+     * удар уходит в пустоту (турель цела, враг далеко — не ранен), а когда
+     * враг в полосе — урон доходит до врага, турель не теряет HP. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    player_class = CLASS_EBUC;
+    enemy_class = CLASS_ORDINARY;
+    dt = 0.05;
+    player->x = 400; player->y = 400; player->size = 25; player->angle = 0;
+    enemy->x = 900; enemy->y = 400; enemy->size = 25;
+    player->hp = 20; player->max_hp = 20;
+    enemy->hp = 999; enemy->max_hp = 999;
+    own_turret(0, 400, 400, 9);
+    enemy->cooldown = 5; enemy->think = 5;      /* бот не вмешивается */
+    punch->active = 1; punch->hit = 0; punch_left = punch_time;
+    ds_fn_update_game();
+    near(arr_get(turret_hp, 0), 9);             /* свой удар не грызёт деспенсер */
+    near(enemy->hp, 999);                       /* и не бьёт врага сквозь пустоту */
+    assert(punch->hit == 0);
+    enemy->x = 460; enemy->y = 400;             /* враг в полосе удара */
+    punch->active = 1; punch->hit = 0; punch_left = punch_time;
+    ds_fn_update_game();
+    near(enemy->hp, 999 - ebuc_damage);         /* урон дошёл до врага */
+    near(arr_get(turret_hp, 0), 9);             /* деспенсер цел */
+    assert(punch->hit == 1);
+    puts("punch: buk's own despenser never eats his punch, damage reaches the foe");
+}
+
+static void test_enemy_shield_front_only(void) {
+    /* Деспенсер врага-буКа прикрывает только спереди: турель за спиной не
+     * подставляется под удар в лицо, и враг честно получает урон. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    player_class = CLASS_ORDINARY;
+    enemy_class = CLASS_EBUC;
+    player->x = 500; player->y = 400; player->size = 25; player->angle = 0;
+    enemy->x = 600; enemy->y = 400; enemy->size = 25;
+    player->hp = 999; player->max_hp = 999;
+    enemy->hp = 50; enemy->max_hp = 50;
+    /* Турель между игроком и врагом — щит принимает удар. */
+    foe_turret(0, 560, 400, 10);
+    assert(ds_fn_enemy_punch_turret_target(500, 400, 1, 0) == 1);
+    /* Турель в полосе удара, но позади тела (дальше допуска 30px) — не щит:
+     * прямого чипа и контрудара нет, удар проходит в лицо врага (входящий
+     * урон бука по правилу класса принимает щит через absorb). */
+    arr_set(enemy_turret_x, 0, 632);
+    assert(ds_fn_enemy_punch_turret_target(500, 400, 1, 0) == -1);
+    enemy->cooldown = 5; enemy->think = 5;
+    punch->x = 500; punch->y = 400; punch->dx = 1; punch->dy = 0;
+    punch->active = 1; punch->hit = 0; punch_left = punch_time;
+    ds_fn_update_game();
+    assert(punch->hit == 1);                    /* удар в лицо прошёл */
+    near(arr_get(enemy_turret_hp, 0), 9);       /* absorb принял урон */
+    near(player->hp, 999);                      /* контрудара нет */
+    /* Турель спереди: прямой чип в щит плюс контрудар по игроку. */
+    arr_set(enemy_turret_x, 0, 560);
+    punch->active = 1; punch->hit = 0; punch_left = punch_time;
+    ds_fn_update_game();
+    near(arr_get(enemy_turret_hp, 0), 8);
+    near(player->hp, 999 - turret_counter_damage);
+    puts("shield: enemy despenser covers only from the front, face punches land");
+}
+
+static void test_turret_shadow_square(void) {
+    /* Тень деспенсера — тем же спрайтом (tex_tint), что и сам деспенсер:
+     * ни кругов, ни колец под турелью. Хитбокс турели — квадрат. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    show_hitboxes = 1;
+    own_turret(0, 500, 460, 10);
+    call_count = 0; tint_calls = 0;
+    ds_fn_draw_turret_shadows();
+    assert(tint_calls == 1);
+    assert(strcmp(tint_last, "despenser.png") == 0);
+    assert(call_count == 0);                    /* тень — спрайт, не круг */
+    arr_set(turret_box_a, 0, 1);
+    call_count = 0;
+    ds_fn_draw_ability_hitboxes();
+    for (int i = 0; i < call_count; i++)
+        assert(calls[i].kind == 'q' || calls[i].kind == 'l');   /* без кругов */
+    puts("turret: square sprite shadow and square hit zone, no round shadow left");
 }
 
 static void test_universe_fade(void) {
@@ -672,6 +796,9 @@ int main(void) {
     test_punch_hitbox_fades();
     test_status_circles();
     test_dash_zone_narrow();
+    test_own_punch_spares_own_turret();
+    test_enemy_shield_front_only();
+    test_turret_shadow_square();
     test_universe_fade();
     test_enemy_class_chances();
     test_poison_green();
@@ -681,7 +808,45 @@ int main(void) {
 '''
 
 
+def check_firebase_rules_cover_request_bodies():
+    """Правила RTDB должны объявлять КАЖДЫЙ ключ тел запросов клиента.
+
+    У узлов правил есть "$other": {".validate": false}, поэтому одно новое
+    поле в PUT/PATCH без правила отклоняет всю запись: именно так онлайн
+    когда-то завис на вечном «подключении» (claim слота не проходил
+    валидацию). Проверка ловит рассинхрон firebase.rules.json и native/net.
+    """
+    rules = json.loads((ROOT / "firebase.rules.json").read_text(encoding="utf-8"))["rules"]
+
+    def declared(node):
+        return {k for k in node if not k.startswith((".", "$"))}
+
+    slot = declared(rules["rooms"]["$room"]["players"]["$slot"])
+    user = declared(rules["users"]["$nick"])
+    banner = declared(rules["banner"])
+    msg = declared(rules["rooms"]["$room"]["chat"]["$msg"])
+
+    def body_keys(name):
+        text = (ROOT / "native/net" / name).read_text(encoding="utf-8")
+        return set(re.findall(r'\\"([a-z0-9_]+)\\":', text))
+
+    missing = body_keys("room_sync.inc") - slot
+    assert not missing, f"rooms/$room/players/$slot rules miss: {sorted(missing)}"
+    # auth_session.inc также шлёт тела логина в identitytoolkit — их ключи
+    # не относятся к базе и в проверке не участвуют.
+    auth_only = {"email", "password", "grant_type", "refresh_token"}
+    profile = (body_keys("state_storage.inc") | body_keys("settings_storage.inc")
+               | (body_keys("auth_session.inc") - auth_only))
+    missing = profile - user
+    assert not missing, f"users/$nick rules miss: {sorted(missing)}"
+    missing = body_keys("player_api.inc") - msg
+    assert not missing, f"rooms/$room/chat/$msg rules miss: {sorted(missing)}"
+    missing = body_keys("room_control.inc") - banner
+    assert not missing, f"banner rules miss: {sorted(missing)}"
+
+
 def main():
+    check_firebase_rules_cover_request_bodies()
     with tempfile.TemporaryDirectory(prefix="cubic-fixes-") as directory:
         temp = Path(directory)
         compiler = DimScriptCompiler()
@@ -720,6 +885,21 @@ def main():
         # Dash resolution takes the traveled length.
         params = [p[1] for p in fns["dash_resolve_target"][0]]
         assert params == ["sx", "sy", "dx", "dy", "len"]
+        # Dash hitbox: one layer of big squares, no small trailing cube chain.
+        assert "draw_hit_dash_cube" not in fns and "draw_hit_dash_zone" not in fns
+        dash_body = "".join(fns["draw_hit_dash_path"][1])
+        assert "rect(" in dash_body and "line(" not in dash_body
+        # Own turret can never intercept the owner's punch.
+        assert "punch_turret_target" not in fns
+        # Turret shadow is the despenser sprite itself (square, tinted).
+        shadow_body = "".join(fns["draw_turret_shadow_at"][1])
+        assert "tex_tint(" in shadow_body and "DESPENSER_TEX" in shadow_body
+        for name in ("draw_game", "draw_online"):
+            assert "".join(fns[name][1]).count("draw_turret_shadows()") == 1, \
+                f"{name} must draw turret shadows in the shadow layer"
+        # Enemy shield covers from the front only (turret behind the body
+        # never substitutes for it).
+        assert "tf<=bw+30" in "".join(fns["enemy_punch_turret_target"][1])
         # Poison is green (fill 0x00C853), freeze stays blue.
         assert "0x0000C853" in "".join(fns["draw_poison"][1])
         assert "0x0000C853" in "".join(fns["draw_player_poison"][1])
@@ -728,6 +908,36 @@ def main():
         assert "studio_bg_rgb(0)" in "".join(fns["draw_studio"][1])
         studio_body = "".join(fns["update_studio"][1]).replace(" ", "")
         assert "studio_bg_a=studio_a" in studio_body
+
+        # ── Чат: пузыри сообщений над бойцами и кнопка закрытия по центру ──
+        online_body = "".join(fns["draw_online"][1])
+        assert online_body.count("draw_chat_bubbles()") == 1, \
+            "draw_online must draw chat bubbles once"
+        upd_body = "".join(fns["update_online"][1])
+        assert upd_body.count("chat_bubbles_watch()") == 1, \
+            "update_online must tick chat bubbles once"
+        assert "chat_bubbles_reset()" in "".join(fns["init_online"][1])
+        # Закрытие чата — там же, где draw_back: вверху по центру.
+        close_x = "".join(fns["chat_close_x"][1]).replace(" ", "")
+        assert "(screen_w-btn_w)/2" in close_x, \
+            "chat close button must sit centered like every other close button"
+        assert "back_y" in "".join(fns["chat_top_y"][1])
+        # Новые сообщения находятся по серверному ключу (устойчиво к обрезке).
+        watch_body = "".join(fns["chat_bubbles_watch"][1])
+        assert "net_chat_key(" in watch_body and "chat_seen_key" in watch_body
+
+        # ── Настройки: громкость музыки ──
+        settings_body = "".join(fns["draw_settings"][1])
+        assert "tr_music_vol()" in settings_body and "music_half_w()" in settings_body
+        touch_body = "".join(fns["touch_settings"][1])
+        assert touch_body.count("music_volume_step(") == 2, \
+            "touch_settings must handle both - and + buttons"
+        assert "net_load_music_volume()" in "".join(fns["settings_from_storage"][1])
+        assert "net_save_music_volume(" in "".join(fns["music_volume_step"][1])
+
+        # ── Рывок Азума: быстрее при той же дистанции (300 * 1.275 = 382.5) ──
+        config_text = (ROOT / "game/scripts/core/config.ds").read_text(encoding="utf-8")
+        assert "azum_dash_time=1.275" in config_text and "azum_dash_speed=300" in config_text
 
         android = temp / "android"
         android.mkdir()

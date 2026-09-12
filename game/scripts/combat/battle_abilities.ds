@@ -375,6 +375,8 @@ function update_game()
     tick_santa_follow()
     if punch_left>0&&punch.active==1&&punch.hit==0
         // Турели врага — щит: удар по ним не достаёт самого врага, а щит мстит.
+        // Щит прикрывает спереди (enemy_punch_turret_target), поэтому враг-буК,
+        // вставший перед своим деспенсером, честно получает урон в лицо.
         number enemy_turret_target=enemy_punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
         if enemy_turret_target>=1
             punch.hit=1
@@ -390,41 +392,31 @@ function update_game()
                 end
             end
             heal_after_attack()
-        else
-            number turret_target=punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
-            if turret_target>=1
-                punch.hit=1
-                damage_turret(turret_target-1,class_punch_damage(player_class))
-                // Удар по турели одновременно ранит стоящего за ней бука.
-                heal_after_attack()
-                if enemy_revive_prot<=0
-                    if enemy_apply_damage(class_punch_damage(player_class))==1
-                        return
+        else if enemy_in_punch()==1
+            // Свои турели удар игрока не задевают: деспенсер бука — щит от
+            // входящего урона, свой удар он не перехватывает и урон от него
+            // не получает, поэтому удар бука всегда доходит до врага.
+            punch.hit=1
+            if enemy_revive_prot<=0
+                if player_class==2&&santa_follow>0
+                    if player_level>=3
+                        if enemy.poison<=0
+                            enemy.poison_tick=santa_poison_tick_interval
+                            enemy.poison_damage=santa_poison_damage_for(player_level)
+                        else
+                            enemy.poison_damage=enemy.poison_damage+santa_poison_damage_for(player_level)
+                        end
+                        enemy.poison=santa_poison_time_for(player_level)
+                    else
+                        if enemy.poison<=0
+                            enemy.poison_tick=santa_poison_tick_interval
+                        end
+                        enemy.poison=santa_poison_time_for(player_level)
                     end
                 end
-            else if enemy_in_punch()==1
-                punch.hit=1
-                if enemy_revive_prot<=0
-                    if player_class==2&&santa_follow>0
-                        if player_level>=3
-                            if enemy.poison<=0
-                                enemy.poison_tick=santa_poison_tick_interval
-                                enemy.poison_damage=santa_poison_damage_for(player_level)
-                            else
-                                enemy.poison_damage=enemy.poison_damage+santa_poison_damage_for(player_level)
-                            end
-                            enemy.poison=santa_poison_time_for(player_level)
-                        else
-                            if enemy.poison<=0
-                                enemy.poison_tick=santa_poison_tick_interval
-                            end
-                            enemy.poison=santa_poison_time_for(player_level)
-                        end
-                    end
-                    heal_after_attack()
-                    if enemy_apply_damage(class_punch_damage(player_class))==1
-                        return
-                    end
+                heal_after_attack()
+                if enemy_apply_damage(class_punch_damage(player_class))==1
+                    return
                 end
             end
         end

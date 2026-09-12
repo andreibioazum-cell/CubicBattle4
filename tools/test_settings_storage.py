@@ -90,7 +90,7 @@ void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (vo
  * читает и не пишет, но чужой старый профиль не должен ничего ломать. */
 static const char *CLOUD_PROFILE =
     "{\"nick\":\"tester\",\"cups\":10,\"candies\":5,\"cls\":3,\"azum\":1,\"santa\":0,"
-    "\"ebuc\":1,\"level\":1,\"levels\":1,\"lang\":1,\"hitboxes\":0,\"mods_n\":2,"
+    "\"ebuc\":1,\"level\":1,\"levels\":1,\"lang\":1,\"hitboxes\":0,\"musicvol\":40,\"mods_n\":2,"
     "\"mods\":\"winter.zip|my mod.zip\"}";
 
 static int run_write(const char *dir) {
@@ -98,10 +98,18 @@ static int run_write(const char *dir) {
     net_save_settings(1, 0);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
+    /* Громкость музыки: значение вне диапазона приводится к 0..100. */
+    net_save_music_volume(35);
+    assert(net_load_music_volume() == 35);
+    net_save_music_volume(150);
+    assert(net_load_music_volume() == 100);
+    net_save_music_volume(35);
+    assert(net_load_music_volume() == 35);
     /* Устройство уже сохранено — облако ничего не отнимает. */
     assert(settings_sync_with_cloud(CLOUD_PROFILE) == 1);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
+    assert(net_load_music_volume() == 35);
     puts("native write: settings.dat created, local wins over cloud");
     return 0;
 }
@@ -110,7 +118,8 @@ static int run_read(const char *dir) {
     net_set_data_path(dir);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
-    puts("native read: a fresh process restores language and hitboxes");
+    assert(net_load_music_volume() == 35);
+    puts("native read: a fresh process restores language, hitboxes and music volume");
     return 0;
 }
 
@@ -121,6 +130,7 @@ static int run_cloud(const char *dir) {
     assert(settings_sync_with_cloud(CLOUD_PROFILE) == 0);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
+    assert(net_load_music_volume() == 40);
     /* Файл на устройстве проверяет python-обвязка теста. */
     puts("native cloud: profile settings adopted on a device without settings.dat");
     return 0;
@@ -132,6 +142,8 @@ static int run_legacy(const char *dir) {
     net_set_data_path(dir);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
+    /* В старом файле musicvol нет — подставляется значение по умолчанию. */
+    assert(net_load_music_volume() == 70);
     net_save_settings(0, 1);
     assert(net_load_language() == 0);
     assert(net_load_hitboxes() == 1);
@@ -175,6 +187,7 @@ def main():
         subprocess.run([*run, "write", str(data)], check=True)
         saved = (data / "settings.dat").read_text(encoding="utf-8")
         assert "lang 1" in saved and "hitboxes 0" in saved, saved
+        assert "musicvol 35" in saved, saved
         assert "mod" not in saved, saved
         subprocess.run([*run, "read", str(data)], check=True)
 
@@ -182,6 +195,9 @@ def main():
         fresh.mkdir()
         subprocess.run([*run, "cloud", str(fresh)], check=True)
         assert (fresh / "settings.dat").exists()
+        adopted = (fresh / "settings.dat").read_text(encoding="utf-8")
+        assert "lang 1" in adopted and "hitboxes 0" in adopted, adopted
+        assert "musicvol 40" in adopted, adopted
 
         legacy = temp / "legacy-device"
         legacy.mkdir()
@@ -191,6 +207,7 @@ def main():
         subprocess.run([*run, "legacy", str(legacy)], check=True)
         rewritten = (legacy / "settings.dat").read_text(encoding="utf-8")
         assert "lang 0" in rewritten and "hitboxes 1" in rewritten, rewritten
+        assert "musicvol 70" in rewritten, rewritten
         assert "mod" not in rewritten, rewritten
     return 0
 

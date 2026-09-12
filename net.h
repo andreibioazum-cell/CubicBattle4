@@ -164,13 +164,16 @@ void net_mark_achievement_flag(double flag);
 double net_load_azum_revives(void);
 void net_save_azum_revives(double revives);
 
-/* Настройки игрока: язык (0 — English, 1 — русский, как в ui/locale_core.ds)
- * и хитбоксы (1 — видны). Живут в settings.dat на устройстве и в профиле
- * /users/<ник> в облаке — то есть сохраняются и там, и там, как прогресс.
+/* Настройки игрока: язык (0 — English, 1 — русский, как в ui/locale_core.ds),
+ * хитбоксы (1 — видны) и громкость музыки (0..100, по умолчанию 70). Живут в
+ * settings.dat на устройстве и в профиле /users/<ник> в облаке — то есть
+ * сохраняются и там, и там, как прогресс.
  * Реализация — settings_storage.inc. */
 double net_load_language(void);
 double net_load_hitboxes(void);
 void net_save_settings(double language, double hitboxes);
+double net_load_music_volume(void);
+void net_save_music_volume(double volume);
 
 /* Бан система */
 double net_banned(void);
@@ -196,5 +199,8 @@ void net_chat_trim(double keep);
 double net_chat_count(void);
 const char *net_chat_text(double idx);
 const char *net_chat_uid(double idx);
+/* Серверный ключ сообщения: уникален на сообщение (uid автора — нет),
+ * по нему скрипт понимает, какие сообщения уже показаны пузырями. */
+const char *net_chat_key(double idx);
 
 #endif

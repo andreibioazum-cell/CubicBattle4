@@ -382,6 +382,8 @@ function draw_game()
     draw_dust()
     draw_player_shadow_layer()
     draw_enemy_shadow()
+    // Тени деспенсеров — в общем слое теней: квадратные, тем же спрайтом.
+    draw_turret_shadows()
     draw_candies()
     draw_player_hitbox_layer()
     draw_enemy_hitbox()

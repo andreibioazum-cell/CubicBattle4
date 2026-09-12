@@ -87,18 +87,27 @@ function enemy_place_turret()
 end
 
 // Удар из точки (px,py) вдоль (pdx,pdy) по турелям врага: номер слота
-// 1..turret_max или -1 (мимо). Как punch_turret_target, но для врага.
+// 1..turret_max или -1 (мимо). Зона турели — квадрат (turret_zone_half).
+// Щит прикрывает только спереди: турель принимает удар, если стоит перед
+// врагом или почти на нём (допуск 30px назад, как у щита игрока в
+// punch_resolve_target). Турель ПОЗАДИ врага телом не подставляется — удар в
+// лицо попадает в лицо, и враг-буК не перестаёт получать урон от того, что
+// его деспенсер остался где-то за спиной.
 function enemy_punch_turret_target(number px, number py, number pdx, number pdy)
     number best=-1, bfw=0, i=0
+    number bw=(enemy.x-px)*pdx+(enemy.y-py)*pdy
+    number th=punch_width/2+turret_zone_half()
+    number back=turret_zone_half()
     loop i<turret_max
         if enemy_turret_alive(i)==1
             number hx=arr_get(enemy_turret_x,i)-px, hy=arr_get(enemy_turret_y,i)-py
             number tf=hx*pdx+hy*pdy, ts=hy*pdx-hx*pdy
-            number th=punch_width/2+turret_hit_r
-            if tf>=0&&tf<=punch_reach+turret_hit_r&&ts*ts<=th*th
-                if best==-1||tf<bfw
-                    best=i+1
-                    bfw=tf
+            if tf>=0-back&&tf<=punch_reach+back&&fabs(ts)<=th
+                if tf<=bw+30
+                    if best==-1||tf<bfw
+                        best=i+1
+                        bfw=tf
+                    end
                 end
             end
         end

@@ -86,6 +86,10 @@ function draw_settings()
     draw_menu_button(1, "English")
     draw_menu_button(2, "Русский")
     draw_menu_button(3, tr_hitboxes_toggle())
+    // Громкость музыки: подпись со значением в строке 4, под ней −/+ шагом 10%.
+    text_in_box(tr_music_vol() + ": " + music_volume + "%", menu_x(), menu_row(4), btn_w, btn_h, text_color, 0.7)
+    button_scaled("-" + music_vol_step + "%", music_minus_x(), menu_row(5), music_half_w(), btn_h, 0.7)
+    button_scaled("+" + music_vol_step + "%", music_plus_x(), menu_row(5), music_half_w(), btn_h, 0.7)
 end
 
 // ── Экран классов ─────────────────────────────────────────────────────────
