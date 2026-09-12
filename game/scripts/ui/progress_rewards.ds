@@ -87,6 +87,17 @@ function progress_normalize()
     end
 end
 
+// Слияние «куплено» при чтении прогресса: класс, который уже открыт в этой
+// сессии, от чтения файла/облака не закрывается. Нужно на случай, когда
+// хранилище отстало (запись не успела уйти, профиль пришёл из облака без
+// покупки) — покупка не может «отмениться» на глазах у игрока.
+function keep_owned(number cls, number stored)
+    if class_owned_of(cls) == 1
+        return 1
+    end
+    return stored
+end
+
 // Прочитать прогресс из локальных файлов (их ведёт net.c): вызывается и при
 // старте игры, и после входа по нику/паролю — раньше это были два одинаковых
 // списка из двадцати строк.
@@ -94,11 +105,14 @@ function progress_from_storage()
     cups = net_load_cups()
     candies = net_load_candies()
     achievement_mask = net_load_achievement_flags()
-    azum_revive_count = net_load_azum_revives()
+    // Счётчик возрождений за Азума намеренно НЕ читается: достижение
+    // «Легенды не умирают...» считается за один заход в игру (7 возрождений
+    // подряд, не выходя из игры), поэтому счётчик обнуляется в engine.init()
+    // и живёт только в памяти сессии.
     player_class = net_load_class()
-    set_class_owned(CLASS_AZUM, net_load_azum())
-    set_class_owned(CLASS_SANTA, net_load_santa())
-    set_class_owned(CLASS_EBUC, net_load_ebuc())
+    set_class_owned(CLASS_AZUM, keep_owned(CLASS_AZUM, net_load_azum()))
+    set_class_owned(CLASS_SANTA, keep_owned(CLASS_SANTA, net_load_santa()))
+    set_class_owned(CLASS_EBUC, keep_owned(CLASS_EBUC, net_load_ebuc()))
     player_level = net_load_level()
     levels_unlocked = net_load_levels_unlocked()
     set_class_progress(CLASS_ORDINARY, net_load_ordinary_level(), net_load_ordinary_levels_unlocked())

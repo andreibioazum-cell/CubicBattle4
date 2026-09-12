@@ -138,20 +138,26 @@ function class_sprite_scale()
     return 1.55
 end
 
+// Спрайт и весь блок подписей (название, девиз, уровень) подняты на 4-6 px:
+// название класса стоит выше, а зазор до спрайта не уменьшился. Спрайт — это
+// 50 px исходника * class_sprite_scale, то есть ~78 px от class_sprite_y;
+// подписи нельзя поднять одни, иначе название влезает на спрайт. Зазоры между
+// строками (32 и 24 px) остались прежними, кнопка покупки — по-прежнему у
+// нижнего края карточки, поэтому карточка не «рассыпается».
 function class_sprite_y()
-    return classes_top() + 12
+    return classes_top() + 8
 end
 
 function class_title_y()
-    return classes_top() + 100
+    return classes_top() + 94
 end
 
 function class_desc_y()
-    return classes_top() + 132
+    return classes_top() + 126
 end
 
 function class_level_y()
-    return classes_top() + 156
+    return classes_top() + 150
 end
 
 function class_pick_inset()

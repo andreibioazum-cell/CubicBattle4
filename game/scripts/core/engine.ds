@@ -135,6 +135,9 @@ end
 
 function init()
     ds_log("init: loading textures")
+    // Возрождения за Азума считаются за заход: достижение «Легенды не
+    // умирают...» требует 7 возрождений, не выходя из игры.
+    azum_revive_count = 0
     load_textures()
     net_set_firebase_key(FB_KEY)
     net_autologin(FIREBASE)
