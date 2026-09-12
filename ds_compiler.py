@@ -71,8 +71,7 @@ BUILTINS = frozenset({
     'net_save_progress', 'net_save_progress_all', 'net_load_achievement_flags',
     'net_save_achievement_flags', 'net_has_achievement_flag',
     'net_mark_achievement_flag', 'net_load_azum_revives', 'net_save_azum_revives',
-    'net_load_language', 'net_load_hitboxes', 'net_load_mod_count',
-    'net_load_mod', 'net_save_settings', 'net_save_mods',
+    'net_load_language', 'net_load_hitboxes', 'net_save_settings',
     'keyboard_show',
     'keyboard_hide', 'keyboard_get_text', 'keyboard_get_raw', 'keyboard_clear',
     'keyboard_enter_pressed', 'keyboard_type', 'keyboard_visible', 'str_len',
@@ -108,7 +107,6 @@ ENGINE_VARS = {
 
 STR_BUILTINS = frozenset({
     'console_line',
-    'net_load_mod',
     'keyboard_get_text',
     'keyboard_get_raw',
     'net_chat_text',

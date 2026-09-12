@@ -89,12 +89,11 @@ void net_autologin(const char *url) { (void)url; }
  * progress.dat/settings.dat на телефоне. Счётчики save_* показывают, что игра
  * вообще пыталась сохраниться. */
 static struct {
-    int progress_saves, settings_saves, mods_saves, cloud_pushes;
+    int progress_saves, settings_saves, cloud_pushes;
     double cups, candies, cls, azum, santa, ebuc, level, levels;
     double ol, ou, al, au, sl, su, el, eu, bp, skin;
     double flags, revives;
-    double language, hitboxes, mods_count;
-    char mods[6][64];
+    double language, hitboxes;
 } store;
 
 void net_save_progress_all(double cups, double candies, double cls, double azum, double santa,
@@ -137,24 +136,8 @@ void net_save_settings(double language, double hitboxes) {
     store.language = language;
     store.hitboxes = hitboxes;
 }
-void net_save_mods(double count, const char *m1, const char *m2, const char *m3,
-    const char *m4, const char *m5, const char *m6) {
-    const char *src[6];
-    int n = (int)count, i;
-    src[0] = m1; src[1] = m2; src[2] = m3; src[3] = m4; src[4] = m5; src[5] = m6;
-    store.mods_saves++;
-    if (n < 0) n = 0;
-    if (n > 6) n = 6;
-    store.mods_count = n;
-    for (i = 0; i < 6; i++) snprintf(store.mods[i], sizeof(store.mods[i]), "%s", i < n ? src[i] : "");
-}
 double net_load_language(void) { return store.language; }
 double net_load_hitboxes(void) { return store.hitboxes; }
-double net_load_mod_count(void) { return store.mods_count; }
-const char *net_load_mod(double i) {
-    int idx = (int)i;
-    return idx >= 0 && idx < 6 ? store.mods[idx] : "";
-}
 
 /* Снимок сети (класс/уровень/скин своего бойца) — просто считаем вызовы. */
 void net_set_class(double v) { (void)v; store.cloud_pushes++; }
@@ -221,8 +204,8 @@ static void test_restart_keeps_buk(void) {
     puts("restart: buk, currencies and its level survive a full script reset");
 }
 
-/* Настройки и моды: свой файл на устройстве и свои вызовы сохранения. */
-static void test_settings_and_mods_save(void) {
+/* Настройки: свой файл на устройстве и свои вызовы сохранения. */
+static void test_settings_save(void) {
     fresh_device();
     language = 1;
     show_hitboxes = 0;
@@ -231,28 +214,14 @@ static void test_settings_and_mods_save(void) {
     near("store.language, 1", store.language, 1);
     near("store.hitboxes, 0", store.hitboxes, 0);
 
-    assert(ds_fn_mod_import("mymod.zip") == 1);
-    assert(store.mods_saves == 1);
-    near("store.mods_count, 1", store.mods_count, 1);
-    assert(strcmp(store.mods[0], "mymod.zip") == 0);
-    assert(ds_fn_mod_import(" second.zip ") == 1);
-    near("store.mods_count, 2", store.mods_count, 2);
-    assert(strcmp(store.mods[1], "second.zip") == 0);
-    ds_fn_mod_delete(0);
-    near("store.mods_count, 1", store.mods_count, 1);
-    assert(strcmp(store.mods[0], "second.zip") == 0);
-
-    /* Перезапуск: язык, хитбоксы и список модов читаются из файла. */
+    /* Перезапуск: язык и хитбоксы читаются из файла. */
     reset();
     near("language, 0", language, 0);
     near("show_hitboxes, 1", show_hitboxes, 1);
-    near("mods_count, 0", mods_count, 0);
     ds_fn_settings_from_storage();
     near("language, 1", language, 1);
     near("show_hitboxes, 0", show_hitboxes, 0);
-    near("mods_count, 1", mods_count, 1);
-    assert(strcmp(mod_1, "second.zip") == 0);
-    puts("settings: language, hitboxes and mods survive a restart");
+    puts("settings: language and hitboxes survive a restart");
 }
 
 /* Стартовый путь целиком: init() обязан поднять и прогресс, и настройки. */
@@ -267,8 +236,6 @@ static void test_init_loads_everything(void) {
     store.skin = 1;
     store.flags = ACH_LEGENDS;
     store.language = 1;
-    store.mods_count = 1;
-    snprintf(store.mods[0], sizeof(store.mods[0]), "winter.zip");
     ds_fn_init();
     near("candies, 77", candies, 77);
     near("cups, 12", cups, 12);
@@ -277,8 +244,6 @@ static void test_init_loads_everything(void) {
     near("ds_fn_class_level_of(CLASS_EBUC), 2", ds_fn_class_level_of(CLASS_EBUC), 2);
     near("achievement_mask, ACH_LEGENDS", achievement_mask, ACH_LEGENDS);
     near("language, 1", language, 1);
-    near("mods_count, 1", mods_count, 1);
-    assert(strcmp(mod_1, "winter.zip") == 0);
     puts("init: startup reads progress and settings from the device");
 }
 
@@ -300,7 +265,7 @@ static void test_leaving_battle_saves(void) {
 int main(void) {
     test_buy_buk_saves();
     test_restart_keeps_buk();
-    test_settings_and_mods_save();
+    test_settings_save();
     test_init_loads_everything();
     test_leaving_battle_saves();
     puts("all saving checks passed");
@@ -329,8 +294,6 @@ def main():
         call = save_body[save_body.index("net_save_progress_all("):]
         assert call.count(",") == 17, f"expected 18 fields, got {call.count(',') + 1}"
         for fn, hook in (("touch_settings", "save_settings()"),
-                         ("mod_import", "save_mods()"),
-                         ("mod_delete", "save_mods()"),
                          ("leave_screen", "save_progress()"),
                          ("login_do", "settings_from_storage()"),
                          ("init", "settings_from_storage()")):

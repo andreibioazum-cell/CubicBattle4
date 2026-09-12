@@ -53,14 +53,18 @@ function enemy_reset_class_state()
 end
 
 function enemy_pick_random_class()
-    // Классы врага выпадают с разным весом: Азум и буК — по 20%, остальные
-    // 60% делят Обычный (30%) и Дед Мороз (30%).
+    // Классы врага выпадают с разным весом (проценты — в core/config.ds):
+    // Азум 20%, буК 8%, Дед Мороз 30%, остальное (42%) — Обычный.
+    // буК редкий намеренно: турели-щиты сильнее всего ломают бой с ботом.
     number roll=rand()%100
-    if roll<20
+    number azum_to=enemy_class_azum_chance
+    number ebuc_to=azum_to+enemy_class_ebuc_chance
+    number santa_to=ebuc_to+enemy_class_santa_chance
+    if roll<azum_to
         enemy_class=CLASS_AZUM
-    else if roll<40
+    else if roll<ebuc_to
         enemy_class=CLASS_EBUC
-    else if roll<70
+    else if roll<santa_to
         enemy_class=CLASS_SANTA
     else
         enemy_class=CLASS_ORDINARY

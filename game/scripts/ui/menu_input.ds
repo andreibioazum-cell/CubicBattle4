@@ -264,10 +264,6 @@ function touch_settings(number x, number y)
         return
     end
     if hit_menu_row(x, y, 3) == 1
-        start_transition(ST_MODS)
-        return
-    end
-    if hit_menu_row(x, y, 4) == 1
         show_hitboxes = 1 - show_hitboxes
         save_settings()
     end
@@ -416,10 +412,6 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == ST_ACHIEVEMENTS
         touch_achievements(x, y, action)
-        return
-    end
-    if game_state == ST_MODS
-        touch_mods(x, y, action)
         return
     end
     if game_state == ST_LEADERBOARD

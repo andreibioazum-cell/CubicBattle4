@@ -129,51 +129,75 @@ function universe_particle_color(number i, number a)
     return (((unsigned)(int)a)<<24)|0x0076FF03
 end
 
-function draw_universe_at(number cx, number cy, number seed, number t)
-    if t<=0
+// fade — плавная альфа всего эффекта (0..1): её ведёт tick_hitbox_fades, она
+// набирается при появлении частиц и гаснет после схлопывания, поэтому вспышка
+// вселенной не обрывается в один кадр ни в начале, ни в конце.
+function draw_universe_at(number cx, number cy, number seed, number t, number fade)
+    if t<=0||fade<=0
         return
     end
     number p=clamp(t/ebuc_universe_collapse_time,0,1)
+    number collapsed=0
     if p>=1
-        return
+        collapsed=1
     end
-    number i=0
-    loop i<ebuc_universe_particles
-        number h1=hash01(seed*13+i*91+7)
-        number h2=hash01(seed*17+i*131+19)
-        number h3=hash01(seed*23+i*173+31)
-        number h4=hash01(seed*29+i*211+47)
-        number sx=40+h1*(screen_w-80)
-        number sy=40+h2*(screen_h-80)
-        number k=p*p
-        number px=lerp(sx,cx,k)
-        number py=lerp(sy,cy,k)
-        number size=2+6*h3*(1-p)
-        number a=floor(120+120*p)
-        circle(px,py,size,universe_particle_color(i,a))
-        if h4>0.86
-            number trail=floor(a*0.55)
-            circle(px,py,size*2.1,universe_particle_color(i+1,trail))
+    if collapsed==0
+        number i=0
+        loop i<ebuc_universe_particles
+            number h1=hash01(seed*13+i*91+7)
+            number h2=hash01(seed*17+i*131+19)
+            number h3=hash01(seed*23+i*173+31)
+            number h4=hash01(seed*29+i*211+47)
+            number sx=40+h1*(screen_w-80)
+            number sy=40+h2*(screen_h-80)
+            number k=p*p
+            number px=lerp(sx,cx,k)
+            number py=lerp(sy,cy,k)
+            number size=2+6*h3*(1-p)
+            number a=floor((120+120*p)*fade)
+            if a>0
+                circle(px,py,size,universe_particle_color(i,a))
+            end
+            if h4>0.86
+                number trail=floor(a*0.55)
+                if trail>0
+                    circle(px,py,size*2.1,universe_particle_color(i+1,trail))
+                end
+            end
+            i=i+1
         end
-        i=i+1
     end
-    if p>0.78
-        number ep=(p-0.78)/0.22
+    if collapsed==1
+        // Всё уже схлопнулось в точку: ядро доигрывает и гаснет вместе с fade.
+        number core=floor(240*fade)
+        if core>0
+            circle(cx,cy,10,universe_particle_color(2,core))
+        end
+    end
+    number ep=(p-0.78)/0.22
+    if ep>1
+        ep=1
+    end
+    if ep>0
         number r=(80+120*ep)*1.0
-        number af=floor(240*ep)
-        ring(cx,cy,r,10,(((unsigned)(int)af)<<24)|0x0000E676)
+        number af=floor(240*ep*fade)
+        if af>0
+            ring(cx,cy,r,10,(((unsigned)(int)af)<<24)|0x0000E676)
+        end
         if ep>0.45
-            number a2=floor(160*(ep-0.45)/0.55)
-            ring(cx,cy,r*0.62,8,(((unsigned)(int)a2)<<24)|0x0076FF03)
+            number a2=floor(160*(ep-0.45)/0.55*fade)
+            if a2>0
+                ring(cx,cy,r*0.62,8,(((unsigned)(int)a2)<<24)|0x0076FF03)
+            end
         end
     end
 end
 
 function draw_universe()
-    if universe_active==0
+    if universe_fx_a<=0
         return
     end
-    draw_universe_at(universe_x,universe_y,universe_id,universe_t)
+    draw_universe_at(universe_x,universe_y,universe_id,universe_t,universe_fx_a)
 end
 
 // Чужие турели (онлайн): раскладка как в update_remote_station.
@@ -228,8 +252,8 @@ function draw_remote_universe()
     number s=0
     loop s<max_players
         number b=s*universe_fields
-        if s!=net_slot()&&arr_get(remote_universe,b+1)==1
-            draw_universe_at(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),arr_get(remote_universe,b),arr_get(remote_universe,b+4))
+        if s!=net_slot()&&arr_get(runiverse_fx_a,s)>0
+            draw_universe_at(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),arr_get(remote_universe,b),arr_get(remote_universe,b+4),arr_get(runiverse_fx_a,s))
         end
         s=s+1
     end

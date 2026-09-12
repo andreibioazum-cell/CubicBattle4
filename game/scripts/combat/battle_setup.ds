@@ -80,14 +80,16 @@ function reset_battle()
     dash_x0=0
     dash_y0=0
     dash_cd=0
-    // Плавность хитбоксов способностей: всё с нуля.
+    // Плавность хитбоксов и эффектов: всё с нуля.
     dash_box_a=0
     snow_ball_a=0
     snow_boom_a=0
     universe_box_a=0
+    universe_fx_a=0
     edash_box_a=0
     esnow_ball_a=0
     esnow_boom_a=0
+    enemy_punch_a=0
     arr_clear(turret_x)
     arr_clear(turret_y)
     arr_clear(turret_hp)
@@ -137,10 +139,12 @@ function reset_battle()
     arr_clear(remote_station)
     arr_clear(remote_universe)
     arr_clear(remote_dash)
+    arr_clear(rpunch_a)
     arr_clear(rdash_box_a)
     arr_clear(rsnow_ball_a)
     arr_clear(rsnow_boom_a)
     arr_clear(runiverse_box_a)
+    arr_clear(runiverse_fx_a)
     arr_clear(rstation_box_a)
     i=0
     loop i<max_players*remote_fields
@@ -174,10 +178,12 @@ function reset_battle()
     end
     i=0
     loop i<max_players
+        arr_push(rpunch_a,0)
         arr_push(rdash_box_a,0)
         arr_push(rsnow_ball_a,0)
         arr_push(rsnow_boom_a,0)
         arr_push(runiverse_box_a,0)
+        arr_push(runiverse_fx_a,0)
         i=i+1
     end
     i=0

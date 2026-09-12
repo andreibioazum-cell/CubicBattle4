@@ -177,12 +177,13 @@ function draw_online()
     end
     draw_player_hitbox_layer()
     if show_hitboxes==1
+        // Полосы ударов соперников гаснут плавно (rpunch_a ведёт
+        // tick_hitbox_fades), поэтому чужой хитбокс не обрывается за один кадр.
         i=0
         loop i<max_players
-            b=i*remote_fields
             rb=i*punch_fields
-            if arr_get(remotes,b+5)==1&&arr_get(remote_punches,rb)==1
-                draw_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,1)
+            if arr_get(rpunch_a,i)>0
+                draw_punch_box(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width,arr_get(rpunch_a,i))
             end
             i=i+1
         end

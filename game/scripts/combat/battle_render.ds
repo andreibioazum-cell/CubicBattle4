@@ -134,7 +134,8 @@ function finish_game(number result)
     finished=result
     aim_id=-1
     super_id=-1
-    aim_a=0
+    // aim_a не обнуляем: полоса удара гаснет сама (update_aim), поэтому в конце
+    // боя хитбокс удара пропадает плавно, а не за один кадр.
     punch.active=0
     punch.hit=0
     punch_left=0
@@ -158,27 +159,30 @@ function finish_game(number result)
     // полупрозрачной плашкой и гаснут сами (очистка — в reset_battle).
     turret_heal_t=0
     universe_active=0
-    universe_t=0
     universe_a=0
     keyboard_hide()
+    // Геометрию эффектов и сетевых снимков НЕ стираем: гасятся только флаги
+    // «активно», а хитбоксы и вспышка вселенной доигрывают своё плавное
+    // пропадание на месте (альфы гасит tick_hitbox_fades при finished!=0).
+    // Полностью всё очищает reset_battle перед следующим боем.
     number i=0
-    loop i<max_players*snow_fields
-        arr_set(remote_snow,i,0)
-        i=i+1
-    end
-    i=0
-    loop i<max_players*station_fields
-        arr_set(remote_station,i,0)
-        i=i+1
-    end
-    i=0
-    loop i<max_players*universe_fields
-        arr_set(remote_universe,i,0)
-        i=i+1
-    end
-    i=0
-    loop i<max_players*dash_fields
-        arr_set(remote_dash,i,0)
+    loop i<max_players
+        number sb=i*snow_fields
+        arr_set(remote_snow,sb,0)
+        arr_set(remote_snow,sb+1,0)
+        arr_set(remote_snow,sb+5,0)
+        number tb=i*station_fields
+        number k=0
+        loop k<turret_max
+            arr_set(remote_station,tb+1+k*5,0)
+            k=k+1
+        end
+        number ub=i*universe_fields
+        arr_set(remote_universe,ub,0)
+        arr_set(remote_universe,ub+1,0)
+        number db=i*dash_fields
+        arr_set(remote_dash,db,0)
+        arr_set(remote_dash,db+1,0)
         i=i+1
     end
     if result==1&&cups_awarded==0
@@ -265,7 +269,9 @@ function draw_player_hitbox_layer()
     if show_hitboxes==0
         return
     end
-    if aim_a>0&&finished==0
+    // Полоса гаснет сама (aim_a в update_aim), поэтому в конце боя она не
+    // обрывается за один кадр, а плавно тает под плашкой результата.
+    if aim_a>0
         draw_punch_box(player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a)
     end
 end
@@ -304,8 +310,10 @@ function draw_enemy_hitbox()
     if show_hitboxes==0
         return
     end
-    if (enemy.state==1||enemy.state==2)&&finished==0
-        draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,1)
+    // Та же плавность, что у полосы игрока: альфу ведёт tick_hitbox_fades,
+    // поэтому хитбокс удара бота появляется и пропадает плавно, а не мигает.
+    if enemy_punch_a>0
+        draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,enemy_punch_a)
     end
 end
 
@@ -390,6 +398,11 @@ function draw_game()
     draw_freeze()
     draw_poison()
     draw_stun()
+    // Эффекты, которые враг наложил на бойца, видны так же, как эффекты на
+    // враге: тот же ровный круг вокруг кубика (заморозка, яд, оглушение).
+    draw_player_freeze()
+    draw_player_poison()
+    draw_player_stun()
     draw_dash_streak()
     draw_snow()
     number w=screen_w/4

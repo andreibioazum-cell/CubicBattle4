@@ -49,6 +49,18 @@ void arr_set(DSArray *a, double i, double v) {
 double arr_len(DSArray *a) { return a ? a->len : 0; }
 double clamp(double v, double lo, double hi) { return v < lo ? lo : v > hi ? hi : v; }
 double dist(double x, double y, double a, double b) { return hypot(x - a, y - b); }
+double lerp(double a, double b, double t) { return a + (b - a) * t; }
+/* Строковые хелперы рантайма: нужны экранам боя (подписи кнопок, «+N кубков»). */
+static char s_concat[512];
+char *ds_concat(const char *left, const char *right) {
+    snprintf(s_concat, sizeof(s_concat), "%s%s", left ? left : "", right ? right : "");
+    return s_concat;
+}
+char *ds_num_to_string(double value) {
+    static char buf[64];
+    snprintf(buf, sizeof(buf), "%g", value);
+    return buf;
+}
 int png_load(const char *name) { (void)name; return 1; }
 void tex(float x, float y, const char *name, float a, float sc) { (void)x; (void)y; (void)name; (void)a; (void)sc; }
 void tex_tint(float x, float y, const char *name, float a, float sc, uint32_t c) { (void)x; (void)y; (void)name; (void)a; (void)sc; (void)c; }
@@ -388,6 +400,8 @@ static void test_hitbox_drawing(void) {
     ds_fn_draw_ability_hitboxes();
     assert(count_kind_color('c', (70u << 24) | gray) >= 1);
     gift->active = 0; boom_t = 0;
+    /* Зоны рисуются, пока жива их альфа: после полного затухания — ничего. */
+    snow_ball_a = 0; snow_boom_a = 0;
     /* Рывок: зона урона рисуется как полоса удара (та же альфа aim_max_alpha)
      * плюс плотная цепочка кубиков по проеханному пути. Серого круга под
      * бойцом больше нет — зона рывка это отрезок, а не пятно под кубиком. */
@@ -417,7 +431,7 @@ static void test_hitbox_drawing(void) {
     assert(count_kind_color('c', aim_c) == 0);
     assert(count_kind_color('c', solid) == 0);
     /* Рывок бота в соло рисуется тем же радиусом, которым он бьёт. */
-    dash_active = 0;
+    dash_active = 0; dash_box_a = 0;
     enemy_dash_active = 1; edash_box_a = 1;
     enemy_dash_x0 = 1100; enemy_dash_y0 = 400; enemy_dash_dx = -1; enemy_dash_dy = 0;
     enemy->x = 800; enemy->y = 400;
@@ -428,7 +442,7 @@ static void test_hitbox_drawing(void) {
     assert(count_kind_color('c', aim_c) == 0);
     enemy_dash_active = 0;
     /* Турель: контурный круг своего радиуса. */
-    dash_active = 0;
+    dash_active = 0; enemy_dash_active = 0; edash_box_a = 0;
     own_turret(0, 500, 460, 10);
     arr_set(turret_box_a, 0, 1);
     call_count = 0;
@@ -500,6 +514,151 @@ static void test_splash_screens(void) {
     puts("splash: warning keeps black screen, studio logo fades out with it");
 }
 
+static void test_punch_hitbox_fades(void) {
+    /* Полоса удара бота больше не вспыхивает на один кадр: у неё своя альфа. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    dt = 0.05;
+    aim_fade_in = 0.09; aim_fade_out = 0.1;
+    show_hitboxes = 1;
+    enemy->state = 2;                       /* удар бота */
+    ds_fn_tick_hitbox_fades();
+    assert(enemy_punch_a > 0 && enemy_punch_a < 1);
+    for (int i = 0; i < 10; i++) ds_fn_tick_hitbox_fades();
+    near(enemy_punch_a, 1);
+    enemy->state = 0;
+    ds_fn_tick_hitbox_fades();
+    assert(enemy_punch_a > 0 && enemy_punch_a < 1);
+    for (int i = 0; i < 10; i++) ds_fn_tick_hitbox_fades();
+    near(enemy_punch_a, 0);
+    /* Рисуется она той же альфой, а не единицей. */
+    enemy_punch_a = 0.5;
+    enemy->x = 400; enemy->y = 300; enemy->angle = 0;
+    call_count = 0;
+    ds_fn_draw_enemy_hitbox();
+    assert(count_kind_color('l', (51u << 24) | 0x00808080) == 1);  /* floor(0.5*102) */
+    /* Конец боя: все хитбоксы гаснут плавно, а не исчезают разом. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    dash_active = 1; dash_box_a = 1;
+    enemy->state = 1; enemy_punch_a = 1;
+    own_turret(0, 500, 460, 10);
+    arr_set(turret_box_a, 0, 1);
+    finished = 1;
+    ds_fn_tick_hitbox_fades();
+    assert(dash_box_a > 0 && dash_box_a < 1);
+    assert(enemy_punch_a > 0 && enemy_punch_a < 1);
+    assert(arr_get(turret_box_a, 0) > 0 && arr_get(turret_box_a, 0) < 1);
+    for (int i = 0; i < 20; i++) ds_fn_tick_hitbox_fades();
+    near(dash_box_a, 0); near(enemy_punch_a, 0); near(arr_get(turret_box_a, 0), 0);
+    puts("hitboxes: bot punch box fades, everything fades out at the end of battle");
+}
+
+static void test_status_circles(void) {
+    /* Эффекты, которые враг наложил на бойца, видны тем же ровным кругом и
+     * так же плавно гаснут. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    dt = 0.05;
+    freeze_fade_in = 0.12; freeze_fade_out = 0.35;
+    player->size = 45; enemy->size = 45;
+    player->x = 300; player->y = 300;
+    enemy->x = 900; enemy->y = 300;
+    player_freeze = 1; player_poison = 1; player_stun = 1;
+    enemy->freeze = 1; enemy->poison = 1; enemy->stun = 1;
+    for (int i = 0; i < 10; i++) ds_fn_tick_status_fades();
+    near(pfreeze_a, 1); near(ppoison_a, 1); near(pstun_a, 1);
+    near(freeze_a, 1); near(poison_a, 1); near(stun_a, 1);
+    player_freeze = 0; player_poison = 0; player_stun = 0;
+    enemy->freeze = 0; enemy->poison = 0; enemy->stun = 0;
+    ds_fn_tick_status_fades();
+    assert(pfreeze_a > 0 && pfreeze_a < 1);
+    assert(ppoison_a > 0 && ppoison_a < 1);
+    assert(pstun_a > 0 && pstun_a < 1);
+    for (int i = 0; i < 20; i++) ds_fn_tick_status_fades();
+    near(pfreeze_a, 0); near(ppoison_a, 0); near(pstun_a, 0);
+    near(freeze_a, 0); near(poison_a, 0); near(stun_a, 0);
+    /* Круг вокруг бойца рисуется в соло (draw_game), тем же цветом, что у врага. */
+    pfreeze_a = 1; ppoison_a = 1; pstun_a = 1;
+    call_count = 0;
+    ds_fn_draw_game();
+    assert(count_kind_color('c', (76u << 24) | 0x1E88E5) == 1);   /* заморозка */
+    assert(count_kind_color('c', (76u << 24) | 0xC853) == 1);     /* яд */
+    assert(count_kind_color('c', (76u << 24) | 0xF9A825) == 1);   /* оглушение */
+    /* В конце боя таймеры состояний уже не тикают, но круги всё равно гаснут. */
+    player_freeze = 2; pfreeze_a = 1;
+    finished = 2;
+    ds_fn_tick_status_fades();
+    assert(pfreeze_a > 0 && pfreeze_a < 1);
+    for (int i = 0; i < 20; i++) ds_fn_tick_status_fades();
+    near(pfreeze_a, 0);
+    puts("status: enemy-applied effects circle the fighter and fade out smoothly");
+}
+
+static void test_dash_zone_narrow(void) {
+    /* Зона рывка узкая и в уроне, и в рисунке: радиус уменьшен масштабом. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    player->size = 45; enemy->size = 45;
+    double old_r = player->size * 0.65 + enemy->size * 0.65 + 12;
+    double pr = ds_fn_dash_hit_radius_solo();
+    near(pr, old_r * dash_hit_radius_scale);
+    assert(dash_hit_radius_scale < 1.0);
+    assert(pr * dash_hitbox_zone_scale < old_r);   /* полоса уже прежнего диаметра */
+    /* Рывок, прошедший в стороне между новым и старым радиусом, больше не бьёт. */
+    game_state = ST_ONLINE;
+    double remote_old = player->size * 0.65 + 14;
+    double remote_pr = ds_fn_dash_hit_radius_remote();
+    near(remote_pr, remote_old * dash_hit_radius_scale);
+    player->x = 500; player->y = 500 + (remote_old + remote_pr) / 2;
+    assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == -1);
+    player->y = 500 + remote_pr - 1;
+    assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == 0);
+    puts("dash: narrower damage zone, the drawn band follows it");
+}
+
+static void test_universe_fade(void) {
+    /* Вспышка вселенной не обрывается в момент схлопывания. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    dt = 0.05;
+    universe_active = 1; universe_t = 0.5; universe_x = 400; universe_y = 300;
+    for (int i = 0; i < 10; i++) ds_fn_tick_hitbox_fades();
+    near(universe_fx_a, 1);
+    universe_active = 0; universe_t = ebuc_universe_collapse_time;
+    ds_fn_tick_hitbox_fades();
+    assert(universe_fx_a > 0 && universe_fx_a < 1);
+    call_count = 0;
+    ds_fn_draw_universe();
+    assert(call_count >= 1);                  /* точка и кольца ещё доигрывают */
+    for (int i = 0; i < 40; i++) ds_fn_tick_hitbox_fades();
+    near(universe_fx_a, 0);
+    call_count = 0;
+    ds_fn_draw_universe();
+    assert(call_count == 0);
+    puts("universe: the collapse flash fades out instead of snapping away");
+}
+
+static void test_enemy_class_chances(void) {
+    /* буК выпадает врагом редко — 8%; Азум 20%, Дед Мороз 30%. */
+    ds_fn_reset_battle();
+    game_state = ST_SOLO;
+    near(enemy_class_ebuc_chance, 8);
+    int counts[4] = {0, 0, 0, 0};
+    const int n = 40000;
+    for (int i = 0; i < n; i++) {
+        ds_fn_enemy_pick_random_class();
+        counts[(int)enemy_class]++;
+    }
+    double ebuc = (double)counts[(int)CLASS_EBUC] / n;
+    double azum = (double)counts[(int)CLASS_AZUM] / n;
+    double santa = (double)counts[(int)CLASS_SANTA] / n;
+    assert(ebuc > 0.065 && ebuc < 0.095);
+    assert(azum > 0.18 && azum < 0.22);
+    assert(santa > 0.28 && santa < 0.32);
+    puts("enemy: buk shows up in 8% of solo battles");
+}
+
 int main(void) {
     setbuf(stdout, NULL);
     ds_main();
@@ -510,6 +669,11 @@ int main(void) {
     test_dash_real_length();
     test_hitbox_fades();
     test_hitbox_drawing();
+    test_punch_hitbox_fades();
+    test_status_circles();
+    test_dash_zone_narrow();
+    test_universe_fade();
+    test_enemy_class_chances();
     test_poison_green();
     test_splash_screens();
     return 0;
@@ -526,10 +690,19 @@ def main():
 
         # ── Wiring checks inside the compiled script modules ──
         fns = compiler.functions
-        for name, hook in (("update_game", "tick_hitbox_fades()"),
-                           ("update_online", "tick_hitbox_fades()")):
+        for name in ("update_game", "update_online"):
             body = fns[name][1]
-            assert body.count(hook) == 1, f"{name} must tick hitbox fades once"
+            for hook in ("tick_hitbox_fades()", "tick_status_fades()"):
+                assert body.count(hook) == 1, f"{name} must call {hook} once"
+        # Эффекты, наложенные врагом, рисуются и вокруг бойца (соло).
+        solo_body = "".join(fns["draw_game"][1])
+        for fn in ("draw_player_freeze()", "draw_player_poison()", "draw_player_stun()"):
+            assert solo_body.count(fn) == 1, f"draw_game must call {fn}"
+        # Шансы классов врага берутся из конфига, а не зашиты числами.
+        pick_body = "".join(fns["enemy_pick_random_class"][1])
+        for name in ("enemy_class_azum_chance", "enemy_class_ebuc_chance",
+                     "enemy_class_santa_chance"):
+            assert name in pick_body, f"enemy_pick_random_class must use {name}"
         for name in ("draw_game", "draw_online"):
             body = fns[name][1]
             assert body.count("draw_ability_hitboxes()") == 1, f"{name} must draw ability hitboxes"

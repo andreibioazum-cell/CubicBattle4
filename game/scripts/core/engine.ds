@@ -20,7 +20,7 @@ end
 
 // Что нужно сделать, покидая экран (закрыть клавиатуру, выйти из комнаты).
 function leave_screen(number state)
-    if state == ST_LOGIN || state == ST_MODS
+    if state == ST_LOGIN
         keyboard_hide()
     end
     if state == ST_ONLINE
@@ -51,10 +51,6 @@ function enter_screen(number state)
     end
     if state == ST_LOGIN
         login_open()
-        return 1
-    end
-    if state == ST_MODS
-        mods_open()
         return 1
     end
     if state == ST_ONLINE
@@ -147,8 +143,8 @@ function init()
     // же приводит их к допустимым значениям и отдаёт сети класс, уровень и
     // скин своего бойца.
     progress_from_storage()
-    // Настройки (язык, хитбоксы, моды) живут в своём файле settings.dat и в
-    // том же профиле облака — читаются сразу за прогрессом.
+    // Настройки (язык и хитбоксы) живут в своём файле settings.dat и в том же
+    // профиле облака — читаются сразу за прогрессом.
     settings_from_storage()
     ds_log("init: ready")
 end
@@ -308,8 +304,6 @@ function update()
         update_online()
     else if game_state == ST_LOGIN
         update_login()
-    else if game_state == ST_MODS
-        update_mods()
     end
     update_weather()
 end
@@ -335,8 +329,6 @@ function draw_screen()
         draw_leaderboard()
     else if game_state == ST_ACHIEVEMENTS
         draw_achievements()
-    else if game_state == ST_MODS
-        draw_mods()
     else
         draw_online()
     end

@@ -324,6 +324,7 @@ function update_game()
     tick_universe()
     tick_enemy_class()
     tick_hitbox_fades()
+    tick_status_fades()
     update_aim()
     if finished!=0
         return
