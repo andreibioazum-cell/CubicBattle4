@@ -176,9 +176,13 @@ static void test_plates(void) {
     arr_set(remotes, remote_fields+5, 1);
     ds_fn_update_event();
     assert(plates_phase == 1);
-    dt = plates_shrink_time;
+    /* Фаза 1: луч между плитами, потом сжатие, потом Санта (фаза 3). */
+    dt = plates_beam_time;
     ds_fn_update_event();
     assert(plates_phase == 2);
+    dt = plates_shrink_time;
+    ds_fn_update_event();
+    assert(plates_phase == 3);
     dt = 0.1;
     player->x = -1000; player->y = -1000; // Don't collect until explicitly tested.
     for (int i = 0; i < 5; i++) ds_fn_update_event();
@@ -199,7 +203,12 @@ static void test_plates(void) {
     double before = candies;
     arr_set(plates_candies, 1, plates_candy_flight);
     ds_fn_plates_collect_candies(); ds_fn_plates_collect_candies();
-    assert(candies == before+candy_give && progress_updates == 1);
+    assert(candies == before+candy_give);
+    /* Сохранение теперь с троттлингом: подбор помечает dirty, а
+     * tick_event_santa пишет прогресс и сбрасывает флаг. */
+    assert(plates_dirty == 1);
+    ds_fn_update_event();
+    assert(plates_dirty == 0);
     cloud_event = 2;
     ds_fn_update_event();
     assert(plates_phase == 0 && plates_santa_t == 0 && arr_get(plates_candies, 0) == 0);
@@ -242,6 +251,10 @@ def main():
         assert frame[-1] == "update_weather()" and frame.count("update_weather()") == 1
         for name in ("draw_game", "draw_online"):
             body = compiler.functions[name][1]
+            # В draw_online первым может стоять чат-гард: пока чат открыт,
+            # рисуется только чат, без арены позади.
+            if body[:4] == ["if chat_open==1", "draw_chat()", "return", "end"]:
+                body = body[4:]
             assert body[0] == "draw_arena_background()"
             assert body.count("draw_snow()") == 1
             assert body.index("draw_snow()") < next(i for i, line in enumerate(body) if line.startswith("hud_bar("))
