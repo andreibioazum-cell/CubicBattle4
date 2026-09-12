@@ -8,8 +8,6 @@ function draw_candies()
         i=i+1
     end
 end
-
-// Жёлтый ореол оглушения (рывок Азума) — как заморозка, но в жёлтых тонах.
 function draw_stun()
     if stun_a<=0
         return
@@ -26,7 +24,6 @@ function draw_stun()
     circle(enemy.x,enemy.y,half,fill)
     ring(enemy.x,enemy.y,half,2,rim)
 end
-
 function draw_player_stun()
     if pstun_a<=0
         return
@@ -42,7 +39,6 @@ function draw_player_stun()
     circle(player.x,player.y,half,fill)
     ring(player.x,player.y,half,2,rim)
 end
-
 function draw_freeze()
     if freeze_a<=0
         return
@@ -59,7 +55,6 @@ function draw_freeze()
     circle(enemy.x,enemy.y,half,fill)
     ring(enemy.x,enemy.y,half,2,rim)
 end
-
 function draw_poison()
     if poison_a<=0
         return
@@ -70,16 +65,12 @@ function draw_poison()
         return
     end
     number half=enemy.size+14
-    // Яд — зелёный (fill 0x00C853, ободок 0x69F0AE), чтобы не сливался с
-    // голубой заморозкой: враг может быть отравлен и заморожен одновременно,
-    // и два одинаково голубых круга выглядели как «двойная заморозка».
     number fill=(((unsigned)(int)af)<<24)|0x0000C853
     number ar=floor(fa*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x0069F0AE
     circle(enemy.x,enemy.y,half,fill)
     ring(enemy.x,enemy.y,half,2,rim)
 end
-
 function draw_player_freeze()
     if pfreeze_a<=0
         return
@@ -95,7 +86,6 @@ function draw_player_freeze()
     circle(player.x,player.y,half,fill)
     ring(player.x,player.y,half,2,rim)
 end
-
 function draw_player_poison()
     if ppoison_a<=0
         return
@@ -105,15 +95,12 @@ function draw_player_poison()
         return
     end
     number half=player.size+14
-    // Яд — зелёный, заморозка — голубая: эффекты больше не сливаются.
     number fill=(((unsigned)(int)af)<<24)|0x0000C853
     number ar=floor(ppoison_a*255*0.7)
     number rim=(((unsigned)(int)ar)<<24)|0x0069F0AE
     circle(player.x,player.y,half,fill)
     ring(player.x,player.y,half,2,rim)
 end
-
-// Логика чужих снежинок — в battle_online.ds, здесь только отрисовка.
 function draw_remote_snow()
     number s=0
     loop s<max_players
@@ -129,13 +116,10 @@ function draw_remote_snow()
         s=s+1
     end
 end
-
 function finish_game(number result)
     finished=result
     aim_id=-1
     super_id=-1
-    // aim_a не обнуляем: полоса удара гаснет сама (update_aim), поэтому в конце
-    // боя хитбокс удара пропадает плавно, а не за один кадр.
     punch.active=0
     punch.hit=0
     punch_left=0
@@ -155,16 +139,10 @@ function finish_game(number result)
     enemy_dash_hit=0
     enemy_super_windup=0
     enemy_super_kind=0
-    // Взрывы турелей не обрываем на экране результата: они доигрывают под
-    // полупрозрачной плашкой и гаснут сами (очистка — в reset_battle).
     turret_heal_t=0
     universe_active=0
     universe_a=0
     keyboard_hide()
-    // Геометрию эффектов и сетевых снимков НЕ стираем: гасятся только флаги
-    // «активно», а хитбоксы и вспышка вселенной доигрывают своё плавное
-    // пропадание на месте (альфы гасит tick_hitbox_fades при finished!=0).
-    // Полностью всё очищает reset_battle перед следующим боем.
     number i=0
     loop i<max_players
         number sb=i*snow_fields
@@ -188,30 +166,20 @@ function finish_game(number result)
     if result==1&&cups_awarded==0
         cups_awarded=1
         cups=cups+cup_win
-        // Леденцы за победу даются, только пока конфеты включены.
         if candy_enabled==1
             candies=candies+candy_win
         end
         save_progress()
-        // Первая победа открывает достижение: grant_achievement сам проверяет,
-        // не выдана ли награда раньше, отмечает её в облаке и показывает тост.
         grant_achievement(ACH_FIRST_WIN)
         ds_log("win +%g cups +%g candies",cup_win,candy_win)
     end
 end
-
 function draw_punch_box(number x, number y, number dx, number dy, number reach, number width, number alpha)
     number aa=floor(clamp(alpha,0,1)*aim_max_alpha)
     if aa>0
         line(x,y,x+dx*reach,y+dy*reach,width,(((unsigned)(int)aa)<<24)|((unsigned)(int)hitbox_gray_rgb))
     end
 end
-
-// Тело и тень бойца — одни функции на всех: игрок, бот и сетевые соперники
-// рисуются одинаково, поэтому спрайт, размер и цвет тени не могут разъехаться.
-// skin — номер скина бойца (у игрока azum_skin, у соперника net_player_skin).
-// Скин «Зомби» ходит своими текстурами (zombie_azum*.png); если они не
-// загрузились, остаётся обычная текстура Азума (обычный куб).
 function fighter_sprite(number cls, number punching, number skin)
     if skin_is_active(cls,skin)==1
         if punching==1
@@ -224,39 +192,31 @@ function fighter_sprite(number cls, number punching, number skin)
     end
     return class_idle_tex(cls)
 end
-
 function draw_fighter_shadow(number x, number y, number ang, number cls, number punching, number skin)
     number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
     tex_tint(x-hw-shadow_off,y-hw+shadow_off,fighter_sprite(cls,punching,skin),sprite_a(ang),ps,(((unsigned)(int)shadow_alpha)<<24))
 end
-
 function draw_fighter_body(number x, number y, number ang, number cls, number punching, number skin)
     number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
     number sx=x-hw, sy=y-hw
     string t=fighter_sprite(cls,punching,skin)
     tex(sx,sy,t,sprite_a(ang),ps)
 end
-
 function draw_player_shadow(number x, number y, number ang, number punching, number skin)
     draw_fighter_shadow(x,y,ang,player_class,punching,skin)
 end
-
 function draw_player_body(number x, number y, number ang, number punching)
     draw_fighter_body(x,y,ang,player_class,punching,azum_skin)
 end
-
 function draw_remote_shadow(number x, number y, number ang, number cls, number punching, number skin)
     draw_fighter_shadow(x,y,ang,cls,punching,skin)
 end
-
 function draw_remote_body(number x, number y, number ang, number cls, number punching, number skin)
     draw_fighter_body(x,y,ang,cls,punching,skin)
 end
-
 function draw_field()
     rect(0,0,screen_w,screen_h,0x33000000)
 end
-
 function draw_player_shadow_layer()
     if punch_left>0
         draw_player_shadow(player.x,player.y,player.angle,1,azum_skin)
@@ -264,18 +224,14 @@ function draw_player_shadow_layer()
         draw_player_shadow(player.x,player.y,player.angle,0,azum_skin)
     end
 end
-
 function draw_player_hitbox_layer()
     if show_hitboxes==0
         return
     end
-    // Полоса гаснет сама (aim_a в update_aim), поэтому в конце боя она не
-    // обрывается за один кадр, а плавно тает под плашкой результата.
     if aim_a>0
         draw_punch_box(player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a)
     end
 end
-
 function draw_player_body_layer()
     if punch_left>0
         draw_player_body(player.x,player.y,player.angle,1)
@@ -283,7 +239,6 @@ function draw_player_body_layer()
         draw_player_body(player.x,player.y,player.angle,0)
     end
 end
-
 function enemy_punching_now()
     if enemy.state==1||enemy.state==2
         return 1
@@ -293,35 +248,28 @@ function enemy_punching_now()
     end
     return 0
 end
-
 function enemy_battle_tex()
     if enemy_punching_now()==1
         return class_punch_tex(enemy_class)
     end
     return class_idle_tex(enemy_class)
 end
-
 function draw_enemy_shadow()
     number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
     tex_tint(enemy.x-ehw-shadow_off,enemy.y-ehw+shadow_off,enemy_battle_tex(),sprite_a(enemy.angle),es,(((unsigned)(int)shadow_alpha)<<24))
 end
-
 function draw_enemy_hitbox()
     if show_hitboxes==0
         return
     end
-    // Та же плавность, что у полосы игрока: альфу ведёт tick_hitbox_fades,
-    // поэтому хитбокс удара бота появляется и пропадает плавно, а не мигает.
     if enemy_punch_a>0
         draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,enemy_punch_a)
     end
 end
-
 function draw_enemy_body()
     number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
     tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
 end
-
 function draw_controls()
     ring(joy.x,joy.y,joy.r,4,0x000000)
     circle(joy.x+joy.ox,joy.y+joy.oy,34,0x000000)
@@ -350,7 +298,6 @@ function draw_controls()
     end
     draw_back()
 end
-
 function draw_result(string title)
     rect(0,0,screen_w,screen_h,0x99000000)
     number w=430, h=250
@@ -360,29 +307,22 @@ function draw_result(string title)
     if finished==1
         reward=cup_win
     end
-    // Весь текст алерта — белый (в т.ч. «+N кубков» и приглашение выйти).
     ctext_scaled(title,y+36,0xFFFFFF,1.12)
     ctext_scaled(tr_cups_reward(reward),y+126,0xFFFFFF,0.9)
     ctext_scaled(tr_tap_to_return(),y+188,0xFFFFFF,0.62)
 end
-
-// Шлейф своего рывка: убран — эффект во время рывка больше не рисуется.
 function draw_dash_streak()
     return
 end
-
-// Чужой рывок (онлайн): эффект шлейфа убран — больше не рисуется.
 function draw_remote_dash()
     return
 end
-
 function draw_game()
     draw_arena_background()
     draw_field()
     draw_dust()
     draw_player_shadow_layer()
     draw_enemy_shadow()
-    // Тени деспенсеров — в общем слое теней: квадратные, тем же спрайтом.
     draw_turret_shadows()
     draw_candies()
     draw_player_hitbox_layer()
@@ -400,8 +340,6 @@ function draw_game()
     draw_freeze()
     draw_poison()
     draw_stun()
-    // Эффекты, которые враг наложил на бойца, видны так же, как эффекты на
-    // враге: тот же ровный круг вокруг кубика (заморозка, яд, оглушение).
     draw_player_freeze()
     draw_player_poison()
     draw_player_stun()

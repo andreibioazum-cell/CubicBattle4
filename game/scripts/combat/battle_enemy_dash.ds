@@ -1,15 +1,4 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_enemy_dash.ds — рывок врага-Азума и рывок игрока в соло
-//
-// Старт рывка бота, его полёт и проверка попадания по игроку и турелям;
-// рядом — рывок самого игрока против бота (tick_dash_solo_hit). Радиусы
-// зоны берутся из combat/battle_hitscan.ds, поэтому рисунок совпадает.
-//
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── Рывок врага (Азум) ────────────────────────────────────────────────────
 function enemy_start_dash()
     number a=atan2(player.y-enemy.y,player.x-enemy.x)
     enemy_dash_dx=cos(a)
@@ -23,7 +12,6 @@ function enemy_start_dash()
     enemy.angle=a
     ds_log("enemy dash started")
 end
-
 function tick_enemy_dash()
     if enemy_dash_cd>0
         enemy_dash_cd=enemy_dash_cd-dt
@@ -45,7 +33,6 @@ function tick_enemy_dash()
         enemy_dash_active=0
         return
     end
-    // Оглушённый враг замирает: таймер идёт, движения нет (как у игрока).
     if enemy.stun>0
         return
     end
@@ -79,17 +66,13 @@ function tick_enemy_dash()
     if enemy_dash_hit==1
         return
     end
-    // Рывок бьёт по текущей позиции (как рывок игрока в соло): сначала щит
-    // из турелей, потом сам игрок. Бьёт в момент пролёта, а не на старте.
     number dti=0
     loop dti<turret_max
         if enemy_dash_hit==0&&turret_alive(dti)==1
-            // Контакт с квадратом турели: по обеим осям сразу.
             number pad=enemy.size*0.65+turret_zone_half()+14
             if fabs(enemy.x-arr_get(turret_x,dti))<=pad&&fabs(enemy.y-arr_get(turret_y,dti))<=pad
                 enemy_dash_hit=1
                 damage_turret(dti,enemy_dash_damage)
-                // Турель-щит мстит за рывок, как за удар.
                 enemy_apply_damage(turret_counter_damage)
             end
         end
@@ -115,8 +98,6 @@ function tick_enemy_dash()
         end
     end
 end
-
-// Рывок игрока: бьёт врага и его турели-щиты (сначала щит, потом враг).
 function tick_dash_solo_hit()
     if dash_active==0||dash_hit==1||finished!=0
         return
@@ -124,7 +105,6 @@ function tick_dash_solo_hit()
     number ti=0
     loop ti<turret_max
         if dash_hit==0&&enemy_turret_alive(ti)==1
-            // Контакт с квадратом турели-щита: по обеим осям сразу.
             number pad=player.size*0.65+turret_zone_half()+14
             if fabs(player.x-arr_get(enemy_turret_x,ti))<=pad&&fabs(player.y-arr_get(enemy_turret_y,ti))<=pad
                 dash_hit=1
@@ -157,8 +137,6 @@ function tick_dash_solo_hit()
         enemy_apply_damage(azum_dash_damage)
     end
 end
-
-// ── Общий тик врага-класса: вызывается из update_game ─────────────────────
 function tick_enemy_class()
     if game_state!=ST_SOLO
         return
@@ -179,10 +157,6 @@ function tick_enemy_class()
     tick_enemy_gift()
     tick_enemy_dash()
 end
-
-// ── Решения: когда враг жмёт ульту ────────────────────────────────────────
-// Вызывается из update_enemy после оглушения. Возвращает 1, если враг занят
-// (рывок летит или идёт замах): обычному ИИ в этом кадре делать нечего.
 function enemy_tick_class_abilities()
     if game_state!=ST_SOLO
         return 0
@@ -207,7 +181,6 @@ function enemy_tick_class_abilities()
         end
         return 1
     end
-    // Ульта только в спокойных состояниях: не в замахе/ударе и не в увороте.
     if enemy.state==1||enemy.state==2||enemy.state==4
         return 0
     end

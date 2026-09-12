@@ -1,17 +1,4 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_super_render.ds — рисунок суперспособностей: турели, луч и вселенная
-//
-// Турель-деспенсер, луч от неё к буку, взрыв турели, частицы вселенной и
-// то же самое у сетевых соперников. Запуск способностей и их логика —
-// в combat/battle_actions_fx.ds, хитбоксы — в combat/battle_hitboxes.ds.
-//
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── Турели бука ───────────────────────────────────────────────────────────
-// Живая турель непрерывно излучает луч от себя до своего хозяина: плотное,
-// почти непрозрачное яркое ядро внутри зелёного свечения.
 function draw_station_beam(number sx, number sy, number px, number py)
     number dx=px-sx, dy=py-sy
     number d=sqrt(dx*dx+dy*dy)
@@ -19,23 +6,12 @@ function draw_station_beam(number sx, number sy, number px, number py)
         return
     end
     number nx=dx/d, ny=dy/d
-    // Луч выходит прямо из центра турели (x1,y1 = центр), а спрайт рисуется
-    // поверх него, поэтому видно, что луч «растёт» из середины турели.
     number x1=sx, y1=sy
-    // не заходить внутрь спрайта игрока
     number x2=px-nx*32, y2=py-ny*32
     number a=floor(250)
-    // внешнее свечение — плотное, без пульсации
     line(x1,y1,x2,y2,15,(((unsigned)(int)200)<<24)|0x0000E676)
-    // ядро луча — сплошное и яркое
     line(x1,y1,x2,y2,6,(((unsigned)(int)a)<<24)|0x00C8FAD6)
 end
-
-// Тень деспенсера — тем же спрайтом и того же размера, что и сам деспенсер
-// (квадратная текстура, tint в shadow_alpha со сдвигом shadow_off), как тени
-// бойцов в battle_render.ds. Круглой тени под турелью больше нет: тень
-// повторяет силуэт спрайта, поэтому читается как сам деспенсер, а не как
-// пятно. Рисуется в слое теней до хитбоксов и спрайтов.
 function draw_turret_shadow_at(number x, number y, number spawn)
     number scale=station_scale
     if spawn>0
@@ -45,9 +21,6 @@ function draw_turret_shadow_at(number x, number y, number spawn)
     number hw=25*scale
     tex_tint(x-hw-shadow_off,y-hw+shadow_off,DESPENSER_TEX,0,scale,(((unsigned)(int)shadow_alpha)<<24))
 end
-
-// Тени всех турелей на арене: свои, врага-бота (соло) и сетевых соперников.
-// Раскладка та же, что у draw_station/draw_enemy_turrets/draw_remote_station.
 function draw_turret_shadows()
     number i=0
     loop i<turret_max
@@ -86,24 +59,17 @@ function draw_turret_shadows()
         s=s+1
     end
 end
-
-// Одна турель: спрайт, анимация появления (spawn 0..1) и полоса HP над ней.
 function draw_turret_at(number x, number y, number hp, number max_hp, number spawn)
     number scale=station_scale
     if spawn>0
         number sp=clamp(spawn/station_spawn_time,0,1)
         scale=station_scale*(1.0+0.25*sp)
     end
-    // Спрайт турели 50x50: центрируем по половине реального размера.
     number hw=25*scale
     tex(x-hw,y-hw,DESPENSER_TEX,0,scale)
-    // Полоса здоровья турели — прямо над ней.
     number bw=46*scale, bh=7
     hud_bar(x-bw/2, y-hw-12, bw, bh, hp, max_hp, 0x7ED321, 0)
 end
-
-// Взрыв турели при полном разрушении: тот же характер, что у взрыва
-// снежинки Деда Мороза, но в зелёных тонах бука.
 function draw_turret_boom(number x, number y, number bt)
     if bt<=0
         return
@@ -122,13 +88,10 @@ function draw_turret_boom(number x, number y, number bt)
         return
     end
     number r=30+95*p
-    // зелёные кольца (вместо голубых у снежинки)
     ring(x,y,r,9,(((unsigned)(int)a)<<24)|0x0000E676)
     ring(x,y,r*0.66,6,(((unsigned)(int)floor(a*0.85))<<24)|0x00B9F6CA)
     ring(x,y,r*0.36,5,(((unsigned)(int)floor(a*0.65))<<24)|0x0076FF03)
-    // яркая вспышка в центре
     circle(x,y,r*0.22+6*(1-p),(((unsigned)(int)floor(a*0.7))<<24)|0x0000E676)
-    // разлетающиеся зелёные осколки-частицы
     number i=0
     loop i<18
         number h1=hash01(i*37+11)
@@ -143,10 +106,6 @@ function draw_turret_boom(number x, number y, number bt)
         i=i+1
     end
 end
-
-// Свои турели: луч — только от последней поставленной турели (если она
-// сломана — от самой свежей из оставшихся), каждая со своим спрайтом и HP.
-// Взрывы разрушенных турелей доигрывают на своих местах.
 function draw_station()
     number beam=-1
     if turret_alive(last_turret_slot)==1
@@ -180,7 +139,6 @@ function draw_station()
         bi=bi+1
     end
 end
-
 function universe_particle_color(number i, number a)
     number m=(int)i%4
     if m==0
@@ -194,10 +152,6 @@ function universe_particle_color(number i, number a)
     end
     return (((unsigned)(int)a)<<24)|0x0076FF03
 end
-
-// fade — плавная альфа всего эффекта (0..1): её ведёт tick_hitbox_fades, она
-// набирается при появлении частиц и гаснет после схлопывания, поэтому вспышка
-// вселенной не обрывается в один кадр ни в начале, ни в конце.
 function draw_universe_at(number cx, number cy, number seed, number t, number fade)
     if t<=0||fade<=0
         return
@@ -234,7 +188,6 @@ function draw_universe_at(number cx, number cy, number seed, number t, number fa
         end
     end
     if collapsed==1
-        // Всё уже схлопнулось в точку: ядро доигрывает и гаснет вместе с fade.
         number core=floor(240*fade)
         if core>0
             circle(cx,cy,10,universe_particle_color(2,core))
@@ -258,15 +211,12 @@ function draw_universe_at(number cx, number cy, number seed, number t, number fa
         end
     end
 end
-
 function draw_universe()
     if universe_fx_a<=0
         return
     end
     draw_universe_at(universe_x,universe_y,universe_id,universe_t,universe_fx_a)
 end
-
-// Чужие турели (онлайн): раскладка как в update_remote_station.
 function draw_remote_station()
     if net_slot()<0
         return
@@ -279,9 +229,6 @@ function draw_remote_station()
             number owner_alive=arr_get(remotes,rb+5)
             number ox=arr_get(remotes,rb+1)
             number oy=arr_get(remotes,rb+2)
-            // Луч — только от последней поставленной турели соперника (номер
-            // слота 1..turret_max хранится в remote_station[b]); если она
-            // сломана, луч отходит к самой свежей из оставшихся живых.
             number beam=-1
             number lslot=arr_get(remote_station,b)
             if lslot>=1&&lslot<=turret_max
@@ -301,7 +248,6 @@ function draw_remote_station()
             end
             if beam>=0&&owner_alive==1
                 number bo=b+1+beam*5
-                // Луч рисуем под спрайтом, чтобы он «выходил из центра».
                 draw_station_beam(arr_get(remote_station,bo+1),arr_get(remote_station,bo+2),ox,oy)
             end
             number o=b+1, st=0
@@ -312,7 +258,6 @@ function draw_remote_station()
                     number rl=net_player_level(s)
                     draw_turret_at(arr_get(remote_station,o+1),arr_get(remote_station,o+2),arr_get(remote_station,o+3),ebuc_station_hp_for(rl),0)
                 else if st==2
-                    // Взрыв чужой турели виден и у нас — доигрывает до конца.
                     draw_turret_boom(arr_get(remote_station,o+1),arr_get(remote_station,o+2),arr_get(remote_station,o+4))
                 end
                 o=o+5
@@ -322,7 +267,6 @@ function draw_remote_station()
         s=s+1
     end
 end
-
 function draw_remote_universe()
     if net_slot()<0
         return

@@ -1,17 +1,4 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_enemy_class.ds — случайный класс врага в соло и его способности.
-//
-// Враг получает случайный класс (0..3) при спавне и играет им честно:
-//   Обычный — как раньше, без ульты;
-//   Азум — рывок в игрока + одно возрождение за бой;
-//   Дед Мороз — удары травят ядом, снежинка летит в игрока и морозит;
-//   буК — ставит до turret_max турелей-щитов, они прикрывают врага.
-// Уровень врага всегда 0: бонусов ветки у него нет.
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── Сброс и выбор класса ──────────────────────────────────────────────────
 function enemy_reset_class_state()
     enemy_class=CLASS_ORDINARY
     enemy_level=0
@@ -52,11 +39,7 @@ function enemy_reset_class_state()
         i=i+1
     end
 end
-
 function enemy_pick_random_class()
-    // Классы врага выпадают с разным весом (проценты — в core/config.ds):
-    // Азум 20%, буК 8%, Дед Мороз 30%, остальное (42%) — Обычный.
-    // буК редкий намеренно: турели-щиты сильнее всего ломают бой с ботом.
     number roll=rand()%100
     number azum_to=enemy_class_azum_chance
     number ebuc_to=azum_to+enemy_class_ebuc_chance
@@ -82,11 +65,6 @@ function enemy_pick_random_class()
     enemy.hp=enemy.max_hp
     ds_log("enemy class %g hp %g",enemy_class,enemy.max_hp)
 end
-
-// Урон по врагу с учётом защиты после возрождения и самого возрождения.
-// Возвращает 1, если бой закончен победой (враг мёртв), иначе 0.
-// Турели врага-буКа — щит: урон сначала уходит в них (enemy_shield_absorb),
-// и только остаток бьёт самого врага.
 function enemy_apply_damage(number dmg)
     if finished!=0
         return 1
@@ -110,7 +88,6 @@ function enemy_apply_damage(number dmg)
     end
     return 0
 end
-
 function enemy_try_revive()
     if enemy.hp>0
         return 0
@@ -146,9 +123,6 @@ function enemy_try_revive()
     ds_log("enemy azum revived")
     return 1
 end
-
-// Турели врага — в battle_enemy_turrets.ds (щит, контрудар, отрисовка).
-// ── Снежинка врага (Дед Мороз) ────────────────────────────────────────────
 function enemy_start_snow()
     enemy_gift.x=enemy.x
     enemy_gift.y=enemy.y
@@ -161,14 +135,11 @@ function enemy_start_snow()
     enemy_gift.pierce=0
     ds_log("enemy snow thrown")
 end
-
 function enemy_snow_explode()
     enemy_gift.active=0
     enemy_boom_x=enemy_gift.x
     enemy_boom_y=enemy_gift.y
     enemy_boom_t=boom_time
-    // Урон по игроку принимает щит из его турелей (take_damage сам направляет
-    // урон в турели бука), отдельного урона турелям радиуса нет.
     if dist(enemy_boom_x,enemy_boom_y,player.x,player.y)<=super_radius
         if revive_prot<=0
             if player_freeze<santa_freeze_time_for(enemy_level)
@@ -185,7 +156,6 @@ function enemy_snow_explode()
         end
     end
 end
-
 function tick_enemy_gift()
     if enemy_boom_t>0
         enemy_boom_t=enemy_boom_t-dt
@@ -203,8 +173,6 @@ function tick_enemy_gift()
     enemy_gift.t=enemy_gift.t+dt
     enemy_gift.x=enemy_gift.x+enemy_gift.dx*super_speed*dt
     enemy_gift.y=enemy_gift.y+enemy_gift.dy*super_speed*dt
-    // Турели игрока-бука снежинка не останавливают: она задевает их на лету
-    // (по разу за полёт) и летит дальше, до самого игрока.
     snow_chip_player_turrets()
     number touched=0
     if dist(enemy_gift.x,enemy_gift.y,player.x,player.y)<player.size*0.65+24
@@ -217,7 +185,6 @@ function tick_enemy_gift()
         enemy_snow_explode()
     end
 end
-
 function draw_enemy_gift()
     if enemy_gift.active==0
         return
@@ -225,7 +192,6 @@ function draw_enemy_gift()
     number hw=16, rot=enemy_gift.t*3
     tex(enemy_gift.x-hw,enemy_gift.y-hw,SNOWFLAKE_TEX,rot,0.5)
 end
-
 function draw_enemy_boom()
     draw_boom_at(enemy_boom_x,enemy_boom_y,enemy_boom_t)
 end

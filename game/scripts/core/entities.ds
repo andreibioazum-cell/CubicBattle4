@@ -1,90 +1,56 @@
 include graphics
-
 object Player
     number x=0, y=0, size=30, angle=0, hp=10, max_hp=10
 end
-
 object Enemy
-    // state: 0=сближение, 1=замах, 2=удар, 3=отход, 4=уклонение, 5=спавн
     number x=0, y=0, size=25, hp=10, max_hp=10, angle=0, state=0, state_time=0, cooldown=0, hit=0
     number strafe=1, dodge_cd=0, think=0, px=0, py=0, pvx=0, pvy=0, seen=0, flank=0
     number mvx=0, mvy=0, svx=0, svy=0, freeze=0, freeze_slow=1, poison=0, poison_tick=0, poison_damage=0
-    // оглушение от рывка Азума: свой таймер, во время него враг не двигается
-    // и не атакует (в отличие от заморозки Деда Мороза)
     number stun=0
-    // человечные дополнения
     number spawn_t=0, wobble=0, wobble_t=0, react=0, speed_var=1, miss_t=0, dodge_fail=0
     number aim_err=0, hesit=0, feint=0
 end
-
 object Punch
     number x=0, y=0, dx=0, dy=0, active=0, shot=0, hit=0
 end
-
 object Gift
     number x=0, y=0, dx=0, dy=0, active=0, t=0, shot=0
-    // Битовая маска турелей, уже «пронзённых» этим полётом снежинки: снежинка
-    // задевает каждую турель на своём пути ровно один раз и летит дальше.
     number pierce=0
 end
-
 Player player=new Player()
 Enemy enemy=new Enemy()
 Punch punch=new Punch()
 Gift gift=new Gift()
-// Случайный класс врага в соло (0..3) и его уровень (всегда 0 — честно).
-// super_cd — общий кулдаун снежинки/турели, windup — замах перед ними
-// (kind: 1 — снежинка, 2 — турель). Рывок Азума на своём кулдауне.
 number enemy_class=0, enemy_level=0, enemy_super_cd=0, enemy_super_windup=0, enemy_super_kind=0
 number enemy_revived=0, enemy_revive_prot=0
-// Снежинка врага (Дед Мороз): летит в игрока, взрывается с заморозкой.
 Gift enemy_gift=new Gift()
 number enemy_boom_t=0, enemy_boom_x=0, enemy_boom_y=0
-// Рывок врага (Азум): летит строго вдоль dash_dx/dash_dy, как у игрока.
 number enemy_dash_active=0, enemy_dash_t=0, enemy_dash_dx=0, enemy_dash_dy=0
 number enemy_dash_hit=0, enemy_dash_cd=0, enemy_dash_x0=0, enemy_dash_y0=0
-// Турели врага (буК): до turret_max штук, щит врага. Взрывы общие
-// (station_boom_*), поэтому отдельно их хранить не нужно.
 array enemy_turret_x=arr_new()
 array enemy_turret_y=arr_new()
 array enemy_turret_hp=arr_new()
 array enemy_turret_maxhp=arr_new()
 array enemy_turret_spawn_t=arr_new()
-
 number aim_tx=0, aim_ty=0
 number finished=0, atk_x=0, atk_y=0, atk2_x=0, atk2_y=0, joy_id=-1, aim_id=-1, super_id=-1
 number punch_left=0, punch_cd=0, aim_a=0
-// Плавная альфа полосы удара врага-бота (соло) и ударов сетевых соперников:
-// их хитбоксы появляются и гаснут так же плавно, как полоса удара игрока
-// (aim_a), а не вспыхивают на один кадр (tick_hitbox_fades).
 number enemy_punch_a=0
 array rpunch_a=arr_new()
 number santa_follow=0
 number super_cd=0, boom_t=0, boom_x=0, boom_y=0, super_windup=0
-// Нажатия во время визуального эффекта ставятся в очередь, но эффекты
-// никогда не рисуются одновременно.
 number queued_punch=0, queued_super=0
 number freeze_a=0
 number player_freeze=0, player_freeze_slow=1, pfreeze_a=0
-// Альфа жёлтого ореола оглушения: у врага свой (stun_a), у игрока свой (pstun_a).
 number stun_a=0
 number player_poison=0, player_poison_tick=0, player_poison_damage=0, ppoison_a=0
 number poison_a=0
-// Оглушение игрока (от чужого рывка в онлайне): не даёт двигаться и атаковать.
 number player_stun=0, pstun_a=0
-// Рывок Азума: направление фиксируется в момент старта (dash_dx/dash_dy),
-// во время рывка можно только поворачиваться. dash_seq — счётчик для сети,
-// dash_pub — опубликован ли старт текущего рывка.
 number dash_active=0, dash_t=0, dash_dx=0, dash_dy=0, dash_hit=0
 number dash_seq=0, dash_pub=0, dash_x0=0, dash_y0=0
-// Кулдаун рывка (свой, чтобы не путать с кулдауном ульты).
 number dash_cd=0
-// Взрывы разрушенных турелей: каждый хранится отдельно и доигрывает до конца,
-// даже если тут же поставили новую турель или сломали ещё одну.
 number station_booms_max=8
 array station_boom_xs=arr_new(), station_boom_ys=arr_new(), station_boom_ts=arr_new()
-// Настоящие турели бука: до turret_max штук, у каждой своя позиция и HP.
-// hp<=0 — слот пуст (место занимает новая турель). spawn_t — анимация появления.
 array turret_x=arr_new()
 array turret_y=arr_new()
 array turret_hp=arr_new()
@@ -92,38 +58,21 @@ array turret_maxhp=arr_new()
 array turret_spawn_t=arr_new()
 number turret_heal_t=0
 number universe_active=0, universe_t=0, universe_x=0, universe_y=0, universe_hit=0, universe_id=0, universe_a=0
-// Плавная альфа самой вспышки вселенной (не хитбокса): частицы проявляются за
-// universe_fade_in, а после схлопывания точка и кольца ещё доигрывают,
-// гаснув за universe_fade_out. У сетевых соперников — своя альфа на слот
-// (позиция и сид берутся из их же снимка remote_universe, он не стирается).
 number universe_fx_a=0
 array runiverse_fx_a=arr_new()
-// Сетевые турели: layout слота см. update_remote_station в battle_abilities.ds.
 array remote_station=arr_new()
 array remote_universe=arr_new()
 array remotes=arr_new(), remote_punches=arr_new()
 array remote_snow=arr_new()
 array remote_dash=arr_new()
-// Плавное появление/пропадание хитбоксов способностей: «живая» альфа (0..1)
-// каждого эффекта (рывок, снежинка и её взрыв, вселенная, круги турелей).
-// Свои — отдельными числами, враг в соло — с приставкой e, сетевые соперники —
-// массивами на слот (tick_hitbox_fades в combat/battle_hitboxes.ds).
 number dash_box_a=0, snow_ball_a=0, snow_boom_a=0, universe_box_a=0
 number edash_box_a=0, esnow_ball_a=0, esnow_boom_a=0
 array rdash_box_a=arr_new(), rsnow_ball_a=arr_new(), rsnow_boom_a=arr_new()
 array runiverse_box_a=arr_new(), rstation_box_a=arr_new()
 array turret_box_a=arr_new(), enemy_turret_box_a=arr_new()
-// Контрудар турели бука в онлайне: thud_seq — счётчик событий «турель
-// получила удар», который бук публикует в снимке слота (поле thud); увидев
-// новый счётчик, клиент бившего игрока сам у себя списывает HP (каждый
-// клиент авторитетен только над своим бойцом). remote_thuds — последний
-// увиденный счётчик по каждому слоту (max_players чисел).
 number thud_seq=0
 array remote_thuds=arr_new()
 array candy_x=arr_new(), candy_y=arr_new()
 array dust=arr_new()
-// Кулдаун спавна пыли для каждого сетевого соперника (0..3).
 array remote_dust_cd=arr_new()
-
-// баны и админ
 string banned_msg=""

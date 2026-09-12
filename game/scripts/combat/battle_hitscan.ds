@@ -1,27 +1,7 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_hitscan.ds — геометрия попаданий: удар, рывок и расстояние до отрезка
-//
-// Кого задевает удар (punch_resolve_target) и рывок (dash_resolve_target),
-// расстояние от точки до проеханного отрезка (seg_dist), радиусы зоны рывка и
-// квадратная зона турели (turret_zone_half) — те самые, которыми считается
-// урон и рисуется хитбокс.
-//
-// Выделен из combat/battle_rules.ds: файл разросся так, что в нём соседствовали
-// классы, турели, попадания и урон.
-// ══════════════════════════════════════════════════════════════════════════
-
-// ── Попадания по игроку и турелям ────────────────────────────────────────
-// Зона турели — КВАДРАТ с половиной стороны turret_hit_r: такой же, каким её
-// рисуют хитбокс и тень (battle_hitboxes.ds, battle_super_render.ds). Все
-// проверки ниже (удар, рывок, снежинка) идут по одному квадрату.
 function turret_zone_half()
     return turret_hit_r
 end
-
-// Псевдодистанция от точки до квадрата турели: 0 внутри и на границе, иначе
-// переполнение по худшей оси (как сегментная дистанция для круга рывка).
 function turret_square_dist(number tx, number ty, number x, number y)
     number dx=fabs(x-tx)-turret_zone_half()
     number dy=fabs(y-ty)-turret_zone_half()
@@ -36,10 +16,6 @@ function turret_square_dist(number tx, number ty, number x, number y)
     end
     return dy
 end
-
-// Дистанция от отрезка [sx,sy]→[sx+dx*len,sy+dy*len] (dx,dy — единичные) до
-// квадрата турели: обход с шагом не больше половины стороны, поэтому быстрый
-// рывок не «перепрыгивает» зону между кадрами обхода.
 function turret_square_seg_dist(number sx, number sy, number dx, number dy, number len, number tx, number ty)
     number best=turret_square_dist(tx,ty,sx,sy)
     number step=turret_zone_half()
@@ -60,14 +36,6 @@ function turret_square_seg_dist(number sx, number sy, number dx, number dy, numb
     end
     return best
 end
-
-// Удар из точки (px,py) вдоль (pdx,pdy): кого он задевает — игрока (0) или
-// живую турель (номер слота 1..turret_max). expand_player — радиус игрока для
-// проверки (0 — проверка точно по центру, как в старом онлайне).
-// Турель принимает удар, если она стоит перед игроком или «на нём»
-// (ближе по направлению удара, допуск 30px назад): турель — это щит бука.
-// Квадрат турели расширяет полосу удара по обоим измерениям (Минковский).
-// -1 — удар никого не задевает.
 function punch_resolve_target(number px, number py, number pdx, number pdy, number expand_player)
     number best=-1, bfw=0, i=0
     number pr=expand_player
@@ -92,7 +60,6 @@ function punch_resolve_target(number px, number py, number pdx, number pdy, numb
                     best=i+1
                     bfw=tf
                 else if best==0
-                    // турель перед игроком или почти на нём — принимает удар
                     if tf<=bfw+30
                         best=i+1
                         bfw=tf
@@ -107,8 +74,6 @@ function punch_resolve_target(number px, number py, number pdx, number pdy, numb
     end
     return best
 end
-
-// Дистанция от точки до отрезка [sx,sy]→[sx+dx*len,sy+dy*len] (dx,dy — единичные).
 function seg_dist(number sx, number sy, number dx, number dy, number len, number tx, number ty)
     number ex=sx+dx*len, ey=sy+dy*len
     number wx=tx-sx, wy=ty-sy
@@ -122,28 +87,12 @@ function seg_dist(number sx, number sy, number dx, number dy, number len, number
     number px=sx+dx*c, py=sy+dy*c
     return sqrt((tx-px)*(tx-px)+(ty-py)*(ty-py))
 end
-
-// Радиус зоны рывка — РОВНО тот, которым считается урон. Единственный
-// источник правды: его используют и проверки попадания (tick_dash_solo_hit,
-// dash_resolve_target, рывок бота), и рисунок хитбокса (battle_hitboxes.ds),
-// поэтому нарисованная зона не может разъехаться с настоящей.
-// Оба радиуса умножаются на dash_hit_radius_scale: зона рывка узкая — и в
-// уроне, и в рисунке (раньше полоса была шириной в два таких радиуса).
-// В соло рывок игрока бьёт по врагу: зона — сумма половин обоих кубиков.
 function dash_hit_radius_solo()
     return (player.size*0.65+enemy.size*0.65+12)*dash_hit_radius_scale
 end
-
-// В онлайне чужой рывок бьёт по этому игроку: зона — половина своего кубика
-// и запас (см. dash_resolve_target).
 function dash_hit_radius_remote()
     return (player.size*0.65+14)*dash_hit_radius_scale
 end
-
-// Кого задевает рывок по уже проеханному отрезку [sx,sy]→[sx+dx*len,sy+dy*len]:
-// 0 — игрока, 1..turret_max — турель, -1 — никого. len — сколько рывок уже
-// проехал: урон считается только там, где боец реально пролетел (хитбокс
-// «живого» пятна рывка, а не весь будущий путь).
 function dash_resolve_target(number sx, number sy, number dx, number dy, number len)
     number best=-1, bd=0
     number pr=dash_hit_radius_remote()
@@ -155,8 +104,6 @@ function dash_resolve_target(number sx, number sy, number dx, number dy, number 
     number i=0
     loop i<turret_max
         if turret_alive(i)==1
-            // Квадрат турели плюс небольшой допуск: рывок задевает турель,
-            // когда проеханный отрезок подошёл к её квадрату вплотную.
             number r=8
             number td=turret_square_seg_dist(sx,sy,dx,dy,len,arr_get(turret_x,i),arr_get(turret_y,i))
             if td<=r
@@ -164,7 +111,6 @@ function dash_resolve_target(number sx, number sy, number dx, number dy, number 
                     best=i+1
                     bd=td
                 else if best==0
-                    // турель-щит на пути рывка или рядом с игроком
                     if td<=bd+20
                         best=i+1
                         bd=td

@@ -6,7 +6,6 @@ function reset_battle()
     player.hp=player.max_hp
     player.size=25*player_scale
     enemy.size=25*enemy_scale
-    // Здоровье врага всегда сбрасывается к стандартному перед каждым боем.
     enemy.max_hp=enemy_base_hp
     enemy.hp=enemy.max_hp
     enemy.state=0
@@ -80,7 +79,6 @@ function reset_battle()
     dash_x0=0
     dash_y0=0
     dash_cd=0
-    // Плавность хитбоксов и эффектов: всё с нуля.
     dash_box_a=0
     snow_ball_a=0
     snow_boom_a=0
@@ -214,35 +212,29 @@ function reset_battle()
         i=i+1
     end
 end
-
 function init_game()
     reset_battle()
     enemy.hp=enemy.max_hp
     spawn_enemy()
     spawn_all_candies()
 end
-
 function init_online()
     reset_battle()
     chat_open=0
     keyboard_hide()
     chat_bubbles_reset()
     online_ready=0
-    // Баннер: не показываем баннер, который висел до нашего входа в комнату.
     banner_skip=1
     banner_t=0
-    // Класс, уровень и скин своего бойца — их видят соперники.
     progress_push_to_net()
     net_connect(FIREBASE,ROOM)
 end
-
 function place_online()
     number s=net_slot(), row=floor(s/2), col=s-row*2
     player.x=screen_w*(0.3+0.4*col)
     player.y=screen_h*(0.35+0.3*row)
     online_ready=1
 end
-
 function spawn_enemy()
     number margin=70, i=0
     loop i<50
@@ -275,13 +267,9 @@ function spawn_enemy()
     else
         enemy.strafe=1
     end
-    // Случайный класс врага: спрайт, HP и способности — от него.
     enemy_pick_random_class()
     ds_log("enemy spawned instantly")
 end
-
-// Леденцы-пикапы рисуются и подбираются, только пока конфеты включены:
-// при candy_enabled==0 карта остаётся без пикапов, но код и файлы на месте.
 function candy_rand_pos(number i)
     number m=candy_margin, k=0
     number cx=m+rand()%(int)(screen_w-2*m), cy=m+rand()%(int)(screen_h-2*m)
@@ -297,7 +285,6 @@ function candy_rand_pos(number i)
     arr_set(candy_x,i,cx)
     arr_set(candy_y,i,cy)
 end
-
 function spawn_all_candies()
     if candy_enabled==0
         return
@@ -308,7 +295,6 @@ function spawn_all_candies()
         i=i+1
     end
 end
-
 function sprite_a(number a)
     return a+pi/2
 end

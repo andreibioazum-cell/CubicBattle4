@@ -20,7 +20,7 @@
 #define READ_TICK 60
 #define CHAT_TICK 1000
 #define EVENT_TICK 500
-/* Баннер админа ("text ..."): опрос banner.json раз в секунду — команда не
+/* Баннер админа ("text ..."): опрос banner.json раз в секунду - команда не
  * претендует на мгновенную доставку, как позиция игрока. */
 #define BANNER_TICK 1000
 #define BANNER_COLOR_MAX 16
@@ -107,7 +107,7 @@ static void ban_unlock(void) { ds_mutex_unlock(banlist.lock); }
 static volatile sig_atomic_t net_fast = 0;
 /* Статики наблюдения за слотами (claim_slot) и приёма игроков (read_players):
  * живут на уровне файла, чтобы net_connect мог сбросить их при каждом новом
- * подключении — иначе записи прошлой сессии «помнят» чужие uid/seq и старые
+ * подключении - иначе записи прошлой сессии «помнят» чужие uid/seq и старые
  * метки времени, что путает захват слота и определение онлайна после
  * переподключения. */
 static unsigned long claim_seen_seq[NET_SLOTS];
@@ -183,7 +183,7 @@ static void normalize_level_pair(int *level, int *unlocked) {
     if (*level > *unlocked) *level = 0;
 }
 /* Атомарная запись: временный файл + rename. Убийство посреди записи не
- * обнуляет прогресс/достижения обрывком файла — старый файл остаётся цел. */
+ * обнуляет прогресс/достижения обрывком файла - старый файл остаётся цел. */
 static void file_write_atomic(const char *path, const char *text) {
     char tmp[400]; FILE *f;
     size_t n = strlen(text);
@@ -199,7 +199,7 @@ static void file_write_atomic(const char *path, const char *text) {
 }
 
 /* Файл прогресса (progress.dat): запись, чтение и все геттеры net_load_*
- * вынесены в native/net/progress_file.inc — вместе с разбором старых
+ * вынесены в native/net/progress_file.inc - вместе с разбором старых
  * форматов файла. Объявлены здесь, потому что сохранение прогресса
  * (net_save_progress_all ниже) и вход по нику (auth_session.inc) вызывают их
  * раньше, чем они определены. */
@@ -224,10 +224,10 @@ static void *http_delete_job(void *arg);
 static void room_slot_delete_async(int slot);
 /* Облачные записи (прогресс, достижения) уходят PATCH'ем из фоновой нити.
  * Надёжность важна: раньше токен перед записью не обновлялся, и через час
- * после входа idToken протухал — PATCH уходил со старым токеном, Firebase
+ * после входа idToken протухал - PATCH уходил со старым токеном, Firebase
  * отвечал 401, а ответ нигде не проверялся. Покупка так и не доходила до
  * облака, и после перезахода (особенно с другого телефона) класс «исчезал».
- * Теперь: токен обновляем до записи, при 401 — форсируем refresh и
+ * Теперь: токен обновляем до записи, при 401 - форсируем refresh и
  * повторяем один раз. */
 static void *http_patch_job(void *arg) {
     HttpJob *j = (HttpJob*)arg;
@@ -304,7 +304,7 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
     if (k != 1 && k != 2 && k != 3) k = 0;
-    // Владение персонажами — липкое: раз куплен, не теряется даже если
+    // Владение персонажами - липкое: раз куплен, не теряется даже если
     // в облаке старая запись без него (фикс бага «буК пропал после перезахода»).
     pg_lock();
     if (pg.loaded) {
@@ -371,7 +371,7 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
         http_patch_async(url, body);
     }
 }
-/* Достижения — отдельный маленький файл с единым битмаском: ACH_FLAG_* задают
+/* Достижения - отдельный маленький файл с единым битмаском: ACH_FLAG_* задают
  * отдельные награды. Добавление нового бита не ломает старые записи. Путь
- * хранится рядом с аккаунтом и прогрессом. Реализация функций — в
+ * хранится рядом с аккаунтом и прогрессом. Реализация функций - в
  * auth_json.inc. */

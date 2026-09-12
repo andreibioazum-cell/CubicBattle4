@@ -65,9 +65,9 @@ void net_ban_set(const char *nick, double banned) {
     }
 }
 
-/* event — скаляр, поэтому PUT, а не PATCH: Firebase принимает PATCH только с
+/* event - скаляр, поэтому PUT, а не PATCH: Firebase принимает PATCH только с
  * объектом в теле («Patch requires a JSON object ...»), и запись с телом "2"
- * сервер отклонял — ивент загорался лишь у того, кто ввёл команду, и пропадал
+ * сервер отклонял - ивент загорался лишь у того, кто ввёл команду, и пропадал
  * после следующего опроса базы. Пишем асинхронно и проверяем код ответа, как в
  * банах: молчаливый «успех» здесь так же не нужен. */
 static void *event_write_job(void *arg) {
@@ -104,11 +104,10 @@ void net_event_set(double mode) {
     LOG("event set %d", m);
 }
 
-/* ── Команда админа "text <сообщение> <цвет>" и баннер ──────────────────────
  * Разбор команды живёт в C, а не в скрипте: из DimScript нет подстрок, только
- * str_eq/str_len. Формат: "text hello, world! green" — сообщение всё между
+ * str_eq/str_len. Формат: "text hello, world! green" - сообщение всё между
  * "text " и последним словом; последнее слово, если это известное имя цвета,
- * становится цветом баннера, иначе остаётся частью сообщения (цвет — белый).
+ * становится цветом баннера, иначе остаётся частью сообщения (цвет - белый).
  */
 static const char *banner_color_names[] = {
     "white", "red", "green", "blue", "yellow", "orange", "purple", "pink",
@@ -143,7 +142,7 @@ static void banner_split_cmd(const char *msg, char *text_out, size_t tcap, char 
     for (c = t; *c; c++)
         if ((*c==' '||*c=='\t') && c[1] && c[1]!=' ' && c[1]!='\t') last_space = c;
     if (last_space) {
-        /* Хвост слова чистим от концевых пробелов: "green  " — тот же цвет. */
+        /* Хвост слова чистим от концевых пробелов: "green  " - тот же цвет. */
         snprintf(word, sizeof(word), "%s", last_space + 1);
         n = strlen(word);
         while (n > 0 && (word[n-1]==' '||word[n-1]=='\t')) word[--n] = 0;
@@ -169,7 +168,7 @@ const char* net_chat_text_cmd_color(const char *msg) {
                      s_text_cmd_color_ret, sizeof(s_text_cmd_color_ret));
     return s_text_cmd_color_ret;
 }
-/* Пишем banner.json в базу (правило — только для админов, как event.json).
+/* Пишем banner.json в базу (правило - только для админов, как event.json).
  * PUT целиком: старый текст баннера заменяется новым. */
 void net_banner_send(const char *text, const char *color) {
     char url[URL], body[BODY], esc[CHAT_TEXT_MAX * 2], ecol[BANNER_COLOR_MAX * 2];
@@ -394,7 +393,7 @@ static void chat_delete_key_async(const char *key) {
     if (t) { ds_thread_detach(t); return; }
     free(url);
 }
-/* Анти-флуд (меньше нагрузки на базу): сравнение полей актора — если игрок
+/* Анти-флуд (меньше нагрузки на базу): сравнение полей актора - если игрок
  * стоит на месте и ничего не меняет, PUT можно пропустить. */
 static int actor_same(const Actor *x, const Actor *y) {
     return x->x==y->x && x->y==y->y && x->a==y->a && x->hp==y->hp && x->alive==y->alive
@@ -408,7 +407,7 @@ static int actor_same(const Actor *x, const Actor *y) {
         && x->thud==y->thud
         && x->cls==y->cls && x->level==y->level && x->skin==y->skin && !strcmp(x->nick,y->nick);
 }
-/* Поля позиции в базе валидируются правилами Firebase как 0..1 (снаряды —
+/* Поля позиции в базе валидируются правилами Firebase как 0..1 (снаряды -
  * -1..1). Одно значение вне диапазона отклоняет PUT целиком, и клиент
  * застревает в подключении. На всякий случай обрезаем всё прямо перед
  * отправкой: нормализация в скрипте уже есть, но это последний рубеж. */

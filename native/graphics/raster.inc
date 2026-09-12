@@ -392,7 +392,7 @@ static void draw_tx(Buffer *b, const Texture *t, float x, float y, float a, floa
     draw_tx_rot(b, t, x, y, a, sc);
 }
 /* Тонированная текстура: рисуется силуэт по альфа-каналу текстуры, залитый
- * цветом tint (0xAARRGGBB). Нужно для теней — текстура становится полностью
+ * цветом tint (0xAARRGGBB). Нужно для теней - текстура становится полностью
  * чёрной, сохраняя форму персонажа. */
 static void draw_tx_unrot_tint(Buffer *b, const Texture *t, float x, float y, float sc, uint32_t tint) {
     if (!b || !t || !t->pixels || !isfinite(x+y+sc) || sc <= 0) return;

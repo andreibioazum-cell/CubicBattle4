@@ -1,12 +1,12 @@
 /* Профиль игрока из облака: разбор записи /users/<ник> и слияние с устройством.
  *
  * Вынесено из native/net/auth_session.inc. Здесь три вещи:
- *   apply_user_json            — разобрать JSON профиля в локальный прогресс;
- *   push_pg_to_cloud           — отправить локальный прогресс в облако;
- *   apply_user_json_keep_local — то же слияние, но облако может только
+ *   apply_user_json            - разобрать JSON профиля в локальный прогресс;
+ *   push_pg_to_cloud           - отправить локальный прогресс в облако;
+ *   apply_user_json_keep_local - то же слияние, но облако может только
  *                                добавлять: купленное на устройстве не теряется.
  * Используют pg/progress_write из state_storage.inc, num/strv из auth_json.inc
- * и settings_sync_with_cloud из settings_storage.inc — все они подключены
+ * и settings_sync_with_cloud из settings_storage.inc - все они подключены
  * раньше в net.c.
  */
 /* Разбор записи /users/<ник> в локальный прогресс (без пароля: в защищённом
@@ -94,7 +94,7 @@ static void apply_user_json(const char *resp) {
                    ebuc_level, ebuc_levels_unlocked,
                    bp_level, azum_skin);
     /* Достижения из облака: если в записи пользователя есть ach_flags,
-     * загружаем их в локальный файл (облако — источник правды). */
+     * загружаем их в локальный файл (облако - источник правды). */
     int cloud_ach_flags = (int)num(resp, "ach_flags", -1);
     int cloud_ach_revives = (int)num(resp, "ach_revives", -1);
     if (cloud_ach_flags >= 0) {
@@ -124,7 +124,7 @@ static void apply_user_json(const char *resp) {
 }
 
 /* Протолкнуть текущий локальный прогресс в облако (только после того, как
- * сессия логина уже установлена — иначе PATCH уйдёт без авторизации). */
+ * сессия логина уже установлена - иначе PATCH уйдёт без авторизации). */
 static void push_pg_to_cloud(void) {
     int cups, candies, cls, azum, santa, ebuc, lv, lu;
     int ol, ou, al, au, sl, su, el, eul, bp, sk;
@@ -148,7 +148,7 @@ static void push_pg_to_cloud(void) {
  * После перезахода такая облачная запись «стирала» купленный локально класс.
  * Теперь возвращаем локальное состояние для каждого купленного класса
  * (Азум/Дед Мороз/бук + уровни) и выбранный класс: облако может добавлять,
- * но никогда не отнимает то, что уже есть на устройстве. Возврат 1 — облако
+ * но никогда не отнимает то, что уже есть на устройстве. Возврат 1 - облако
  * нужно обновить после логина (push_pg_to_cloud в net_auth). */
 static int apply_user_json_keep_local(const char *resp) {
     int had = 0, restored = 0;
@@ -182,7 +182,7 @@ static int apply_user_json_keep_local(const char *resp) {
     /* Выбранный класс возвращаем только если облако «забыло» именно его
      * (куплен локально, в облаке нет): тогда cloud cls уже сломан
      * (apply_user_json свёл его на обычный), и выбор игрока теряется.
-     * Если облако знает класс — его выбор (cls) свежее локального файла. */
+     * Если облако знает класс - его выбор (cls) свежее локального файла. */
     if (local_cls > 0 && local_cls < 4) {
         int local_owned = 0, was_in_cloud = 0;
         if (local_cls == 1) { local_owned = local_azum; was_in_cloud = cloud_azum; }
@@ -213,5 +213,4 @@ static int apply_user_json_keep_local(const char *resp) {
     }
     return 0;
 }
-
 

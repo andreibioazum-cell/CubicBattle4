@@ -8,7 +8,7 @@ static void achievements_read(void) {
     data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
     f = fopen(path, "r");
     if (f) {
-        /* Современный формат — битмаск и (со 2-го числа) счётчик возрождений
+        /* Современный формат - битмаск и (со 2-го числа) счётчик возрождений
          * Азума. Старые сборки писали «welcome all_characters» (0/1 0/1) или
          * одно число-битмаск: такие файлы тоже читаем. Достижение «Привет!»
          * удалено, его бит (0) при чтении старого формата не ставится. */
@@ -92,7 +92,7 @@ void net_mark_achievement_flag(double flag) {
     }
 }
 
-/* Счётчик возрождений за Азума — второе число в achievements.dat. Лежит рядом
+/* Счётчик возрождений за Азума - второе число в achievements.dat. Лежит рядом
  * с флагами, чтобы достижение «Легенды не умирают...» переживало перезаход. */
 double net_load_azum_revives(void) {
     double value;
@@ -373,11 +373,10 @@ static void json_escape(const char *src, char *dst, size_t cap){
     dst[o]='\0';
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
  * Firebase Auth: базу могут читать и писать только запросы с ?auth=<idToken>.
  *
  * Раньше правила базы были открыты («users: .read true»), а URL лежал в
- * открытом репозитории — любой мог выкачать чужие пароли (они хранились в
+ * открытом репозитории - любой мог выкачать чужие пароли (они хранились в
  * открытом виде), затереть чат, слоты или баны и просто завалить базу
  * запросами. Теперь клиент логинится в Firebase Auth по e-mail/паролю
  * <ник>@cb4.game (пароль = игровой пароль + суффикс), получает idToken и
@@ -386,9 +385,8 @@ static void json_escape(const char *src, char *dst, size_t cap){
  * нашего приложения, а правила firebase.rules.json пускают одних лишь
  * authenticated-запросов. Пароли из базы исчезают совсем.
  *
- * Если FB-ключ не задан (config.ds: FB_KEY=""), клиент работает по-старому —
+ * Если FB-ключ не задан (config.ds: FB_KEY=""), клиент работает по-старому -
  * это переходный режим для уже собранных версий.
- * ──────────────────────────────────────────────────────────────────────────── */
 #define FB_EMAIL_DOMAIN "@cb4.game"
 /* Пароль Firebase = игровой + суффикс: у Firebase минимум 6 символов, а игра
  * разрешает короткие пароли; суффикс добивает длину и не даёт использовать
@@ -426,8 +424,8 @@ static void fb_store_tokens(const char *id_token, const char *refresh_token, dou
     ds_mutex_unlock(fb.lock);
 }
 
-/* URL auth-эндпоинтов. Боевой путь — googleapis.com; если же базой указан
- * локальный http:// тестовый сервер, auth-эндпоинты тоже ищутся на нём —
+/* URL auth-эндпоинтов. Боевой путь - googleapis.com; если же базой указан
+ * локальный http:// тестовый сервер, auth-эндпоинты тоже ищутся на нём -
  * так тестовый прогон проходит ровно тот же код, что и бой. */
 static void fb_auth_endpoint(char *dst, size_t cap, const char *path) {
     if (net.base[0] && !strncmp(net.base, "http://", 7)) {
@@ -438,7 +436,7 @@ static void fb_auth_endpoint(char *dst, size_t cap, const char *path) {
         snprintf(dst, cap, "https://securetoken.googleapis.com/v1/token?key=%s", fb.key);
     else
         /* path уже содержит /v1/... (например /v1/accounts:signInWithPassword),
-         * поэтому второй раз «v1» подставлять нельзя — иначе получится
+         * поэтому второй раз «v1» подставлять нельзя - иначе получится
          * /v1/v1/... и Firebase Auth ответит ошибкой, а клиент покажет
          * «No connection». */
         snprintf(dst, cap, "https://identitytoolkit.googleapis.com%s?key=%s", path, fb.key);

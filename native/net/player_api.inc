@@ -203,7 +203,7 @@ double net_player_level(double slot) {
     if(v>LEVEL_MAX) v=LEVEL_MAX;
     return v;
 }
-/* Скин бойца в снимке комнаты. Старые клиенты поле не присылают — тогда оно
+/* Скин бойца в снимке комнаты. Старые клиенты поле не присылают - тогда оно
  * читается как 0 (обычный скин), поэтому смешанные версии в онлайне работают. */
 double net_player_skin(double slot) {
     int i=sidx(slot); double v=0;

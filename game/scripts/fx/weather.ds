@@ -1,7 +1,4 @@
 include graphics
-
-// Общий фон арены для соло и онлайна. snow.png — такая же бесшовная плитка
-// 256×256, как grass.png. Пока снежный фон не добавлен, оставляем траву.
 function draw_arena_background()
     string ground=GRASS
     if candy_enabled==1&&snow_tex_ok==1
@@ -17,19 +14,12 @@ function draw_arena_background()
         y=y+arena_tile_size
     end
 end
-
-// Сезонный снег не зависит от Firebase и не включает сетевые ивенты: в соло
-// и в онлайне снег идёт всегда, пока включены конфеты (candy_enabled==1).
-// Отдельного «снегопада»-ивента больше нет — снежинки и так всегда в игре.
 function snow_active()
     if game_state==ST_SOLO||game_state==ST_ONLINE
         return candy_enabled==1
     end
     return 0
 end
-
-// Отдельные часы погоды: обновляются из главного цикла, даже когда бой уже
-// закончился и update_game() больше не двигает бойцов. Снег не замирает.
 function update_weather()
     if snow_active()==0
         return
@@ -39,27 +29,19 @@ function update_weather()
         snow_t=0
     end
 end
-
 function hash01(number i)
     number v=sin(i*127.1+11.7)*43758.5453
     return v-floor(v)
 end
-
 function frac01(number v)
     return v-floor(v)
 end
-
-// Один и тот же эффект для снежного онлайн-ивента и зимнего соло-боя.
 function draw_snow()
     if snow_active()==0
         return
     end
     number i=0
     loop i<event_flakes
-        // Каждая снежинка живёт свой цикл: появляется в случайной точке,
-        // со случайным размером (не больше самой png-снежинки, 64px = scale 1)
-        // и, не двигаясь, постепенно уменьшается до нуля. Потом рождается
-        // заново в новом месте с новым размером.
         number h1=hash01(i), h2=hash01(i+91)
         number life=2.2+2.6*h1
         number ph=frac01(snow_t/life+h2)

@@ -1,12 +1,5 @@
 include graphics
-
-// fx/dust.ds — след пыли от ходьбы игрока (живёт отдельно от боевой логики).
-// Частицы рождаются ПОЗАДИ кубика (вдоль движения назад) и летят главным
-// образом назад, поэтому след остаётся за спиной, а не под ногами.
-// Пул на dust_max частиц, по dust_fields чисел каждая: x, y, vx, vy, life.
-
 function dust_spawn(number px, number py, number jdx, number jdy)
-    // Ищем свободный слот (life==0).
     number i = 0, base = 0, found = 0
     loop i < dust_max
         base = i * dust_fields
@@ -19,8 +12,6 @@ function dust_spawn(number px, number py, number jdx, number jdy)
     if found == 0
         return
     end
-    // Скорость: основной импульс летит НАЗАД по ходу движения (след тянется
-    // за кубиком), плюс небольшой разброс вбок для пышности.
     number angle = (rand() % 628) / 100.0
     number vx = cos(angle) * dust_spd * dust_side_share - jdx * dust_spd * dust_back_share
     number vy = sin(angle) * dust_spd * dust_side_share - jdy * dust_spd * dust_back_share
@@ -30,7 +21,6 @@ function dust_spawn(number px, number py, number jdx, number jdy)
     arr_set(dust, base + 3, vy)
     arr_set(dust, base + 4, dust_life_max)
 end
-
 function update_dust()
     number i = 0, base = 0
     loop i < dust_max
@@ -39,7 +29,6 @@ function update_dust()
         if lf > 0
             arr_set(dust, base, arr_get(dust, base) + arr_get(dust, base + 2) * dt)
             arr_set(dust, base + 1, arr_get(dust, base + 1) + arr_get(dust, base + 3) * dt)
-            // Трение: частицы плавно тормозят и останавливаются, а не исчезают рывком.
             arr_set(dust, base + 2, arr_get(dust, base + 2) * 0.88)
             arr_set(dust, base + 3, arr_get(dust, base + 3) * 0.88)
             arr_set(dust, base + 4, lf - dt)
@@ -47,7 +36,6 @@ function update_dust()
         i = i + 1
     end
 end
-
 function draw_dust()
     number i = 0, base = 0
     loop i < dust_max
@@ -55,14 +43,11 @@ function draw_dust()
         number lf = arr_get(dust, base + 4)
         if lf > 0
             number t = lf / dust_life_max
-            // Пока частица «свежая» (t близко к 1) держим её яркой и крупной, а на
-            // последней половине жизни плавно гасим — след тает, а не «выключается».
             number fade = clamp(t / 0.5, 0, 1)
             number r = dust_r_max * (0.45 + 0.55 * fade)
             number a = floor(fade * fade * 150)
             if a > 0
                 number grey = floor(120 + 100 * t)
-                // Цвет: ARGB серый (0xAA888888 стиль), но через сдвиги как в других местах.
                 number c = ((((unsigned)(int)a) << 24) | (((unsigned)(int)grey) << 16) | (((unsigned)(int)grey) << 8) | ((unsigned)(int)grey))
                 circle(arr_get(dust, base), arr_get(dust, base + 1), r, c)
             end
@@ -70,17 +55,12 @@ function draw_dust()
         i = i + 1
     end
 end
-
-// Общий спавн следа: px,py — точка позади бегуна, jdx,jdy — направление
-// движения (нормализовано). Ставим 1-2 частицы для пышности.
 function dust_trail(number px, number py, number jdx, number jdy)
     dust_spawn(px, py, jdx, jdy)
     if rand() % 2 == 0
         dust_spawn(px - jdx * dust_back_off * 0.4, py - jdy * dust_back_off * 0.4, jdx, jdy)
     end
 end
-
-// ── Тик спавна пыли (вызывается из move_player) ────────────────────────────
 function tick_dust(number jdx, number jdy, number jmag)
     if finished != 0
         return
@@ -93,13 +73,8 @@ function tick_dust(number jdx, number jdy, number jmag)
         return
     end
     dust_cd = dust_spawn_cd
-    // Спавним позади кубика, чтобы след тянулся сзади, а не под ногами.
     dust_trail(player.x - jdx * dust_back_off, player.y - jdy * dust_back_off, jdx, jdy)
 end
-
-// ── След врага-бота (соло): тот же шлейф, что и у игрока ───────────────────
-// Вызывается из enemy_move с фактической скоростью (с учётом заморозки):
-// стоит на месте или заморожен — пыли нет, побежал — потянулся след.
 function tick_enemy_dust(number vx, number vy)
     if finished != 0 || enemy.hp <= 0
         return
@@ -116,11 +91,6 @@ function tick_enemy_dust(number vx, number vy)
     number dx = vx / mag, dy = vy / mag
     dust_trail(enemy.x - dx * dust_back_off, enemy.y - dy * dust_back_off, dx, dy)
 end
-
-// ── След соперников в онлайне ───────────────────────────────────────────────
-// Сетевые позиции приходят скачками и сглаживаются в smooth_remotes, поэтому
-// скорость оцениваем по остаточному расстоянию до цели: dist*remote_smooth —
-// это примерно пиксели в секунду. Идёт — пыль тянется, замер — тает.
 function tick_remote_dust(number s, number x, number y, number tx, number ty)
     if finished != 0
         return

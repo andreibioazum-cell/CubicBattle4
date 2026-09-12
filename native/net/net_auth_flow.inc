@@ -1,13 +1,13 @@
 /* Вход по нику и паролю: net_auth целиком.
  *
  * Тело функции исторически было разорвано между auth_session.inc и
- * moderation.inc — одна функция на два файла, из-за чего между ними нельзя
+ * moderation.inc - одна функция на два файла, из-за чего между ними нельзя
  * было ничего подключить. Теперь обе половины лежат здесь, а порядок
  * подключения в net.c прежний: auth_session.inc → net_auth_flow.inc →
  * moderation.inc.
  *
  * Разбор профиля (apply_user_json / apply_user_json_keep_local) и отправка
- * локального прогресса в облако (push_pg_to_cloud) — в profile_apply.inc.
+ * локального прогресса в облако (push_pg_to_cloud) - в profile_apply.inc.
  */
 double net_auth(const char *url, const char *nick, const char *pass) {
     if (!nick || !nick_valid(nick)) return (double)NET_LOGIN_BAD_NICK;
@@ -22,8 +22,6 @@ double net_auth(const char *url, const char *nick, const char *pass) {
 
     char req_url[URL], resp[RESP];
     snprintf(req_url, sizeof(req_url), "%s/users/%s.json", net.base, nick);
-    /* ── Защищённый режим: пароль проверяет Firebase Auth, база пароли не
-     * хранит. Токен подписывает и все остальные запросы (fb_http). ── */
     if (fb_enabled()) {
         int registered = 0;
         int r;
@@ -43,7 +41,7 @@ double net_auth(const char *url, const char *nick, const char *pass) {
             return (double)NET_ERROR;
         }
         if (code != 200 || !p || !*p || !strncmp(p, "null", 4)) {
-            /* Записи ещё нет (новый аккаунт или старый без записи) — создаём
+            /* Записи ещё нет (новый аккаунт или старый без записи) - создаём
              * дефолтную без пароля. */
             int put_code = put_default_user(req_url, nick, NULL);
             if (put_code != 200) {
@@ -70,7 +68,6 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         return (double)NET_ERROR;
     }
 
-    /* ── Переходный режим без ключа Firebase: как раньше, пароль в базе. ── */
     int code = http("GET", req_url, NULL, resp, sizeof(resp));
     if (code == 0) {
         if (net_log_ok()) LOGERR("net_auth: network error connecting to %s", req_url);

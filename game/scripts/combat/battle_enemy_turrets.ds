@@ -1,17 +1,5 @@
 include graphics
-
-// ══════════════════════════════════════════════════════════════════════════
-// battle_enemy_turrets.ds — турели-щиты врага-буКа в соло.
-//
-// Как турели игрока (battle_rules.ds), но принадлежат врагу: прикрывают его
-// от ударов и рывка, мстят контрударом, ломаются от взрывов снежинок.
-// Взрывы общие (station_boom_*), луч тянется от турели к врагу.
-// enemy_last_turret_slot — слот последней поставленной турели врага: только
-// от него рисуется луч (см. draw_enemy_turrets ниже).
-// ══════════════════════════════════════════════════════════════════════════
-
 number enemy_last_turret_slot=0
-
 function enemy_turret_alive(number i)
     if i<0||i>=turret_max
         return 0
@@ -21,7 +9,6 @@ function enemy_turret_alive(number i)
     end
     return 0
 end
-
 function enemy_turret_count_alive()
     number n=0, i=0
     loop i<turret_max
@@ -32,7 +19,6 @@ function enemy_turret_count_alive()
     end
     return n
 end
-
 function enemy_destroy_turret(number i)
     if enemy_turret_alive(i)==0
         return
@@ -42,7 +28,6 @@ function enemy_destroy_turret(number i)
     arr_set(enemy_turret_maxhp,i,0)
     arr_set(enemy_turret_spawn_t,i,0)
 end
-
 function enemy_damage_turret(number i, number dmg)
     if enemy_turret_alive(i)==0
         return
@@ -57,7 +42,6 @@ function enemy_damage_turret(number i, number dmg)
     end
     arr_set(enemy_turret_hp,i,h)
 end
-
 function enemy_place_turret()
     number slot=-1, i=0
     loop i<turret_max
@@ -90,14 +74,6 @@ function enemy_place_turret()
     enemy_last_turret_slot=slot
     ds_log("enemy turret placed, alive %g/%g",enemy_turret_count_alive(),turret_max)
 end
-
-// Удар из точки (px,py) вдоль (pdx,pdy) по турелям врага: номер слота
-// 1..turret_max или -1 (мимо). Зона турели — квадрат (turret_zone_half).
-// Щит прикрывает только спереди: турель принимает удар, если стоит перед
-// врагом или почти на нём (допуск 30px назад, как у щита игрока в
-// punch_resolve_target). Турель ПОЗАДИ врага телом не подставляется — удар в
-// лицо попадает в лицо, и враг-буК не перестаёт получать урон от того, что
-// его деспенсер остался где-то за спиной.
 function enemy_punch_turret_target(number px, number py, number pdx, number pdy)
     number best=-1, bfw=0, i=0
     number bw=(enemy.x-px)*pdx+(enemy.y-py)*pdy
@@ -120,7 +96,6 @@ function enemy_punch_turret_target(number px, number py, number pdx, number pdy)
     end
     return best
 end
-
 function enemy_tick_turrets()
     number i=0
     loop i<turret_max
@@ -134,10 +109,7 @@ function enemy_tick_turrets()
         i=i+1
     end
 end
-
 function draw_enemy_turrets()
-    // Луч тянется только от последней поставленной турели; если она сломана —
-    // от самой свежей из оставшихся живых (ровно один луч, не от всех).
     number beam=-1
     if enemy_turret_alive(enemy_last_turret_slot)==1
         beam=enemy_last_turret_slot

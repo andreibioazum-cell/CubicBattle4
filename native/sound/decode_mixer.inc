@@ -1,20 +1,20 @@
-/* sound.c — звуки и музыка для DimScript.
+/* sound.c - звуки и музыка для DimScript.
  *
- * Файлы лежат в game/sounds (в APK — assets/sounds).
+ * Файлы лежат в game/sounds (в APK - assets/sounds).
  * Поддерживается несжатый PCM WAV
- * (8/16/24/32-бит, моно или стерео, любая частота — микшер сам пересчитает
+ * (8/16/24/32-бит, моно или стерео, любая частота - микшер сам пересчитает
  * линейной интерполяцией в 44100 Гц стерео).
  *
  * Встроенные функции скрипта:
- *   snd_load name      — загрузить WAV из папки звуков (1 = удалось, 0 = нет);
- *   snd_play name      — проиграть один раз;
- *   snd_loop name      — проиграть по кругу (музыка);
- *   snd_stop name      — остановить;
- *   snd_playing name   — 1, если звук сейчас играет;
- *   snd_volume name, v — громкость этого звука (0..1);
- *   snd_stop_all       — остановить всё.
+ *   snd_load name      - загрузить WAV из папки звуков (1 = удалось, 0 = нет);
+ *   snd_play name      - проиграть один раз;
+ *   snd_loop name      - проиграть по кругу (музыка);
+ *   snd_stop name      - остановить;
+ *   snd_playing name   - 1, если звук сейчас играет;
+ *   snd_volume name, v - громкость этого звука (0..1);
+ *   snd_stop_all       - остановить всё.
  *
- * Вывод звука: Android — AudioTrack через JNI (никаких лишних библиотек).
+ * Вывод звука: Android - AudioTrack через JNI (никаких лишних библиотек).
  */
 #include "runtime.h"
 #include <stdio.h>
@@ -37,7 +37,7 @@ typedef struct {
 
 typedef struct {
     SndSound *snd;
-    double pos;          /* позиция в кадрах (дробная — для ресемплинга) */
+    double pos;          /* позиция в кадрах (дробная - для ресемплинга) */
     int loop;
     int active;
 } SndVoice;
@@ -67,7 +67,7 @@ static char *snd_strdup(const char *s) {
 }
 
 /* ------------------------------------------------------------------ */
-/* чтение файла звука: Android — ассеты из APK */
+/* чтение файла звука: Android - ассеты из APK */
 /* ------------------------------------------------------------------ */
 static int snd_open_candidate(const char *path, uint8_t **out, size_t *sz) {
     if (!snd_amgr || !path || !out || !sz) return 0;
@@ -90,7 +90,7 @@ static int snd_open_candidate(const char *path, uint8_t **out, size_t *sz) {
 }
 
 /* Имя звука может прийти как "lobbymusic.wav", "sounds/lobbymusic.wav" или
- * "game/sounds/lobbymusic.wav" — приводим к голому имени файла. */
+ * "game/sounds/lobbymusic.wav" - приводим к голому имени файла. */
 static const char *snd_base_name(const char *name) {
     if (!name) return "";
     const char *n = name;

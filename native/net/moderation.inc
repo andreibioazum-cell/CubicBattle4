@@ -231,7 +231,7 @@ static int nick_banned_locally(const char *nick) {
 }
 
 /* Синхронная облачная проверка бана: только для фоновых потоков сети
- * (thread_main), из игрового потока её звать нельзя — блокирует кадр. */
+ * (thread_main), из игрового потока её звать нельзя - блокирует кадр. */
 static int ban_check_cloud_sync(const char *nick) {
     char url[URL], resp[RESP];
     const char *p;
@@ -244,7 +244,7 @@ static int ban_check_cloud_sync(const char *nick) {
     if (code == 200) {
         p = skip_ws(resp);
         if (p && *p && strncmp(p, "null", 4) != 0) {
-            // true или объект — считаем забаненным
+            // true или объект - считаем забаненным
             ban_cache_put(nick);
             return 1;
         }

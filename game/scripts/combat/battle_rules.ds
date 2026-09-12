@@ -1,10 +1,4 @@
 include graphics
-// Упрощённый бой без праймов, с человечным врагом и админкой
-// Пока azum.png не лежит в game/assets, Азум (игрок и враг) выглядит как
-// обычный куб — играет текстурами ordinary*.png. Скин «Зомби» ходит своими
-// zombie_azum*.png; если они не загрузились, скин откатывается на обычный
-// вид Азума. Как только azum*.png появятся в ассетах, Азум включит свою
-// текстуру сам (флаг azum_tex_ok выставляет engine.ds из png_load).
 function azum_idle_tex()
     if azum_tex_ok==1
         return AZUM_TEX
@@ -17,33 +11,24 @@ function azum_punch_tex()
     end
     return PUNCH_TEX
 end
-
-// Есть ли у скина «Зомби» обе свои текстуры (idle и удар). Ходит по текстурам
-// только тогда, когда и то, и другое загрузились: половинчатый скин, где
-// удар — чужой силуэт, выглядит хуже, чем откат на обычный вид целиком.
 function zombie_tex_ok()
     if azum_zombie_tex_ok==1&&azum_zombie_punch_tex_ok==1
         return 1
     end
     return 0
 end
-
-// Спрайт скина «Зомби»: zombie_azum*.png. Если они не загрузились,
-// возвращается обычная текстура Азума (обычный куб).
 function zombie_idle_tex()
     if azum_zombie_tex_ok==1
         return AZUM_ZOMBIE_TEX
     end
     return azum_idle_tex()
 end
-
 function zombie_punch_tex()
     if azum_zombie_punch_tex_ok==1
         return AZUM_ZOMBIE_PUNCH_TEX
     end
     return azum_punch_tex()
 end
-
 function class_idle_tex(number cls)
     if cls==CLASS_AZUM
         return azum_idle_tex()
@@ -56,7 +41,6 @@ function class_idle_tex(number cls)
     end
     return ORDINARY_TEX
 end
-
 function class_punch_tex(number cls)
     if cls==CLASS_AZUM
         return azum_punch_tex()
@@ -69,7 +53,6 @@ function class_punch_tex(number cls)
     end
     return PUNCH_TEX
 end
-
 function class_punch_damage_for(number cls, number lv)
     if cls==CLASS_SANTA
         return santa_damage
@@ -82,16 +65,12 @@ function class_punch_damage_for(number cls, number lv)
     end
     return punch_damage
 end
-
 function player_max_hp_for(number cls)
     if cls==CLASS_EBUC
         return ebuc_hp
     end
     return 10
 end
-
-// Уровни бука: 1 — у турелей больше HP, 2 — установка турели лечит бука,
-// 3 — луч турели лечит бука каждую секунду.
 function ebuc_station_hp_for(number lv)
     number h=ebuc_station_hp
     if lv>=1
@@ -99,7 +78,6 @@ function ebuc_station_hp_for(number lv)
     end
     return h
 end
-
 function ebuc_universe_damage_for(number lv)
     number d=ebuc_universe_damage
     if lv>=3
@@ -107,15 +85,12 @@ function ebuc_universe_damage_for(number lv)
     end
     return d
 end
-
 function class_punch_damage(number cls)
     return class_punch_damage_for(cls,player_level)
 end
-
 function santa_poison_time_for(number lv)
     return santa_poison_time
 end
-
 function santa_poison_damage_for(number lv)
     number d=santa_poison_dps
     if lv>=1
@@ -126,7 +101,6 @@ function santa_poison_damage_for(number lv)
     end
     return d
 end
-
 function santa_freeze_time_for(number lv)
     number t=super_freeze
     if lv>=3
@@ -134,4 +108,3 @@ function santa_freeze_time_for(number lv)
     end
     return t
 end
-

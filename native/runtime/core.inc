@@ -235,13 +235,13 @@ double lerp(double a, double b, double t){ return a + (b-a)*t; }
 double dist(double x1, double y1, double x2, double y2){ double dx=x2-x1, dy=y2-y1; return sqrt(dx*dx+dy*dy); }
 /* Математика для скриптов: короткие имена вместо вложенных if'ов. Все они
  * объявлены в runtime.h и перечислены в BUILTINS компилятора (ds_compiler.py)
- * — без записи там скрипт их не увидит. */
+ * - без записи там скрипт их не увидит. */
 double ds_min(double a, double b){ return a<b ? a : b; }
 double ds_max(double a, double b){ return a>b ? a : b; }
 double ds_abs(double v){ return v<0 ? -v : v; }
 double ds_round(double v){ return v<0 ? -floor(-v+0.5) : floor(v+0.5); }
 double ds_sign(double v){ return v>0 ? 1 : (v<0 ? -1 : 0); }
-/* Остаток от деления и целая часть — для «каждые N» и округления вниз. */
+/* Остаток от деления и целая часть - для «каждые N» и округления вниз. */
 double ds_mod(double a, double b){ if(b==0) return 0; return fmod(a,b); }
 double ds_trunc(double v){ return v<0 ? ceil(v) : floor(v); }
 double str_len(const char *s){ return s ? (double)strlen(s) : 0; }

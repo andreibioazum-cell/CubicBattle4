@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------ */
 /* Android: система AudioTrack через JNI. Специально без OpenSL ES и   */
 /* AAudio: им нужны флаги линковки (-lOpenSLES/-laaudio), а JNI уже    */
-/* доступен через JavaVM из NativeActivity — сборка не требует ничего. */
+/* доступен через JavaVM из NativeActivity - сборка не требует ничего. */
 /* ------------------------------------------------------------------ */
 #ifdef __ANDROID__
 #include <jni.h>
@@ -40,7 +40,7 @@ static void *snd_at_thread_fn(void *arg) {
     JNIEnv *env = snd_jni_env(&attached);
     if (!env) { ds_log_err("audio: thread cannot attach to JVM"); return NULL; }
     while (snd_at_run) {
-        /* write() в MODE_STREAM блокируется, когда буфер устройства полон, —
+        /* write() в MODE_STREAM блокируется, когда буфер устройства полон, -
          * это и задаёт темп потоку, без sleep. */
         jint written = (*env)->CallIntMethod(env, snd_at_track, snd_at_write, snd_at_buf, 0, (jint)(AT_FRAMES * 2));
         if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); ds_log_err("audio: AudioTrack.write failed"); break; }

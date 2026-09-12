@@ -1,9 +1,3 @@
-// ── Ульта бука: вселенная ──────────────────────────────────────────────────
-// Взрыв вселенной выжигает турели-щиты и бука, и врага: урон (dmg) сначала
-// поглощается их турелями (каждая турель держит урон, пока не разрушится),
-// и только остаток бьёт самого бойца — щит работает против всего урона,
-// как обещает карточка класса. Вторая ульта отключена, но функция оставлена
-// для совместимости со старыми клиентами.
 function universe_collapse(number dmg)
     if finished!=0
         return
@@ -20,8 +14,6 @@ function universe_collapse(number dmg)
             end
         end
     end
-    // Своя вселенная бьёт и самого бука: урон принимают его турели, остаток
-    // доходит до него (поэтому ульта всё ещё может убить бука без турелей).
     number own=dmg
     if player_class==CLASS_EBUC
         own=player_shield_absorb(dmg)
@@ -42,9 +34,6 @@ function universe_collapse(number dmg)
         end
     end
 end
-
-// Чужая вселенная в онлайне: урон принимают турели получателя, остаток бьёт
-// его самого.
 function universe_collapse_remote(number dmg)
     if finished!=0
         return
@@ -63,7 +52,6 @@ function universe_collapse_remote(number dmg)
         end
     end
 end
-
 function tick_universe()
     if universe_active==0
         return
@@ -76,14 +64,6 @@ function tick_universe()
         universe_collapse(ebuc_universe_damage_for(player_level))
     end
 end
-
-// Сетевые турели соперников. Раскладка слота (station_fields чисел на игрока):
-//   0               — слот последней поставленной турели (1..turret_max);
-//   i-я турель (0..2): 1+i*5 — состояние (0 нет, 1 стоит, 2 взрыв),
-//                      2+i*5 — x, 3+i*5 — y, 4+i*5 — hp, 5+i*5 — таймер взрыва.
-// Переходы: hp в снимке >0 → турель стоит; hp упало до 0 → на её месте
-// доигрывает взрыв (состояние 2), потом слот гаснет. HP убывает в снимке
-// хозяина, поэтому полоса здоровья чужой турели всегда честная.
 function update_remote_station()
     if net_slot()<0
         return
@@ -117,19 +97,16 @@ function update_remote_station()
                 end
                 number st=arr_get(remote_station,o)
                 if hhp>0
-                    // живая турель (или только что поставленная/починенная)
                     arr_set(remote_station,o,1)
                     arr_set(remote_station,o+1,hx)
                     arr_set(remote_station,o+2,hy)
                     arr_set(remote_station,o+3,hhp)
                     arr_set(remote_station,o+4,0)
                     if st!=1
-                        // только что появилась — теперь это последняя поставленная
                         arr_set(remote_station,b,i+1)
                     end
                 else
                     if st==1
-                        // турель только что сломалась: взрыв доигрывает на её месте
                         arr_set(remote_station,o,2)
                         arr_set(remote_station,o+4,station_boom_time)
                     else if st==2
@@ -149,7 +126,6 @@ function update_remote_station()
         s=s+1
     end
 end
-
 function update_remote_universe()
     if net_slot()<0
         return
@@ -176,7 +152,6 @@ function update_remote_universe()
                 if t>=ebuc_universe_collapse_time
                     arr_set(remote_universe,b+1,0)
                     arr_set(remote_universe,b,0)
-                    // Чужая вселенная тоже бьёт локального игрока и его турели.
                     number rlevel=net_player_level(s)
                     universe_collapse_remote(ebuc_universe_damage_for(rlevel))
                     if finished!=0
@@ -188,10 +163,6 @@ function update_remote_universe()
         s=s+1
     end
 end
-
-// Чужие рывки Азума. Раскладка слота (dash_fields чисел на игрока):
-//   +0 счётчик, +1 активен, +2/+3 старт рывка (x,y), +4/+5 направление,
-//   +6 оставшееся время, +7 уже попал (урон один раз за рывок).
 function update_remote_dashes()
     if net_slot()<0
         return
@@ -215,7 +186,6 @@ function update_remote_dashes()
                     arr_set(remote_dash,b+6,azum_dash_time)
                     arr_set(remote_dash,b+7,0)
                 else
-                    // счётчик погашен — рывок закончился
                     arr_set(remote_dash,b+1,0)
                 end
             end
@@ -229,9 +199,6 @@ function update_remote_dashes()
                     arr_set(remote_dash,b+1,0)
                     arr_set(remote_dash,b+7,0)
                 else if arr_get(remote_dash,b+7)==0&&finished==0
-                    // Рывок бьёт только там, где реально пролетел: урон
-                    // считается по уже проеханному отрезку (хитбокс совпадает
-                    // с серыми кубиками и живым пятном, а не со всем путём).
                     number total_len=azum_dash_speed*azum_dash_time
                     number gone=total_len-azum_dash_speed*t
                     if gone<0
@@ -240,13 +207,9 @@ function update_remote_dashes()
                     if gone>total_len
                         gone=total_len
                     end
-                    // рывок режется по пути: кого задел — игрока или турель
                     number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5),gone)
                     if target==0
                         arr_set(remote_dash,b+7,1)
-                        // В защите после возрождения рывок проходит насквозь
-                        // (как удар бота в соло): игрок не умирает в ту же
-                        // секунду, что только что возродился.
                         if revive_prot<=0
                             take_damage(azum_dash_damage)
                             stun_player(azum_dash_stun)
@@ -269,7 +232,6 @@ function update_remote_dashes()
         s=s+1
     end
 end
-
 function flush_queued_action()
     if queued_punch==0&&queued_super==0
         return
@@ -297,10 +259,6 @@ function flush_queued_action()
         fire_punch()
     end
 end
-
-// Попадание рывка игрока по врагу — в battle_enemy_class.ds (щит из турелей).
-
-// Тикеры рывка: таймер рывка (движение уже в move_player) и кулдаун кнопки.
 function tick_dash()
     if dash_active>0
         dash_t=dash_t-dt
@@ -317,7 +275,6 @@ function tick_dash()
         end
     end
 end
-
 function update_game()
     tick_alert_hold()
     tick_revive()
@@ -342,8 +299,6 @@ function update_game()
     move_player()
     tick_dash()
     tick_dash_solo_hit()
-    // Леденцы-пикапы подбираются только при включённых конфетах: при
-    // candy_enabled==0 их нет на карте (см. spawn_all_candies).
     if candy_enabled==1
         number ci=0
         loop ci<candy_count
@@ -378,9 +333,6 @@ function update_game()
     tick_super_windup()
     tick_santa_follow()
     if punch_left>0&&punch.active==1&&punch.hit==0
-        // Турели врага — щит: удар по ним не достаёт самого врага, а щит мстит.
-        // Щит прикрывает спереди (enemy_punch_turret_target), поэтому враг-буК,
-        // вставший перед своим деспенсером, честно получает урон в лицо.
         number enemy_turret_target=enemy_punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
         if enemy_turret_target>=1
             punch.hit=1
@@ -397,9 +349,6 @@ function update_game()
             end
             heal_after_attack()
         else if enemy_in_punch()==1
-            // Свои турели удар игрока не задевают: деспенсер бука — щит от
-            // входящего урона, свой удар он не перехватывает и урон от него
-            // не получает, поэтому удар бука всегда доходит до врага.
             punch.hit=1
             if enemy_revive_prot<=0
                 if player_class==2&&santa_follow>0

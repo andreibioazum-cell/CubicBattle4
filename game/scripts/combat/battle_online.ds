@@ -1,12 +1,8 @@
-// Гасим только флаг и таймер удара: геометрию (x, y, dx, dy) оставляем, чтобы
-// хитбокс удара соперника плавно догасал на своём месте (rpunch_a), а не
-// уезжал в угол экрана на последнем кадре.
 function clear_remote_punch(number s)
     number rb=s*punch_fields
     arr_set(remote_punches,rb,0)
     arr_set(remote_punches,rb+5,0)
 end
-
 function start_remote_punch(number s)
     number rb=s*punch_fields
     arr_set(remote_punches,rb,1)
@@ -16,7 +12,6 @@ function start_remote_punch(number s)
     arr_set(remote_punches,rb+4,net_player_punch_dy(s))
     arr_set(remote_punches,rb+5,0)
 end
-
 function read_remotes()
     if net_slot()<0
         return
@@ -55,7 +50,6 @@ function read_remotes()
         s=s+1
     end
 end
-
 function update_remote_punches()
     number s=0
     loop s<max_players
@@ -66,16 +60,10 @@ function update_remote_punches()
             if arr_get(remotes,s*remote_fields+5)==0
                 clear_remote_punch(s)
             else
-                // Удар соперника бьёт игрока (по центру, как раньше) или
-                // живую турель бука — с проверкой на радиус турели. Если удар
-                // приняла турель, её HP убывает и виден взрыв при разрушении.
                 number target=punch_resolve_target(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),0)
                 if target==0||(target>=1&&target<=turret_max)
                     number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
                     if target==0
-                        // Как и в соло: в защите после возрождения удар
-                        // проскакивает насквозь — Азум не умирает снова в ту
-                        // же секунду, особенно в момент достижения легенды.
                         if revive_prot<=0
                             take_damage(class_punch_damage_for(rcls,rlevel))
                             if rcls==CLASS_SANTA
@@ -88,9 +76,6 @@ function update_remote_punches()
                         end
                     else
                         damage_turret(target-1,class_punch_damage_for(rcls,rlevel))
-                        // Турель-щит мстит: публикуем событие «турель
-                        // получила удар» — бивший клиент сам у себя
-                        // списывает небольшой урон (update_remote_thuds).
                         thud_seq=thud_seq+1
                         net_publish_thud(thud_seq)
                         ds_log("remote punch hit turret %g, hp %g",target-1,arr_get(turret_hp,target-1))
@@ -111,11 +96,6 @@ function update_remote_punches()
         s=s+1
     end
 end
-
-// Контрудары чужих турелей: соперник-бук публикует новый счётчик thud, когда
-// по его турели попал наш удар, — и мы у себя списываем небольшой урон.
-// Счётчик меняется один раз на событие (как punch/dash), поэтому урон не
-// дублируется. В защите после возрождения контрудар не бьёт.
 function update_remote_thuds()
     if net_slot()<0
         return
@@ -144,8 +124,6 @@ function update_remote_thuds()
         s=s+1
     end
 end
-
-// Чужие снежинки: летят по снимку, взрываются заморозкой без урона.
 function update_remote_snow()
     if net_slot()<0
         return
@@ -208,7 +186,6 @@ function update_remote_snow()
         s=s+1
     end
 end
-
 function smooth_remotes()
     number s=0
     loop s<max_players
@@ -231,7 +208,6 @@ function smooth_remotes()
                     da=da+2*pi
                 end
                 ra=ra+da*clamp(dt*remote_smooth,0,1)
-                // Соперник в онлайне тоже тянет за собой след пыли.
                 tick_remote_dust(s,rx,ry,nx,ny)
             end
             arr_set(remotes,b+1,rx)
@@ -241,7 +217,6 @@ function smooth_remotes()
         s=s+1
     end
 end
-
 function count_living_remotes()
     number count=0, s=0
     loop s<max_players
@@ -252,16 +227,12 @@ function count_living_remotes()
     end
     return count
 end
-
 function check_online_finish()
     if online_ready==0||finished!=0
         return
     end
     number enemies_alive=count_living_remotes()
     if enemies_alive>0
-        // Дебаунс: соперник должен реально побыть в комнате (секунду), прежде
-        // чем его исчезновение станет победой. Один «фантомный» сетевой снимок
-        // (например, гонка с удалением чужого слота) победу засчитать не может.
         foes_seen_t=foes_seen_t+dt
         if foes_seen_t>foes_seen_min
             match_seen_foe=1
@@ -271,7 +242,6 @@ function check_online_finish()
         finish_game(1)
     end
 end
-
 function push_self()
     if net_slot()<0
         return
@@ -284,8 +254,6 @@ function push_self()
     net_publish(player.x/screen_w,player.y/screen_h,player.angle,player.hp,alive)
     net_publish_punch(punch.x/screen_w,punch.y/screen_h,punch.dx,punch.dy,punch.shot)
     if player_class==CLASS_EBUC
-        // Все живые турели, каждая со своим HP: у соперников полоса здоровья
-        // всегда свежая (публикуется при каждом изменении).
         number x1=0, y1=0, h1=0, x2=0, y2=0, h2=0, x3=0, y3=0, h3=0
         if turret_alive(0)==1
             x1=arr_get(turret_x,0)/screen_w
@@ -309,8 +277,6 @@ function push_self()
             net_publish_universe(0,0,0)
         end
     end
-    // Рывок Азума: старт публикуем один раз (нужна точная стартовая позиция
-    // и направление), когда рывок закончился — гасим счётчик.
     if player_class==CLASS_AZUM
         if dash_active==1&&dash_pub==0
             net_publish_dash(dash_x0/screen_w,dash_y0/screen_h,dash_dx,dash_dy,dash_seq)
@@ -321,9 +287,7 @@ function push_self()
         end
     end
 end
-
 function update_online()
-    // Бан мог прилететь уже во время боя: сразу выкидываем в меню с сообщением.
     if net_banned() == 1
         banned_msg = tr_banned()
         start_transition(0)
@@ -378,12 +342,6 @@ function update_online()
     if finished!=0
         return
     end
-    // Мир синхронизируем, пока у нас есть слот в комнате, а не только пока
-    // net_status()==NET_PLAYING: статус NET_ERROR ставит поток-писатель при
-    // временном сбое PUT (плохая сеть), но поток-читатель в это время продолжает
-    // тянуть позиции и чат. Раньше весь обмен миром замирал при любой ошибке
-    // записи: чат обновлялся, а персонажи стояли («чат прогрузился, никто не
-    // двигается, висит переподключение»).
     if net_slot()>=0
         if online_ready==0
             place_online()
@@ -400,8 +358,6 @@ function update_online()
         push_self()
     end
     update_event()
-    // Пузыри чата над бойцами: таймеры и подхват новых сообщений живут здесь,
-    // поэтому сообщение видно над кубиком автора даже с закрытым чатом.
     chat_bubbles_watch()
     chat_update()
 end
