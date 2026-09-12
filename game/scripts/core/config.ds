@@ -1,7 +1,7 @@
 include graphics
 number ST_LOBBY=0, ST_SOLO=1, ST_MODES=2, ST_SETTINGS=4, ST_ONLINE=5
 number ST_CONSOLE=6, ST_LOGIN=7, ST_CLASSES=8, ST_LEVELS=9, ST_LEADERBOARD=10
-number ST_ACHIEVEMENTS=11, ST_SKINS=13
+number ST_ACHIEVEMENTS=11, ST_SKINS=13, ST_PROMO=14
 number game_state=ST_LOBBY
 number language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
 number ui_purple=0xFF5F10A0
@@ -34,6 +34,11 @@ number ACH_TOAST_FADE_IN=0.14, ACH_TOAST_HOLD=1.5, ACH_TOAST_EXIT=0.24
 number ACH_TOAST_DURATION=1.96
 number cups=0, candies=0, cup_win=5, candy_win=3
 number candy_enabled=1
+// Карточки в соло: шанс 1/100 на матч, +1% за матч без карточки (до 20%),
+// стрик живёт в promo.dat. Награда за код: одна на аккаунт (см. promo.ds).
+number card_chance_base=1, card_chance_step=1, card_chance_cap=20
+number card_drop_min=6, card_drop_max=24
+number promo_reward_cups=50, promo_reward_candies=20
 number money_scale=0.5, money_gap=24, money_line_h=16
 number alert_hold=0.5, finish_t=0
 number cups_awarded=0

@@ -7,7 +7,7 @@ function start_transition(number target)
     t_dir = 1
 end
 function leave_screen(number state)
-    if state == ST_LOGIN
+    if state == ST_LOGIN || state == ST_PROMO
         keyboard_hide()
     end
     if state == ST_ONLINE
@@ -228,6 +228,8 @@ function update()
         update_online()
     else if game_state == ST_LOGIN
         update_login()
+    else if game_state == ST_PROMO
+        update_promo()
     end
     update_weather()
 end
@@ -252,6 +254,8 @@ function draw_screen()
         draw_leaderboard()
     else if game_state == ST_ACHIEVEMENTS
         draw_achievements()
+    else if game_state == ST_PROMO
+        draw_promo()
     else
         draw_online()
     end

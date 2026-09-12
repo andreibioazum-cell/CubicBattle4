@@ -276,6 +276,7 @@ function tick_dash()
     end
 end
 function update_game()
+    card_update()
     tick_alert_hold()
     tick_revive()
     tick_freeze()

@@ -199,6 +199,10 @@ function touch_modes(number x, number y)
     end
     if hit_menu_row(x, y, 3) == 1
         open_leaderboard()
+        return
+    end
+    if hit_menu_row(x, y, 4) == 1
+        start_transition(ST_PROMO)
     end
 end
 function touch_settings(number x, number y)
@@ -366,5 +370,9 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == ST_LEADERBOARD
         touch_leaderboard(x, y, action)
+        return
+    end
+    if game_state == ST_PROMO
+        touch_promo(x, y, action)
     end
 end

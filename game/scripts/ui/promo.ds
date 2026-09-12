@@ -1,0 +1,268 @@
+include graphics
+// Карточки и промокоды. Карточка выпадает в соло-матче с шансом 1/100
+// (+1% за матч без карточки, до 20%; стрик — в promo.dat). На карточке
+// личный промокод: выводится из ника (net_promo_code), у каждого свой.
+// Код вводится на экране ST_PROMO и даёт разовую награду; код и флаг
+// активации дублируются в Firebase.
+number promo_focus=0
+string promo_input=""
+number promo_msg_t=0
+string promo_msg_text=""
+number promo_msg_kind=0
+number card_active=0
+number card_x=0, card_y=0, card_t=0
+number card_drop_in=0
+number card_open=0
+number card_open_t=0
+function card_roll()
+    number chance=card_chance_base+net_promo_streak()*card_chance_step
+    if chance>card_chance_cap
+        chance=card_chance_cap
+    end
+    if rand()%100>=chance
+        card_drop_in=0
+        net_promo_bump_streak()
+        return
+    end
+    card_drop_in=card_drop_min+rand()%(int)(card_drop_max-card_drop_min+1)
+    net_promo_reset_streak()
+end
+function card_spawn()
+    number m=candy_margin, k=0
+    number cx=m+rand()%(int)(screen_w-2*m), cy=m+rand()%(int)(screen_h-2*m)
+    loop k<24
+        if dist(cx,cy,player.x,player.y)<140||dist(cx,cy,enemy.x,enemy.y)<140
+            cx=m+rand()%(int)(screen_w-2*m)
+            cy=m+rand()%(int)(screen_h-2*m)
+            k=k+1
+        else
+            k=24
+        end
+    end
+    card_x=cx
+    card_y=cy
+    card_t=0
+    card_active=1
+    ds_log("card dropped at %g %g",cx,cy)
+end
+function card_collect()
+    if finished!=0
+        return
+    end
+    card_active=0
+    card_open=1
+    card_open_t=0
+    net_promo_register()
+    ds_log("card collected: %s",net_promo_code())
+end
+function card_close()
+    card_open=0
+    card_open_t=0
+end
+function card_update()
+    card_t=card_t+dt
+    if card_open==1
+        card_open_t=card_open_t+dt
+        return
+    end
+    if finished!=0
+        return
+    end
+    if card_drop_in>0
+        card_drop_in=card_drop_in-dt
+        if card_drop_in<=0
+            card_drop_in=0
+            card_spawn()
+        end
+    end
+    if card_active==1
+        if dist(card_x,card_y,player.x,player.y)<player.size*0.65+26
+            card_collect()
+        end
+    end
+end
+function draw_card_item()
+    if card_active==0
+        return
+    end
+    number bob=4*sin(card_t*3)
+    number x=card_x-22, y=card_y-30+bob
+    number a=110+95*sin(card_t*5)
+    number aa=floor(clamp(a,0,255))
+    ring(card_x,card_y+bob,44,3,(((unsigned)(int)aa)<<24)|0xFFB388FF)
+    roundrect(x-3,y-3,50,66,10,0xFFB388FF)
+    roundrect(x,y,44,60,8,0xFFF7F3FF)
+    text_in_box("?",x,y+8,44,44,0xFF5F10A0,1.1)
+end
+function draw_card_open()
+    if card_open==0
+        return
+    end
+    rect(0,0,screen_w,screen_h,0xAA000000)
+    number w=430
+    number h=380
+    number x=center_x(w)
+    number y=screen_h/2-h/2
+    roundrect(x-8,y-8,w+16,h+16,36,card_ring)
+    roundrect(x,y,w,h,30,card_bg)
+    ctext_scaled(tr_card_title(),y+36,0xFFB388FF,1.05)
+    ctext_scaled(tr_card_sub(),y+88,text_color,0.55)
+    string code=net_promo_code()
+    if str_len(code)>0
+        number sc=0.85
+        if text_ink_width(code)*sc>w-56
+            sc=(w-56)/text_ink_width(code)
+        end
+        ctext_scaled(code,y+150,0xFF4FC3F7,sc)
+    else
+        ctext_scaled(tr_card_need_login(),y+150,text_color,0.55)
+    end
+    ctext_scaled(tr_card_hint1(),y+216,text_color,0.5)
+    ctext_scaled(tr_card_hint2(),y+240,text_color,0.5)
+    ctext_scaled(tr_tap_to_return(),y+h-42,text_color,0.55)
+end
+function promo_field_y()
+    return content_top()+158
+end
+function promo_btn_y()
+    return promo_field_y()+56+20
+end
+function promo_msg_y()
+    return promo_btn_y()+btn_h+16
+end
+function promo_set_msg(string text, number kind)
+    promo_msg_text=text
+    promo_msg_kind=kind
+    promo_msg_t=4.0
+end
+function promo_leave()
+    promo_focus=0
+    keyboard_hide()
+end
+function promo_hex_ok(string ch)
+    return str_index_of("0123456789ABCDEF",ch)>=0
+end
+function promo_code_valid(string s)
+    if str_len(s)!=18
+        return 0
+    end
+    if str_starts_with(s,"CB4-")==0
+        return 0
+    end
+    if str_eq(str_sub(s,8,1),"-")==0
+        return 0
+    end
+    if str_eq(str_sub(s,13,1),"-")==0
+        return 0
+    end
+    number i=0
+    loop i<18
+        if i!=3&&i!=8&&i!=13
+            string ch=str_sub(s,i,1)
+            if promo_hex_ok(ch)==0
+                return 0
+            end
+        end
+        i=i+1
+    end
+    return 1
+end
+function promo_submit()
+    if promo_focus==1
+        promo_input=keyboard_get_text()
+    end
+    string code=str_upper(str_trim(promo_input))
+    if str_len(code)==0
+        promo_set_msg(tr_promo_need_code(),0)
+        return
+    end
+    if net_login_status()!=2
+        promo_set_msg(tr_promo_need_login(),0)
+        promo_leave()
+        return
+    end
+    if promo_code_valid(code)==0
+        promo_set_msg(tr_promo_bad(),0)
+        return
+    end
+    if net_promo_used()==1
+        promo_set_msg(tr_promo_used_msg(),0)
+        return
+    end
+    cups=cups+promo_reward_cups
+    candies=candies+promo_reward_candies
+    net_promo_mark_used()
+    save_progress()
+    ds_log("promo %s redeemed: +%g cups +%g candies",code,promo_reward_cups,promo_reward_candies)
+    promo_leave()
+    promo_set_msg(tr_promo_success(),1)
+end
+function update_promo()
+    if promo_focus==0
+        return
+    end
+    if keyboard_visible()==1
+        promo_input=keyboard_get_text()
+    end
+    if keyboard_enter_pressed()==1
+        promo_submit()
+    end
+end
+function draw_promo()
+    screen_fill()
+    draw_back()
+    ctext(tr_promo_title(),title_y(),text_color)
+    number w=fit_w(560)
+    number x=center_x(w)
+    number top=content_top()+8
+    panel(x,top,w,116,0)
+    string code=net_promo_code()
+    if str_len(code)>0
+        centered_text(tr_promo_your_code(),x,w,top+16,text_color,0.5)
+        centered_text(code,x,w,top+50,0xFF4FC3F7,0.85)
+        centered_text(promo_used_state(),x,w,top+84,0xFFC9B6FF,0.45)
+    else
+        centered_text(tr_promo_need_login(),x,w,top+52,text_color,0.55)
+    end
+    ctext_scaled(tr_promo_how1(),top+126,text_color,0.48)
+    ctext_scaled(tr_promo_how2(),top+150,text_color,0.48)
+    number fy=promo_field_y()
+    roundrect(x,fy,w,56,field_radius,card_bg)
+    number caret=0
+    if promo_focus==1&&keyboard_visible()==1
+        caret=1
+    end
+    string shown=promo_input
+    if caret==1
+        shown=shown+"|"
+    end
+    if str_len(shown)==0
+        shown=tr_promo_enter_ph()
+    end
+    text_in_field(shown,x+field_text_pad,fy,56,text_color,0.6)
+    button(tr_promo_submit(),x,promo_btn_y(),w,btn_h)
+    promo_msg_t=tick_down(promo_msg_t)
+    draw_msg(promo_msg_text,promo_msg_y(),promo_msg_t)
+end
+function touch_promo(number x, number y, number action)
+    if action!=0
+        return
+    end
+    if back_hit(x,y)==1
+        promo_leave()
+        start_transition(ST_MODES)
+        return
+    end
+    number w=fit_w(560)
+    number fx=center_x(w)
+    if hit_rect(x,y,fx,promo_field_y(),w,56)==1
+        promo_focus=1
+        keyboard_show()
+        return
+    end
+    if hit_rect_pad(x,y,fx,promo_btn_y(),w,btn_h)==1
+        promo_submit()
+        return
+    end
+    promo_leave()
+end

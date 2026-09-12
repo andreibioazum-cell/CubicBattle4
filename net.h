@@ -164,6 +164,20 @@ void net_mark_achievement_flag(double flag);
 double net_load_azum_revives(void);
 void net_save_azum_revives(double revives);
 
+/* Персональный промокод: выводится детерминированно из ника (тот же ник —
+ * тот же код, у разных игроков — разные коды), поэтому известен даже без
+ * сети. net_promo_register пишет код в облачный профиль, net_promo_mark_used
+ * помечает его активированным (локально и в облаке) — одна награда на
+ * аккаунт. net_promo_streak/bump/reset — счётчик матчей без карточки
+ * (растёт шанс выпадения, см. promo.ds). Реализация — native/net/promo.inc. */
+const char *net_promo_code(void);
+void net_promo_register(void);
+double net_promo_used(void);
+void net_promo_mark_used(void);
+double net_promo_streak(void);
+void net_promo_bump_streak(void);
+void net_promo_reset_streak(void);
+
 /* Настройки игрока: язык (0 — English, 1 — русский, как в ui/locale_core.ds),
  * хитбоксы (1 — видны) и громкость музыки (0..100, по умолчанию 70). Живут в
  * settings.dat на устройстве и в профиле /users/<ник> в облаке — то есть

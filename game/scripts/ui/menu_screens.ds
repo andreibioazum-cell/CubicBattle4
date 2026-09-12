@@ -52,6 +52,7 @@ function draw_modes()
     draw_menu_button(1, tr_solo())
     draw_menu_button(2, tr_online())
     draw_menu_button(3, tr_leaderboard())
+    draw_menu_button(4, tr_promo())
 end
 function draw_settings()
     screen_fill()

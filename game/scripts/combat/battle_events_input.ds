@@ -265,6 +265,12 @@ function joy_touch(number x, number y, number action, number id)
     end
 end
 function touch_game(number x, number y, number action, number id)
+    if card_open!=0
+        if action==0
+            card_close()
+        end
+        return
+    end
     if finished!=0
         if action==0&&finish_t>=alert_hold
             start_transition(0)

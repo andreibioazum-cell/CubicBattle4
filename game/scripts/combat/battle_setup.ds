@@ -50,6 +50,10 @@ function reset_battle()
     gift.active=0
     gift.t=0
     gift.shot=0
+    card_active=0
+    card_open=0
+    card_drop_in=0
+    card_t=0
     super_cd=0
     queued_punch=0
     queued_super=0
@@ -214,6 +218,7 @@ function reset_battle()
 end
 function init_game()
     reset_battle()
+    card_roll()
     enemy.hp=enemy.max_hp
     spawn_enemy()
     spawn_all_candies()
