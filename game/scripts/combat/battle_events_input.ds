@@ -175,6 +175,9 @@ function draw_online()
         end
         i=i+1
     end
+    // Тени деспенсеров (своих и чужих) — в общем слое теней: квадратные, тем же
+    // спрайтом, что и сами турели, а не круглые пятна.
+    draw_turret_shadows()
     draw_player_hitbox_layer()
     if show_hitboxes==1
         // Полосы ударов соперников гаснут плавно (rpunch_a ведёт

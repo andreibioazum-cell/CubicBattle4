@@ -4,19 +4,69 @@ include graphics
 // battle_hitscan.ds — геометрия попаданий: удар, рывок и расстояние до отрезка
 //
 // Кого задевает удар (punch_resolve_target) и рывок (dash_resolve_target),
-// расстояние от точки до проеханного отрезка (seg_dist) и радиусы зоны рывка —
-// те самые, которыми считается урон и рисуется хитбокс.
+// расстояние от точки до проеханного отрезка (seg_dist), радиусы зоны рывка и
+// квадратная зона турели (turret_zone_half) — те самые, которыми считается
+// урон и рисуется хитбокс.
 //
 // Выделен из combat/battle_rules.ds: файл разросся так, что в нём соседствовали
 // классы, турели, попадания и урон.
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Попадания по игроку и турелям ────────────────────────────────────────
+// Зона турели — КВАДРАТ с половиной стороны turret_hit_r: такой же, каким её
+// рисуют хитбокс и тень (battle_hitboxes.ds, battle_super_render.ds). Все
+// проверки ниже (удар, рывок, снежинка) идут по одному квадрату.
+function turret_zone_half()
+    return turret_hit_r
+end
+
+// Псевдодистанция от точки до квадрата турели: 0 внутри и на границе, иначе
+// переполнение по худшей оси (как сегментная дистанция для круга рывка).
+function turret_square_dist(number tx, number ty, number x, number y)
+    number dx=fabs(x-tx)-turret_zone_half()
+    number dy=fabs(y-ty)-turret_zone_half()
+    if dx<0
+        dx=0
+    end
+    if dy<0
+        dy=0
+    end
+    if dx>dy
+        return dx
+    end
+    return dy
+end
+
+// Дистанция от отрезка [sx,sy]→[sx+dx*len,sy+dy*len] (dx,dy — единичные) до
+// квадрата турели: обход с шагом не больше половины стороны, поэтому быстрый
+// рывок не «перепрыгивает» зону между кадрами обхода.
+function turret_square_seg_dist(number sx, number sy, number dx, number dy, number len, number tx, number ty)
+    number best=turret_square_dist(tx,ty,sx,sy)
+    number step=turret_zone_half()
+    if step<=0
+        step=1
+    end
+    number off=0
+    loop off<=len
+        number d=turret_square_dist(tx,ty,sx+dx*off,sy+dy*off)
+        if d<best
+            best=d
+        end
+        off=off+step
+    end
+    number de=turret_square_dist(tx,ty,sx+dx*len,sy+dy*len)
+    if de<best
+        best=de
+    end
+    return best
+end
+
 // Удар из точки (px,py) вдоль (pdx,pdy): кого он задевает — игрока (0) или
 // живую турель (номер слота 1..turret_max). expand_player — радиус игрока для
 // проверки (0 — проверка точно по центру, как в старом онлайне).
 // Турель принимает удар, если она стоит перед игроком или «на нём»
 // (ближе по направлению удара, допуск 30px назад): турель — это щит бука.
+// Квадрат турели расширяет полосу удара по обоим измерениям (Минковский).
 // -1 — удар никого не задевает.
 function punch_resolve_target(number px, number py, number pdx, number pdy, number expand_player)
     number best=-1, bfw=0, i=0
@@ -31,11 +81,13 @@ function punch_resolve_target(number px, number py, number pdx, number pdy, numb
         best=0
         bfw=fw
     end
+    number th=punch_width/2+turret_zone_half()
+    number back=turret_zone_half()
     loop i<turret_max
         if turret_alive(i)==1
             number hx=arr_get(turret_x,i)-px, hy=arr_get(turret_y,i)-py
-            number tf=hx*pdx+hy*pdy, ts=hy*pdx-hx*pdy, th=punch_width/2+turret_hit_r
-            if tf>=0&&tf<=punch_reach+turret_hit_r&&ts*ts<=th*th
+            number tf=hx*pdx+hy*pdy, ts=hy*pdx-hx*pdy
+            if tf>=0-back&&tf<=punch_reach+back&&fabs(ts)<=th
                 if best==-1
                     best=i+1
                     bfw=tf
@@ -46,26 +98,6 @@ function punch_resolve_target(number px, number py, number pdx, number pdy, numb
                         bfw=tf
                     end
                 else if tf<bfw-1
-                    best=i+1
-                    bfw=tf
-                end
-            end
-        end
-        i=i+1
-    end
-    return best
-end
-
-// Локальный бой иногда должен проверить турель отдельно от игрока-владельца.
-function punch_turret_target(number px, number py, number pdx, number pdy)
-    number best=-1, bfw=0, i=0
-    loop i<turret_max
-        if turret_alive(i)==1
-            number hx=arr_get(turret_x,i)-px, hy=arr_get(turret_y,i)-py
-            number tf=hx*pdx+hy*pdy, ts=hy*pdx-hx*pdy
-            number th=punch_width/2+turret_hit_r
-            if tf>=0&&tf<=punch_reach+turret_hit_r&&ts*ts<=th*th
-                if best==-1||tf<bfw
                     best=i+1
                     bfw=tf
                 end
@@ -123,8 +155,10 @@ function dash_resolve_target(number sx, number sy, number dx, number dy, number 
     number i=0
     loop i<turret_max
         if turret_alive(i)==1
-            number r=turret_hit_r+8
-            number td=seg_dist(sx,sy,dx,dy,len,arr_get(turret_x,i),arr_get(turret_y,i))
+            // Квадрат турели плюс небольшой допуск: рывок задевает турель,
+            // когда проеханный отрезок подошёл к её квадрату вплотную.
+            number r=8
+            number td=turret_square_seg_dist(sx,sy,dx,dy,len,arr_get(turret_x,i),arr_get(turret_y,i))
             if td<=r
                 if best==-1
                     best=i+1

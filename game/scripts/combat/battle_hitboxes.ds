@@ -17,10 +17,10 @@ include graphics
 // плавно гаснут под плашкой результата.
 //
 // Рисуются реальные зоны урона: у снежинки — круг контакта (размером с
-// проверку попадания), линия пути и круг взрыва, у рывка — уже проеханный
-// отрезок: полоса зоны урона (тот же примитив и альфа, что у хитбокса удара)
-// и плотная цепочка кубиков по нему (онлайн-рывок бьёт ровно по этому
-// отрезку, см. dash_resolve_target). Залитые участки сплошные, чтобы зона
+// проверку попадания), линия пути и круг взрыва; у рывка — уже проеханный
+// отрезок, разложенный на квадратные большие хитбоксы (один слой: онлайн-рывок
+// бьёт ровно по этому отрезку, см. dash_resolve_target); у турели — квадрат
+// зоны попадания, как её спрайт и тень. Залитые участки сплошные, чтобы зона
 // читалась целиком, а не только контуром.
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -166,37 +166,18 @@ function draw_hit_snow()
     end
 end
 
-// ── Рывки: зона урона как полоса удара + плотная цепочка кубиков ──────────
+// ── Рывки: зона урона — только квадратные большие хитбоксы ────────────────
 // Рывок рисуется ровно там, где он действительно бьёт: по уже проеханному
 // отрезку от точки старта до текущего положения бойца (по нему режется урон,
 // см. dash_resolve_target и tick_dash_solo_hit).
 //
-// Зона рывка узкая: радиус попадания уменьшен dash_hit_radius_scale
-// (combat/battle_hitscan.ds), а полоса рисуется шириной dash_hitbox_zone_scale
-// радиусов, поэтому рывок больше не накрывает экран широким серым следом.
-// Двумя слоями, оба — настоящая зона урона:
-//   1. полоса шириной в зону урона — тем же примитивом и той же альфой, что
-//      хитбокс удара (draw_punch_box), поэтому рывок выглядит как его удары;
-//   2. цепочка кубиков с шагом dash_hitbox_step радиусов: кубиков много, они
-//      ставятся часто и проявляются по мере полёта — путь «растёт».
-// Круга вокруг бойца больше нет: зона рывка — отрезок, а не пятно под кубиком.
-function draw_hit_dash_cube(number x, number y, number side, number env)
-    if side<=0||env<=0
-        return
-    end
-    rect(x-side/2,y-side/2,side,side,(((unsigned)(int)hb_aim_alpha(env))<<24)|((unsigned)(int)hitbox_dash_rgb))
-end
-
-// Полоса зоны рывка: тот же примитив, цвет и альфа, что у полосы удара.
-function draw_hit_dash_zone(number x1, number y1, number x2, number y2, number w, number env)
-    if show_hitboxes==0
-        return
-    end
-    if w<=0||env<=0
-        return
-    end
-    line(x1,y1,x2,y2,w,(((unsigned)(int)hb_aim_alpha(env))<<24)|((unsigned)(int)hitbox_dash_rgb))
-end
+// Слой один: проеханный отрезок раскладывается по клеткам мира размером со
+// сторону квадрата, и каждая затронутая клетка рисуется одним БОЛЬШИМ
+// квадратом (сторона — dash_hitbox_zone_scale радиусов зоны урона, альфа —
+// как у хитбоксов ударов). Мелких кубиков, тянущихся вторым слоем следом за
+// большими, больше нет: квадраты не перекрываются (каждая клетка рисуется
+// один раз), поэтому зона не двоится и не оставляет мелкой крошки позади.
+// Круга вокруг бойца тоже нет: зона рывка — отрезок, а не пятно под кубиком.
 
 // Альфа как у хитбоксов ударов (aim_max_alpha), чтобы рывок читался так же.
 function hb_aim_alpha(number env)
@@ -214,28 +195,45 @@ function draw_hit_dash_path(number sx, number sy, number dx, number dy, number c
     if travel>len
         travel=len
     end
-    if pr<=0
+    if pr<=0||env<=0
         return
     end
-    // 1. Полоса зоны урона — от старта до текущего положения бойца.
-    draw_hit_dash_zone(sx,sy,sx+dx*travel,sy+dy*travel,pr*dash_hitbox_zone_scale,env)
-    // 2. Кубики по тому же отрезку: шаг — доля радиуса, поэтому их много.
-    number step=pr*dash_hitbox_step
-    if step<=0
-        step=2
-    end
-    number side=step*dash_hitbox_cube
+    number side=pr*dash_hitbox_zone_scale
     if side<=0
         side=2
     end
-    number off=0
+    // Клетки мира, затронутые проеханным отрезком: список пар gx,gy без
+    // повторов. Шаг обхода — половина стороны, поэтому ни одна клетка на
+    // пути не пропускается, а текущая точка даёт последний квадрат зоны.
+    array cells=arr_new()
+    number off=0, step=side*0.5, px=0, py=0, gx=0, gy=0, seen=0, k=0
     loop off<=travel
-        draw_hit_dash_cube(sx+dx*off,sy+dy*off,side,env)
+        px=sx+dx*off
+        py=sy+dy*off
+        gx=floor(px/side)
+        gy=floor(py/side)
+        seen=0
+        k=0
+        loop k<arr_len(cells)
+            if arr_get(cells,k)==gx&&arr_get(cells,k+1)==gy
+                seen=1
+                k=arr_len(cells)
+            end
+            k=k+2
+        end
+        if seen==0
+            arr_push(cells,gx)
+            arr_push(cells,gy)
+        end
         off=off+step
     end
-    // Последний кубик — точно в текущей точке: конец зоны виден всегда.
-    if travel>0
-        draw_hit_dash_cube(sx+dx*travel,sy+dy*travel,side,env)
+    number col=(((unsigned)(int)hb_aim_alpha(env))<<24)|((unsigned)(int)hitbox_dash_rgb)
+    k=0
+    loop k<arr_len(cells)
+        gx=arr_get(cells,k)
+        gy=arr_get(cells,k+1)
+        rect(gx*side,gy*side,side,side,col)
+        k=k+2
     end
 end
 
@@ -273,12 +271,29 @@ function draw_hit_dash()
     end
 end
 
-// ── Турели: круг попадания по каждой живой турели ─────────────────────────
+// ── Турели: квадрат зоны попадания по каждой живой турели ─────────────────
+// Зона турели — квадрат, как и её спрайт с тенью: половина стороны равна
+// turret_hit_r (combat/battle_hitscan.ds, проверки идут по тому же квадрату).
+// Круглой зоны у деспенсера больше нет.
+function draw_hit_square(number x, number y, number half, number rgb, number env)
+    if show_hitboxes==0
+        return
+    end
+    if half<=0||env<=0
+        return
+    end
+    rect(x-half,y-half,half*2,half*2,(((unsigned)(int)hb_fill_alpha(env))<<24)|((unsigned)(int)rgb))
+    draw_hit_line(x-half,y-half,x+half,y-half,3,rgb,env)
+    draw_hit_line(x+half,y-half,x+half,y+half,3,rgb,env)
+    draw_hit_line(x+half,y+half,x-half,y+half,3,rgb,env)
+    draw_hit_line(x-half,y+half,x-half,y-half,3,rgb,env)
+end
+
 function draw_hit_turrets()
     number i=0
     loop i<turret_max
         if arr_get(turret_box_a,i)>0
-            draw_hit_circle(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(turret_box_a,i))
+            draw_hit_square(arr_get(turret_x,i),arr_get(turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(turret_box_a,i))
         end
         i=i+1
     end
@@ -286,7 +301,7 @@ function draw_hit_turrets()
         i=0
         loop i<turret_max
             if arr_get(enemy_turret_box_a,i)>0
-                draw_hit_circle(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(enemy_turret_box_a,i))
+                draw_hit_square(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),turret_hit_r,hitbox_turret_rgb,arr_get(enemy_turret_box_a,i))
             end
             i=i+1
         end
@@ -304,7 +319,7 @@ function draw_hit_turrets()
             number o=b+1, k=0
             loop k<turret_max
                 if arr_get(rstation_box_a,s*turret_max+k)>0
-                    draw_hit_circle(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb,arr_get(rstation_box_a,s*turret_max+k))
+                    draw_hit_square(arr_get(remote_station,o+1),arr_get(remote_station,o+2),turret_hit_r,hitbox_turret_rgb,arr_get(rstation_box_a,s*turret_max+k))
                 end
                 o=o+5
                 k=k+1

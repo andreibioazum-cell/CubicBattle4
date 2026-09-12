@@ -107,7 +107,9 @@ function snow_chip_enemy_turrets()
     if gift.active==0
         return
     end
-    number zone=turret_hit_r+20, i=0
+    // Зона турели — квадрат: снежинка задевает его, когда входит в квадрат
+    // зоны, расширенный на 20 (как раньше по радиусу, но без круглой зоны).
+    number zone=turret_zone_half()+20, i=0
     loop i<turret_max
         if enemy_turret_alive(i)==1
             number bit=1
@@ -117,7 +119,7 @@ function snow_chip_enemy_turrets()
                 bit=4
             end
             if pierce_has(gift.pierce,bit)==0
-                if dist(gift.x,gift.y,arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i))<zone
+                if fabs(gift.x-arr_get(enemy_turret_x,i))<zone&&fabs(gift.y-arr_get(enemy_turret_y,i))<zone
                     gift.pierce=gift.pierce+bit
                     enemy_damage_turret(i,santa_super_damage)
                     ds_log("snow pierced enemy turret %g",i)
@@ -133,7 +135,7 @@ function snow_chip_player_turrets()
     if enemy_gift.active==0
         return
     end
-    number zone=turret_hit_r+20, i=0
+    number zone=turret_zone_half()+20, i=0
     loop i<turret_max
         if turret_alive(i)==1
             number bit=1
@@ -143,7 +145,7 @@ function snow_chip_player_turrets()
                 bit=4
             end
             if pierce_has(enemy_gift.pierce,bit)==0
-                if dist(enemy_gift.x,enemy_gift.y,arr_get(turret_x,i),arr_get(turret_y,i))<zone
+                if fabs(enemy_gift.x-arr_get(turret_x,i))<zone&&fabs(enemy_gift.y-arr_get(turret_y,i))<zone
                     enemy_gift.pierce=enemy_gift.pierce+bit
                     damage_turret(i,santa_super_damage)
                     ds_log("enemy snow pierced turret %g",i)
