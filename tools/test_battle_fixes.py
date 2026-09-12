@@ -115,6 +115,15 @@ double net_has_achievement_flag(double) { return 0; }
 double net_load_achievement_flags(void) { return 0; }
 void net_save_azum_revives(double) {}
 double net_load_azum_revives(void) { return 0; }
+/* Промокоды (promo.inc): в тестах код детерминированно фиксированный,
+ * флаг активации и стрик матчей не меняются. */
+const char *net_promo_code(void) { return "CB4-0000-0000-0000"; }
+void net_promo_register(void) {}
+double net_promo_used(void) { return 0; }
+void net_promo_mark_used(void) {}
+double net_promo_streak(void) { return 0; }
+void net_promo_bump_streak(void) {}
+void net_promo_reset_streak(void) {}
 void net_set_mode(double v) { (void)v; }
 void net_set_room(double v) { (void)v; }
 /* Публикации в сеть: в соло-тестах не нужны, но update_game тянет их в линк. */
@@ -139,7 +148,45 @@ void net_publish_universe(double a, double b, double c) { (void)a; (void)b; (voi
 void net_publish_thud(double a) { (void)a; }
 void net_open(double v) { (void)v; }
 void net_connect(const char *a, const char *b) { (void)a; (void)b; }
+double net_login_status(void) { return 0; }
 void keyboard_hide(void) {}
+void keyboard_show(void) {}
+const char *keyboard_get_text(void) { return ""; }
+int keyboard_visible(void) { return 0; }
+int keyboard_enter_pressed(void) { return 0; }
+/* Строковые/клавиатурные хелперы для экрана промокодов (promo.ds). */
+double str_len(const char *s) { return s ? (double)strlen(s) : 0.0; }
+int str_eq(const char *a, const char *b) { return a && b && strcmp(a, b) == 0; }
+int str_starts_with(const char *s, const char *pref) {
+    return s && pref && strncmp(s, pref, strlen(pref)) == 0;
+}
+double str_index_of(const char *hay, const char *needle) {
+    if (!hay || !needle) return -1;
+    const char *p = strstr(hay, needle);
+    return p ? (double)(p - hay) : -1;
+}
+const char *str_sub(const char *s, double start, double len) {
+    static char buf[24];
+    if (!s) return "";
+    size_t st = (size_t)start, ln = (size_t)len, sl = strlen(s);
+    if (st > sl) st = sl;
+    if (st + ln > sl) ln = sl - st;
+    memcpy(buf, s + st, ln);
+    buf[ln] = 0;
+    return buf;
+}
+const char *str_trim(const char *s) {
+    static char buf[64];
+    snprintf(buf, sizeof(buf), "%s", s ? s : "");
+    return buf;
+}
+const char *str_upper(const char *s) {
+    static char buf[64];
+    snprintf(buf, sizeof(buf), "%s", s ? s : "");
+    for (size_t i = 0; buf[i]; i++)
+        if (buf[i] >= 'a' && buf[i] <= 'z') buf[i] = (char)(buf[i] - 'a' + 'A');
+    return buf;
+}
 void net_event_set(double mode) { (void)mode; }
 double net_status(void) { return 0; }
 double net_count(void) { return 0; }
@@ -869,6 +916,7 @@ def check_firebase_rules_cover_request_bodies():
     # не относятся к базе и в проверке не участвуют.
     auth_only = {"email", "password", "grant_type", "refresh_token"}
     profile = (body_keys("state_storage.inc") | body_keys("settings_storage.inc")
+               | body_keys("promo.inc")
                | (body_keys("auth_session.inc") - auth_only))
     missing = profile - user
     assert not missing, f"users/$nick rules miss: {sorted(missing)}"
@@ -967,6 +1015,35 @@ def main():
             "touch_settings must handle both - and + buttons"
         assert "net_load_music_volume()" in "".join(fns["settings_from_storage"][1])
         assert "net_save_music_volume(" in "".join(fns["music_volume_step"][1])
+
+        # ── Карточки и промокоды: дроп только в соло, код персональный ──
+        solo_upd = "".join(fns["update_game"][1])
+        assert solo_upd.count("card_update()") == 1, \
+            "update_game must tick cards once"
+        draw_game_body = "".join(fns["draw_game"][1])
+        assert draw_game_body.count("draw_card_item()") == 1, \
+            "draw_game must draw the field card once"
+        assert draw_game_body.count("draw_card_open()") == 1, \
+            "draw_game must draw the card overlay once"
+        assert "card_roll()" in "".join(fns["init_game"][1]), \
+            "init_game must roll the card chance"
+        reset_body = "".join(fns["reset_battle"][1])
+        assert "card_active=0" in reset_body and "card_open=0" in reset_body, \
+            "reset_battle must clear the card state"
+        # Онлайн карточки не видит: тик и ролл только в соло.
+        assert "card_update()" not in "".join(fns["update_online"][1])
+        assert "card_roll()" not in "".join(fns["init_online"][1])
+        assert "card_open!=0" in "".join(fns["touch_game"][1]), \
+            "touch_game must be blocked while the card overlay is open"
+        # Экран промокодов: кнопка в меню, маршрутизация ввода.
+        assert "tr_promo()" in "".join(fns["draw_modes"][1])
+        assert "start_transition(ST_PROMO)" in "".join(fns["touch_modes"][1])
+        assert "touch_promo(" in "".join(fns["touch_menu"][1])
+        # Код детерминированно выводится из ника в C (не в конфиге и не на клиенте).
+        promo_c = (ROOT / "native/net/promo.inc").read_text(encoding="utf-8")
+        assert "CB4-%04X-%04X-%04X" in promo_c
+        assert "promo_sync_with_cloud(resp)" in (
+            ROOT / "native/net/profile_apply.inc").read_text(encoding="utf-8")
 
         # ── Рывок Азума: быстрее при той же дистанции (300 * 1.275 = 382.5) ──
         config_text = (ROOT / "game/scripts/core/config.ds").read_text(encoding="utf-8")

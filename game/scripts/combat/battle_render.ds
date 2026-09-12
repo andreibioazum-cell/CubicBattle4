@@ -127,6 +127,7 @@ function finish_game(number result)
     santa_follow=0
     drop_joy()
     gift.active=0
+    card_active=0
     boom_t=0
     dash_active=0
     dash_t=0
@@ -325,6 +326,7 @@ function draw_game()
     draw_enemy_shadow()
     draw_turret_shadows()
     draw_candies()
+    draw_card_item()
     draw_player_hitbox_layer()
     draw_enemy_hitbox()
     draw_ability_hitboxes()
@@ -354,4 +356,5 @@ function draw_game()
     else if finished==2
         draw_result(tr_defeat())
     end
+    draw_card_open()
 end

@@ -5,9 +5,9 @@
  *   push_pg_to_cloud           - отправить локальный прогресс в облако;
  *   apply_user_json_keep_local - то же слияние, но облако может только
  *                                добавлять: купленное на устройстве не теряется.
- * Используют pg/progress_write из state_storage.inc, num/strv из auth_json.inc
- * и settings_sync_with_cloud из settings_storage.inc - все они подключены
- * раньше в net.c.
+ * Используют pg/progress_write из state_storage.inc, num/strv из auth_json.inc,
+ * settings_sync_with_cloud из settings_storage.inc и promo_sync_with_cloud из
+ * promo.inc - все они подключены раньше в net.c.
  */
 /* Разбор записи /users/<ник> в локальный прогресс (без пароля: в защищённом
  * режиме пароль проверяет Firebase Auth, а не база). */
@@ -121,6 +121,8 @@ static void apply_user_json(const char *resp) {
     }
     /* Настройки из той же записи: см. settings_sync_with_cloud. */
     settings_sync_with_cloud(resp);
+    /* Промокод из той же записи: см. promo_sync_with_cloud в promo.inc. */
+    promo_sync_with_cloud(resp);
 }
 
 /* Протолкнуть текущий локальный прогресс в облако (только после того, как

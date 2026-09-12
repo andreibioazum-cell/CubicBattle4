@@ -20,6 +20,7 @@ def find_ds_files(directory):
         "core/ui.ds",              # UI-кит: кнопки, карточки, хит-тесты, текст
         "ui/progress_classes.ds",  # классы, уровни и скины
         "ui/progress_rewards.ds",  # награды, сохранение и синхронизация
+        "ui/promo.ds",             # карточки в соло и экран промокодов
         "ui/layout.ds",            # геометрия экранов (draw_* и touch_*)
         "ui/chat.ds",              # онлайн-чат
         "ui/menu_screens.ds",      # отрисовка экранов меню
