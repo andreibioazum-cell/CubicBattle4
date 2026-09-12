@@ -67,11 +67,15 @@ function class_pays_candies(number cls)
     return 0
 end
 
-function class_currency_of(number cls)
+// Единица валюты для цены класса на кнопке: «50 кубков» / «100 леденцов».
+// Нужна именно единица в родительном падеже, а не название валюты из кошелька
+// (tr_cups/tr_candies): на плашке «100 Леденцы» было бы ошибкой.
+// Формат самой подписи собирает tr_price_tag() — он общий с уровнями.
+function class_price_unit_of(number cls)
     if class_pays_candies(cls) == 1
-        return tr_candies()
+        return tr_candies_unit()
     end
-    return tr_cups()
+    return tr_cups_unit()
 end
 
 function class_name_of(number cls)
@@ -118,13 +122,13 @@ function class_power_of(number cls)
     return class_punch_damage_for(cls, class_level_of(cls))
 end
 
-// Подпись кнопки внутри карточки класса.
+// Подпись кнопки внутри карточки класса: выбран / цена покупки / выбрать.
 function class_pick_label(number cls)
     if player_class == cls
         return tr_class_selected()
     end
     if class_owned_of(cls) == 0
-        return tr_buy_for(class_cost_of(cls), class_currency_of(cls))
+        return tr_price_tag(class_cost_of(cls), class_price_unit_of(cls))
     end
     return tr_class_pick()
 end
@@ -308,13 +312,13 @@ function level_action(number cls, number n)
     level_msg_t = msg_time
 end
 
-// Строка статуса уровня в списке: открыт / цена открытия / закрыт.
+// Строка статуса уровня в списке: открыт / цена покупки / закрыт.
 function level_status_of(number cls, number n)
     if n <= class_unlocked_of(cls)
         return tr_level_status_open()
     end
     if n == class_unlocked_of(cls) + 1
-        return tr_level_unlock_cost(level_cost(n))
+        return tr_price_tag(level_cost(n), tr_cups_unit())
     end
     return tr_level_status_locked()
 end

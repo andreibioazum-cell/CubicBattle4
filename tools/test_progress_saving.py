@@ -60,6 +60,22 @@ const char *str_trim(const char *s) {
     return buf;
 }
 
+/* Строковые хелперы рантайма: ценники на плашках склеиваются из числа и
+ * валюты, поэтому нужны и ds_num_to_string, и ds_concat. Буферов несколько:
+ * вложенный ds_concat не должен затирать результат внутреннего вызова. */
+static char tag_pool[16][256];
+static int tag_slot = 0;
+char *ds_num_to_string(double number) {
+    char *b = tag_pool[tag_slot++ % 16];
+    snprintf(b, sizeof(tag_pool[0]), "%g", number);
+    return b;
+}
+char *ds_concat(const char *left, const char *right) {
+    char *b = tag_pool[tag_slot++ % 16];
+    snprintf(b, sizeof(tag_pool[0]), "%s%s", left ? left : "", right ? right : "");
+    return b;
+}
+
 struct DSArray { int len; double values[512]; };
 DSArray *arr_new(void) { DSArray *a = calloc(1, sizeof(*a)); assert(a); return a; }
 void arr_free(DSArray *a) { free(a); }
@@ -279,12 +295,85 @@ static void test_leaving_battle_saves(void) {
     puts("battle exit: progress is saved when leaving solo/online");
 }
 
+/* Ценники на плашках: только стоимость и валюта, без глаголов «Купить» и
+ * «Открыть». Покупка должна читаться так же, как в кошельке лобби, но в
+ * родительном падеже: «65 кубков», «150 леденцов» — не «150 Леденцы». */
+static void test_price_labels(void) {
+    fresh_device();
+    language = 1;   /* 1 — русский, 0 — английский */
+    const char *ru_cups = ds_fn_tr_price_tag(azum_cost, ds_fn_tr_cups_unit());
+    const char *ru_candy = ds_fn_tr_price_tag(ebuc_candy_cost, ds_fn_tr_candies_unit());
+    assert(strcmp(ru_cups, "65 кубков") == 0);
+    assert(strcmp(ru_candy, "150 леденцов") == 0);
+    assert(strstr(ru_cups, "Купить") == NULL && strstr(ru_candy, "Купить") == NULL);
+    language = 0;
+    assert(strcmp(ds_fn_tr_price_tag(30, ds_fn_tr_cups_unit()), "30 cups") == 0);
+    assert(strcmp(ds_fn_tr_price_tag(100, ds_fn_tr_candies_unit()), "100 candies") == 0);
+    language = 1;
+
+    /* Кнопка класса — цена, пока класс не куплен, дальше «Выбрать»/«Выбран». */
+    assert(strcmp(ds_fn_class_pick_label(CLASS_EBUC), "150 леденцов") == 0);
+    candies = 150;
+    ds_fn_pick_class(CLASS_EBUC);
+    assert(strcmp(ds_fn_class_pick_label(CLASS_EBUC), "Выбран") == 0);
+    ds_fn_pick_class(CLASS_ORDINARY);
+    assert(strcmp(ds_fn_class_pick_label(CLASS_EBUC), "Выбрать") == 0);
+
+    /* Строка уровня: открыт / цена / закрыт. Глагола «Открыть» нет нигде. */
+    assert(strcmp(ds_fn_level_status_of(CLASS_ORDINARY, 1), "30 кубков") == 0);
+    /* Тап по уровню, который ещё нельзя купить, просит купить предыдущий. */
+    cups = 0;
+    ds_fn_level_action(CLASS_ORDINARY, 3);
+    assert(strcmp(ds_fn_level_msg_text(), "Купите предыдущий уровень") == 0);
+    language = 0;
+    assert(strcmp(ds_fn_level_status_of(CLASS_ORDINARY, 1), "30 cups") == 0);
+    assert(strcmp(ds_fn_level_msg_text(), "Buy the previous level") == 0);
+    language = 1;
+    assert(strcmp(ds_fn_level_status_of(CLASS_ORDINARY, 1), "30 кубков") == 0);
+    puts("labels: prices are price + currency only, locked level asks for the previous one");
+}
+
+/* Покупка не отменяется чтением из хранилища: слияние «куплено» одностороннее,
+ * даже если файл или облако пришли без класса. */
+static void test_owned_class_is_never_lost(void) {
+    fresh_device();
+    store.ebuc = 0;               /* хранилище отстало: бука в нём нет */
+    ds_fn_set_class_owned(CLASS_EBUC, 1);   /* покупка уже сделана в этой сессии */
+    ds_fn_progress_from_storage();
+    near("ds_fn_class_owned_of(CLASS_EBUC) stays 1", ds_fn_class_owned_of(CLASS_EBUC), 1);
+
+    /* И наоборот: пустая память честно берёт покупку из хранилища. */
+    fresh_device();
+    store.ebuc = 1;
+    ds_fn_progress_from_storage();
+    near("ds_fn_class_owned_of(CLASS_EBUC) comes from storage", ds_fn_class_owned_of(CLASS_EBUC), 1);
+    puts("owned classes: a purchase survives the storage merge, storage still opens new classes");
+}
+
+/* «Легенды не умирают...»: 7 возрождений за один заход. Старый счётчик из
+ * achievements.dat не донашивает достижение между запусками. */
+static void test_legends_counter_is_per_session(void) {
+    fresh_device();
+    store.revives = ACH_LEGENDS_NEED - 1;     /* в файле почти набрано */
+    store.language = 1;                       /* и русский в settings.dat */
+    ds_fn_init();
+    near("azum_revive_count after restart", azum_revive_count, 0);
+    near("achievement_mask after restart", achievement_mask, 0);
+    assert((int)ds_fn_has_achievement(ACH_LEGENDS) == 0);
+    assert(strcmp(ds_fn_tr_achievement_legends_desc(),
+                  "Возродиться за Азума 7 раз, не выходя из игры") == 0);
+    puts("legends: the revive counter starts from zero on every launch");
+}
+
 int main(void) {
     test_buy_buk_saves();
     test_restart_keeps_buk();
     test_settings_save();
     test_init_loads_everything();
     test_leaving_battle_saves();
+    test_price_labels();
+    test_owned_class_is_never_lost();
+    test_legends_counter_is_per_session();
     puts("all saving checks passed");
     return 0;
 }
