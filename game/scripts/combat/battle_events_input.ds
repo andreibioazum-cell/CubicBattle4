@@ -212,7 +212,7 @@ function draw_online()
     draw_controls()
     draw_chat()
     draw_plates_hud()
-    number st=net_status(), sy=chat_btn_y()+btn_h+12
+    number st=net_status(), sy=chat_cy+chat_r+12
     if st==4
         ctext(tr_no_connection(),sy,0xFFFFFF)
         ctext(tr_reconnecting(),sy+32,0xFFFFFF)

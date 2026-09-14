@@ -163,70 +163,57 @@ function touch_lobby(number x, number y, number action)
     if action != 0
         return
     end
-    if hit_menu_row(x, y, 0) == 1
+    if hit_lobby_play(x, y) == 1
         start_transition(ST_MODES)
         return
     end
-    if hit_menu_row(x, y, 1) == 1
+    if hit_lobby_sub(x, y, 0) == 1
         start_transition(ST_CLASSES)
         return
     end
-    if hit_menu_row(x, y, 2) == 1
+    if hit_lobby_sub(x, y, 1) == 1
+        start_transition(ST_MORE)
+    end
+end
+function touch_more(number x, number y)
+    if hit_more_row(x, y, 0) == 1
         start_transition(ST_SETTINGS)
         return
     end
-    if hit_menu_row(x, y, 3) == 1
+    if hit_more_row(x, y, 1) == 1
         login_after = ST_LOBBY
         start_transition(ST_LOGIN)
         return
     end
-    if hit_menu_row(x, y, 4) == 1
+    if hit_more_row(x, y, 2) == 1
         start_transition(ST_ACHIEVEMENTS)
         return
     end
-    if hit_lobby_quests(x, y) == 1
+    if hit_more_row(x, y, 3) == 1
         quest_load()
         start_transition(ST_QUESTS)
     end
 end
 function touch_modes(number x, number y)
     if hit_modes_row(x, y, 0) == 1
-        start_transition(ST_LOBBY)
-        return
-    end
-    if hit_modes_row(x, y, 1) == 1
         start_transition(ST_SOLO)
         return
     end
-    if hit_modes_row(x, y, 2) == 1
+    if hit_modes_row(x, y, 1) == 1
         open_online()
         return
     end
-    if hit_modes_row(x, y, 3) == 1
+    if hit_modes_row(x, y, 2) == 1
         open_leaderboard()
         return
     end
-    if hit_modes_row(x, y, 4) == 1
+    if hit_modes_row(x, y, 3) == 1
         start_transition(ST_PROMO)
     end
 end
 function touch_settings(number x, number y)
     if hit_settings_row(x, y, 0) == 1
-        start_transition(ST_LOBBY)
-        return
-    end
-    if hit_settings_row(x, y, 1) == 1
-        language = 0
-        save_settings()
-        return
-    end
-    if hit_settings_row(x, y, 2) == 1
-        language = 1
-        save_settings()
-        return
-    end
-    if hit_settings_row(x, y, 3) == 1
-        show_hitboxes = 1 - show_hitboxes
+        language = 1 - language
         save_settings()
         return
     end
@@ -238,13 +225,18 @@ function touch_settings(number x, number y)
         music_volume_step(music_vol_step)
         return
     end
-    if hit_settings_row(x, y, 6) == 1
+    if hit_settings_row(x, y, 2) == 1
+        show_hitboxes = 1 - show_hitboxes
+        save_settings()
+        return
+    end
+    if hit_settings_row(x, y, 3) == 1
         fps_cap = next_fps_cap(fps_cap)
         save_settings()
         ds_set_fps_cap(fps_cap)
         return
     end
-    if hit_settings_row(x, y, 7) == 1
+    if hit_settings_row(x, y, 4) == 1
         render_scale = next_render_scale(render_scale)
         save_settings()
         ds_set_render_scale(render_scale)
@@ -378,6 +370,10 @@ function touch_menu(number x, number y, number action)
     end
     if game_state == ST_MODES
         touch_modes(x, y)
+        return
+    end
+    if game_state == ST_MORE
+        touch_more(x, y)
         return
     end
     if game_state == ST_SETTINGS

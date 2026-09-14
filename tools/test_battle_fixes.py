@@ -1058,11 +1058,12 @@ def main():
         assert upd_body.count("chat_bubbles_watch()") == 1, \
             "update_online must tick chat bubbles once"
         assert "chat_bubbles_reset()" in "".join(fns["init_online"][1])
-        # Закрытие чата — там же, где draw_back: вверху по центру.
+        # Закрытие чата — круг с крестиком вверху по центру, там же, где
+        # выход из боя (exit_cy).
         close_x = "".join(fns["chat_close_x"][1]).replace(" ", "")
-        assert "(screen_w-btn_w)/2" in close_x, \
-            "chat close button must sit centered like every other close button"
-        assert "back_y" in "".join(fns["chat_top_y"][1])
+        assert "screen_w/2" in close_x, \
+            "chat close button must sit centered at the top"
+        assert "exit_cy" in "".join(fns["chat_top_y"][1])
         # Новые сообщения находятся по серверному ключу (устойчиво к обрезке).
         watch_body = "".join(fns["chat_bubbles_watch"][1])
         assert "net_chat_key(" in watch_body and "chat_seen_key" in watch_body

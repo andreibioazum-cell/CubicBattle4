@@ -123,7 +123,8 @@ function draw_card_open()
     ctext_scaled(tr_tap_to_return(),y+h-42,text_color,0.55)
 end
 function promo_field_y()
-    return content_top()+158
+    // +26: чтобы вторая строка подсказки не тонула под полем ввода
+    return content_top()+184
 end
 function promo_btn_y()
     return promo_field_y()+56+20

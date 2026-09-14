@@ -11,13 +11,13 @@ number STICKER_TILE=64
 string STICKER_LIKE="like.png", STICKER_DISLIKE="dislike.png", STICKER_75="75.png"
 string STICKER_CMD="/sticker "
 function chat_close_x()
-    return (screen_w - btn_w) / 2
+    return screen_w / 2
 end
 function chat_top_y()
-    return back_y
+    return exit_cy
 end
 function chat_msg_top()
-    return chat_top_y() + btn_h + 4
+    return exit_cy + exit_r + 12
 end
 function chat_input_y()
     return screen_h - 72
@@ -218,28 +218,43 @@ function chat_update()
     end
 end
 function chat_btn_x()
-    return 16
+    return chat_cx - chat_r
 end
 function chat_btn_y()
-    return 108
+    return chat_cy - chat_r
 end
 function chat_btn_w()
-    return btn_w
+    return chat_r * 2
 end
 function chat_btn_h()
-    return btn_h
+    return chat_r * 2
+end
+// Кнопка чата — маленький круг с тремя точками; открытый чат закрывается
+// крестиком там же, где выход из боя.
+function draw_chat_circle_button()
+    circle(chat_cx, chat_cy, chat_r, 0x995F10A0)
+    ring(chat_cx, chat_cy, chat_r, 3, 0x88000000)
+    circle(chat_cx - 9, chat_cy, 2.6, text_color)
+    circle(chat_cx, chat_cy, 2.6, text_color)
+    circle(chat_cx + 9, chat_cy, 2.6, text_color)
+end
+function draw_chat_close_button()
+    number cx = chat_close_x()
+    number cy = chat_top_y()
+    circle(cx, cy, exit_r, card_bg)
+    line(cx - 9, cy - 9, cx + 9, cy + 9, 4, text_color)
+    line(cx - 9, cy + 9, cx + 9, cy - 9, 4, text_color)
 end
 function draw_chat()
     if game_state != 5
         return
     end
     if chat_open == 0
-        button(tr_chat(), chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h())
+        draw_chat_circle_button()
         return
     end
     screen_fill()
-    number cx = chat_close_x()
-    button(tr_close(), cx, chat_top_y(), btn_w, btn_h)
+    draw_chat_close_button()
     number lx = 16, lw = screen_w - 32, iy = chat_input_y(), ih = 52, ly = chat_msg_top(), line_h = 28
     number maxl = chat_visible_limit()
     if net_chat_count() > maxl
@@ -299,13 +314,13 @@ function touch_chat(number x, number y, number action)
         return 0
     end
     if chat_open == 0
-        if hit_rect(x, y, chat_btn_x(), chat_btn_y(), chat_btn_w(), chat_btn_h()) == 1
+        if hit_chat_circle(x, y) == 1
             chat_set_open(1)
             return 1
         end
         return 0
     end
-    if hit_rect(x, y, chat_close_x(), chat_top_y(), btn_w, btn_h) == 1
+    if hit_rect_pad(x, y, chat_close_x() - exit_r, chat_top_y() - exit_r, exit_r * 2, exit_r * 2) == 1
         chat_set_open(0)
         return 1
     end

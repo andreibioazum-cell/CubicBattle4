@@ -17,18 +17,20 @@ end
 function menu_stride()
     return btn_h + btn_gap
 end
-function menu_top()
-    return screen_h / 2 - (lobby_rows * btn_h + (lobby_rows - 1) * btn_gap) / 2
+function menu_top_for(number rows)
+    return screen_h / 2 - (rows * btn_h + (rows - 1) * btn_gap) / 2
 end
-function menu_row(number i)
-    return menu_top() + i * menu_stride()
+// Меню «ещё»: четыре строки (настройки, аккаунт, достижения, задания).
+function more_row(number i)
+    return menu_top_for(more_rows) + i * menu_stride()
 end
-function hit_menu_row(number px, number py, number i)
-    return hit_rect_pad(px, py, menu_x(), menu_row(i), btn_w, btn_h)
+function hit_more_row(number px, number py, number i)
+    return hit_rect_pad(px, py, menu_x(), more_row(i), btn_w, btn_h)
 end
-// Настройки: 8 строк (в лобби их 5) — центрируем отдельно, чтобы на низких
-// экранах последние строки не уходили за нижний край.
-number SETTINGS_ROWS=8
+// Настройки: 5 строк — язык, музыка (− / + по половинам), хитбоксы, FPS,
+// апскейл. Центрируем отдельно, чтобы на низких экранах строки не уходили
+// за нижний край.
+number SETTINGS_ROWS=5
 function settings_top()
     number top = screen_h / 2 - (SETTINGS_ROWS * btn_h + (SETTINGS_ROWS - 1) * btn_gap) / 2
     if top < 8
@@ -43,10 +45,10 @@ function hit_settings_row(number px, number py, number i)
     return hit_rect_pad(px, py, menu_x(), settings_row_y(i), btn_w, btn_h)
 end
 function hit_settings_music_minus(number px, number py)
-    return hit_rect_pad(px, py, music_minus_x(), settings_row_y(5), music_half_w(), btn_h)
+    return hit_rect_pad(px, py, music_minus_x(), settings_row_y(1), music_half_w(), btn_h)
 end
 function hit_settings_music_plus(number px, number py)
-    return hit_rect_pad(px, py, music_plus_x(), settings_row_y(5), music_half_w(), btn_h)
+    return hit_rect_pad(px, py, music_plus_x(), settings_row_y(1), music_half_w(), btn_h)
 end
 function music_half_w()
     return (btn_w - music_btn_gap) / 2
@@ -57,32 +59,39 @@ end
 function music_plus_x()
     return menu_x() + btn_w - music_half_w()
 end
-function hit_music_minus(number px, number py)
-    return hit_rect_pad(px, py, music_minus_x(), menu_row(5), music_half_w(), btn_h)
+function lobby_play_x()
+    return center_x(lobby_play_w)
 end
-function hit_music_plus(number px, number py)
-    return hit_rect_pad(px, py, music_plus_x(), menu_row(5), music_half_w(), btn_h)
+function lobby_play_y()
+    number block = lobby_play_h + lobby_gap + lobby_sub_h + lobby_gap + lobby_sub_h
+    return screen_h / 2 - block / 2
+end
+function lobby_sub_x()
+    return center_x(lobby_sub_w)
+end
+function lobby_sub_y(number i)
+    return lobby_play_y() + lobby_play_h + lobby_gap + i * (lobby_sub_h + lobby_gap)
+end
+function hit_lobby_play(number px, number py)
+    return hit_rect_pad(px, py, lobby_play_x(), lobby_play_y(), lobby_play_w, lobby_play_h)
+end
+function hit_lobby_sub(number px, number py, number i)
+    return hit_rect_pad(px, py, lobby_sub_x(), lobby_sub_y(i), lobby_sub_w, lobby_sub_h)
 end
 function lobby_title_y()
-    return menu_top() - 70
+    return lobby_play_y() - 64
 end
 function lobby_hello_y()
     return 18
 end
 function lobby_money_y()
-    return menu_row(lobby_rows - 1) + btn_h + 12
+    return lobby_sub_y(1) + lobby_sub_h + 16
 end
 function lobby_msg_y()
     return lobby_money_y() + money_line_h + 6
 end
-function lobby_quests_x()
-    return screen_w - btn_w - 20
-end
-function lobby_quests_y()
-    return screen_h - btn_h - 20
-end
-function hit_lobby_quests(number px, number py)
-    return hit_rect_pad(px, py, lobby_quests_x(), lobby_quests_y(), btn_w, btn_h)
+function hit_chat_circle(number px, number py)
+    return hit_rect_pad(px, py, chat_cx - chat_r, chat_cy - chat_r, chat_r * 2, chat_r * 2)
 end
 function classes_card_w()
     number n = classes_visible_count()

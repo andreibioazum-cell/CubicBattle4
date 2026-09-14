@@ -308,6 +308,18 @@ function tr_shop()
     end
     return "Shop"
 end
+function tr_more()
+    if language == 1
+        return "Меню"
+    end
+    return "More"
+end
+function tr_language_row()
+    if language == 1
+        return "Язык: Русский"
+    end
+    return "Language: English"
+end
 function tr_candies()
     if language == 1
         return "Леденцы"

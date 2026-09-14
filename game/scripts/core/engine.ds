@@ -244,6 +244,8 @@ function draw_screen()
         draw_game()
     else if game_state == ST_MODES
         draw_modes()
+    else if game_state == ST_MORE
+        draw_more()
     else if game_state == ST_SETTINGS
         draw_settings()
     else if game_state == ST_LOGIN

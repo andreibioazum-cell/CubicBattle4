@@ -130,6 +130,14 @@ void net_banner_send(const char *text, const char *color) { (void)text; (void)co
 double net_banner_ts(void) { return 0; }
 const char *net_banner_text(void) { return ""; }
 const char *net_banner_color(void) { return ""; }
+double net_is_banned(const char *nick) { (void)nick; return 0; }
+void net_save_settings(double language, double hitboxes) { (void)language; (void)hitboxes; }
+void net_save_music_volume(double volume) { (void)volume; }
+void net_save_fps_cap(double cap) { (void)cap; }
+void net_save_render_scale(double scale) { (void)scale; }
+void net_leaderboard_fetch(const char *url) { (void)url; }
+void snd_volume(const char *name, double volume) { (void)name; (void)volume; }
+
 static const char *chat_msgs[16];
 static int chat_msg_count;
 static char sent_buf[16][128];
@@ -198,12 +206,15 @@ static void test_send_and_touch(void) {
     assert(ds_fn_touch_chat(60, 600, 0) == 1);
     assert(sticker_menu_open == 0 && chat_open == 1);
 
-    /* Кнопка «закрыть» чат сбрасывает меню. */
+    /* Кнопка «закрыть» чат сбрасывает меню (круг с крестиком сверху по центру). */
     assert(ds_fn_touch_chat(bx + 26, by + 26, 0) == 1);  /* open menu */
-    assert(ds_fn_touch_chat(ds_fn_chat_close_x() + 140, ds_fn_chat_top_y() + 28, 0) == 1);
+    assert(ds_fn_touch_chat(ds_fn_chat_close_x(), ds_fn_chat_top_y(), 0) == 1);
     assert(chat_open == 0 && sticker_menu_open == 0);
     puts("touch: button toggles menu, tile sends + closes instantly, outside tap closes menu OK");
 }
+
+void ds_set_fps_cap(int fps) { (void)fps; }
+void ds_set_render_scale(int scale) { (void)scale; }
 
 static void test_video_settings(void) {
     /* Циклы значений в настройках: FPS макс -> 60 -> 30 -> макс, апскейл 1 -> 2 -> 3. */
@@ -213,11 +224,11 @@ static void test_video_settings(void) {
     assert(ds_fn_next_render_scale(1) == 2);
     assert(ds_fn_next_render_scale(2) == 3);
     assert(ds_fn_next_render_scale(3) == 1);
-    /* Все 8 строк настроек помещаются на низком (landscape) экране. */
+    /* Все 5 строк настроек помещаются на низком (landscape) экране. */
     screen_h = 720;
-    assert(ds_fn_settings_row_y(7) + 56 <= screen_h - 4);
+    assert(ds_fn_settings_row_y(4) + 56 <= screen_h - 4);
     screen_h = 1280;
-    assert(ds_fn_settings_row_y(7) + 56 <= screen_h - 4);
+    assert(ds_fn_settings_row_y(4) + 56 <= screen_h - 4);
     puts("video settings: fps/scale cycling and settings screen fit OK");
 }
 
@@ -237,9 +248,10 @@ static void test_render(void) {
     near(tex_calls[0].scale, 24.0 / 100.0);  /* стикеры 100x100, строка 24px */
     near(tex_calls[1].scale, 24.0 / 100.0);
     near(tex_calls[0].x, 16 + 8);
-    near(tex_calls[0].y, 84 + 28 + 2);   /* вторая строка, по центру её высоты */
-    near(tex_calls[1].y, 84 + 56 + 2);   /* третья строка */
-    assert(ring_calls == 1 && circle_calls == 3);  /* смайлик на стикер-кнопке */
+    /* верх списка = exit_cy + exit_r + 12 = 82 */
+    near(tex_calls[0].y, 82 + 28 + 2);   /* вторая строка, по центру её высоты */
+    near(tex_calls[1].y, 82 + 56 + 2);   /* третья строка */
+    assert(ring_calls == 1 && circle_calls == 4);  /* смайлик + круг кнопки закрытия */
 
     /* Пузырь над головой: стикер — картинкой, обычный текст — без tex. */
     tex_count = 0; roundrect_calls = 0;
@@ -255,12 +267,71 @@ static void test_render(void) {
     puts("render: sticker rows in the chat list and sticker head bubbles OK");
 }
 
+static void expect_transition(int want) {
+    assert(t_dir == 1 && t_target == want);
+    t_dir = 0;  /* снять блокировку, чтобы следующий тап сработал */
+}
+
+/* Минималистичный UI: в лобби одна большая «Играть» и две поды, всё
+ * остальное — на экране «Меню»; «назад» — компактный круг в углу; в бою
+ * выход — крестик сверху по центру; настройки — пять строк. */
+static void test_minimal_ui(void) {
+    /* Лобби: Play -> режимы, Shop -> классы, More -> меню. */
+    game_state = ST_LOBBY;
+    ds_fn_touch_lobby((screen_w - lobby_play_w) / 2 + lobby_play_w / 2, ds_fn_lobby_play_y() + lobby_play_h / 2, 0);
+    expect_transition(ST_MODES);
+    ds_fn_touch_lobby(ds_fn_lobby_sub_x() + lobby_sub_w / 2, ds_fn_lobby_sub_y(0) + lobby_sub_h / 2, 0);
+    expect_transition(ST_CLASSES);
+    ds_fn_touch_lobby(ds_fn_lobby_sub_x() + lobby_sub_w / 2, ds_fn_lobby_sub_y(1) + lobby_sub_h / 2, 0);
+    expect_transition(ST_MORE);
+
+    /* Экран «Меню»: настройки, аккаунт, достижения, задания. */
+    game_state = ST_MORE;
+    ds_fn_touch_more(ds_fn_menu_x() + btn_w / 2, ds_fn_more_row(0) + btn_h / 2);
+    expect_transition(ST_SETTINGS);
+    ds_fn_touch_more(ds_fn_menu_x() + btn_w / 2, ds_fn_more_row(1) + btn_h / 2);
+    expect_transition(ST_LOGIN);
+    ds_fn_touch_more(ds_fn_menu_x() + btn_w / 2, ds_fn_more_row(2) + btn_h / 2);
+    expect_transition(ST_ACHIEVEMENTS);
+    ds_fn_touch_more(ds_fn_menu_x() + btn_w / 2, ds_fn_more_row(3) + btn_h / 2);
+    expect_transition(ST_QUESTS);
+
+    /* Режимы: четыре строки, «назад» больше не строка. */
+    game_state = ST_MODES;
+    ds_fn_touch_modes(ds_fn_menu_x() + btn_w / 2, ds_fn_modes_row(3) + btn_h / 2);
+    expect_transition(ST_PROMO);
+
+    /* Настройки: пять строк; музыка — левая половина минус, правая плюс. */
+    game_state = ST_SETTINGS;
+    music_volume = 50;
+    ds_fn_touch_settings(ds_fn_menu_x() + btn_w * 0.25, ds_fn_settings_row_y(1) + btn_h / 2);
+    assert(music_volume == 40);
+    ds_fn_touch_settings(ds_fn_menu_x() + btn_w * 0.75, ds_fn_settings_row_y(1) + btn_h / 2);
+    assert(music_volume == 50);
+    ds_fn_touch_settings(ds_fn_menu_x() + btn_w / 2, ds_fn_settings_row_y(0) + btn_h / 2);
+    assert(language == 1);
+    language = 0;
+
+    /* «Назад» в меню — круг в левом верхнем углу; в бою выход — крестик
+     * сверху по центру, и наоборот. */
+    game_state = ST_SETTINGS;
+    assert(ds_fn_back_hit(back_cx, back_cy) == 1);
+    assert(ds_fn_back_hit(screen_w / 2, exit_cy) == 0);
+    game_state = ST_SOLO;
+    assert(ds_fn_back_hit(screen_w / 2, exit_cy) == 1);
+    assert(ds_fn_back_hit(back_cx, back_cy) == 0);
+    game_state = ST_ONLINE;
+    assert(ds_fn_hit_chat_circle(chat_cx, chat_cy) == 1);
+    puts("minimal ui: lobby 3 buttons, more menu, 5 settings rows, corner back OK");
+}
+
 int main(void) {
     setbuf(stdout, NULL);
     ds_main();
     test_parsing();
     test_send_and_touch();
     test_video_settings();
+    test_minimal_ui();
     test_render();
     return 0;
 }
@@ -288,7 +359,7 @@ def main():
         # Настройки: FPS и апскейл меняются из экрана настроек.
         settings_body = "".join(compiler.functions["draw_settings"][1])
         assert "tr_fps_label()" in settings_body and "tr_scale_label()" in settings_body
-        assert "settings_row_y(7)" in settings_body
+        assert "settings_row_y(4)" in settings_body
         touch_settings_body = "".join(compiler.functions["touch_settings"][1])
         assert "ds_set_fps_cap(" in touch_settings_body
         assert "ds_set_render_scale(" in touch_settings_body

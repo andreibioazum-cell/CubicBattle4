@@ -2,7 +2,7 @@ include graphics
 number ST_LOBBY=0, ST_SOLO=1, ST_MODES=2, ST_SETTINGS=4, ST_ONLINE=5
 number ST_LOGIN=7, ST_CLASSES=8, ST_LEVELS=9, ST_LEADERBOARD=10
 number ST_ACHIEVEMENTS=11, ST_SKINS=13, ST_PROMO=14
-number ST_QUESTS=15
+number ST_QUESTS=15, ST_MORE=16
 number game_state=ST_LOBBY
 number language=0, t_dir=0, t_target=0, t_fade=0, transition_duration=0.15
 number ui_purple=0xFF5F10A0
@@ -12,8 +12,15 @@ number locked_shade=0.75, locked_text_alpha=191
 number stat_hp_color=0xE94560, stat_power_color=0x4FC3F7
 number btn_w=280, btn_h=56, btn_gap=16, btn_radius=20
 number back_y=24, title_gap=12
-number lobby_rows=5
-number modes_rows=5
+number modes_rows=4, more_rows=4
+// Компактная кнопка «назад» в углу вместо широкой полосы вверху.
+number back_cx=52, back_cy=52, back_r=26
+// Кнопка выхода из боя: маленький круг с крестиком сверху по центру.
+number exit_cy=44, exit_r=26
+// Лобби: одна большая кнопка «Играть» и две поды.
+number lobby_play_w=340, lobby_play_h=76, lobby_sub_w=340, lobby_sub_h=58, lobby_gap=22
+// Чат в онлайне: маленькая круглая кнопка вместо широкой.
+number chat_cx=56, chat_cy=104, chat_r=28
 number touch_pad_x=12, touch_pad_y=8
 number screen_margin=40, class_action_gap=40
 number class_count=4, class_gap=14, class_card_h=272

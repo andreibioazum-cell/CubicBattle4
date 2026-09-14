@@ -74,11 +74,34 @@ function button_scaled(string label, number x, number y, number w, number h, num
     roundrect(x, y, w, h, btn_radius, ui_purple)
     text_in_box(label, x, y, w, h, text_color, scale)
 end
+function battle_state_now()
+    if game_state == ST_SOLO || game_state == ST_ONLINE
+        return 1
+    end
+    return 0
+end
+function draw_exit_cross()
+    number cx = screen_w / 2
+    circle(cx, exit_cy, exit_r, 0x66000000)
+    ring(cx, exit_cy, exit_r, 3, 0x88000000)
+    line(cx - 9, exit_cy - 9, cx + 9, exit_cy + 9, 4, 0xE6FFFFFF)
+    line(cx - 9, exit_cy + 9, cx + 9, exit_cy - 9, 4, 0xE6FFFFFF)
+end
 function draw_back()
-    button(tr_back(), (screen_w - btn_w) / 2, back_y, btn_w, btn_h)
+    if battle_state_now() == 1
+        draw_exit_cross()
+        return
+    end
+    circle(back_cx, back_cy, back_r, ui_purple)
+    line(back_cx - 7, back_cy, back_cx + 9, back_cy, 4, text_color)
+    line(back_cx - 7, back_cy, back_cx - 1, back_cy - 6, 4, text_color)
+    line(back_cx - 7, back_cy, back_cx - 1, back_cy + 6, 4, text_color)
 end
 function back_hit(number x, number y)
-    return hit_rect_pad(x, y, (screen_w - btn_w) / 2, back_y, btn_w, btn_h)
+    if battle_state_now() == 1
+        return hit_rect_pad(x, y, screen_w / 2 - exit_r, exit_cy - exit_r, exit_r * 2, exit_r * 2)
+    end
+    return hit_rect_pad(x, y, back_cx - back_r, back_cy - back_r, back_r * 2, back_r * 2)
 end
 function screen_fill()
     rect(0, 0, screen_w, screen_h, bg_screen)
