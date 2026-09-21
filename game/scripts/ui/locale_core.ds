@@ -427,11 +427,44 @@ end
 public function tr_class_ebuc_desc()
     return "You thought I was a regular cube, but it was me, buC!"
 end
-public function tr_music_vol()
+-- Подпись кнопки музыки в настройках: кнопка листает выкл → вкл → 50%.
+-- Неканоничное значение (например, 70 из старого сохранения) показывается
+-- честно, процентом, и первым же тапом приводится к одному из трёх состояний.
+public function tr_music_state()
     if language == 1 then
-        return "Музыка"
+        if music_volume <= 0 then
+            return "Музыка: выкл"
+        end
+        if music_volume >= 100 then
+            return "Музыка: вкл"
+        end
+        if music_volume == 50 then
+            return "Музыка: 50%"
+        end
+        return "Музыка: " + music_volume + "%"
     end
-    return "Music"
+    if music_volume <= 0 then
+        return "Music: off"
+    end
+    if music_volume >= 100 then
+        return "Music: on"
+    end
+    if music_volume == 50 then
+        return "Music: 50%"
+    end
+    return "Music: " + music_volume + "%"
+end
+public function tr_motion_blur_toggle()
+    if language == 1 then
+        if motion_blur == 1 then
+            return "Размытие движения: ВКЛ"
+        end
+        return "Размытие движения: ВЫКЛ"
+    end
+    if motion_blur == 1 then
+        return "Motion blur: ON"
+    end
+    return "Motion blur: OFF"
 end
 public function tr_hitboxes_toggle()
     if language == 1 then

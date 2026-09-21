@@ -174,6 +174,40 @@ public function draw_fighter_hurt(number x, number y, number ang, number cls, nu
     local number hw=25*cube_scale*scale
     tex_tint(x-hw,y-hw,fighter_sprite(cls,punching,skin),sprite_a(ang),cube_scale*scale,(((unsigned)(int)fa)<<24)|((unsigned)(int)hurt_rgb))
 end
+-- Размытие движения: по скорости бойца ((x,y) минус позиция прошлого кадра)
+-- рисуется короткий след из полупрозрачных силуэтов его же спрайта — чем
+-- дальше силуэт от бойца, тем он прозрачнее. Включается настройкой
+-- «Размытие движения» (motion_blur в core/config.ds). Вызывается ДО тела,
+-- поэтому след всегда остаётся под кубиком.
+public function draw_motion_ghosts(number x, number y, number px, number py, number ang, number cls, number punching, number skin, number scale)
+    if motion_blur==0 then
+        return
+    end
+    local number vx=(x-px)/dt, vy=(y-py)/dt
+    local number speed=sqrt(vx*vx+vy*vy)
+    if speed<12 then
+        return
+    end
+    local number trail=speed*blur_time
+    if trail>blur_max_dist then
+        trail=blur_max_dist
+    end
+    vx=vx/speed
+    vy=vy/speed
+    local number hw=25*cube_scale*scale, ps=cube_scale*scale
+    local string t=fighter_sprite(cls,punching,skin)
+    local number k=1
+    while k<=blur_ghosts do
+        -- Альфа максимальна у ближайшего силуэта и тает к хвосту следа;
+        -- хвостовой силуэт остаётся слегка видимым.
+        local number f=k/blur_ghosts
+        local number a=floor(blur_alpha*(1-(k-1.0)/blur_ghosts)*255)
+        if a>0 then
+            tex_tint(x-vx*trail*f-hw,y-vy*trail*f-hw,t,sprite_a(ang),ps,(((unsigned)(int)a)<<24)|((unsigned)(int)blur_rgb))
+        end
+        k=k+1
+    end
+end
 public function draw_player_shadow(number x, number y, number ang, number punching, number skin)
     draw_fighter_shadow(x,y,ang,player_class,punching,skin)
 end
@@ -197,8 +231,11 @@ public function draw_player_hitbox_layer()
 end
 public function draw_player_body_layer()
     local number punching=punch_left>0
+    draw_motion_ghosts(player.x,player.y,player_bx,player_by,player.angle,player_class,punching,azum_skin,player_scale)
     draw_player_body(player.x,player.y,player.angle,punching)
     draw_fighter_hurt(player.x,player.y,player.angle,player_class,punching,azum_skin,player_scale,player_hurt_a)
+    player_bx=player.x
+    player_by=player.y
 end
 public function enemy_punching_now()
     if enemy.state==1||enemy.state==2 then
@@ -229,8 +266,12 @@ public function draw_enemy_hitbox()
 end
 public function draw_enemy_body()
     local number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
+    local number punching=enemy_punching_now()
+    draw_motion_ghosts(enemy.x,enemy.y,enemy_bx,enemy_by,enemy.angle,enemy_class,punching,SKIN_NORMAL,enemy_scale)
     tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
-    draw_fighter_hurt(enemy.x,enemy.y,enemy.angle,enemy_class,enemy_punching_now(),SKIN_NORMAL,enemy_scale,enemy_hurt_a)
+    draw_fighter_hurt(enemy.x,enemy.y,enemy.angle,enemy_class,punching,SKIN_NORMAL,enemy_scale,enemy_hurt_a)
+    enemy_bx=enemy.x
+    enemy_by=enemy.y
 end
 public function draw_controls()
     ring(joy.x,joy.y,joy.r,4,0x000000)

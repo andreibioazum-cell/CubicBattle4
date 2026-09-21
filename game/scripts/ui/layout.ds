@@ -67,27 +67,6 @@ end
 public function hit_settings_row(number px, number py, number i)
     return hit_rect_pad(px, py, menu_x(), settings_row_y(i), btn_w, settings_btn_h())
 end
-public function hit_settings_music_minus(number px, number py)
-    return hit_rect_pad(px, py, music_minus_x(), settings_row_y(5), music_half_w(), settings_btn_h())
-end
-public function hit_settings_music_plus(number px, number py)
-    return hit_rect_pad(px, py, music_plus_x(), settings_row_y(5), music_half_w(), settings_btn_h())
-end
-public function music_half_w()
-    return (btn_w - music_btn_gap) / 2
-end
-public function music_minus_x()
-    return menu_x()
-end
-public function music_plus_x()
-    return menu_x() + btn_w - music_half_w()
-end
-public function hit_music_minus(number px, number py)
-    return hit_rect_pad(px, py, music_minus_x(), menu_row(5), music_half_w(), btn_h)
-end
-public function hit_music_plus(number px, number py)
-    return hit_rect_pad(px, py, music_plus_x(), menu_row(5), music_half_w(), btn_h)
-end
 public function lobby_title_y()
     return menu_top() - 70
 end

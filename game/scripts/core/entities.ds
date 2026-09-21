@@ -47,6 +47,10 @@ public number poison_a=0
 public number player_stun=0, pstun_a=0
 -- Альфы красной вспышки урона (1 в момент удара, плавно тают в tick_hurt_fades).
 public number player_hurt_a=0, enemy_hurt_a=0
+-- Позиции бойцов в прошлом кадре: по ним draw_motion_ghosts считает скорость
+-- и рисует след размытия движения (combat/battle_render.ds).
+public number player_bx=0, player_by=0, enemy_bx=0, enemy_by=0
+public array remote_blur=arr_new()
 public number dash_active=0, dash_t=0, dash_dx=0, dash_dy=0, dash_hit=0
 public number dash_seq=0, dash_pub=0, dash_x0=0, dash_y0=0
 public number dash_cd=0

@@ -9,7 +9,7 @@ public number bg_screen=0x1A1A2E, card_bg=0xFF2A2A40, card_ring=0xFF5A5A78, card
 public number text_color=0xFFFFFF
 public number locked_shade=0.75, locked_text_alpha=191
 public number stat_hp_color=0xE94560, stat_power_color=0x4FC3F7
-public number btn_w=280, btn_h=56, btn_gap=16, btn_radius=20
+public number btn_w=280, btn_h=53, btn_gap=15, btn_radius=20
 public number back_y=24, title_gap=12
 public number lobby_rows=5
 public number modes_rows=6
@@ -126,6 +126,12 @@ public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
 -- обратно (tick_hurt_fades в combat/battle_damage.ds). hurt_alpha — сила
 -- вспышки в момент удара.
 public number hurt_rgb=0x00E53935, hurt_alpha=0.55, hurt_fade=0.35
+-- Размытие движения кубиков (настройка «Размытие движения»): пока боец бежит,
+-- за ним тянутся blur_ghosts полупрозрачных силуэтов его спрайта. След
+-- рассчитывается по скорости бойца (blur_time секунд пути), ограничен
+-- blur_max_dist и тает к хвосту; цвет силуэтов — blur_rgb.
+public number motion_blur=0, blur_ghosts=3, blur_time=0.09, blur_max_dist=60
+public number blur_alpha=0.35, blur_rgb=0x00FFFFFF
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
@@ -161,7 +167,9 @@ public number login_w=460, login_btn_w=380, login_field_gap=64, login_btn_gap=22
 public string login_nick="", login_pass=""
 public string LOBBY_MUSIC="lobbymusic.wav"
 public number music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1.0
-public number music_volume=70, music_vol_step=10, music_btn_gap=16
+-- Кнопка «Музыка» в настройках листает три состояния громкости: выкл (0),
+-- вкл (100) и 50% — от общей громкости звука. Промежуточных значений больше нет.
+public number music_volume=70
 -- Счётчик кадров в бою: настройка (show_fps) и усреднённое значение, которое
 -- пересчитывается раз в fps_interval секунд, чтобы цифры не прыгали.
 public number show_fps=0, fps_value=0, fps_acc=0, fps_frames=0, fps_interval=0.5

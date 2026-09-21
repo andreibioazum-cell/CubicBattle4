@@ -70,6 +70,13 @@ public function reset_battle()
     pstun_a=0
     player_hurt_a=0
     enemy_hurt_a=0
+    -- Позиции прошлого кадра для размытия движения: стартуем с точек спавна,
+    -- чтобы на первом кадре боя не тянулся ложный след.
+    player_bx=player.x
+    player_by=player.y
+    enemy_bx=enemy.x
+    enemy_by=enemy.y
+    arr_clear(remote_blur)
     player_poison=0
     player_poison_tick=0
     player_poison_damage=0

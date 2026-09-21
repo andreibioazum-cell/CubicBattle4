@@ -97,14 +97,25 @@ public function settings_from_storage()
     music_volume = net_load_music_volume()
     winter_theme = net_load_winter_theme()
     show_fps = net_load_fps_meter()
+    motion_blur = net_load_motion_blur()
 end
 public function save_settings()
     net_save_settings(language, show_hitboxes)
     net_save_winter_theme(winter_theme)
     net_save_fps_meter(show_fps)
+    net_save_motion_blur(motion_blur)
 end
-public function music_volume_step(number d)
-    music_volume = clamp(music_volume + d, 0, 100)
+-- Кнопка «Музыка» листает громкость по кругу: выкл (0) → вкл (100) → 50%
+-- от общей громкости → снова выкл. Значение сразу сохраняется и применяется
+-- к играющей музыке.
+public function music_volume_cycle()
+    if music_volume <= 0 then
+        music_volume = 100
+    else if music_volume >= 100 then
+        music_volume = 50
+    else
+        music_volume = 0
+    end
     net_save_music_volume(music_volume)
     if music_ok == 1 then
         snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)

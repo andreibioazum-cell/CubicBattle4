@@ -25,6 +25,7 @@ typedef struct {
     DSMutex lock;
     int loaded, has_file;
     int language, hitboxes, musicvol, winter, showfps;
+    int blur; /* размытие движения кубиков, хранится только на устройстве */
     int legal; /* unix-время нажатия кнопки согласия с предупреждением */
 } Settings;
 static Settings st = { .lock = DS_MUTEX_INIT };
@@ -36,7 +37,7 @@ static void settings_read(void) {
     char path[320], line[128];
     FILE *f;
     int language = 0, hitboxes = 1, musicvol = 70, has_file = 0;
-    int winter = 1, showfps = 0, legal = 0;
+    int winter = 1, showfps = 0, blur = 0, legal = 0;
     st_lock();
     if (st.loaded) { st_unlock(); return; }
     st_unlock();
@@ -51,6 +52,7 @@ static void settings_read(void) {
             if (sscanf(line, "musicvol %d", &value) == 1) { musicvol = value; continue; }
             if (sscanf(line, "winter %d", &value) == 1) { winter = value; continue; }
             if (sscanf(line, "showfps %d", &value) == 1) { showfps = value; continue; }
+            if (sscanf(line, "blur %d", &value) == 1) { blur = value; continue; }
             if (sscanf(line, "legal %d", &value) == 1) { legal = value; continue; }
         }
         fclose(f);
@@ -61,6 +63,7 @@ static void settings_read(void) {
     st.musicvol = musicvol < 0 ? 0 : (musicvol > 100 ? 100 : musicvol);
     st.winter = winter ? 1 : 0;
     st.showfps = showfps ? 1 : 0;
+    st.blur = blur ? 1 : 0;
     st.legal = legal;
     st.has_file = has_file;
     st.loaded = 1;
@@ -75,9 +78,9 @@ static void settings_write(void) {
     st_lock();
     snprintf(text, sizeof(text),
              "lang %d\nhitboxes %d\nmusicvol %d\nwinter %d\nshowfps %d\n"
-             "legal %d\n",
+             "blur %d\nlegal %d\n",
              st.language, st.hitboxes, st.musicvol, st.winter, st.showfps,
-             st.legal);
+             st.blur, st.legal);
     st.has_file = 1;
     st_unlock();
     file_write_atomic(path, text);
@@ -177,6 +180,26 @@ void net_save_fps_meter(double on) {
     st_unlock();
     settings_write();
     settings_push_to_cloud();
+}
+
+/* Размытие движения кубиков: как согласие с предупреждением, хранится только
+ * на устройстве (строка "blur 0/1") и в облако не уходит - правила Firebase
+ * могут быть опубликованы без этого поля, и тогда весь PATCH настроек не
+ * прошёл бы целиком. */
+double net_load_motion_blur(void) {
+    double v;
+    settings_read();
+    st_lock(); v = (double)st.blur; st_unlock();
+    return v;
+}
+
+void net_save_motion_blur(double on) {
+    settings_read();
+    st_lock();
+    st.blur = on ? 1 : 0;
+    st.loaded = 1;
+    st_unlock();
+    settings_write();
 }
 
 /* Язык и хитбоксы: пишем на устройство и сразу отправляем в облако. */
