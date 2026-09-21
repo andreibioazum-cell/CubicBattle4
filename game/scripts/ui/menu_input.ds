@@ -267,12 +267,8 @@ public function touch_settings(number x, number y)
         save_settings()
         return
     end
-    if hit_settings_music_minus(x, y) == 1 then
-        music_volume_step(-music_vol_step)
-        return
-    end
-    if hit_settings_music_plus(x, y) == 1 then
-        music_volume_step(music_vol_step)
+    if hit_settings_row(x, y, 4) == 1 then
+        music_volume_cycle()
         return
     end
     if hit_settings_row(x, y, 6) == 1 then

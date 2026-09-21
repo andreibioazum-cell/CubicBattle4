@@ -103,10 +103,7 @@ public function update_aim()
         end
     end
     if punch_cd>0 then
-        punch_cd=punch_cd-dt
-        if punch_cd<0 then
-            punch_cd=0
-        end
+        punch_cd=tick_down(punch_cd)
     end
 end
 public function follow_punch()

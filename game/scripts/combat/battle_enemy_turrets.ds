@@ -98,13 +98,7 @@ end
 public function enemy_tick_turrets()
     local number i=0
     while i<turret_max do
-        if arr_get(enemy_turret_spawn_t,i)>0 then
-            local number t=arr_get(enemy_turret_spawn_t,i)-dt
-            if t<0 then
-                t=0
-            end
-            arr_set(enemy_turret_spawn_t,i,t)
-        end
+        arr_set(enemy_turret_spawn_t,i,tick_down(arr_get(enemy_turret_spawn_t,i)))
         i=i+1
     end
 end

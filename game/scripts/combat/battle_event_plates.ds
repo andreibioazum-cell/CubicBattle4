@@ -281,17 +281,25 @@ public function draw_plate(number cx, number cy, number k, number lit)
     local number r=20*k
     local number pulse=0.5+0.5*sin(event_t*5)
     local number aa=floor(clamp(k*1.4,0,1)*235)
-    local color dark=(((unsigned)(int)floor(aa*0.85))<<24)|0x007F1414
-    local color tr=0x00E53935
+    -- Нулевой альфа-байт движок считает «альфы нет» и рисует плашку сплошной
+    -- заливкой; кроме того, доли альфы (0.85/0.55) при aa=1 округляются до 0.
+    if aa<1 then
+        return
+    end
+    local number tr=0x00E53935
     if lit==1 then
         tr=0x00FF6E63
     end
-    local color top=(((unsigned)(int)aa)<<24)|tr
-    roundrect(cx-half-5*k,cy-half-5*k,half*2+10*k,half*2+10*k,r+5*k,dark)
-    roundrect(cx-half,cy-half,half*2,half*2,r,top)
+    local number a85=floor(aa*0.85)
+    if a85>0 then
+        roundrect(cx-half-5*k,cy-half-5*k,half*2+10*k,half*2+10*k,r+5*k,(((unsigned)(int)a85)<<24)|0x007F1414)
+    end
+    roundrect(cx-half,cy-half,half*2,half*2,r,(((unsigned)(int)aa)<<24)|((unsigned)(int)tr))
     local number rr=half*0.45+2*pulse*k
-    local color hint=(((unsigned)(int)floor(aa*0.55))<<24)|0x00FFFFFF
-    ring(cx,cy,rr,3*k,hint)
+    local number a55=floor(aa*0.55)
+    if a55>0 then
+        ring(cx,cy,rr,3*k,(((unsigned)(int)a55)<<24)|0x00FFFFFF)
+    end
 end
 public function draw_event_plates()
     if event_mode!=3||plates_phase>=3 then

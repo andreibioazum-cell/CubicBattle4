@@ -79,10 +79,7 @@ public function update_banner()
         end
     end
     if banner_t>0 then
-        banner_t=banner_t-dt
-        if banner_t<0 then
-            banner_t=0
-        end
+        banner_t=tick_down(banner_t)
     end
 end
 public function draw_banner()
@@ -145,7 +142,7 @@ public function draw_online()
                 punching=1
                 ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
             end
-            draw_remote_shadow(rx,ry,ra,rcls,punching,net_player_skin(i))
+            draw_fighter_shadow(rx,ry,ra,rcls,punching,net_player_skin(i))
         end
         i=i+1
     end
@@ -191,7 +188,7 @@ public function draw_online()
                 punching=1
                 ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
             end
-            draw_remote_body(rx,ry,ra,rcls,punching,net_player_skin(i))
+            draw_fighter_body(rx,ry,ra,rcls,punching,net_player_skin(i))
             local string rn=net_player_nick(i)
             if str_len(rn)>0 then
                 local color rncol=admin_head_color_of(rn,0xFFFFFF)
@@ -202,9 +199,9 @@ public function draw_online()
     end
     draw_event_santa()
     draw_chat_bubbles()
-    draw_player_freeze()
-    draw_player_poison()
-    draw_player_stun()
+    draw_status_aura(player.x,player.y,player.size,freeze_rgb,freeze_rim,pfreeze_a)
+    draw_status_aura(player.x,player.y,player.size,poison_rgb,poison_rim,ppoison_a)
+    draw_status_aura(player.x,player.y,player.size,stun_rgb,stun_rim,pstun_a)
     draw_dash_streak()
     draw_snow()
     local number w=screen_w/3

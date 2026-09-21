@@ -74,6 +74,9 @@ public function enemy_apply_damage(number dmg)
     if enemy_class==CLASS_EBUC then
         dmg=enemy_shield_absorb(dmg)
     end
+    if dmg>0 then
+        enemy_hurt_a=1
+    end
     enemy.hp=enemy.hp-dmg
     if enemy.hp<0 then
         enemy.hp=0
@@ -146,21 +149,12 @@ public function enemy_snow_explode()
                 player_freeze_slow=super_freeze_slow
             end
             take_damage(santa_super_damage)
-            if player.hp<=0 then
-                player.hp=0
-                if try_revive()==0 then
-                    finish_game(2)
-                end
-            end
         end
     end
 end
 public function tick_enemy_gift()
     if enemy_boom_t>0 then
-        enemy_boom_t=enemy_boom_t-dt
-        if enemy_boom_t<0 then
-            enemy_boom_t=0
-        end
+        enemy_boom_t=tick_down(enemy_boom_t)
     end
     if enemy_gift.active==0 then
         return

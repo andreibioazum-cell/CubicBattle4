@@ -91,26 +91,16 @@ public function update_enemy()
             enemy.cooldown=0
         end
     end
-    if enemy.dodge_cd>0 then
-        enemy.dodge_cd=enemy.dodge_cd-dt
-        if enemy.dodge_cd<0 then
-            enemy.dodge_cd=0
-        end
-    end
+    enemy.dodge_cd=tick_down(enemy.dodge_cd)
     if enemy.flank>0 then
         enemy.flank=enemy.flank-dt
     end
-    if enemy.react>0 then
-        enemy.react=enemy.react-dt
-        if enemy.react<0 then
-            enemy.react=0
-        end
-    end
+    enemy.react=tick_down(enemy.react)
     if enemy.poison>0 then
         if enemy.poison_tick<=0 then
             enemy.poison_tick=santa_poison_tick_interval
         end
-        enemy.poison=enemy.poison-dt
+        enemy.poison=tick_down(enemy.poison)
         enemy.poison_tick=enemy.poison_tick-dt
         if enemy.poison_tick<=0 then
             local number tick_dmg=santa_poison_damage_for(player_level)
@@ -123,18 +113,14 @@ public function update_enemy()
             if enemy_apply_damage(tick_dmg)==1 then
                 return
             end
-        end
-        if enemy.poison<=0 then
+        else if enemy.poison<=0 then
             enemy.poison=0
             enemy.poison_tick=0
             enemy.poison_damage=0
         end
     end
     if enemy.stun>0 then
-        enemy.stun=enemy.stun-dt
-        if enemy.stun<0 then
-            enemy.stun=0
-        end
+        enemy.stun=tick_down(enemy.stun)
         return
     end
     if enemy_tick_class_abilities()==1 then
@@ -183,12 +169,8 @@ public function update_enemy()
                                 player_poison_damage=santa_poison_damage_for(enemy_level)
                             end
                             ds_log("enemy punch! hp %g",player.hp)
-                            if player.hp<=0 then
-                                player.hp=0
-                                if try_revive()==0 then
-                                    finish_game(2)
-                                    return
-                                end
+                            if finished!=0 then
+                                return
                             end
                         end
                     else

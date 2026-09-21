@@ -53,11 +53,10 @@ public function tick_santa_follow()
     if santa_follow<=0 then
         return
     end
-    santa_follow=santa_follow-dt
+    santa_follow=tick_down(santa_follow)
     if santa_follow>0 then
         return
     end
-    santa_follow=0
     if finished!=0||player_class!=2 then
         return
     end

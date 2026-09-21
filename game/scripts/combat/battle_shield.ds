@@ -2,11 +2,22 @@ public function pierce_has(number mask, number bit)
     local number shifted=floor(mask/bit)
     return shifted-floor(shifted*0.5)*2
 end
-public function nearest_own_turret()
+-- Бит маски проколов для турели i: турели нумеруются 0,1,2 → биты 1,2,4.
+public function turret_pierce_bit(number i)
+    if i==1 then
+        return 2
+    end
+    if i==2 then
+        return 4
+    end
+    return 1
+end
+-- Ближайшая живая турель (по массивам одной стороны) к точке (x,y), -1 если их нет.
+public function nearest_turret(array xs, array ys, array hps, number x, number y)
     local number best=-1, bd=0, i=0
     while i<turret_max do
-        if turret_alive(i)==1 then
-            local number d=dist(arr_get(turret_x,i),arr_get(turret_y,i),player.x,player.y)
+        if arr_get(hps,i)>0 then
+            local number d=dist(arr_get(xs,i),arr_get(ys,i),x,y)
             if best==-1||d<bd then
                 best=i
                 bd=d
@@ -16,111 +27,81 @@ public function nearest_own_turret()
     end
     return best
 end
-public function nearest_enemy_turret()
-    local number best=-1, bd=0, i=0
-    while i<turret_max do
-        if enemy_turret_alive(i)==1 then
-            local number d=dist(arr_get(enemy_turret_x,i),arr_get(enemy_turret_y,i),enemy.x,enemy.y)
-            if best==-1||d<bd then
-                best=i
-                bd=d
-            end
-        end
-        i=i+1
+-- Щит бука: урон сначала «съедают» свои турели по очереди (начиная с ближайшей
+-- к бойцу), остаток проходит в HP. mine=1 — турели игрока, 0 — турели врага.
+public function shield_absorb_turrets(array xs, array ys, array hps, number x, number y, number mine, number dmg)
+    if dmg<=0 then
+        return 0
     end
-    return best
+    local number left=dmg
+    while left>0 do
+        local number best=nearest_turret(xs,ys,hps,x,y)
+        if best<0 then
+            return left
+        end
+        local number take=arr_get(hps,best)
+        if left<take then
+            take=left
+        end
+        if mine==1 then
+            damage_turret(best,take)
+        else
+            enemy_damage_turret(best,take)
+        end
+        left=left-take
+    end
+    return 0
 end
 public function player_shield_absorb(number dmg)
     if player_class!=CLASS_EBUC then
         return dmg
     end
-    if dmg<=0 then
-        return 0
-    end
-    local number left=dmg
-    while left>0 do
-        local number best=nearest_own_turret()
-        if best<0 then
-            return left
-        end
-        local number hp=arr_get(turret_hp,best)
-        local number take=hp
-        if left<take then
-            take=left
-        end
-        damage_turret(best,take)
-        left=left-take
-    end
-    return 0
+    return shield_absorb_turrets(turret_x,turret_y,turret_hp,player.x,player.y,1,dmg)
 end
 public function enemy_shield_absorb(number dmg)
     if enemy_class!=CLASS_EBUC then
         return dmg
     end
-    if dmg<=0 then
-        return 0
-    end
-    local number left=dmg
-    while left>0 do
-        local number best=nearest_enemy_turret()
-        if best<0 then
-            return left
+    return shield_absorb_turrets(enemy_turret_x,enemy_turret_y,enemy_turret_hp,enemy.x,enemy.y,0,dmg)
+end
+-- Снежинка прокалывает чужие турели на своём пути: каждой наносится урон один
+-- раз (в маске pierce остаётся бит турели). mine=1 — летит gift и бьёт по
+-- турелям врага, 0 — летит enemy_gift и бьёт по турелям игрока.
+public function snow_chip_turrets(array xs, array ys, array hps, number mine, number x, number y)
+    local number zone=turret_zone_half()+20, i=0
+    while i<turret_max do
+        if arr_get(hps,i)>0 then
+            local number bit=turret_pierce_bit(i)
+            local number pierce=enemy_gift.pierce
+            if mine==1 then
+                pierce=gift.pierce
+            end
+            if pierce_has(pierce,bit)==0 then
+                if fabs(x-arr_get(xs,i))<zone&&fabs(y-arr_get(ys,i))<zone then
+                    if mine==1 then
+                        gift.pierce=gift.pierce+bit
+                        enemy_damage_turret(i,santa_super_damage)
+                        ds_log("snow pierced enemy turret %g",i)
+                    else
+                        enemy_gift.pierce=enemy_gift.pierce+bit
+                        damage_turret(i,santa_super_damage)
+                        ds_log("enemy snow pierced turret %g",i)
+                    end
+                end
+            end
         end
-        local number hp=arr_get(enemy_turret_hp,best)
-        local number take=hp
-        if left<take then
-            take=left
-        end
-        enemy_damage_turret(best,take)
-        left=left-take
+        i=i+1
     end
-    return 0
 end
 public function snow_chip_enemy_turrets()
     if gift.active==0 then
         return
     end
-    local number zone=turret_zone_half()+20, i=0
-    while i<turret_max do
-        if enemy_turret_alive(i)==1 then
-            local number bit=1
-            if i==1 then
-                bit=2
-            else if i==2 then
-                bit=4
-            end
-            if pierce_has(gift.pierce,bit)==0 then
-                if fabs(gift.x-arr_get(enemy_turret_x,i))<zone&&fabs(gift.y-arr_get(enemy_turret_y,i))<zone then
-                    gift.pierce=gift.pierce+bit
-                    enemy_damage_turret(i,santa_super_damage)
-                    ds_log("snow pierced enemy turret %g",i)
-                end
-            end
-        end
-        i=i+1
-    end
+    snow_chip_turrets(enemy_turret_x,enemy_turret_y,enemy_turret_hp,1,gift.x,gift.y)
 end
 public function snow_chip_player_turrets()
     if enemy_gift.active==0 then
         return
     end
-    local number zone=turret_zone_half()+20, i=0
-    while i<turret_max do
-        if turret_alive(i)==1 then
-            local number bit=1
-            if i==1 then
-                bit=2
-            else if i==2 then
-                bit=4
-            end
-            if pierce_has(enemy_gift.pierce,bit)==0 then
-                if fabs(enemy_gift.x-arr_get(turret_x,i))<zone&&fabs(enemy_gift.y-arr_get(turret_y,i))<zone then
-                    enemy_gift.pierce=enemy_gift.pierce+bit
-                    damage_turret(i,santa_super_damage)
-                    ds_log("enemy snow pierced turret %g",i)
-                end
-            end
-        end
-        i=i+1
-    end
+    snow_chip_turrets(turret_x,turret_y,turret_hp,0,enemy_gift.x,enemy_gift.y)
 end
