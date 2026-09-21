@@ -123,10 +123,12 @@ public number poison_rgb=0x0000C853, poison_rim=0x0069F0AE
 public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
 -- Красная вспышка при получении урона: в момент удара боец «краснеет»
 -- силуэтом своего спрайта (tex_tint) и за hurt_fade секунд плавно отцветает
--- обратно (tick_hurt_fades в combat/battle_damage.ds). hurt_alpha — сила
--- вспышки в момент удара: она небольшая, чтобы куб оставался виден под
--- красным (при 0.55 он выглядел залитым сплошным красным).
-public number hurt_rgb=0x00E53935, hurt_alpha=0.35, hurt_fade=0.25
+-- обратно (tick_hurt_fades в combat/battle_damage.ds). Параметры подобраны
+-- так, чтобы куб НИКОГДА не выглядел залитым красным: пик слабый (28%), а
+-- затухание (0.15 с) заметно короче кулдауна удара (0.3 с) — между ударами
+-- вспышка успевает растаять целиком, и серия ударов не «держит» врага
+-- красным секунду подряд, а даёт короткие моргания на каждый удар.
+public number hurt_rgb=0x00E53935, hurt_alpha=0.28, hurt_fade=0.15
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
