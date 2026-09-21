@@ -99,14 +99,14 @@ def main():
 
     # --- экран приватности: рисунок, вход из настроек, выход назад -------
     assert "ST_PRIVACY=16" in config
-    assert "SETTINGS_ROWS=8" in layout
+    assert "SETTINGS_ROWS=7" in layout
     draw_settings = function_body(menu_screens, "draw_settings")
-    assert "settings_row_y(7)" in draw_settings and "tr_privacy()" in draw_settings
+    assert "settings_row_y(6)" in draw_settings and "tr_privacy()" in draw_settings
     draw_privacy = function_body(menu_screens, "draw_privacy")
     for i in range(1, 11):
         assert "tr_pv%d()" % i in draw_privacy, "строка tr_pv%d не рисуется" % i
     touch_settings = function_body(menu_input, "touch_settings")
-    assert re.search(r"hit_settings_row\(x, y, 7\) == 1 then\s*\n\s*start_transition\(ST_PRIVACY\)",
+    assert re.search(r"hit_settings_row\(x, y, 6\) == 1 then\s*\n\s*start_transition\(ST_PRIVACY\)",
                      touch_settings), "строка приватности не открывает экран"
     touch_menu = function_body(menu_input, "touch_menu")
     assert "ST_PRIVACY" in touch_menu and "back_hit" in touch_menu
