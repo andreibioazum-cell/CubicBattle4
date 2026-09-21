@@ -128,7 +128,9 @@ public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
 -- затухание (0.15 с) заметно короче кулдауна удара (0.3 с) — между ударами
 -- вспышка успевает растаять целиком, и серия ударов не «держит» врага
 -- красным секунду подряд, а даёт короткие моргания на каждый удар.
-public number hurt_rgb=0x00E53935, hurt_alpha=0.28, hurt_fade=0.15
+-- Насыщенная вспышка: при попадании красный силуэт теперь хорошо заметен,
+-- а не выглядит как едва различимый полупрозрачный оттенок.
+public number hurt_rgb=0x00FF2020, hurt_alpha=0.75, hurt_fade=0.15
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
@@ -192,6 +194,9 @@ public number plates_lock_me=0, plates_save_interval=4
 -- фиксируется в settings.dat (метка времени), системная кнопка «Назад» на
 -- этом экране выходит из игры.
 public number warn_open=1, warn_a=1, warn_ready=0, warn_t=0, warn_wait=3
+-- После согласия весь экран предупреждения плавно растворяется. warn_open
+-- остаётся включённым до конца анимации, чтобы во время неё не проходили тапы.
+public number warn_closing=0, warn_fade=0.55
 public number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 public number studio_in=0.5, studio_hold=1.6, studio_fade=0.7
 public string STUDIO_NAME="CUBIC CORPORATION"

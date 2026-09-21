@@ -141,9 +141,18 @@ public function update_music()
     snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
 end
 public function update_warning()
-    -- Предупреждение об эпилепсии держится до явного согласия (legal_accept):
-    -- авто-скрытия больше нет, иначе предупреждение можно «проспать».
+    -- Предупреждение держится до явного согласия. После нажатия не убираем
+    -- его одним кадром: плавно гасим весь слой и только затем открываем лобби.
     if warn_open != 1 then
+        return
+    end
+    if warn_closing == 1 then
+        warn_a = clamp(warn_a - dt / warn_fade, 0, 1)
+        if warn_a <= 0 then
+            warn_a = 0
+            warn_open = 0
+            warn_closing = 0
+        end
         return
     end
     warn_a = 1

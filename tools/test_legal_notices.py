@@ -48,14 +48,14 @@ def main():
 
     # --- гейт согласия: без авто-скрытия, вход только кнопкой -------------
     warn_update = function_body(engine, "update_warning")
-    assert "warn_open = 0" not in warn_update, \
-        "предупреждение снова скрывается само: %s" % warn_update
-    assert "warn_hold" not in warn_update and "warn_fade" not in warn_update, \
-        "остался таймер скрытия предупреждения"
+    assert "warn_open = 0" in warn_update and "warn_closing == 1" in warn_update, \
+        "предупреждение должно закрываться только после плавного затухания"
+    assert "warn_a = clamp(warn_a - dt / warn_fade, 0, 1)" in warn_update, \
+        "после согласия нет плавного fade-out предупреждения"
     accept = function_body(menu_input, "legal_accept")
-    assert "warn_open = 0" in accept and "settings_mark_legal()" in accept, \
-        "согласие не закрывает гейт или не пишет метку: %s" % accept
-    assert "if warn_ready < 1 then" in accept
+    assert "warn_closing = 1" in accept and "settings_mark_legal()" in accept, \
+        "согласие не запускает затухание или не пишет метку: %s" % accept
+    assert "if warn_ready < 1 || warn_closing == 1 then" in accept
     assert "warn_t = warn_t + dt" in warn_update and \
         "warn_ready = clamp(warn_t / warn_wait, 0, 1)" in warn_update, \
         "отсчёт секунд должен вестись по warn_t"
