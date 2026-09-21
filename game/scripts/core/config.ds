@@ -174,7 +174,9 @@ public number music_volume=70
 -- Счётчик кадров в бою: настройка (show_fps) и усреднённое значение, которое
 -- пересчитывается раз в fps_interval секунд, чтобы цифры не прыгали.
 public number show_fps=0, fps_value=0, fps_acc=0, fps_frames=0, fps_interval=0.5
-public number fps_plate_rgb=0xDD171923, fps_text_scale=0.5
+-- FPS-индикатор строго монохромный: только чистые чёрный и белый,
+-- без синеватого почти-чёрного оттенка.
+public number fps_plate_rgb=0xFF000000, fps_frame_rgb=0xFFFFFFFF, fps_text_rgb=0xFFFFFFFF, fps_text_scale=0.5
 public number event_mode=0, disco_t=0, event_t=0, event_flakes=28
 public number plates_size=150, plates_shrink_time=0.9, plates_stand_r=80
 public number plates_xa=0.22, plates_xb=0.78, plates_yy=0.5

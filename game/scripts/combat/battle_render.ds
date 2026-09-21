@@ -309,8 +309,10 @@ public function draw_fps_meter()
     local number tt=text_ink_top(label)*sc
     local number w=tw+28, h=36
     local number x=(screen_w-w)/2, y=screen_h-h-16
+    -- Чистая белая рамка и чистая чёрная плашка: никаких цветных оттенков.
+    roundrect(x-2,y-2,w+4,h+4,h/2+2,fps_frame_rgb)
     roundrect(x,y,w,h,h/2,fps_plate_rgb)
-    text_scaled(label,x+(w-tw)/2,y+(h-th)/2-tt+1.5,text_color,sc)
+    text_scaled(label,x+(w-tw)/2,y+(h-th)/2-tt+1.5,fps_text_rgb,sc)
 end
 public function draw_dash_streak()
     return

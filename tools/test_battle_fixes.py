@@ -649,7 +649,7 @@ static void test_splash_screens(void) {
     assert(calls[0].kind == 'q' && calls[0].color == 0x80000000);
     int saw_accept_btn = 0;
     for (int i = 0; i < call_count; i++) {
-        if (calls[i].kind == 'q' && calls[i].color == 0x80383838) saw_accept_btn = 1;
+        if (calls[i].kind == 'o' && calls[i].color == 0xFF000000) saw_accept_btn = 1;
     }
     assert(saw_accept_btn);
     /* Кнопка сразу в полной яркости, а подпись держит отсчёт «(3)(2)(1)»;
@@ -659,8 +659,8 @@ static void test_splash_screens(void) {
     ds_fn_draw_warning();
     assert(strstr(last_text, "(3)") != NULL);          /* 1-я секунда */
     for (int i = 0; i < call_count; i++)
-        if (calls[i].kind == 'q' && calls[i].color != 0xFF000000)
-            assert(calls[i].color == 0xFF383838); /* не тусклая */
+        if (calls[i].kind == 'o')
+            assert(calls[i].color == 0xFFFFFFFF || calls[i].color == 0xFF000000); /* строго монохромная */
     warn_t = 1.5; warn_ready = 0.5;
     ds_fn_draw_warning();
     assert(strstr(last_text, "(2)") != NULL);          /* 2-я секунда */
