@@ -158,8 +158,14 @@ end
 public function draw_fighter_body(number x, number y, number ang, number cls, number punching, number skin)
     local number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
     local number sx=x-hw, sy=y-hw
-    local string t=fighter_sprite(cls,punching,skin)
-    tex(sx,sy,t,sprite_a(ang),ps)
+    -- Базовый idle-спрайт рисуем всегда. На части Android-драйверов первая
+    -- отложенная загрузка punch-текстуры иногда готова на кадр позже; раньше
+    -- в этот момент игрок целиком исчезал. Теперь punch лишь накладывается
+    -- сверху, поэтому боец остаётся видимым даже при задержке текстуры.
+    tex(sx,sy,fighter_sprite(cls,0,skin),sprite_a(ang),ps)
+    if punching==1 then
+        tex(sx,sy,fighter_sprite(cls,1,skin),sprite_a(ang),ps)
+    end
 end
 -- Красная вспышка при получении урона: сразу поверх тела бойца рисуется его же
 -- спрайт, но силуэтом (tex_tint) красного цвета с альфой вспышки. Альфа
@@ -236,8 +242,12 @@ public function draw_enemy_hitbox()
 end
 public function draw_enemy_body()
     local number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
-    tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
-    draw_fighter_hurt(enemy.x,enemy.y,enemy.angle,enemy_class,enemy_punching_now(),SKIN_NORMAL,enemy_scale,enemy_hurt_a)
+    local number punching=enemy_punching_now()
+    tex(enemy.x-ehw,enemy.y-ehw,class_idle_tex(enemy_class),sprite_a(enemy.angle),es)
+    if punching==1 then
+        tex(enemy.x-ehw,enemy.y-ehw,class_punch_tex(enemy_class),sprite_a(enemy.angle),es)
+    end
+    draw_fighter_hurt(enemy.x,enemy.y,enemy.angle,enemy_class,punching,SKIN_NORMAL,enemy_scale,enemy_hurt_a)
 end
 public function draw_controls()
     ring(joy.x,joy.y,joy.r,4,0x000000)

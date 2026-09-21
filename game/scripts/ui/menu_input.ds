@@ -113,6 +113,12 @@ public function warn_rgb(number rgb)
     return (1 + floor(warn_a * 254)) * 0x1000000 + rgb
 end
 public function draw_warning()
+    -- Не отправляем последний почти прозрачный кадр: альфа 0 в старом API
+    -- означает «цвет без заданной альфы» и некоторые драйверы показывали
+    -- кнопку снова на один кадр в самом конце анимации.
+    if warn_closing==1&&warn_a<0.02 then
+        return
+    end
     -- Фон использует ту же альфу, что и текст: после согласия весь экран
     -- предупреждения плавно растворяется, показывая лобби под ним.
     rect(0, 0, screen_w, screen_h, warn_rgb(0))
@@ -140,7 +146,9 @@ public function draw_warning()
     -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
     -- но не крупнее 0.8, как было раньше.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
-    roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, warn_rgb(56 * 0x010101))
+    -- rect использует обычное альфа-смешивание. roundrect намеренно работает
+    -- через replace-конвейер и при малой альфе оставлял тёмную плашку/вспышку.
+    rect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, warn_rgb(56 * 0x010101))
     text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, warn_rgb(0xFFFFFF), scale)
 end
 public function legal_accept()

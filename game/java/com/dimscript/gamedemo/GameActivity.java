@@ -109,6 +109,13 @@ public final class GameActivity extends NativeActivity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        /* Некоторые прошивки TECNO после нескольких кадров около 30 Hz
+         * закрепляют NativeActivity на половине частоты экрана. Явно просим
+         * стабильные 60 Hz; это только предпочтение, Android сам выберет
+         * ближайший поддерживаемый режим и не сломает экраны на 90/120 Hz. */
+        WindowManager.LayoutParams windowParams = getWindow().getAttributes();
+        windowParams.preferredRefreshRate = 60.0f;
+        getWindow().setAttributes(windowParams);
         enterImmersiveMode();
 
         chatEditor = new EditText(this);

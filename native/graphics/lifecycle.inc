@@ -314,7 +314,10 @@ static void gfx_autoscale_new_window(void) {
 
 static void gfx_set_scale(int s, int cooldown) {
     if (s < 1) s = 1;
-    if (s > 4) s = 4;
+    /* На слабых 1080p-устройствах (включая Unisoc T615) 1/4 всё ещё может
+     * упираться в 30 fps. Разрешаем аварийные 1/5 и 1/6: интерфейс станет
+     * мягче, зато управление и анимации останутся отзывчивыми. */
+    if (s > 6) s = 6;
     if (s == gfx_auto_scale) return;
     gfx_auto_scale = s;
     gfx_cooldown = cooldown;
@@ -356,7 +359,9 @@ void ds_graphics_report_frame_interval(double sec) {
     if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
         int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
         if (bad) {
-            if (gfx_auto_scale < 4) gfx_set_scale(gfx_auto_scale + 1, 90);
+            /* Ухудшение должно быть быстрым: длинный 90-кадровый cooldown
+             * оставлял слабый телефон на каждой промежуточной ступени 30 fps. */
+            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 1, 12);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
                    gfx_finer_cooldown == 0 && !gfx_finer_off) {
             gfx_probe_finer = 1;
