@@ -1,22 +1,26 @@
+-- Нанести игроку урон: щит бука и снижение Азума считаются здесь, затем
+-- красная вспышка (player_hurt_a), списание HP и разруливание смерти —
+-- возрождение Азума или поражение. Возвращает 1, если бой закончился.
 public function take_damage(number dmg)
+    local number real=dmg
     if player_class==CLASS_EBUC then
-        dmg=player_shield_absorb(dmg)
+        real=player_shield_absorb(real)
     end
-    local number reduction=0
     if player_class==CLASS_AZUM&&azum_revived==1&&player_level>=1 then
-        reduction=azum_second_life_damage_reduction
+        real=real*(1-clamp(azum_second_life_damage_reduction,0,0.9))
     end
-    if reduction<0 then
-        reduction=0
+    if real>0 then
+        player_hurt_a=1
     end
-    if reduction>0.9 then
-        reduction=0.9
-    end
-    local number real=dmg*(1-reduction)
-    player.hp=player.hp-real
-    if player.hp<0 then
+    player.hp=clamp(player.hp-real,0,player.max_hp)
+    if player.hp<=0 then
         player.hp=0
+        if try_revive()==0 then
+            finish_game(2)
+            return 1
+        end
     end
+    return 0
 end
 public function heal_after_attack()
     local number amount=0
@@ -86,6 +90,13 @@ public function tick_revive()
             revive_prot=0
         end
     end
+end
+-- Красная вспышка урона: в момент удара take_damage/enemy_apply_damage ставят
+-- альфу в 1, здесь она каждый кадр плавно тает до нуля — боец «отцветает»
+-- обратно к обычному виду.
+public function tick_hurt_fades()
+    player_hurt_a=fade_down_a(player_hurt_a,hurt_fade)
+    enemy_hurt_a=fade_down_a(enemy_hurt_a,hurt_fade)
 end
 public function tick_alert_hold()
     if finished!=0&&finish_t<alert_hold then

@@ -1,89 +1,57 @@
+-- Заморозка, оглушение и яд игрока: таймеры статусов и плавные альфы кругов
+-- статусов (свои и врага). Таймеры считает tick_down (core/ui.ds), альфы —
+-- hb_fade (combat/battle_hitbox_fades.ds): пока статус активен, круг плавно
+-- проявляется; когда статус снят или бой кончен — так же плавно тает.
 public function tick_freeze()
-    if player_freeze>0 then
-        player_freeze=player_freeze-dt
-        if player_freeze<0 then
-            player_freeze=0
-        end
-    end
+    player_freeze=tick_down(player_freeze)
 end
 public function tick_player_stun()
-    if player_stun>0 then
-        player_stun=player_stun-dt
-        if player_stun<0 then
-            player_stun=0
-        end
-    end
+    player_stun=tick_down(player_stun)
+end
+public function clear_player_poison()
+    player_poison=0
+    player_poison_tick=0
+    player_poison_damage=0
 end
 public function tick_player_poison()
-    if player_poison>0 then
-        if player_poison_tick<=0 then
-            player_poison_tick=santa_poison_tick_interval
-        end
-        player_poison=player_poison-dt
-        player_poison_tick=player_poison_tick-dt
-        if player_poison_tick<=0 then
-            take_damage(player_poison_damage)
-            player_poison=0
-            player_poison_tick=0
-            player_poison_damage=0
-        end
-        if player_poison<=0 then
-            player_poison=0
-            player_poison_tick=0
-            player_poison_damage=0
-        end
+    if player_poison<=0 then
+        return
     end
-end
-public function fade_up_status(number a)
-    a=a+dt/freeze_fade_in
-    if a>1 then
-        a=1
+    if player_poison_tick<=0 then
+        player_poison_tick=santa_poison_tick_interval
     end
-    return a
-end
-public function fade_down_status(number a)
-    a=a-dt/freeze_fade_out
-    if a<0 then
-        a=0
+    player_poison=tick_down(player_poison)
+    player_poison_tick=player_poison_tick-dt
+    if player_poison_tick<=0 then
+        -- Тик яда — обычный урон: тот же take_damage (вспышка, возрождение).
+        take_damage(player_poison_damage)
+        clear_player_poison()
+        return
     end
-    return a
-end
-public function status_alpha(number a, number live)
-    if finished!=0 then
-        return fade_down_status(a)
+    if player_poison<=0 then
+        clear_player_poison()
     end
-    if live==1 then
-        return fade_up_status(a)
-    end
-    return fade_down_status(a)
 end
 public function tick_status_fades()
     local number efreeze=0, epoison=0, estun=0
     if game_state==ST_SOLO then
-        if enemy.freeze>0 then
-            efreeze=1
-        end
-        if enemy.poison>0 then
-            epoison=1
-        end
-        if enemy.stun>0 then
-            estun=1
-        end
+        efreeze=enemy.freeze>0
+        epoison=enemy.poison>0
+        estun=enemy.stun>0
     end
-    freeze_a=status_alpha(freeze_a,efreeze)
-    poison_a=status_alpha(poison_a,epoison)
-    stun_a=status_alpha(stun_a,estun)
-    local number pfreeze=0, ppoison=0, pstun=0
-    if player_freeze>0 then
-        pfreeze=1
+    local number pfreeze=player_freeze>0, ppoison=player_poison>0, pstun=player_stun>0
+    if finished!=0 then
+        efreeze=0
+        epoison=0
+        estun=0
+        pfreeze=0
+        ppoison=0
+        pstun=0
     end
-    if player_poison>0 then
-        ppoison=1
-    end
-    if player_stun>0 then
-        pstun=1
-    end
-    pfreeze_a=status_alpha(pfreeze_a,pfreeze)
-    ppoison_a=status_alpha(ppoison_a,ppoison)
-    pstun_a=status_alpha(pstun_a,pstun)
+    freeze_a=hb_fade(freeze_a,efreeze,freeze_fade_in,freeze_fade_out)
+    poison_a=hb_fade(poison_a,epoison,freeze_fade_in,freeze_fade_out)
+    stun_a=hb_fade(stun_a,estun,freeze_fade_in,freeze_fade_out)
+    pfreeze_a=hb_fade(pfreeze_a,pfreeze,freeze_fade_in,freeze_fade_out)
+    ppoison_a=hb_fade(ppoison_a,ppoison,freeze_fade_in,freeze_fade_out)
+    pstun_a=hb_fade(pstun_a,pstun,freeze_fade_in,freeze_fade_out)
 end

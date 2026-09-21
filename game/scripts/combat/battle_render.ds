@@ -26,98 +26,21 @@ public function draw_candies()
         i=i+1
     end
 end
-public function draw_stun()
-    if stun_a<=0 then
+-- Аура статуса (заморозка/яд/оглушение): ровный полупрозрачный круг вокруг
+-- бойца с ярким ободком. Одна функция для всех статусов и для обоих бойцов —
+-- цвета задаются в core/config.ds, альфу плавно ведёт tick_status_fades
+-- (combat/battle_status.ds).
+public function draw_status_aura(number x, number y, number size, number rgb, number rim, number a)
+    if a<=0 then
         return
     end
-    local number fa=stun_a*255
-    local number af=floor(fa*0.3)
-    if af<=0 then
+    local number fill=floor(a*255*0.3)
+    if fill<=0 then
         return
     end
-    local number half=enemy.size+14
-    local number fill=(((unsigned)(int)af)<<24)|0x00F9A825
-    local number ar=floor(fa*0.7)
-    local number rim=(((unsigned)(int)ar)<<24)|0x00FFD54F
-    circle(enemy.x,enemy.y,half,fill)
-    ring(enemy.x,enemy.y,half,2,rim)
-end
-public function draw_player_stun()
-    if pstun_a<=0 then
-        return
-    end
-    local number af=floor(pstun_a*255*0.3)
-    if af<=0 then
-        return
-    end
-    local number half=player.size+14
-    local number fill=(((unsigned)(int)af)<<24)|0x00F9A825
-    local number ar=floor(pstun_a*255*0.7)
-    local number rim=(((unsigned)(int)ar)<<24)|0x00FFD54F
-    circle(player.x,player.y,half,fill)
-    ring(player.x,player.y,half,2,rim)
-end
-public function draw_freeze()
-    if freeze_a<=0 then
-        return
-    end
-    local number fa=freeze_a*255
-    local number af=floor(fa*0.3)
-    if af<=0 then
-        return
-    end
-    local number half=enemy.size+14
-    local number fill=(((unsigned)(int)af)<<24)|0x001E88E5
-    local number ar=floor(fa*0.7)
-    local number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
-    circle(enemy.x,enemy.y,half,fill)
-    ring(enemy.x,enemy.y,half,2,rim)
-end
-public function draw_poison()
-    if poison_a<=0 then
-        return
-    end
-    local number fa=poison_a*255
-    local number af=floor(fa*0.3)
-    if af<=0 then
-        return
-    end
-    local number half=enemy.size+14
-    local number fill=(((unsigned)(int)af)<<24)|0x0000C853
-    local number ar=floor(fa*0.7)
-    local number rim=(((unsigned)(int)ar)<<24)|0x0069F0AE
-    circle(enemy.x,enemy.y,half,fill)
-    ring(enemy.x,enemy.y,half,2,rim)
-end
-public function draw_player_freeze()
-    if pfreeze_a<=0 then
-        return
-    end
-    local number af=floor(pfreeze_a*255*0.3)
-    if af<=0 then
-        return
-    end
-    local number half=player.size+14
-    local number fill=(((unsigned)(int)af)<<24)|0x001E88E5
-    local number ar=floor(pfreeze_a*255*0.7)
-    local number rim=(((unsigned)(int)ar)<<24)|0x004FC3F7
-    circle(player.x,player.y,half,fill)
-    ring(player.x,player.y,half,2,rim)
-end
-public function draw_player_poison()
-    if ppoison_a<=0 then
-        return
-    end
-    local number af=floor(ppoison_a*255*0.3)
-    if af<=0 then
-        return
-    end
-    local number half=player.size+14
-    local number fill=(((unsigned)(int)af)<<24)|0x0000C853
-    local number ar=floor(ppoison_a*255*0.7)
-    local number rim=(((unsigned)(int)ar)<<24)|0x0069F0AE
-    circle(player.x,player.y,half,fill)
-    ring(player.x,player.y,half,2,rim)
+    local number half=size+14
+    circle(x,y,half,(((unsigned)(int)fill)<<24)|((unsigned)(int)rgb))
+    ring(x,y,half,2,(((unsigned)(int)floor(a*255*0.7))<<24)|((unsigned)(int)rim))
 end
 public function draw_remote_snow()
     local number s=0
@@ -238,27 +161,31 @@ public function draw_fighter_body(number x, number y, number ang, number cls, nu
     local string t=fighter_sprite(cls,punching,skin)
     tex(sx,sy,t,sprite_a(ang),ps)
 end
+-- Красная вспышка при получении урона: сразу поверх тела бойца рисуется его же
+-- спрайт, но силуэтом (tex_tint) красного цвета с альфой вспышки. Альфа
+-- взлетает до 1 в момент удара (take_damage / enemy_apply_damage) и плавно
+-- тает в tick_hurt_fades (combat/battle_damage.ds), поэтому боец «краснеет»
+-- и плавно возвращается к обычному виду.
+public function draw_fighter_hurt(number x, number y, number ang, number cls, number punching, number skin, number scale, number a)
+    if a<=0 then
+        return
+    end
+    local number fa=floor(a*255*hurt_alpha)
+    local number hw=25*cube_scale*scale
+    tex_tint(x-hw,y-hw,fighter_sprite(cls,punching,skin),sprite_a(ang),cube_scale*scale,(((unsigned)(int)fa)<<24)|((unsigned)(int)hurt_rgb))
+end
 public function draw_player_shadow(number x, number y, number ang, number punching, number skin)
     draw_fighter_shadow(x,y,ang,player_class,punching,skin)
 end
 public function draw_player_body(number x, number y, number ang, number punching)
     draw_fighter_body(x,y,ang,player_class,punching,azum_skin)
 end
-public function draw_remote_shadow(number x, number y, number ang, number cls, number punching, number skin)
-    draw_fighter_shadow(x,y,ang,cls,punching,skin)
-end
-public function draw_remote_body(number x, number y, number ang, number cls, number punching, number skin)
-    draw_fighter_body(x,y,ang,cls,punching,skin)
-end
 public function draw_field()
     rect(0,0,screen_w,screen_h,0x33000000)
 end
 public function draw_player_shadow_layer()
-    if punch_left>0 then
-        draw_player_shadow(player.x,player.y,player.angle,1,azum_skin)
-    else
-        draw_player_shadow(player.x,player.y,player.angle,0,azum_skin)
-    end
+    local number punching=punch_left>0
+    draw_player_shadow(player.x,player.y,player.angle,punching,azum_skin)
 end
 public function draw_player_hitbox_layer()
     if show_hitboxes==0 then
@@ -269,11 +196,9 @@ public function draw_player_hitbox_layer()
     end
 end
 public function draw_player_body_layer()
-    if punch_left>0 then
-        draw_player_body(player.x,player.y,player.angle,1)
-    else
-        draw_player_body(player.x,player.y,player.angle,0)
-    end
+    local number punching=punch_left>0
+    draw_player_body(player.x,player.y,player.angle,punching)
+    draw_fighter_hurt(player.x,player.y,player.angle,player_class,punching,azum_skin,player_scale,player_hurt_a)
 end
 public function enemy_punching_now()
     if enemy.state==1||enemy.state==2 then
@@ -305,6 +230,7 @@ end
 public function draw_enemy_body()
     local number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
     tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
+    draw_fighter_hurt(enemy.x,enemy.y,enemy.angle,enemy_class,enemy_punching_now(),SKIN_NORMAL,enemy_scale,enemy_hurt_a)
 end
 public function draw_controls()
     ring(joy.x,joy.y,joy.r,4,0x000000)
@@ -396,15 +322,15 @@ public function draw_game()
     draw_player_body_layer()
     -- Эффекты на игроке (яд/заморозка/стан) рисуются на его слое — сразу за
     -- телом игрока и ПОД врагом, иначе они перекрывали врага.
-    draw_player_freeze()
-    draw_player_poison()
-    draw_player_stun()
+    draw_status_aura(player.x,player.y,player.size,freeze_rgb,freeze_rim,pfreeze_a)
+    draw_status_aura(player.x,player.y,player.size,poison_rgb,poison_rim,ppoison_a)
+    draw_status_aura(player.x,player.y,player.size,stun_rgb,stun_rim,pstun_a)
     -- Щит (станция/луч) — выше игрока, но ниже врага.
     draw_station()
     draw_enemy_body()
-    draw_freeze()
-    draw_poison()
-    draw_stun()
+    draw_status_aura(enemy.x,enemy.y,enemy.size,freeze_rgb,freeze_rim,freeze_a)
+    draw_status_aura(enemy.x,enemy.y,enemy.size,poison_rgb,poison_rim,poison_a)
+    draw_status_aura(enemy.x,enemy.y,enemy.size,stun_rgb,stun_rim,stun_a)
     draw_dash_streak()
     draw_snow()
     local number w=screen_w/4

@@ -103,12 +103,8 @@ public function update_remote_punches()
                         ds_log("remote punch hit turret %g, hp %g",target-1,arr_get(turret_hp,target-1))
                     end
                     clear_remote_punch(s)
-                    if player.hp<=0 then
-                        player.hp=0
-                        if try_revive()==0 then
-                            finish_game(2)
-                            return
-                        end
+                    if finished!=0 then
+                        return
                     end
                 end
             end
@@ -132,12 +128,6 @@ public function update_remote_thuds()
                 if gen>0&&revive_prot<=0&&finished==0 then
                     take_damage(turret_counter_damage)
                     ds_log("turret thud from %g, hp %g",s,player.hp)
-                    if player.hp<=0 then
-                        player.hp=0
-                        if try_revive()==0 then
-                            finish_game(2)
-                        end
-                    end
                 end
             end
         end
@@ -196,11 +186,7 @@ public function update_remote_snow()
                 end
             end
             if arr_get(remote_snow,b+5)>0 then
-                local number bt=arr_get(remote_snow,b+5)-dt
-                if bt<0 then
-                    bt=0
-                end
-                arr_set(remote_snow,b+5,bt)
+                arr_set(remote_snow,b+5,tick_down(arr_get(remote_snow,b+5)))
             end
         end
         s=s+1
@@ -323,6 +309,7 @@ public function update_online()
     tick_universe()
     tick_hitbox_fades()
     tick_status_fades()
+    tick_hurt_fades()
     tick_remote_punches()
     update_aim()
     if finished!=0 then
@@ -336,25 +323,10 @@ public function update_online()
     end
     move_player()
     tick_dash()
-    if punch_left>0 then
-        punch_left=punch_left-dt
-        if punch_left<0 then
-            punch_left=0
-        end
-    end
+    punch_left=tick_down(punch_left)
     follow_punch()
-    if super_cd>0 then
-        super_cd=super_cd-dt
-        if super_cd<0 then
-            super_cd=0
-        end
-    end
-    if boom_t>0 then
-        boom_t=boom_t-dt
-        if boom_t<0 then
-            boom_t=0
-        end
-    end
+    super_cd=tick_down(super_cd)
+    boom_t=tick_down(boom_t)
     tick_super_windup()
     tick_santa_follow()
     update_dust()

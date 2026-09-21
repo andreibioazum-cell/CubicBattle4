@@ -116,6 +116,16 @@ public number santa_follow_delay=0.4, santa_super_damage=2.0
 public number super_freeze=3.0, super_freeze_slow=0.12
 public number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
 public number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
+-- Цвета кругов статусов (заливка + яркий ободок): один набор и для врага,
+-- и для игрока — рисует draw_status_aura (combat/battle_render.ds).
+public number freeze_rgb=0x001E88E5, freeze_rim=0x004FC3F7
+public number poison_rgb=0x0000C853, poison_rim=0x0069F0AE
+public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
+-- Красная вспышка при получении урона: в момент удара боец «краснеет»
+-- силуэтом своего спрайта (tex_tint) и за hurt_fade секунд плавно отцветает
+-- обратно (tick_hurt_fades в combat/battle_damage.ds). hurt_alpha — сила
+-- вспышки в момент удара.
+public number hurt_rgb=0x00E53935, hurt_alpha=0.55, hurt_fade=0.35
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
