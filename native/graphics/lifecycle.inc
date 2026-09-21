@@ -311,7 +311,7 @@ static void gfx_autoscale_new_window(void) {
 
 static void gfx_set_scale(int s, int cooldown) {
     if (s < 1) s = 1;
-    if (s > 3) s = 3;
+    if (s > 4) s = 4;
     if (s == gfx_auto_scale) return;
     gfx_auto_scale = s;
     gfx_cooldown = cooldown;
@@ -353,7 +353,7 @@ void ds_graphics_report_frame_interval(double sec) {
     if (gfx_miss_streak >= 10 || gfx_win_frames >= 45) {
         int bad = gfx_miss_streak >= 10 || gfx_win_misses >= 9;
         if (bad) {
-            if (gfx_auto_scale < 3) gfx_set_scale(gfx_auto_scale + 1, 90);
+            if (gfx_auto_scale < 4) gfx_set_scale(gfx_auto_scale + 1, 90);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
                    gfx_finer_cooldown == 0 && !gfx_finer_off) {
             gfx_probe_finer = 1;

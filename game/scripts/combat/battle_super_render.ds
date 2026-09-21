@@ -105,10 +105,23 @@ public function draw_turret_boom(number x, number y, number bt)
         return
     end
     local number r=30+95*p
+    -- Каждая доля альфы (0.85/0.7/0.65...) округляется вниз и при a=1 даёт
+    -- альфа-байт 0: движок (pack_c) рисит такой цвет ПОЛНОСТЬЮ НЕПРОЗРАЧНЫМ -
+    -- в начале и конце взрыва круги вспыхивали сплошной зеленью. Поэтому
+    -- каждый примитив с нулевым байтом пропускается.
     ring(x,y,r,9,(((unsigned)(int)a)<<24)|0x0000E676)
-    ring(x,y,r*0.66,6,(((unsigned)(int)floor(a*0.85))<<24)|0x00B9F6CA)
-    ring(x,y,r*0.36,5,(((unsigned)(int)floor(a*0.65))<<24)|0x0076FF03)
-    circle(x,y,r*0.22+6*(1-p),(((unsigned)(int)floor(a*0.7))<<24)|0x0000E676)
+    local number a85=floor(a*0.85)
+    if a85>0 then
+        ring(x,y,r*0.66,6,(((unsigned)(int)a85)<<24)|0x00B9F6CA)
+    end
+    local number a65=floor(a*0.65)
+    if a65>0 then
+        ring(x,y,r*0.36,5,(((unsigned)(int)a65)<<24)|0x0076FF03)
+    end
+    local number a70=floor(a*0.7)
+    if a70>0 then
+        circle(x,y,r*0.22+6*(1-p),(((unsigned)(int)a70)<<24)|0x0000E676)
+    end
     local number i=0
     while i<18 do
         local number h1=hash01(i*37+11)
@@ -119,7 +132,9 @@ public function draw_turret_boom(number x, number y, number bt)
         local number py=y+sin(ang)*rr
         local number sz=2+4*(1-p)
         local number aa=floor(a*(0.7+0.3*h2))
-        circle(px,py,sz,(((unsigned)(int)aa)<<24)|0x0000E676)
+        if aa>0 then
+            circle(px,py,sz,(((unsigned)(int)aa)<<24)|0x0000E676)
+        end
         i=i+1
     end
 end
