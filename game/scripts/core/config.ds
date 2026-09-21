@@ -124,14 +124,9 @@ public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
 -- Красная вспышка при получении урона: в момент удара боец «краснеет»
 -- силуэтом своего спрайта (tex_tint) и за hurt_fade секунд плавно отцветает
 -- обратно (tick_hurt_fades в combat/battle_damage.ds). hurt_alpha — сила
--- вспышки в момент удара.
-public number hurt_rgb=0x00E53935, hurt_alpha=0.55, hurt_fade=0.35
--- Размытие движения кубиков (настройка «Размытие движения»): пока боец бежит,
--- за ним тянутся blur_ghosts полупрозрачных силуэтов его спрайта. След
--- рассчитывается по скорости бойца (blur_time секунд пути), ограничен
--- blur_max_dist и тает к хвосту; цвет силуэтов — blur_rgb.
-public number motion_blur=0, blur_ghosts=3, blur_time=0.09, blur_max_dist=60
-public number blur_alpha=0.35, blur_rgb=0x00FFFFFF
+-- вспышки в момент удара: она небольшая, чтобы куб оставался виден под
+-- красным (при 0.55 он выглядел залитым сплошным красным).
+public number hurt_rgb=0x00E53935, hurt_alpha=0.35, hurt_fade=0.25
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3

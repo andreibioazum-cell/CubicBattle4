@@ -188,11 +188,7 @@ public function draw_online()
                 punching=1
                 ra=atan2(arr_get(remote_punches,rb+4),arr_get(remote_punches,rb+3))
             end
-            -- След размытия движения — до тела чужого бойца, как у своих.
-            draw_motion_ghosts(rx,ry,arr_get(remote_blur,i*2),arr_get(remote_blur,i*2+1),ra,rcls,punching,net_player_skin(i),player_scale)
             draw_fighter_body(rx,ry,ra,rcls,punching,net_player_skin(i))
-            arr_set(remote_blur,i*2,rx)
-            arr_set(remote_blur,i*2+1,ry)
             local string rn=net_player_nick(i)
             if str_len(rn)>0 then
                 local color rncol=admin_head_color_of(rn,0xFFFFFF)

@@ -271,11 +271,6 @@ public function touch_settings(number x, number y)
         music_volume_cycle()
         return
     end
-    if hit_settings_row(x, y, 5) == 1 then
-        motion_blur = 1 - motion_blur
-        save_settings()
-        return
-    end
     if hit_settings_row(x, y, 6) == 1 then
         show_fps = 1 - show_fps
         save_settings()

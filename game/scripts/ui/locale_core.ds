@@ -454,18 +454,7 @@ public function tr_music_state()
     end
     return "Music: " + music_volume + "%"
 end
-public function tr_motion_blur_toggle()
-    if language == 1 then
-        if motion_blur == 1 then
-            return "Размытие движения: ВКЛ"
-        end
-        return "Размытие движения: ВЫКЛ"
-    end
-    if motion_blur == 1 then
-        return "Motion blur: ON"
-    end
-    return "Motion blur: OFF"
-end
+
 public function tr_hitboxes_toggle()
     if language == 1 then
         if show_hitboxes == 1 then

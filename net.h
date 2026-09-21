@@ -208,8 +208,6 @@ double net_load_winter_theme(void);
 void net_save_winter_theme(double on);
 double net_load_fps_meter(void);
 void net_save_fps_meter(double on);
-double net_load_motion_blur(void);
-void net_save_motion_blur(double on);
 
 /* Согласие с предупреждением об эпилепсии (settings_storage.inc): метка
  * времени нажатия кнопки согласия, хранится только на устройстве. */
