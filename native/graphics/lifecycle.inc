@@ -359,9 +359,10 @@ void ds_graphics_report_frame_interval(double sec) {
     if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
         int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
         if (bad) {
-            /* Ухудшение должно быть быстрым: длинный 90-кадровый cooldown
-             * оставлял слабый телефон на каждой промежуточной ступени 30 fps. */
-            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 1, 12);
+            /* Пересоздание оффскрина ждёт GPU и само даёт заметный рывок.
+             * Перепрыгиваем сразу две ступени (1→3→5→6), чтобы вместо пяти
+             * подвисаний при подборе масштаба было максимум три. */
+            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 2, 12);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
                    gfx_finer_cooldown == 0 && !gfx_finer_off) {
             gfx_probe_finer = 1;
