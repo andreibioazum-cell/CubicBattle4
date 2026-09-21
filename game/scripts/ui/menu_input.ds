@@ -149,6 +149,7 @@ public function legal_accept()
     end
     -- Метку пишем сразу, но само предупреждение оставляем открытым на время
     -- fade-out: update_warning плавно уменьшит warn_a и закроет его в конце.
+    warn_close_t = 0
     warn_closing = 1
     settings_mark_legal()
     -- Заставки студии больше нет: после затухания открывается лобби.

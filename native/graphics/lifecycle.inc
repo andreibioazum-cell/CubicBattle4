@@ -281,8 +281,9 @@ int ds_graphics_init(AAssetManager *a, ANativeWindow *window) {
  * держит 60 fps; мягче она становится только вместо провала в 30.
  *
  * Гистерезис здесь принципиально несимметричный, чтобы масштаб не «дышал»:
- * грубее уходим быстро (10 промахов подряд или 9 из 45 кадров), а пробу
- * «резче» допускаем только после 300 кадров (~5 с) вообще без промахов и не
+ * грубее уходим быстро (4 промаха подряд или 4 из 24 кадров), чтобы слабый
+ * телефон не оставался на 20-35 fps несколько секунд, а пробу «резче»
+ * допускаем только после 300 кадров (~5 с) вообще без промахов и не
  * чаще раза в 15 с; две провалившиеся пробы за сеанс навсегда фиксируют
  * текущий масштаб (gfx_finer_off) — лучше стабильная мягкость, чем видимая
  * пульсация резкости и пересоздание оффскрина каждые несколько секунд.
@@ -303,7 +304,9 @@ int ds_graphics_pixel_scale(void) { return gfx_auto_scale; }
 
 /* Старт/возврат в приложение/смена размера окна: история скорости устарела. */
 static void gfx_autoscale_new_window(void) {
-    gfx_cooldown = 60;
+    /* Первую оценку производительности делаем быстро: на слабом GPU секунда
+     * кадров в полном разрешении визуально ощущается как зависание интерфейса. */
+    gfx_cooldown = 15;
     gfx_probe_finer = 0;
     gfx_probe_left = 0;
     gfx_miss_streak = 0; gfx_win_frames = 0; gfx_win_misses = 0; gfx_clean = 0;
@@ -350,8 +353,8 @@ void ds_graphics_report_frame_interval(double sec) {
     }
     gfx_win_frames++;
     if (missed) gfx_win_misses++;
-    if (gfx_miss_streak >= 10 || gfx_win_frames >= 45) {
-        int bad = gfx_miss_streak >= 10 || gfx_win_misses >= 9;
+    if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
+        int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
         if (bad) {
             if (gfx_auto_scale < 4) gfx_set_scale(gfx_auto_scale + 1, 90);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&

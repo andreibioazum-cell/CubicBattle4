@@ -147,8 +147,12 @@ public function update_warning()
         return
     end
     if warn_closing == 1 then
-        warn_a = clamp(warn_a - dt / warn_fade, 0, 1)
-        if warn_a <= 0 then
+        -- Smoothstep вместо линейного шага: начало и конец затухания мягкие
+        -- даже на устройствах, которые держат только 20-35 кадров в секунду.
+        warn_close_t = clamp(warn_close_t + dt / warn_fade, 0, 1)
+        local number p=warn_close_t
+        warn_a = 1 - p*p*(3-2*p)
+        if warn_close_t >= 1 then
             warn_a = 0
             warn_open = 0
             warn_closing = 0

@@ -50,8 +50,9 @@ def main():
     warn_update = function_body(engine, "update_warning")
     assert "warn_open = 0" in warn_update and "warn_closing == 1" in warn_update, \
         "предупреждение должно закрываться только после плавного затухания"
-    assert "warn_a = clamp(warn_a - dt / warn_fade, 0, 1)" in warn_update, \
-        "после согласия нет плавного fade-out предупреждения"
+    assert "warn_close_t = clamp(warn_close_t + dt / warn_fade, 0, 1)" in warn_update and \
+        "warn_a = 1 - p*p*(3-2*p)" in warn_update, \
+        "после согласия нет плавного smoothstep fade-out предупреждения"
     accept = function_body(menu_input, "legal_accept")
     assert "warn_closing = 1" in accept and "settings_mark_legal()" in accept, \
         "согласие не запускает затухание или не пишет метку: %s" % accept
