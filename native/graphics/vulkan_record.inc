@@ -21,6 +21,10 @@ static int ds_vk_batch_push(int pipeline, const void *desc, size_t first, size_t
 }
 
 static int ds_vk_build_geometry(void) {
+    /* Uploads of textures this frame draws for the first time are finished
+     * before their geometry is built, so a sprite is visible in the very frame
+     * it first appears and never pops in a frame later. */
+    ds_vk_process_pending_uploads();
     geo_reset();
     vk_batch_n = 0;
     const void *font_desc = vk_font_desc ? (const void *)(uintptr_t)vk_font_desc : NULL;

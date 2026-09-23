@@ -360,6 +360,10 @@ public function update_online()
     end
     move_player()
     tick_dash()
+    -- The swing is closed on the frame its window ends (see update_game).
+    if punch.active==1&&punch_left<=0 then
+        punch.active=0
+    end
     punch_left=tick_down(punch_left)
     follow_punch()
     super_cd=tick_down(super_cd)

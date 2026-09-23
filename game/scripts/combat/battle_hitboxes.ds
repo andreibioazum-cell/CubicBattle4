@@ -162,11 +162,14 @@ public function draw_hit_dash()
         if game_state==ST_SOLO then
             dpr=dash_hit_radius_solo()
         end
-        draw_hit_dash_path(dash_x0,dash_y0,dash_dx,dash_dy,player.x,player.y,dpr,dash_box_a)
+        -- The strip ends where the flight ended (dash_travel freezes at the
+        -- dash end), so the zone fades out in place instead of stretching after
+        -- the fighter and leaving hitbox remnants.
+        draw_hit_dash_path(dash_x0,dash_y0,dash_dx,dash_dy,dash_x0+dash_dx*dash_travel,dash_y0+dash_dy*dash_travel,dpr,dash_box_a)
     end
     if game_state==ST_SOLO&&edash_box_a>0 then
         local number epr=dash_hit_radius_solo()
-        draw_hit_dash_path(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,enemy.x,enemy.y,epr,edash_box_a)
+        draw_hit_dash_path(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,enemy_dash_x0+enemy_dash_dx*enemy_dash_travel,enemy_dash_y0+enemy_dash_dy*enemy_dash_travel,epr,edash_box_a)
     end
     if game_state!=ST_ONLINE then
         return

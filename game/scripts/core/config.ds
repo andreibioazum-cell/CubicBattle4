@@ -90,10 +90,6 @@ public number hitbox_rgb=0x00000000
 public number hitbox_zone_alpha=96
 public number hitbox_fade_in=0.16, hitbox_fade_out=0.26
 public number dash_hit_radius_scale=0.9
--- The dash follows the stick: a turn wider than about ten degrees moves the
--- start of the zone to the turning point, so the zone shows the leg the
--- fighter is on and turns with him (dash_turn_cos = cos(10 degrees)).
-public number dash_turn_cos=0.985
 public number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
 public number joy_speed=192, player_scale=1.8, enemy_scale=1.8
 public number cube_scale=1.4
@@ -149,7 +145,11 @@ public number station_beam_alpha=255, station_beam_core_alpha=255
 public number station_beam_rgb=0x00E676, station_beam_core_rgb=0x00C8FAD6
 public number ebuc_station_cd=6
 public number turret_counter_damage=0.5
-public number azum_dash_cd=5.5, azum_dash_time=1.275, azum_dash_speed=300
+-- The dash is a burst again, as in the beginning: the direction is locked at
+-- the start and the whole 382.5 px path is flown in 0.45 s (850 px/s) instead
+-- of a 1.275 s glide at 300 px/s, where the dash felt like walking with a
+-- hitbox strip. The distance is unchanged, so the balance stays as it is.
+public number azum_dash_cd=5.5, azum_dash_time=0.45, azum_dash_speed=850
 public number azum_dash_damage=3, azum_dash_stun=1.8, dash_hit_r=34
 public number azum_hp=8
 public number shadow_off=10, shadow_alpha=0x30

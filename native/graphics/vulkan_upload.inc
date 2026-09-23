@@ -228,9 +228,13 @@ static void ds_vk_pending_texture(Texture *t) {
     if (vk_pending_n < DS_VK_PENDING_CAP) vk_pending_tex[vk_pending_n++] = t;
 }
 
-/* Deferred uploads are handled at the start of end_frame. */
+/* Deferred uploads are handled at the start of end_frame and again before the
+ * frame geometry is built, so a texture that a frame draws for the first time
+ * is already on the GPU when its triangles are recorded: sprites never appear a
+ * frame late (the fighter popping in a moment after the battle starts). */
 static void ds_vk_process_pending_uploads(void) {
     if (!vk_ready) { vk_pending_n = 0; vk_pending_font = 0; return; }
+    int out = 0;
     for (int i = 0; i < vk_pending_n; i++) {
         Texture *t = vk_pending_tex[i];
         if (!t || !t->pixels || t->gpu.uploaded) continue;
@@ -242,10 +246,15 @@ static void ds_vk_process_pending_uploads(void) {
             t->gpu.desc = (long long)(intptr_t)desc;
             t->gpu.uploaded = 1;
         } else {
-            ds_log_err("vulkan: texture upload failed for '%s'", t->name ? t->name : "?");
+            /* The failure is logged once and the texture stays pending: memory
+             * pressure on a cold start clears, and the next frame boundary
+             * retries the upload without any further calls. */
+            if (t->upload_tries++ == 0)
+                ds_log_err("vulkan: texture upload failed for '%s', retrying", t->name ? t->name : "?");
+            vk_pending_tex[out++] = t;
         }
     }
-    vk_pending_n = 0;
+    vk_pending_n = out;
     if (vk_pending_font) {
         vk_pending_font = 0;
         if (!ds_vk_upload_font_atlas())

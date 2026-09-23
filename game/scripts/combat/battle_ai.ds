@@ -18,6 +18,12 @@ public function start_enemy_attack()
     enemy.state=1
     enemy.state_time=enemy_windup
     enemy.hit=0
+    -- The swing pose is latched for the hitbox zone, which fades out frozen at
+    -- the last strike frame instead of swinging around with him.
+    enemy_punch_x=enemy.x
+    enemy_punch_y=enemy.y
+    enemy_punch_dx=cos(enemy.angle)
+    enemy_punch_dy=sin(enemy.angle)
     enemy.react=enemy_human_react_min + (rand()%100)/100.0*(enemy_human_react_max-enemy_human_react_min)
     return 1
 end
@@ -132,6 +138,10 @@ public function update_enemy()
     end
     local number pr=player.size*0.65, reach=enemy_punch_reach+pr
     if enemy.state==1 then
+        enemy_punch_x=enemy.x
+        enemy_punch_y=enemy.y
+        enemy_punch_dx=cos(enemy.angle)
+        enemy_punch_dy=sin(enemy.angle)
         enemy.state_time=enemy.state_time-dt
         if enemy.state_time>enemy_lock_time then
             enemy_turn_prediction()
@@ -152,6 +162,10 @@ public function update_enemy()
         return
     end
     if enemy.state==2 then
+        enemy_punch_x=enemy.x
+        enemy_punch_y=enemy.y
+        enemy_punch_dx=cos(enemy.angle)
+        enemy_punch_dy=sin(enemy.angle)
         enemy.state_time=enemy.state_time-dt
         if enemy.hit==0 then
             local number target=punch_resolve_target(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),player.size*0.65)

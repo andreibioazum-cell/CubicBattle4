@@ -53,6 +53,9 @@ struct Texture {
     Texture *next;
     char *name;
     int w, h, opaque;
+    /* Failed GPU uploads so far: the retry is silent after the first log line,
+     * so a texture that cannot upload does not flood the log every frame. */
+    int upload_tries;
     uint32_t *pixels;
     TexGpu gpu;
 };
