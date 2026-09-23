@@ -1,29 +1,27 @@
-/* Хост-регрессионный тест Vulkan-инициализации (native/graphics/vulkan_backend.inc).
+/* Host regression test of the Vulkan init path (native/graphics/vulkan_backend.inc).
  *
- * Воспроизводит класс краша с поля (TECNO KL4 / Mali-G57, tombstone:
- * «null pointer dereference» внутри драйвера GPU при создании конвейеров в
- * ds_graphics_init). Причина была в том, что VkPipelineShaderStageCreateInfo
- * создавался без нулевой инициализации: в pNext/flags оставался мусор стека,
- * а загрузчик Vulkan и драйвер обходят цепочку pNext каждого create-info —
- * мусорный указатель = разыменование несуществующего адреса прямо в драйвере.
+ * Reproduces the crash seen on a TECNO KL4 (Mali-G57): a null pointer
+ * dereference inside the GPU driver while ds_graphics_init created pipelines.
+ * VkPipelineShaderStageCreateInfo was filled without zeroing it first, so
+ * pNext/flags held stack garbage; the loader and the driver walk that pNext
+ * chain, and a garbage pointer is dereferenced inside the driver.
  *
- * Тест запускает ds_graphics_init в потоке, чей стек ЗАРАНЕЕ заполнен 0xDE:
- * любое поле структуры, которое код не инициализировал, становится
- * ненулевым мусором (как «грязный» стек на телефоне), и строгий фейковый
- * драйвер (проверяет pNext/flags, как настоящий) ловит нарушение вместо
- * того, чтобы падать с SIGSEGV. Потоком же проверяются два полных кадра и
- * пересоздание swapchain со СМЕНОЙ ФОРМАТА (поворот) - путь пересборки
- * render pass/конвейеров (vk_rp_format) в ds_vk_begin_frame_backend.
+ * The test runs ds_graphics_init in a thread whose stack is pre-filled with
+ * 0xDE, so any field the code forgets to set becomes non-zero garbage, and a
+ * strict fake driver (checking pNext/flags like the real one) reports the
+ * violation instead of crashing with SIGSEGV. The same thread then draws two
+ * frames and rebuilds the swapchain with a format change (a rotation), which
+ * covers the render pass and pipeline rebuild in ds_vk_begin_frame_backend.
  *
- * Фейковый драйвер моделирует реалистичный Android: окно в ландшафте на
- * портретном дисплее (currentTransform = ROTATE_90). Поэтому же проверяется
- * preTransform swapchain: игра рисует в координатах окна, и правильный
- * preTransform — IDENTITY (поворот окна к дисплею делает система).
- * preTransform = currentTransform — классическая ошибка, при которой в
- * ландшафте вся картинка оказывается повёрнутой на 90° и растянутой.
+ * The fake driver models a realistic Android device: a landscape window on a
+ * portrait display (currentTransform = ROTATE_90). That is also why preTransform
+ * is checked: the game draws in window coordinates, so IDENTITY is correct and
+ * the compositor rotates the window towards the display. preTransform equal to
+ * currentTransform is the classic mistake that leaves the landscape picture
+ * rotated by 90 degrees and stretched.
  *
- * Сборка и запуск (из корня репозитория; нужны Vulkan-заголовки,
- * например клон KhronosGroup/Vulkan-Headers):
+ * Build and run (from the repository root, needs Vulkan headers, for example a
+ * clone of KhronosGroup/Vulkan-Headers):
  *   gcc -std=gnu99 -O1 -o /tmp/test_vk_init \
  *       tools/host_test/test_vk_init.c \
  *       -I tools/host_test/stub -I /tmp/vktools/Vulkan-Headers/include -I . -lm -lpthread
@@ -31,37 +29,38 @@
  */
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
-#include <android/native_window.h> /* заглушка из tools/host_test/stub: нужна для ANativeWindow */
+#include <android/native_window.h> /* stub from tools/host_test/stub, needed for ANativeWindow */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <time.h>
 
-/* --- строгий фейковый драйвер: валидирует вход как настоящий --- */
+/* --- strict fake driver: validates its input like the real one --- */
 
 static int g_violations = 0;
 static char g_violation_msg[256];
 static int g_pipeline_creates = 0;
 static int g_swapchain_creates = 0;
 static int g_present_suboptimal_once = 1;
-/* Драйвер, который отвечает SUBOPTIMAL на КАЖДЫЙ present, не меняя при этом
- * параметров поверхности: так ведут себя реальные Android-драйверы при
+/* A driver that answers SUBOPTIMAL on every present without changing the
+ * surface parameters, the way real Android drivers behave with
  * preTransform=IDENTITY (currentTransform=ROTATE_90). */
 static int g_present_suboptimal_always = 0;
 static uint64_t g_next_handle = 0x1000;
 
-/* Список режимов презентации: как у Mali/Adreno на Android. Тесты меняют его,
- * чтобы проверить всю цепочку предпочтений (MAILBOX -> FIFO_RELAXED -> FIFO). */
+/* Present mode list as Mali and Adreno report it on Android. Tests change it to
+ * cover the whole preference chain (MAILBOX, FIFO_RELAXED, FIFO). */
 static VkPresentModeKHR g_present_modes[4] = {
     VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_MAILBOX_KHR,
     VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR };
 static uint32_t g_present_mode_count = 4;
 static VkPresentModeKHR g_created_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
 static uint32_t g_surface_min_images = 2;
-/* Лог собирается целиком: по строкам проверяются решения, которые иначе видны
- * только на устройстве (режим презентации, игнор SUBOPTIMAL, просьба о 60 fps). */
+/* The whole log is kept: its lines cover decisions that are otherwise only
+ * visible on a device (present mode, ignored SUBOPTIMAL, the 60 fps request). */
 static char g_log[16384];
 static size_t g_log_len;
 static void g_log_append(const char *s) {
@@ -74,7 +73,7 @@ static void g_log_append(const char *s) {
 }
 
 static void g_violation(const char *fmt, ...) {
-    if (g_violations) return; /* первое сообщение важнее всего */
+    if (g_violations) return; /* the first message matters most */
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(g_violation_msg, sizeof g_violation_msg, fmt, ap);
@@ -83,14 +82,14 @@ static void g_violation(const char *fmt, ...) {
 }
 static void *g_next(void) { return (void *)(g_next_handle++); }
 
-/* Проверяем всё, что настоящий драйвер обязан проверить в
- * vkCreateGraphicsPipelines, в первую очередь pNext/flags: мусор в них —
- * ровно тот баг, который ронял Mali. */
+/* Everything the real driver has to check in vkCreateGraphicsPipelines is
+ * checked here, pNext/flags first: garbage there is exactly the bug that
+ * crashed Mali. */
 static int g_validate_pipeline_create(const VkGraphicsPipelineCreateInfo *pi) {
     const char *bad = NULL;
     if (pi->sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO) bad = "createInfo.sType";
-    else if (pi->pNext) bad = "createInfo.pNext != NULL (мусор стека!)";
-    else if (pi->flags) bad = "createInfo.flags != 0 (мусор стека!)";
+    else if (pi->pNext) bad = "createInfo.pNext != NULL (stack garbage!)";
+    else if (pi->flags) bad = "createInfo.flags != 0 (stack garbage!)";
     else if (pi->stageCount < 1 || !pi->pStages) bad = "createInfo.pStages";
     else if (!pi->layout) bad = "createInfo.layout == NULL";
     else if (!pi->renderPass) bad = "createInfo.renderPass == NULL";
@@ -98,8 +97,8 @@ static int g_validate_pipeline_create(const VkGraphicsPipelineCreateInfo *pi) {
     for (uint32_t i = 0; i < pi->stageCount && !bad; i++) {
         const VkPipelineShaderStageCreateInfo *st = &pi->pStages[i];
         if (st->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO) bad = "stage.sType";
-        else if (st->pNext) bad = "stage.pNext != NULL (мусор стека!)";
-        else if (st->flags) bad = "stage.flags != 0 (мусор стека!)";
+        else if (st->pNext) bad = "stage.pNext != NULL (stack garbage!)";
+        else if (st->flags) bad = "stage.flags != 0 (stack garbage!)";
         else if (st->module == VK_NULL_HANDLE) bad = "stage.module == NULL";
         else if (!st->pName) bad = "stage.pName == NULL";
     }
@@ -130,7 +129,7 @@ static void g_fill_format_props(VkFormatProperties *fp) {
                                 VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 }
 
-/* --- фейковые реализации (только то, что использует графический TU) --- */
+/* --- fake implementations of what the graphics TU uses --- */
 
 VkResult vkCreateInstance(const VkInstanceCreateInfo *ci, const VkAllocationCallbacks *ac, VkInstance *out) {
     (void)ac;
@@ -190,22 +189,22 @@ VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice d, VkSurface
 }
 VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, const VkAllocationCallbacks *ac, VkSwapchainKHR *out) {
     (void)d; (void)ac;
-    if (ci->imageExtent.width == 0 || ci->imageExtent.height == 0) { g_violation("swapchain: пустой extent"); return VK_ERROR_INITIALIZATION_FAILED; }
-    /* Android: буфер живёт в системе координат ОКНА, поворот окна к дисплею
-     * делает системный композитор. Поэтому единственно правильный preTransform
-     * для игры, рисующей в координатах окна, — IDENTITY. currentTransform
-     * (ROTATE_90 в ландшафте) проворачивает картинку на 90° ещё раз. */
+    if (ci->imageExtent.width == 0 || ci->imageExtent.height == 0) { g_violation("swapchain: empty extent"); return VK_ERROR_INITIALIZATION_FAILED; }
+    /* On Android the buffer lives in window coordinates and the system
+     * compositor rotates the window towards the display, so IDENTITY is the
+     * only correct preTransform for a game that draws in window coordinates.
+     * currentTransform (ROTATE_90 in landscape) rotates the picture once more. */
     if (ci->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) {
-        g_violation("swapchain: preTransform != IDENTITY (картинка будет повёрнута на 90° в ландшафте)");
+        g_violation("swapchain: preTransform != IDENTITY (the landscape picture would be rotated)");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    /* Режим обязан быть из списка драйвера: vkCreateSwapchainKHR с чужим
-     * режимом настоящий драйвер отвергает (VK_ERROR_INITIALIZATION_FAILED). */
+    /* The mode must come from the driver list: a real driver rejects
+     * vkCreateSwapchainKHR with an unknown one (VK_ERROR_INITIALIZATION_FAILED). */
     int listed = 0;
     for (uint32_t i = 0; i < g_present_mode_count; i++)
         if (g_present_modes[i] == ci->presentMode) listed = 1;
     if (!listed) {
-        g_violation("swapchain: presentMode %d нет в списке драйвера", (int)ci->presentMode);
+        g_violation("swapchain: presentMode %d is not in the driver list", (int)ci->presentMode);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     g_created_present_mode = ci->presentMode;
@@ -231,8 +230,8 @@ VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice d, VkSurface
     memset(c, 0, sizeof *c);
     c->currentExtent.width = 720; c->currentExtent.height = 1280;
     c->minImageCount = g_surface_min_images; c->maxImageCount = 0; c->maxImageArrayLayers = 1;
-    /* Реалистичный Android: портретный дисплей, окно в ландшафте —
-     * система поворачивает окно на 90° (currentTransform = ROTATE_90). */
+    /* Realistic Android: portrait display, landscape window, so the system
+     * rotates the window by 90 degrees (currentTransform = ROTATE_90). */
     c->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
     c->currentTransform = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
     c->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -240,8 +239,9 @@ VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice d, VkSurface
 }
 VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice d, VkSurfaceKHR s, uint32_t *count, VkSurfaceFormatKHR *fmts) {
     (void)d; (void)s;
-    /* Первый swapchain - B8G8R8A8, пересоздание («поворот») - R8G8B8A8:
-     * проверяет пересборку render pass/конвейеров при смене формата. */
+    /* The first swapchain is B8G8R8A8 and the rebuild ("rotation") uses
+     * R8G8B8A8, which covers the render pass and pipeline rebuild on a format
+     * change. */
     VkFormat f = (g_swapchain_creates == 0) ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
     if (!fmts) { *count = 1; return VK_SUCCESS; }
     fmts[0].format = f;
@@ -403,13 +403,13 @@ VkResult vkCreateSemaphore(VkDevice d, const VkSemaphoreCreateInfo *ci, const Vk
 }
 void vkDestroySemaphore(VkDevice d, VkSemaphore s, const VkAllocationCallbacks *ac) { (void)d; (void)s; (void)ac; }
 
-/* --- платформенный API кадрового ритма (ANativeWindow_setFrameRate) ---
- * На хосте его нет: игра берёт функции dlsym'ом, поэтому стенд подставляет свои
- * и проверяет саму ПОЛИТИКУ - какие ровно значения игра просит у системы и
- * сколько раз. */
+/* --- platform frame rate API (ANativeWindow_setFrameRate) ---
+ * A host has none of it. The game resolves the functions with dlsym, so the
+ * stand substitutes its own and checks the policy: which exact values the game
+ * asks the system for, and how often. */
 static int g_frame_rate_calls, g_frame_rate_strategy_calls, g_clear_frame_rate_calls;
 static ANativeWindow *g_frame_rate_window;
-static ANativeWindow *g_test_window; /* окно, с которым работает тест */
+static ANativeWindow *g_test_window; /* the window this test works with */
 static float g_frame_rate_value;
 static int8_t g_frame_rate_compat, g_frame_rate_strategy;
 static int32_t fake_set_frame_rate(ANativeWindow *w, float fps, int8_t compat) {
@@ -424,11 +424,11 @@ static int32_t fake_set_frame_rate_strategy(ANativeWindow *w, float fps, int8_t 
 }
 static void fake_clear_frame_rate(ANativeWindow *w) { (void)w; g_clear_frame_rate_calls++; }
 
-/* Команды буфера: на хосте некуда записывать. */
+/* Buffer commands: there is nowhere to write them on a host. */
 void vkCmdBindPipeline(VkCommandBuffer cb, VkPipelineBindPoint pb, VkPipeline p) { (void)cb; (void)pb; (void)p; }
-/* Push-константы и области blit запоминаются: по ним проверяется апскейл —
- * шейдер обязан получать ЛОГИЧЕСКИЙ размер окна, а blit тянуть маленький
- * оффскрин на весь swapchain. */
+/* Push constants and blit regions are recorded: they show whether the shader
+ * gets the logical window size and blit stretches a small offscreen onto the
+ * whole swapchain. */
 static float g_pc[4];
 static int g_pc_sets, g_blits, g_copies;
 static int g_blit_src_w, g_blit_src_h, g_blit_dst_w, g_blit_dst_h;
@@ -454,18 +454,18 @@ void vkCmdBlitImage(VkCommandBuffer cb, VkImage src, VkImageLayout sl, VkImage d
         g_blit_dst_w = rc[0].dstOffsets[1].x; g_blit_dst_h = rc[0].dstOffsets[1].y;
         int same_size = rc[0].srcOffsets[1].x == rc[0].dstOffsets[1].x &&
                         rc[0].srcOffsets[1].y == rc[0].dstOffsets[1].y;
-        /* 1:1 - без фильтрации; растягивание автомасштаба - LINEAR (формат
-         * фейкового драйвера линейную фильтрацию рекламирует). */
+        /* 1:1 blit is unfiltered, the autoscale stretch uses LINEAR (the fake
+         * driver's format advertises linear filtering). */
         if (same_size && f != VK_FILTER_NEAREST)
-            g_violation("blit 1:1: фильтр не NEAREST");
+            g_violation("blit 1:1: filter is not NEAREST");
         if (!same_size && f != VK_FILTER_LINEAR)
-            g_violation("blit автомасштаба: фильтр не LINEAR (растягивание обязано быть мягким)");
+            g_violation("autoscale blit: filter is not LINEAR (the stretch must be soft)");
     }
     g_blits++;
 }
 void vkCmdCopyImage(VkCommandBuffer cb, VkImage src, VkImageLayout sl, VkImage dst, VkImageLayout dl, uint32_t n, const VkImageCopy *rc) { (void)cb; (void)src; (void)sl; (void)dst; (void)dl; (void)n; (void)rc; g_copies++; }
 
-/* --- заглушки рантайма и Android (как в test_geometry.c) --- */
+/* --- runtime and Android stubs (as in test_geometry.c) --- */
 
 static void g_log_vprintf(const char *format, va_list ap) {
     char line[256];
@@ -488,7 +488,7 @@ int screen_w = 720, screen_h = 1280;
 
 #include "graphics.c"
 
-/* Android-заглушки: типы приходят из stub/android/asset_manager.h выше. */
+/* Android stubs: the types come from stub/android/asset_manager.h above. */
 AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) { (void)mgr; (void)name; (void)mode; return NULL; }
 off_t AAsset_getLength(AAsset *a) { (void)a; return 0; }
 int AAsset_read(AAsset *a, void *buf, size_t n) { (void)a; (void)buf; (void)n; return -1; }
@@ -496,7 +496,13 @@ int AAsset_close(AAsset *a) { (void)a; return 0; }
 
 
 
-/* --- сам тест --- */
+/* --- the test itself --- */
+
+static uint64_t test_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000u + (uint64_t)(t.tv_nsec / 1000000);
+}
 
 #define TEST_STACK_SIZE (1u << 20)
 static char test_stack[TEST_STACK_SIZE];
@@ -507,21 +513,23 @@ static struct { int init_ok; int frame1_ok; int frame2_ok; int frame3_ok; int fr
                 int scale0, scale_miss, scale_probe, scale_rollback, scale_still;
                 unsigned probe_off_w, probe_off_h;
                 unsigned probe_blit_src_w, probe_blit_src_h, probe_blit_dst_w, probe_blit_dst_h;
-                /* режимы презентации и поведение при SUBOPTIMAL */
+                /* present modes and behaviour on SUBOPTIMAL */
                 int mode_init, mode_fifo_only, mode_relaxed;
                 int creates_before_storm, creates_after_storm, creates_after_change;
                 int creates_before_storm2, creates_after_storm2;
-                int storm_ok, frame5_ok, frame6_ok; } g_res;
+                int storm_ok, frame5_ok, frame6_ok;
+                /* frame pacing */
+                unsigned paced_ms; } g_res;
 
 static void *test_thread(void *arg) {
     (void)arg;
-    /* Весь стек потока уже заполнен 0xDE: незаинициализированные поля
-     * структур в коде будут содержать мусор, а не ноль. */
+    /* The thread stack is already filled with 0xDE, so any structure field the
+     * code forgets to set holds garbage instead of zero. */
     static int dummy_window;
     ANativeWindow *win = (ANativeWindow *)&dummy_window;
     g_test_window = win;
-    /* Подменяем платформенные функции до init: игра обязана попросить у системы
-     * кадровый ритм (60 fps) ровно один раз на окно. */
+    /* Platform functions are substituted before init: the game must ask for a
+     * 60 fps rhythm exactly once per window. */
     vk_set_frame_rate = fake_set_frame_rate;
     vk_set_frame_rate_strategy = fake_set_frame_rate_strategy;
     vk_clear_frame_rate = fake_clear_frame_rate;
@@ -534,14 +542,14 @@ static void *test_thread(void *arg) {
     g_res.frame1_ok = ds_graphics_begin_frame(&b);
     rect(0, 0, 10, 10, 0xff123456);
     ds_graphics_end_frame();
-    /* Второй кадр: фейковый драйвер вернул SUBOPTIMAL на present, а при
-     * пересоздании swapchain - другой формат (симуляция поворота).
-     * Проверяет пересборку render pass/конвейеров (vk_rp_format). */
+    /* Second frame: the fake driver answered SUBOPTIMAL on present and hands
+     * out another format on the rebuild (a simulated rotation), which covers the
+     * render pass and pipeline rebuild (vk_rp_format). */
     g_res.frame2_ok = ds_graphics_begin_frame(&b);
     rect(0, 0, 10, 10, 0xff654321);
     ds_graphics_end_frame();
-    /* Третий кадр: апскейла в настройках больше нет, поэтому оффскрин всегда
-     * ровно с окно, логический размер совпадает с ним, а blit идёт 1:1. */
+    /* Third frame: there is no upscale setting anymore, so the offscreen always
+     * matches the window, the logical size is the same and the blit is 1:1. */
     g_res.frame3_ok = ds_graphics_begin_frame(&b);
     rect(0, 0, 10, 10, 0xff123456);
     ds_graphics_end_frame();
@@ -549,14 +557,26 @@ static void *test_thread(void *arg) {
     g_res.log_w = vk_log_w; g_res.log_h = vk_log_h;
     g_res.blit_src_w = g_blit_src_w; g_res.blit_src_h = g_blit_src_h;
     g_res.blit_dst_w = g_blit_dst_w; g_res.blit_dst_h = g_blit_dst_h;
-    /* Автоматическое внутреннее разрешение (правила из lifecycle.inc):
-     * промах по vsync (кадр дольше 20 мс) уводит масштаб сразу на две ступени
-     * (1 -> 3 -> 5 -> 6), проба «резче» - шаг на одну ступень назад - возможна
-     * только после 300 кадров подряд без промахов, а промах на пробе откатывает
-     * масштаб и запрещает новые пробы. Кнопки и настройки для этого нет. */
+    /* Frame pacing: without a vsync wait (MAILBOX) the loop ran at 350+ fps, so
+     * a frame has to wait out the rest of the 60 fps budget. Three frames cannot
+     * pass in less than two budgets; pacing is then switched off so the rest of
+     * the test does not sleep. */
+    uint64_t pace_t0 = test_ms();
+    for (int i = 0; i < 3; i++) {
+        if (!ds_graphics_begin_frame(&b)) break;
+        ds_graphics_end_frame();
+    }
+    g_res.paced_ms = (unsigned)(test_ms() - pace_t0);
+    vk_pace_on = 0;
+    vk_pace_next_ns = 0;
+    /* Internal render scale (rules from autoscale.inc): a vsync miss (a frame
+     * longer than 20 ms) moves the scale two steps at once (1, 3, 5, 6), a
+     * sharper probe is a single step back and is allowed only after 300 clean
+     * frames, and a miss during a probe rolls back and blocks new probes. There
+     * is no button or setting for any of this. */
     g_res.scale0 = ds_graphics_pixel_scale();
-    /* Каждое пересоздание swapchain сбрасывает историю контроллера и даёт
-     * секунду кулдауна: первые кадры нового окна всегда медленные. */
+    /* Every swapchain rebuild drops the controller history and adds a one
+     * second cooldown: the first frames of a new window are always slow. */
     for (int i = 0; i < 60; i++) ds_graphics_report_frame_interval(0.0167);
     for (int i = 0; i < 10; i++) ds_graphics_report_frame_interval(0.0333);
     g_res.scale_miss = ds_graphics_pixel_scale();
@@ -566,10 +586,10 @@ static void *test_thread(void *arg) {
     g_res.off2_w = vk_off_w; g_res.off2_h = vk_off_h;
     g_res.blit2_src_w = g_blit_src_w; g_res.blit2_src_h = g_blit_src_h;
     g_res.blit2_dst_w = g_blit_dst_w; g_res.blit2_dst_h = g_blit_dst_h;
-    /* Проба «резче» допускается только после 300 кадров подряд без промахов.
-     * Ждём именно её (флаг gfx_probe_finer поднят, пока идёт проба) - так тест
-     * не зависит от границ окон автопроска. Масштаб после пробы - на ступень
-     * назад (3 -> 2), оффскрин вырастает с 240x426 до 360x640. */
+    /* The sharper probe is allowed only after 300 clean frames. The test waits
+     * for the probe itself (gfx_probe_finer is set while one runs), so it does
+     * not depend on the boundaries of the autoscale windows. The scale steps
+     * back (3 to 2) and the offscreen grows from 240x426 to 360x640. */
     for (int i = 0; i < 3000 && !gfx_probe_finer; i++)
         ds_graphics_report_frame_interval(0.0167);
     g_res.scale_probe = ds_graphics_pixel_scale();
@@ -579,20 +599,20 @@ static void *test_thread(void *arg) {
     g_res.probe_off_w = vk_off_w; g_res.probe_off_h = vk_off_h;
     g_res.probe_blit_src_w = g_blit_src_w; g_res.probe_blit_src_h = g_blit_src_h;
     g_res.probe_blit_dst_w = g_blit_dst_w; g_res.probe_blit_dst_h = g_blit_dst_h;
-    for (int i = 0; i < 45; i++) ds_graphics_report_frame_interval(0.0167); /* кулдаун пробы */
-    for (int i = 0; i < 10; i++) ds_graphics_report_frame_interval(0.0333); /* промах на пробе */
+    for (int i = 0; i < 45; i++) ds_graphics_report_frame_interval(0.0167); /* probe cooldown */
+    for (int i = 0; i < 10; i++) ds_graphics_report_frame_interval(0.0333); /* miss during the probe */
     g_res.scale_rollback = ds_graphics_pixel_scale();
-    /* После провалившейся пробы масштаб не «дышит» обратно: ещё 405 чистых
-     * кадров (90 кулдаун + 315) не допускают новую пробу (кулдаун 1800). */
+    /* After a failed probe the scale does not breathe back: another 405 clean
+     * frames (90 cooldown plus 315) still do not allow a new probe. */
     for (int i = 0; i < 405; i++) ds_graphics_report_frame_interval(0.0167);
     g_res.scale_still = ds_graphics_pixel_scale();
 
-    /* --- SUBOPTIMAL на КАЖДОМ кадре при неизменной поверхности ---
-     * Так отвечает реальный Android-драйвер при preTransform=IDENTITY
-     * (currentTransform=ROTATE_90). Пересобирать swapchain из-за этого нельзя:
-     * пересборка = vkQueueWaitIdle + новые изображения/семафоры + сброс истории
-     * автомасштаба, то есть та самая ступенька 30-45 fps, которую невозможно
-     * вылечить оптимизацией отрисовки. --- */
+    /* --- SUBOPTIMAL on every frame with an unchanged surface ---
+     * That is what a real Android driver answers with preTransform IDENTITY and
+     * currentTransform ROTATE_90. It must not rebuild the swapchain: a rebuild
+     * costs vkQueueWaitIdle, new images and semaphores and a dropped autoscale
+     * history, which is exactly the 30-45 fps step that no draw call
+     * optimisation can fix. --- */
     g_res.creates_before_storm = g_swapchain_creates;
     g_present_suboptimal_always = 1;
     g_res.storm_ok = 1;
@@ -603,9 +623,9 @@ static void *test_thread(void *arg) {
     }
     g_res.creates_after_storm = g_swapchain_creates;
 
-    /* --- Поверхность реально изменилась: пересборка обязана случиться, и
-     * режим презентации выбирается заново по списку драйвера. Панель, где
-     * MAILBOX и FIFO_RELAXED не поддержаны: остаётся FIFO. --- */
+    /* --- The surface really changed: a rebuild has to happen and the present
+     * mode is chosen again from the driver list. A display without MAILBOX and
+     * FIFO_RELAXED leaves FIFO. --- */
     g_present_modes[0] = VK_PRESENT_MODE_FIFO_KHR;
     g_present_mode_count = 1;
     g_surface_min_images = 3;
@@ -616,8 +636,8 @@ static void *test_thread(void *arg) {
     g_res.mode_fifo_only = (int)g_created_present_mode;
     g_res.creates_after_change = g_swapchain_creates;
 
-    /* --- FIFO + FIFO_RELAXED без MAILBOX: выбирается FIFO_RELAXED, потому что
-     * только он снимает «штрафной» вертикальный интервал при промахе. --- */
+    /* --- FIFO plus FIFO_RELAXED without MAILBOX: FIFO_RELAXED wins, as the
+     * only mode that drops the penalty interval of a late frame. --- */
     g_present_modes[0] = VK_PRESENT_MODE_FIFO_KHR;
     g_present_modes[1] = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     g_present_mode_count = 2;
@@ -628,7 +648,7 @@ static void *test_thread(void *arg) {
     }
     g_res.mode_relaxed = (int)g_created_present_mode;
 
-    /* --- И снова шторм SUBOPTIMAL: пересборок быть не должно. --- */
+    /* --- Another SUBOPTIMAL storm: no rebuilds are allowed. --- */
     g_res.creates_before_storm2 = g_swapchain_creates;
     for (int i = 0; i < 60; i++) { ds_graphics_begin_frame(&b); ds_graphics_end_frame(); }
     g_res.creates_after_storm2 = g_swapchain_creates;
@@ -655,6 +675,9 @@ int main(void) {
     if (g_swapchain_creates < 2) { fail = 1; printf("FAIL: ожидалось 2+ пересоздания swapchain, было %d\n", g_swapchain_creates); }
     if (g_pipeline_creates < 8) { fail = 1; printf("FAIL: ожидалось 8+ созданий конвейеров (4 init + 4 после смены формата), было %d\n", g_pipeline_creates); }
     if (!g_res.frame3_ok) { fail = 1; printf("FAIL: begin_frame третьего кадра вернул 0\n"); }
+    if (g_res.paced_ms < 40) {
+        fail = 1; printf("FAIL: три кадра прошли за %u мс - ритм 60 fps не держится\n", g_res.paced_ms);
+    }
     if (g_res.off_w != 720 || g_res.off_h != 1280) {
         fail = 1; printf("FAIL: без апскейла оффскрин %ux%u, ожидалось 720x1280\n", g_res.off_w, g_res.off_h);
     }
@@ -693,9 +716,9 @@ int main(void) {
     if (g_res.scale_still != 3) { fail = 1; printf("FAIL: после отката пробы масштаб снова поехал (%d), ожидалась фиксация 3\n", g_res.scale_still); }
     if (g_blits < 3) { fail = 1; printf("FAIL: blit не вызывался на каждом кадре (было %d)\n", g_blits); }
 
-    /* Кадровый ритм: игра обязана один раз на окно попросить у системы 60 fps
-     * (FIXED_SOURCE + CHANGE_FRAME_RATE_ALWAYS) и снять просьбу при закрытии
-     * окна, иначе система держит режим панели по просьбе игры, которой нет. */
+    /* Frame rate: the game has to ask for 60 fps once per window (FIXED_SOURCE
+     * plus CHANGE_FRAME_RATE_ALWAYS) and drop the request when the window closes,
+     * otherwise the panel mode stays reserved for a game that is gone. */
     if (g_frame_rate_strategy_calls != 1 || g_frame_rate_calls != 0) {
         fail = 1; printf("FAIL: просьба о кадровом ритме вызвана %d раз (стратегия) + %d раз (простая), ожидалось 1 + 0\n",
                          g_frame_rate_strategy_calls, g_frame_rate_calls);
@@ -710,8 +733,8 @@ int main(void) {
     if (g_clear_frame_rate_calls != 1) {
         fail = 1; printf("FAIL: просьба о кадровом ритме не снята при закрытии окна (%d)\n", g_clear_frame_rate_calls);
     }
-    /* Режим презентации: MAILBOX при полном списке, FIFO_RELAXED вместо FIFO там,
-     * где MAILBOX нет, и FIFO, если нет ничего кроме него. */
+    /* Present mode: MAILBOX when the driver offers it, FIFO_RELAXED instead of
+     * FIFO where MAILBOX is missing, and FIFO when nothing else is there. */
     if (g_res.mode_init != (int)VK_PRESENT_MODE_MAILBOX_KHR) {
         fail = 1; printf("FAIL: первый swapchain создан с presentMode %d, ожидался MAILBOX(%d)\n",
                          g_res.mode_init, (int)VK_PRESENT_MODE_MAILBOX_KHR);
@@ -723,7 +746,7 @@ int main(void) {
         fail = 1; printf("FAIL: при списке FIFO+FIFO_RELAXED выбран режим %d, ожидался FIFO_RELAXED(%d)\n",
                          g_res.mode_relaxed, (int)VK_PRESENT_MODE_FIFO_RELAXED_KHR);
     }
-    /* SUBOPTIMAL без изменений поверхности не пересобирает swapchain. */
+    /* SUBOPTIMAL with an unchanged surface does not rebuild the swapchain. */
     if (!g_res.storm_ok) { fail = 1; printf("FAIL: begin_frame упал в шторме SUBOPTIMAL\n"); }
     if (g_res.creates_after_storm != g_res.creates_before_storm) {
         fail = 1; printf("FAIL: SUBOPTIMAL без изменений поверхности пересобрал swapchain %d раз\n",
@@ -733,7 +756,7 @@ int main(void) {
         fail = 1; printf("FAIL: повторный шторм SUBOPTIMAL пересобрал swapchain %d раз\n",
                          g_res.creates_after_storm2 - g_res.creates_before_storm2);
     }
-    /* Реальное изменение поверхности пересобирает ровно один swapchain. */
+    /* A real surface change rebuilds exactly one swapchain. */
     if (g_res.creates_after_change != g_res.creates_before_storm + 1) {
         fail = 1; printf("FAIL: после изменения поверхности пересборок %d, ожидалась одна\n",
                          g_res.creates_after_change - g_res.creates_before_storm);

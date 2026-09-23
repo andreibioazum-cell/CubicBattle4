@@ -1,44 +1,40 @@
-/* Автоматическое внутреннее разрешение (внутренний масштаб кадра) и редкая
- * сводка в лог. Часть Vulkan-бэкенда: подключается из graphics.c после
- * vulkan_backend.inc и собирается с ним в один translation unit, поэтому
- * состояние общее — сводка печатает выбранный режим презентации и число
- * пересборок swapchain.
+/* Internal render scale of the frame (no button, no setting, no saved value:
+ * the scale only follows the measured frame time) plus a rare log summary. Part
+ * of the Vulkan backend: included by graphics.c after vulkan_backend.inc, so the
+ * state is shared and the summary can print the present mode and the number of
+ * swapchain rebuilds.
  *
- * Ни кнопки, ни настройки, ни сохранённого значения у масштаба нет: только
- * реакция на фактическую скорость кадров. Vsync (FIFO) квантует частоту:
- * стоит кадру стать чуть дольше 16.6 мс, и вместо 60 будет 30. На слабых GPU
- * в бою (много слоёв смешивания на весь экран) полный размер окна в этот бюджет
- * не укладывается, поэтому при накоплении промахов кадр рисуется
- * в оффскрин в scale раз меньше и растягивается на окно; как только запас
- * появляется — возвращаемся к 1:1. Картинка всегда резкая, пока устройство
- * держит 60 fps; мягче она становится только вместо провала в 30.
+ * Vsync (FIFO) quantises the rate: a frame only slightly longer than 16.6 ms
+ * lands in 30 instead of 60. On weak GPUs the full window size does not fit
+ * into that budget in battle, so a run of missed frames moves the rendering
+ * into an offscreen scale times smaller, stretched back onto the window; when
+ * there is headroom again the scale returns to 1:1. The image stays sharp while
+ * the device holds 60 fps and gets softer only instead of dropping to 30.
  *
- * Гистерезис здесь принципиально несимметричный, чтобы масштаб не «дышал»:
- * грубее уходим быстро (4 промаха подряд или 4 из 24 кадров), чтобы слабый
- * телефон не оставался на 20-35 fps несколько секунд, а пробу «резче»
- * допускаем только после 300 кадров (~5 с) вообще без промахов и не
- * чаще раза в 15 с; две провалившиеся пробы за сеанс навсегда фиксируют
- * текущий масштаб (gfx_finer_off) — лучше стабильная мягкость, чем видимая
- * пульсация резкости и пересоздание оффскрина каждые несколько секунд.
- * История промахов сбрасывается на каждом новом окне (gfx_autoscale_new_window):
- * первые кадры после возврата в приложение всегда медленные и не должны
- * сразу тянуть масштаб вниз. */
+ * The hysteresis is deliberately asymmetric so the scale does not breathe: it
+ * gets coarser fast (4 misses in a row or 4 of 24 frames) so a weak phone does
+ * not stay at 20-35 fps for seconds, while a sharper probe is allowed only
+ * after 300 clean frames and not more often than every 15 s. Two failed probes
+ * pin the current scale for the session: steady softness beats visible
+ * sharpness swings and a recreated offscreen every few seconds. History is
+ * dropped for every new window, since the first frames after returning to the
+ * app are always slow. */
 static int gfx_auto_scale = 1;
-static int gfx_cooldown = 0;        /* кадров до любых решений после смены */
-static int gfx_finer_cooldown = 0;  /* кадров до следующей пробы «резче» */
-static int gfx_probe_finer = 0;     /* идёт проба «резче»: промах откатит */
-static int gfx_probe_left = 0;      /* кадров вердикта пробы; дожил до 0 - успех */
-static int gfx_probe_fails = 0;     /* сколько проб провалилось за сеанс */
-static int gfx_finer_off = 0;       /* после двух провалов пробы выключены */
-static int gfx_clean = 0;           /* кадров подряд без промаха */
+static int gfx_cooldown = 0;        /* frames before any decision after a change */
+static int gfx_finer_cooldown = 0;  /* frames before the next sharper probe */
+static int gfx_probe_finer = 0;     /* sharper probe running: a miss rolls back */
+static int gfx_probe_left = 0;      /* frames left in the probe verdict */
+static int gfx_probe_fails = 0;     /* failed probes this session */
+static int gfx_finer_off = 0;       /* probes off after two failures */
+static int gfx_clean = 0;           /* frames in a row without a miss */
 static int gfx_miss_streak = 0, gfx_win_frames = 0, gfx_win_misses = 0;
 
 int ds_graphics_pixel_scale(void) { return gfx_auto_scale; }
 
-/* Старт/возврат в приложение/смена размера окна: история скорости устарела. */
+/* New window (start, return to the app, resize): the old timings are stale. */
 static void gfx_autoscale_new_window(void) {
-    /* Первую оценку производительности делаем быстро: на слабом GPU секунда
-     * кадров в полном разрешении визуально ощущается как зависание интерфейса. */
+    /* Judge performance early: on a weak GPU a second of full size frames feels
+     * like a frozen interface. */
     gfx_cooldown = 15;
     gfx_probe_finer = 0;
     gfx_probe_left = 0;
@@ -47,9 +43,8 @@ static void gfx_autoscale_new_window(void) {
 
 static void gfx_set_scale(int s, int cooldown) {
     if (s < 1) s = 1;
-    /* На слабых 1080p-устройствах (включая Unisoc T615) 1/4 всё ещё может
-     * упираться в 30 fps. Разрешаем аварийные 1/5 и 1/6: интерфейс станет
-     * мягче, зато управление и анимации останутся отзывчивыми. */
+    /* On weak 1080p devices 1/4 can still miss the 30 fps step, so 1/5 and 1/6
+     * are allowed: the image gets softer, the controls stay responsive. */
     if (s > 6) s = 6;
     if (s == gfx_auto_scale) return;
     gfx_auto_scale = s;
@@ -58,18 +53,16 @@ static void gfx_set_scale(int s, int cooldown) {
     ds_log("graphics: internal resolution 1/%d (auto)", s);
 }
 
-/* Редкая сводка в лог (раз в 5 с): единственный способ увидеть на телефоне,
- * что реально происходит с кадровым ритмом — ступеньки вертикальной
- * синхронизации, режим презентации, число пересборок swapchain и выбранный
- * автомасштаб. Без неё «в бою 30-45 fps» невозможно отличить от «уперлись в
- * GPU»: строки в логе видно в logcat и в отчёте о падении. */
+/* Log summary every 5 seconds: the only way to see on the phone what the frame
+ * rhythm does - vsync steps, present mode, swapchain rebuilds, chosen scale.
+ * Without it a frame rate complaint cannot be told apart from a GPU limit. */
 static double gfx_report_acc;
 static int gfx_report_frames;
 #define GFX_REPORT_SEC 5.0
 
-/* Кадровый интервал главного цикла (секунды): вызывается после каждого кадра. */
+/* Frame interval of the main loop in seconds, reported after every frame. */
 void ds_graphics_report_frame_interval(double sec) {
-    if (!(sec > 0.0) || sec > 0.25) return;   /* пауза, сворачивание, отладчик */
+    if (!(sec > 0.0) || sec > 0.25) return;   /* pause, background, debugger */
     gfx_report_acc += sec;
     gfx_report_frames++;
     if (gfx_report_acc >= GFX_REPORT_SEC) {
@@ -82,19 +75,19 @@ void ds_graphics_report_frame_interval(double sec) {
         gfx_report_frames = 0;
     }
     if (gfx_finer_cooldown > 0) gfx_finer_cooldown--;
-    /* Промах по vsync 60 Гц: кадр пришёл ко второму вертикальному интервалу
-     * (33 мс) или позже. 20 мс — граница с запасом против дрожания 16.7. */
+    /* Vsync miss at 60 Hz: the frame came at the second interval (33 ms) or
+     * later. 20 ms leaves room for jitter around 16.7. */
     int missed = sec > 0.020;
     gfx_clean = missed ? 0 : gfx_clean + 1;
     if (gfx_cooldown > 0) { gfx_cooldown--; return; }
-    /* Вердикт пробы «резче»: окно кадров после её кулдауна. Одиночный поздний
-     * промах спустя минуту не должен откатывать уже прижившийся масштаб. */
+    /* Verdict of the sharper probe: the frames after its cooldown. A single
+     * late miss a minute later must not roll back a scale that settled. */
     if (gfx_probe_finer && gfx_probe_left > 0) {
         gfx_probe_left--;
-        if (gfx_probe_left == 0) gfx_probe_finer = 0;  /* проба прижилась */
+        if (gfx_probe_left == 0) gfx_probe_finer = 0;  /* probe held up */
     }
     if (missed) {
-        if (gfx_probe_finer) {   /* проба «резче» провалилась — откат и надолго */
+        if (gfx_probe_finer) {   /* sharper probe failed: roll back for good */
             gfx_probe_finer = 0;
             gfx_probe_left = 0;
             gfx_probe_fails++;
@@ -112,16 +105,16 @@ void ds_graphics_report_frame_interval(double sec) {
     if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
         int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
         if (bad) {
-            /* Пересоздание оффскрина ждёт GPU и само даёт заметный рывок.
-             * Перепрыгиваем сразу две ступени (1→3→5→6), чтобы вместо пяти
-             * подвисаний при подборе масштаба было максимум три. */
+            /* A recreated offscreen waits for the GPU and hitches by itself, so
+             * two steps are skipped at once (1-3-5-6): at most three hitches
+             * instead of five while the scale settles. */
             if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 2, 12);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
                    gfx_finer_cooldown == 0 && !gfx_finer_off) {
             gfx_probe_finer = 1;
             gfx_finer_cooldown = 900;
             gfx_set_scale(gfx_auto_scale - 1, 45);
-            gfx_probe_left = 45 + 60;  /* кулдаун пробы плюс окно вердикта */
+            gfx_probe_left = 45 + 60;  /* probe cooldown plus verdict window */
         }
         gfx_win_frames = 0; gfx_win_misses = 0;
     }

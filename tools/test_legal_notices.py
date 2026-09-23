@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Юридический минимум: гейт согласия об эпилепсии и экран приватности.
+"""Legal minimum: the epilepsy consent gate and the privacy screen.
 
-Проверяет связность механизма, описанного в README («Приватность,
-предупреждения и дисклеймеры»), чисто по исходникам, без компиляции:
+Checks the wiring described in the README from the sources alone, without
+compiling:
 
-  gate    — предупреждение об эпилепсии не скрывается само: update_warning
-            больше не закрывает warn_open, вход только через legal_accept,
-            а системная «Назад» на этом экране отдаёт управление Android
-            (выход из игры), т.е. войти без согласия нельзя;
-  stamp   — нажатие согласия пишется в settings.dat нативно
-            (settings_mark_legal / строка "legal %d"), метка локальная и в
-            облачный PATCH не попадает;
-  privacy — экран ST_PRIVACY нарисован, достижим из настроек (8-я строка) и
-            возвращается в настройки кнопкой «Назад»; текст есть на обоих
-            языках;
-  perms   — в манифесте ровно два разрешения: INTERNET и
-            ACCESS_NETWORK_STATE (нет ничего про геолокацию, контакты и т.п.).
+  gate    - the epilepsy warning never hides itself: update_warning no longer
+            closes warn_open, entry goes through legal_accept only, and the
+            system Back button on that screen exits the game, so the game cannot
+            be entered without consent;
+  stamp   - accepting writes a stamp into settings.dat natively
+            (settings_mark_legal, the "legal %d" line); the stamp is local and
+            never reaches the cloud PATCH;
+  privacy - the ST_PRIVACY screen is drawn, reachable from settings (row 8) and
+            returns to settings with a Back button; both languages are there;
+  perms   - the manifest has exactly two permissions, INTERNET and
+            ACCESS_NETWORK_STATE, and nothing about location or contacts.
 """
 from pathlib import Path
 import re
@@ -29,7 +28,7 @@ def read(*parts):
 
 
 def function_body(source, name):
-    """Тело public function name ... end (DimScript)."""
+    """Body of public function name ... end (DimScript)."""
     match = re.search(
         r"public function %s\(.*?\nend\n" % re.escape(name), source, re.S)
     assert match, "функция %s не найдена" % name
@@ -46,7 +45,7 @@ def main():
     storage = read("native", "net", "settings_storage.inc")
     manifest = read("game", "AndroidManifest.xml")
 
-    # --- гейт согласия: без авто-скрытия, вход только кнопкой -------------
+    # --- consent gate: no auto hide, entry only through the button --------
     warn_update = function_body(engine, "update_warning")
     assert "warn_open = 0" in warn_update and "warn_closing == 1" in warn_update, \
         "предупреждение должно закрываться только после плавного затухания"
@@ -74,23 +73,24 @@ def main():
     draw_warn = function_body(menu_input, "draw_warning")
     assert "tr_legal_accept()" in draw_warn and "warn_btn_y()" in draw_warn, \
         "на экране предупреждения нет кнопки согласия"
-    # Кнопка не «разгорается»: яркость постоянная, как в конце отсчёта.
+    # The button does not light up: brightness stays at its final value.
     assert "brightness" not in draw_warn, \
         "кнопка согласия снова меняет яркость со временем"
-    # Пока отсчёт идёт, в подписи держатся секунды «(N)», потом пропадают.
+    # While counting down the label holds "(N)" seconds, then drops them.
     assert "warn_wait - floor(warn_t)" in draw_warn and "warn_ready < 1" in draw_warn, \
         "на кнопке нет отсчёта секунд до разблокировки"
     assert "warn_btn_w" in layout and "hit_warn_btn" in layout
-    # У кнопки согласия есть обводка, и она рисуется ПОСЛЕ заливки: белая
-    # геометрия под затухающей полупрозрачной чёрной заливкой просвечивает, и
-    # кнопка перед исчезновением вспыхивает белым (так и потерялась рамка).
+    # The consent button has an outline, drawn after the fill: white geometry
+    # under a fading translucent black fill shows through and makes the button
+    # flash white right before it disappears, which is how the frame was lost.
     ui = read("game", "scripts", "core", "ui.ds")
     outline = function_body(ui, "roundrect_outline")
     order = [m.group(0) for m in re.finditer(r"(roundrect|roundrect_outline|text_in_box)\(", draw_warn)]
     assert order == ["roundrect(", "roundrect_outline(", "text_in_box("], order
     assert "line(" in outline and "outline_arc(" in outline, \
         "обводка должна состоять из штриха (line) по сторонам и дуг"
-    # Штрих идёт снаружи кромки: половина толщины отложена наружу от x/y/w/h.
+    # The stroke sits outside the edge: half of its thickness is offset from
+    # x/y/w/h outwards.
     assert "local number o = t / 2" in outline and "line(x - o, y + rad, x - o, y + h - rad, t, c)" in outline
     assert "warn_frame_th" in config and "warn_frame_th" in draw_warn, \
         "на кнопке согласия нет обводки (warn_frame_th)"
@@ -100,7 +100,7 @@ def main():
         assert any(mx in arc for arc in arcs) and any(my in arc for arc in arcs), \
             "дуги должны быть во всех четырёх четвертях"
 
-    # --- метка согласия: локальная, переживает перезапуск ----------------
+    # --- consent stamp: local, survives a restart -------------------------
     assert 'sscanf(line, "legal %d", &value)' in storage
     assert '"legal %d\\n"' in storage or "legal %d\\n" in storage
     assert "void settings_mark_legal(void)" in storage
@@ -115,7 +115,7 @@ def main():
     assert "'settings_mark_legal'" in compiler, \
         "нативная функция не зарегистрирована в BUILTINS компилятора"
 
-    # --- экран приватности: рисунок, вход из настроек, выход назад -------
+    # --- privacy screen: drawn, reached from settings, back works ---------
     assert "ST_PRIVACY=16" in config
     assert "SETTINGS_ROWS=7" in layout
     draw_settings = function_body(menu_screens, "draw_settings")
@@ -133,7 +133,7 @@ def main():
     draw_screen = function_body(engine, "draw_screen")
     assert "draw_privacy()" in draw_screen
 
-    # --- тексты на обоих языках ------------------------------------------
+    # --- texts in both languages ------------------------------------------
     for name in ["tr_legal_accept", "tr_privacy", "tr_privacy_title"] + \
                 ["tr_pv%d" % i for i in range(1, 11)]:
         body = function_body(locale, name)
@@ -144,7 +144,7 @@ def main():
     accept_ru = function_body(locale, "tr_legal_accept")
     assert "риск" in accept_ru and "risk" in accept_ru
 
-    # --- разрешения манифеста: только сеть -------------------------------
+    # --- manifest permissions: network only -------------------------------
     perms = re.findall(r'uses-permission android:name="android\.permission\.([A-Z_]+)"', manifest)
     assert perms == ["INTERNET", "ACCESS_NETWORK_STATE"], perms
 

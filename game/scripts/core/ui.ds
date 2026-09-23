@@ -87,13 +87,13 @@ public function button_scaled(string label, number x, number y, number w, number
     roundrect(x, y, w, h, btn_radius, ui_purple)
     text_in_box(label, x, y, w, h, text_color, scale)
 end
--- Обводка скруглённого прямоугольника: штрих толщиной t идёт СНАРУЖИ кромки
--- (x, y, w, h, rad) и на саму фигуру не заходит ни одним пикселем. Рисовать её
--- нужно ПОСЛЕ заливки: белая подложка под затухающей полупрозрачной заливкой
--- просвечивает сквозь неё, и в конце анимации кнопка вспыхивает белым.
--- Штрих - это линии с круглыми заглушками (line): на стыках сторон и дуг не
--- остаётся щелей, а сам угол повторяется тремя отрезками (шаг 22.5°; на
--- радиусах кнопок ~20 px расхождение с настоящей дугой меньше трети пикселя).
+-- Outline of a rounded rectangle: a stroke of thickness t outside the edge
+-- (x, y, w, h, rad) that never covers the shape itself. It has to be drawn
+-- after the fill: white geometry under a fading translucent fill shows through
+-- and makes the button flash white at the end of the animation.
+-- The stroke is made of lines with round caps, so the corners of the sides and
+-- arcs meet without gaps; a corner is three segments (22.5 degrees per step,
+-- which is within a third of a pixel of a real arc at button radii).
 public function roundrect_outline(number x, number y, number w, number h, number rad, number t, color c)
     local number o = t / 2
     local number rr = rad + o
@@ -106,9 +106,9 @@ public function roundrect_outline(number x, number y, number w, number h, number
     outline_arc(x + w - rad, y + h - rad, rr, t, c, 1, 1)
     outline_arc(x + rad, y + h - rad, rr, t, c, -1, 1)
 end
--- Четверть дуги обводки радиусом rr от центра (cx, cy) в четверти (mx, my).
--- Точки единичной окружности заданы числами (0°, 22.5°, 45°, 67.5°, 90°),
--- чтобы не гонять тригонометрию в каждом кадре.
+-- Quarter of an outline arc of radius rr around (cx, cy) in the quadrant
+-- (mx, my). The unit circle points are plain numbers (0, 22.5, 45, 67.5 and 90
+-- degrees) so no trigonometry runs per frame.
 public function outline_arc(number cx, number cy, number rr, number t, color c, number mx, number my)
     line(cx + mx * rr, cy, cx + mx * 0.9239 * rr, cy + my * 0.3827 * rr, t, c)
     line(cx + mx * 0.9239 * rr, cy + my * 0.3827 * rr, cx + mx * 0.7071 * rr, cy + my * 0.7071 * rr, t, c)

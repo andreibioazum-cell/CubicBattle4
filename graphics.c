@@ -1,4 +1,4 @@
-/* Vulkan-рендер в одном трансляционном юните; части сгруппированы по ролям. */
+/* Vulkan renderer in one translation unit; the parts are grouped by role. */
 #include "native/graphics/types.inc"
 #include "native/graphics/geometry.inc"
 #include "native/graphics/vulkan_backend.inc"

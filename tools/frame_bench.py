@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Замер кадра боя на хосте: команды, геометрия и время этапов без Android.
+"""Measures a battle frame on a host: commands, geometry and stage timings.
 
-Зачем: FPS в бою упирается в какой-то потолок, и по коду не видно, где именно.
-Инструмент запускает НАСТОЯЩИЕ боевые скрипты (game/game.c) поверх настоящей
-геометрии (native/graphics/geometry.inc) и настоящего шрифта, но вместо Vulkan
-считает то, что GPU получает на вход: сколько команд рисует кадр, сколько из
-них превращается в вершины/треугольники и сколько времени занимает каждый этап
-(update, draw, разбор команд в геометрию, слияние пачек в draw call'ы).
+Why: a frame rate report gives no clue about where the time goes. The tool runs
+the real battle scripts (game/game.c) on real geometry
+(native/graphics/geometry.inc) and the real font, but instead of Vulkan it
+counts what the GPU would receive: the commands a frame draws, how many of them
+become vertices and triangles, and how long each stage takes (update, draw,
+command to geometry, batching into draw calls).
 
-Запуск из корня репозитория:
+Run from the repository root:
 
     python3 gen.py
-    python3 tools/frame_bench.py [кадров] [ширина] [высота]
+    python3 tools/frame_bench.py [frames] [width] [height]
 
-По умолчанию 600 кадров, 2400x1080 (телефон игрока в ландшафте). Печатается
-сводка: средние/максимальные миллисекунды по этапам, средние и пиковые числа
-команд, вершин, треугольников и draw call'ов, а также предупреждение, если
-кадр упирается в предел индексов uint16 (65535 вершин) — тогда часть сцены
-молча не рисуется.
+Defaults are 600 frames at 2400x1080, the player's phone in landscape. The
+summary prints average and peak milliseconds per stage, average and peak counts
+of commands, vertices, triangles and draw calls, and warns when a frame hits the
+uint16 index limit of 65535 vertices, where part of the scene is silently
+dropped.
 """
 from __future__ import annotations
 
@@ -31,17 +31,17 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 
-import ui_preview  # noqa: E402  (переиспользуем автозаглушки и STUBS)
+import ui_preview  # noqa: E402  (reuses its autostubs and STUBS)
 
 CC = shlex.split(__import__("os").environ.get("CC", "cc"))
 
 LAYER = r"""
-/* ================= запись команд кадра ================= */
+/* ================= frame command recording ================= */
 #include "native/graphics/types.inc"
 #include "native/graphics/geometry.inc"
 #include "ttf_font.c"
 
-/* Ассеты читаем прямо из game/assets - как AAssetManager на устройстве. */
+/* Assets are read from game/assets, the way AAssetManager does on a device. */
 struct AAsset { FILE *fp; long len; };
 static int dummy_amgr_storage;
 AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) {
@@ -63,10 +63,10 @@ int AAsset_close(AAsset *a) { if (!a) return 0; fclose(a->fp); free(a); return 0
 static Buffer g_buf;
 void ds_set_asset_manager(AAssetManager *a) { amgr = a ? a : (AAssetManager *)&dummy_amgr_storage; }
 
-/* ====== дословно из native/graphics/lifecycle.inc ======
- * Меняется только источник ассетов (файлы репозитория) и то, что вместо
- * отложенной GPU-заливки текстура сразу считается лежащей на GPU: кадр,
- * который видит игрок, - это установившееся состояние, а не первый кадр. */
+/* ====== copied from native/graphics/lifecycle.inc ======
+ * Only the asset source changes (files in the repository) and the deferred GPU
+ * upload: a texture counts as uploaded right away, because the frame the player
+ * sees is the steady state and not the first one. */
 static void ds_vk_pending_texture(Texture *t) { (void)t; }
 
 static Texture *find_tx(const char *n) {
@@ -130,8 +130,8 @@ static Texture *load_png(const char *req) {
         if (a != 255) t->opaque = 0;
     }
     stbi_image_free(dec);
-    /* На устройстве текстура лежит на GPU после первого кадра: геометрия
-     * строится только для залитых текстур (t->gpu.uploaded && t->gpu.desc). */
+    /* On a device a texture is on the GPU after the first frame, and geometry is
+     * built only for uploaded textures (t->gpu.uploaded && t->gpu.desc). */
     t->gpu.uploaded = 1;
     t->gpu.desc = 1;
     return t;
@@ -262,9 +262,9 @@ int text_ink_top(const char *s) {
 int text_width(const char *s) { return text_ink_width(s); }
 int text_height(const char *s) { return text_ink_height(s); }
 
-/* ====== разбор команд в геометрию: копия ds_vk_build_geometry ======
- * (native/graphics/vulkan_record.inc) плюс слияние пачек в draw call'ы
- * дословно как в ds_vk_record_draws - без Vulkan, только счётчики. */
+/* ====== command to geometry, a copy of ds_vk_build_geometry ======
+ * (native/graphics/vulkan_record.inc) plus the batching of ds_vk_record_draws,
+ * without Vulkan and with counters only. */
 typedef struct { int pipeline; const void *desc; size_t first; size_t count; } BenchBatch;
 static BenchBatch *b_batches;
 static size_t b_n, b_cap;
@@ -346,13 +346,13 @@ static int bench_build_geometry(void) {
                 }
                 break;
         }
-        /* Предел индексов uint16: лишние вершины молча теряются (geo_push_vert),
-         * здесь это видно как неполная геометрия команды. */
+        /* The uint16 index limit: extra vertices are dropped silently by
+         * geo_push_vert, which shows up here as incomplete geometry. */
         if (geo_vn == 65535 && geo_in == is) b_fail_verts++;
         (void)v_before;
         if (!bench_batch_push(pipeline, desc, is, geo_in - is)) return 0;
     }
-    /* Слияние подряд идущих пачек одного конвейера и одной текстуры. */
+    /* Merges runs of batches sharing a pipeline and a texture. */
     b_draw_calls = 0; b_merged_verts = 0;
     size_t i = 0;
     while (i < b_n) {
@@ -416,7 +416,7 @@ int main(int argc, char **argv) {
     ds_fn_init_game();
     dt = 1.0 / 60.0;
 
-    /* Прогрев: текстуры, шрифт, первые кадры боя. */
+    /* Warm up: textures, font, the first battle frames. */
     for (int i = 0; i < 60; i++) {
         ds_fn_update();
         frame_open = 1; cmd_n = 0;
@@ -435,8 +435,8 @@ int main(int argc, char **argv) {
 
     for (int f = 0; f < frames; f++) {
         dt = 1.0 / 60.0;
-        /* Ввод: ведём джойстик по кругу и раз в 40 кадров бьём - сцена живая,
-         * как у игрока, а не «стоит и ничего не рисует». */
+        /* Input: the joystick walks in a circle and a punch lands every 40
+         * frames, so the scene stays alive like in a real match. */
         double ang = (double)f * 0.07;
         ds_fn_touch((float)(joy.x + cos(ang) * 70.0), (float)(joy.y + sin(ang) * 70.0), 0, 1);
         if (f % 40 == 0) ds_fn_touch((float)atk_x, (float)atk_y, 0, 2);
@@ -515,8 +515,8 @@ def compile_bench(temp: Path) -> Path:
         if not missing:
             if run.returncode == 0:
                 return binary
-            sys.exit("сборка бенчмарка не удалась:\n" + run.stderr)
-        lines = ["/* Автозаглушки: сигнатуры из runtime.h/net.h, тела нейтральные. */",
+            sys.exit("benchmark build failed:\n" + run.stderr)
+        lines = ["/* Autostubs: signatures from runtime.h and net.h, neutral bodies. */",
                  "#include <stdarg.h>", "#include <stdio.h>"]
         unknown = []
         for name in missing:
@@ -531,16 +531,16 @@ def compile_bench(temp: Path) -> Path:
                 continue
             done.add(name)
         if unknown:
-            sys.exit("нет прототипов для заглушек: " + ", ".join(unknown))
+            sys.exit("no prototypes for these stubs: " + ", ".join(unknown))
         stubs.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    sys.exit("не удалось слинковать бенчмарк за 10 итераций")
+    sys.exit("could not link the benchmark in 10 passes")
 
 
 def main(argv: list[str]) -> int:
     args = argv[1:]
     game_c = ROOT / "game" / "game.c"
     if not game_c.exists():
-        sys.exit("нет game/game.c - сначала запустите python3 gen.py")
+        sys.exit("game/game.c is missing, run python3 gen.py first")
     with tempfile.TemporaryDirectory(prefix="frame-bench-") as td:
         binary = compile_bench(Path(td))
         run = subprocess.run([str(binary), *args], capture_output=True, text=True)

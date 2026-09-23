@@ -82,7 +82,6 @@ public number show_hitboxes=1
 public number hitbox_rgb=0x00000000
 public number hitbox_zone_alpha=96
 public number hitbox_fade_in=0.16, hitbox_fade_out=0.26
-public number dash_hitbox_zone_scale=1.3
 public number dash_hit_radius_scale=0.9
 public number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
 public number joy_speed=192, player_scale=1.8, enemy_scale=1.8
@@ -201,9 +200,9 @@ public number warn_open=1, warn_a=1, warn_ready=0, warn_t=0, warn_wait=3
 -- После согласия весь экран предупреждения плавно растворяется. warn_open
 -- остаётся включённым до конца анимации, чтобы во время неё не проходили тапы.
 public number warn_closing=0, warn_close_t=0, warn_fade=1.25
--- Толщина обводки кнопки согласия: штрих идёт снаружи её кромки (см.
--- roundrect_outline в core/ui.ds), поэтому кнопка с рамкой выглядит ровно как
--- раньше, когда рамка была белым прямоугольником чуть больше заливки.
+-- Outline thickness of the consent button. The stroke sits outside the edge
+-- (roundrect_outline in core/ui.ds), so the button looks the same as it did
+-- with the old white rectangle slightly larger than the fill.
 public number warn_frame_th=2
 public number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 public number studio_in=0.5, studio_hold=1.6, studio_fade=0.7

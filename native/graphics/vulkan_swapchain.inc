@@ -1,9 +1,9 @@
-/* Swapchain (создание/пересоздание/уничтожение) и кадры в полёте.
- * Часть Vulkan-бэкенда: включается из vulkan_backend.inc, всё собирается
- * одним translation unit'ом (graphics.c), поэтому состояние общее. */
+/* Swapchain (create, rebuild, destroy) and the frames in flight. Part of the
+ * Vulkan backend, included by vulkan_backend.inc and compiled into one
+ * translation unit (graphics.c), so the state is shared between the parts. */
 
-/* Контроллер автомасштаба живёт в lifecycle.inc (подключается позже); новое
- * окно = устаревшая история кадров, решения на ней принимать нельзя. */
+/* The autoscale controller lives in autoscale.inc and is included later; a new
+ * window means the old frame history is stale and cannot be judged by. */
 static void gfx_autoscale_new_window(void);
 
 /* --- swapchain --- */
@@ -18,18 +18,19 @@ static const char *ds_vk_present_mode_name(VkPresentModeKHR mode) {
     }
 }
 
-/* Режим презентации выбирается один раз на swapchain, но доступный список
- * печатается всегда: без этой строки в логе невозможно понять, откуда взялись
- * ступеньки 30-45 fps (ступеньки бывают только у FIFO). */
+/* The present mode is chosen once per swapchain, but the available list is
+ * always logged: without that line a frame rate report cannot be traced back to
+ * the mode the driver offered. */
 static VkPresentModeKHR ds_vk_choose_present_mode(char *listed, size_t listed_cap) {
-    /* Порядок предпочтений:
-     *   MAILBOX      - композитор забирает самый свежий готовый кадр, ступеньки
-     *                  «промах = целый лишний интервал» нет вовсе;
-     *   FIFO_RELAXED - вертикальная синхронизация без штрафного интервала: если
-     *                  кадр опоздал, он показывается сразу. Это страховка для
-     *                  драйверов, где MAILBOX не поддержан (там игра попадала
-     *                  в жёсткие ступеньки 60/40/30 fps на панели 120 Гц);
-     *   FIFO         - последний вариант: ступеньки неизбежны, но картинка целая. */
+    /* Order of preference:
+     *   MAILBOX      - the compositor takes the newest ready frame, so a late
+     *                  frame never costs a whole extra interval;
+     *   FIFO_RELAXED - vsync without the penalty interval: a late frame is shown
+     *                  right away. This is the fallback for drivers without
+     *                  MAILBOX, where a 120 Hz panel turned misses into steep
+     *                  60/40/30 fps steps;
+     *   FIFO         - the last resort: steps are unavoidable, the image is
+     *                  always whole. */
     VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
     int have_mailbox = 0, have_relaxed = 0;
     if (listed && listed_cap) listed[0] = '\0';
@@ -73,8 +74,8 @@ static void ds_vk_destroy_swapchain(void) {
     vk_image_held = 0;
 }
 
-/* Параметры поверхности, которые требуют новой swapchain. Спрашивать их
- * обязательно перед пересборкой: сам по себе SUBOPTIMAL ничего не значит. */
+/* Surface parameters that require a new swapchain. They must be queried before
+ * a rebuild: SUBOPTIMAL on its own means nothing. */
 typedef struct {
     VkExtent2D extent;
     VkFormat format;
@@ -90,14 +91,13 @@ static int ds_vk_query_surface(DsVkSurfaceState *out) {
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_phys, vk_surface, &caps),
                             "vkGetPhysicalDeviceSurfaceCapabilitiesKHR")) return 0;
     if (caps.currentExtent.width == UINT32_MAX || caps.currentExtent.width == 0 || caps.currentExtent.height == 0)
-        return 0; /* окно схлопнулось - попробуем в следующем кадре */
+        return 0; /* the window collapsed: retry next frame */
     uint32_t want = caps.minImageCount + 1;
     if (want < 3) want = 3;
     if (caps.maxImageCount && want > caps.maxImageCount) want = caps.maxImageCount;
 
-    /* Формат: обязательно с поддержкой blit (нужен автоматическому
-     * внутреннему масштабу); для R8G8B8A8/B8G8R8A8_UNORM это гарантия
-     * спецификации. */
+    /* The format must support blit, which the internal scale needs; for
+     * R8G8B8A8/B8G8R8A8_UNORM the specification guarantees that. */
     uint32_t nf = 0;
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_phys, vk_surface, &nf, NULL),
                             "vkGetPhysicalDeviceSurfaceFormatsKHR")) return 0;
@@ -117,38 +117,38 @@ static int ds_vk_query_surface(DsVkSurfaceState *out) {
     out->colorspace = chosen.colorSpace;
     out->extent = caps.currentExtent;
     out->images = want;
-    /* preTransform = IDENTITY — обязательно на Android. Изображения swapchain
-     * живут в системе координат ОКНА (ландшафт, как видит пользователь), а
-     * поворот окна относительно дисплея уже применяет системный композитор —
-     * этот поворот и есть caps.currentTransform (ROTATE_90 в ландшафте).
-     * Если задать preTransform = currentTransform (как в некоторых примерах),
-     * движок презентации проворачивает изображение ЕЩЁ на 90°: в ландшафте
-     * игра оказывается «вертикальной» и растянутой. */
+    /* preTransform = IDENTITY is required on Android. Swapchain images live in
+     * window coordinates (the landscape the player sees), and the rotation of
+     * the window against the display is applied by the system compositor - that
+     * rotation is caps.currentTransform (ROTATE_90 in landscape). Setting
+     * preTransform to currentTransform, as some samples do, makes the
+     * presentation engine rotate the image once more: the landscape game comes
+     * out vertical and stretched. */
     out->transform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
         ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
         : caps.currentTransform;
     return 1;
 }
 
-/* Что именно изменилось в поверхности (NULL - ничего). */
+/* What exactly changed on the surface, NULL for nothing. */
 static const char *ds_vk_surface_diff(const DsVkSurfaceState *s) {
-    if (vk_swap == VK_NULL_HANDLE) return "нет swapchain";
-    if (s->extent.width != vk_sw_extent.width || s->extent.height != vk_sw_extent.height) return "размер окна";
-    if (s->format != vk_sw_format) return "формат поверхности";
-    if (s->colorspace != vk_sw_colorspace) return "цветовое пространство";
-    if (s->transform != vk_sw_transform) return "поворот поверхности";
-    if (s->images != vk_sw_want_images) return "число изображений";
+    if (vk_swap == VK_NULL_HANDLE) return "no swapchain";
+    if (s->extent.width != vk_sw_extent.width || s->extent.height != vk_sw_extent.height) return "window size";
+    if (s->format != vk_sw_format) return "surface format";
+    if (s->colorspace != vk_sw_colorspace) return "colour space";
+    if (s->transform != vk_sw_transform) return "surface transform";
+    if (s->images != vk_sw_want_images) return "image count";
     return NULL;
 }
 
-/* Нужно ли пересобирать swapchain. Драйвер сообщает SUBOPTIMAL_KHR и когда
- * поверхность реально не изменилась (типовой случай: preTransform=IDENTITY при
- * currentTransform=ROTATE_90), поэтому параметры поверхности сверяются, и не
- * чаще, чем раз в DS_VK_SW_CHECK_FRAMES кадров. Иначе swapchain пересобирался
- * бы каждый кадр: vkQueueWaitIdle, заново изображения/семафоры, сброс истории
- * автомасштаба - и частота кадров встаёт в ступеньки 30-45 fps, которые не
- * лечатся оптимизацией отрисовки. OUT_OF_DATE_KHR (vk_need_recreate) считается
- * без всех этих проверок: там поверхность действительно устарела. */
+/* Whether the swapchain has to be rebuilt. Drivers also report SUBOPTIMAL_KHR
+ * when the surface did not change at all (preTransform IDENTITY against a
+ * ROTATE_90 surface is the usual case), so the surface parameters are compared,
+ * and not more often than once per DS_VK_SW_CHECK_FRAMES frames. Trusting every
+ * SUBOPTIMAL rebuilt the swapchain each frame - vkQueueWaitIdle, new images and
+ * semaphores, autoscale history dropped - which costs the 30-45 fps steps that
+ * no draw call optimisation can fix. OUT_OF_DATE_KHR (vk_need_recreate) skips
+ * these checks: there the surface really is out of date. */
 #define DS_VK_SW_CHECK_FRAMES 30
 
 static int ds_vk_swapchain_stale(void) {
@@ -160,8 +160,7 @@ static int ds_vk_swapchain_stale(void) {
     if (!ds_vk_query_surface(&now)) return 0;
     const char *why = ds_vk_surface_diff(&now);
     if (!why) {
-        /* Не чаще первой строки, потом раз в 300 проверок: лог не должен
-         * превращаться в поток на каждом кадре. */
+        /* First time, then every 300 checks: the log must not flood. */
         if (vk_sw_ignored++ == 0 || (vk_sw_ignored % 300) == 0)
             ds_log("vulkan: SUBOPTIMAL ignored (%u), surface unchanged", vk_sw_ignored);
         return 0;
@@ -231,9 +230,9 @@ static int ds_vk_recreate_swapchain(void) {
     vk_sw_check_timer = 0;
     vk_image_held = 0;
     vk_sw_recreates++;
-    /* Первое окно, возврат в приложение, поворот/ресайз: накопленные промахи
-     * относятся к прошлому окну, а первые кадры нового всегда медленные —
-     * контроллер автомасштаба начинает считать заново через секунду. */
+    /* First window, returning to the app, resize: the collected misses belong
+     * to the previous window and the first frames of a new one are always slow,
+     * so the autoscale controller starts counting from scratch. */
     gfx_autoscale_new_window();
     ds_log("vulkan: swapchain #%u %ux%u, %u images, format %d, present %s (available: %s)",
            vk_sw_recreates, vk_sw_extent.width, vk_sw_extent.height, (unsigned)vk_sw_count,
@@ -241,7 +240,7 @@ static int ds_vk_recreate_swapchain(void) {
     return 1;
 }
 
-/* --- кадры в полёте --- */
+/* --- frames in flight --- */
 
 static void ds_vk_destroy_frame_resources(void) {
     for (int i = 0; i < DS_VK_FRAMES_IN_FLIGHT; i++) {
@@ -272,11 +271,11 @@ static int ds_vk_create_frame_resources(void) {
         ai.commandBufferCount = 1;
         if (!ds_vk_check_result(vkAllocateCommandBuffers(vk_device, &ai, &f->cmd), "vkAllocateCommandBuffers")) return 0;
         VkFenceCreateInfo fi = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-        fi.flags = VK_FENCE_CREATE_SIGNALED_BIT; /* первый проход не ждёт */
+        fi.flags = VK_FENCE_CREATE_SIGNALED_BIT; /* the first pass waits for nothing */
         if (!ds_vk_check_result(vkCreateFence(vk_device, &fi, NULL, &f->fence), "vkCreateFence(frame)")) return 0;
         VkSemaphoreCreateInfo si = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
         if (!ds_vk_check_result(vkCreateSemaphore(vk_device, &si, NULL, &f->image_available), "vkCreateSemaphore(frame)")) return 0;
-        /* Буферы геометрии растут по мере надобности; стартуем с разумного. */
+        /* Geometry buffers grow on demand and start at a sane size. */
         if (!ds_vk_create_buffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                  &f->vbuf, &f->vmem, (void **)&f->vmap)) return 0;

@@ -140,10 +140,10 @@ public function draw_warning()
     -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
     -- но не крупнее 0.8, как было раньше.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
-    -- Кнопка согласия: чёрная скруглённая заливка и белая обводка по её кромке.
-    -- Обводка рисуется ПОСЛЕ заливки и только снаружи (roundrect_outline): белая
-    -- подложка под полупрозрачной чёрной заливкой просвечивала при затухании, и
-    -- кнопка перед исчезновением становилась ослепительно белой.
+    -- Consent button: black rounded fill with a white outline around its edge.
+    -- The outline is drawn after the fill and only outside it
+    -- (roundrect_outline): a white layer under the translucent black fill used
+    -- to show through while fading out and turned the button bright white.
     local number bw = warn_btn_w(), bx = center_x(bw), by = warn_btn_y()
     roundrect(bx, by, bw, btn_h, btn_radius, warn_rgb(0))
     roundrect_outline(bx, by, bw, btn_h, btn_radius, warn_frame_th, warn_rgb(0xFFFFFF))

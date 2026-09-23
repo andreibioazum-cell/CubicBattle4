@@ -536,41 +536,38 @@ static void test_hitbox_drawing(void) {
     assert(count_kind_color('c', (48u << 24) | dark) >= 1);
     gift->active = 0; boom_t = 0;
     snow_ball_a = 0; snow_boom_a = 0;
-    /* Рывок: клетки зоны урона - ОСТРЫЕ квадраты (rect) того же цвета и той же
-     * прозрачности, что и остальные зоны; скруглений нет нигде. Клетки по
-     * уже проеханному отрезку, один слой. */
+    /* Рывок: зона урона - одна полоса (rect_rot) вдоль уже проеханного
+     * отрезка, того же цвета и той же прозрачности, что и остальные зоны.
+     * Ширина полосы - диаметр зоны урона, поэтому рисунок и урон совпадают. */
     dash_active = 1; dash_box_a = 1;
     dash_x0 = 300; dash_y0 = 400; dash_dx = 1; dash_dy = 0;
     player->x = 700; player->y = 400;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
     double pr = ds_fn_dash_hit_radius_solo();    /* тот же радиус, что и урон */
-    double side = pr * dash_hitbox_zone_scale;   /* сторона большого квадрата */
-    double travel = azum_dash_speed * azum_dash_time;   /* 382.5 из 400 пути */
-    int squares = count_kind_color('q', zone);
-    assert(squares >= (int)(travel / side));
-    assert(squares >= 8);
-    assert(count_kind_color('o', zone) == 0);       /* roundrect в хитбоксах нет */
-    for (int i = 0; i < call_count; i++) {
-        if (calls[i].kind != 'q' || calls[i].color != zone) continue;
-        /* Все клетки одного большого размера и сидят на сетке мира. */
-        assert(fabs(calls[i].w - side) < 1e-3);
-        assert(fabs(calls[i].h - side) < 1e-3);
-        double gx = calls[i].x / side, gy = calls[i].y / side;
-        assert(fabs(gx - floor(gx + 0.5)) < 1e-3);   /* центр клетки сетки */
-        assert(fabs(gy - floor(gy + 0.5)) < 1e-3);
-    }
-    /* Ни капсул line(), ни кругов: слой ровно один. */
+    double path = azum_dash_speed * azum_dash_time;   /* 382.5 из 400 пути */
+    double travel = player->x - dash_x0;         /* проехали 400 -> весь путь */
+    if (travel > path) travel = path;
+    assert(count_kind_color('t', zone) == 1);    /* ровно одна полоса */
+    assert(count_kind_color('q', zone) == 0);    /* сетки квадратов больше нет */
+    assert(count_kind_color('o', zone) == 0);    /* roundrect в хитбоксах нет */
     assert(count_kind_color('l', zone) == 0);
     assert(count_kind_color('c', zone) == 0);
-    /* Рывок бота в соло рисуется тем же радиусом и тем же цветом. */
+    for (int i = 0; i < call_count; i++) {
+        if (calls[i].kind != 't' || calls[i].color != zone) continue;
+        assert(fabs(calls[i].h - 2 * pr) < 1e-3);          /* ширина = диаметр зоны */
+        assert(fabs(calls[i].y - (400 - pr)) < 1e-3);      /* полоса по оси рывка */
+        assert(fabs((calls[i].x + calls[i].w / 2) - (dash_x0 + travel / 2)) < 1e-3);
+    }
+    /* Рывок бота в соло рисуется тем же радиусом, цветом и той же полосой. */
     dash_active = 0; dash_box_a = 0;
     enemy_dash_active = 1; edash_box_a = 1;
     enemy_dash_x0 = 1100; enemy_dash_y0 = 400; enemy_dash_dx = -1; enemy_dash_dy = 0;
     enemy->x = 800; enemy->y = 400;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('q', zone) >= 5);
+    assert(count_kind_color('t', zone) == 1);
+    assert(count_kind_color('q', zone) == 0);
     assert(count_kind_color('o', zone) == 0);
     assert(count_kind_color('l', zone) == 0);
     assert(count_kind_color('c', zone) == 0);
@@ -801,7 +798,7 @@ static void test_dash_zone_narrow(void) {
     near(pr, old_r * dash_hit_radius_scale);
     assert(dash_hit_radius_scale < 1.0);
     assert(dash_hit_radius_scale >= 0.85);
-    assert(pr * dash_hitbox_zone_scale < old_r * 2);   /* полоса уже прежнего диаметра */
+    assert(pr < old_r);   /* зона рывка уже прежнего диаметра */
     /* Рывок, прошедший в стороне между новым и старым радиусом, больше не бьёт. */
     game_state = ST_ONLINE;
     double remote_old = player->size * 0.65 + 14;
@@ -811,7 +808,7 @@ static void test_dash_zone_narrow(void) {
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == -1);
     player->y = 500 + remote_pr - 1;
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == 0);
-    puts("dash: narrower damage zone, the drawn squares follow it");
+    puts("dash: narrower damage zone, the drawn strip follows it");
 }
 
 static void test_own_punch_spares_own_turret(void) {
