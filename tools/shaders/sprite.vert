@@ -1,8 +1,8 @@
 #version 450
-/* Общий вершинный шейдер рендера Cubic Battle: принимает вершину в пикселях
- * виртуального экрана (origin — левый верхний угол, y вниз) и переводит её в
- * NDC Vulkan'а через push-константу (2/w, 2/h, -1, -1). UV и цвет уходят
- * фрагментному шейдеру без изменений: у сплошных примитивов uv не используется. */
+/* Common vertex shader of the Cubic Battle renderer: takes a vertex in virtual
+ * screen pixels (origin at the top left, y down) and maps it to Vulkan NDC
+ * through the push constant (2/w, 2/h, -1, -1). UV and colour reach the fragment
+ * shader unchanged; solid primitives leave uv unused. */
 layout(location = 0) in vec2 in_pos;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_col; /* R8G8B8A8_UNORM, normalized */

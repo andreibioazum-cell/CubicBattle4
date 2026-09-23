@@ -72,8 +72,8 @@ typedef const struct JNIInvokeInterface *JavaVM;
 #endif
 """
 
-# Тест включает настоящий net.c, поэтому видит и статические функции модуля
-# (promo_code_for_nick, promo_sync_with_cloud, сессию lg).
+# The test includes the real net.c, so it also sees the static functions of the
+# module (promo_code_for_nick, promo_sync_with_cloud, the lg session).
 HARNESS = r'''
 #include <assert.h>
 #include <stdio.h>
@@ -92,17 +92,17 @@ static int run_write(const char *dir) {
     promo_code_for_nick("Andrei", code1, sizeof(code1));
     promo_code_for_nick("andrei", again, sizeof(again));
     promo_code_for_nick("Boris", code2, sizeof(code2));
-    /* Формат 3 буквы + 1 цифра: 4 символа, например ABC1. */
+    /* Format: 3 letters plus 1 digit, so 4 characters, for example ABC1. */
     assert(strlen(code1) == 4);
     assert(strlen(code2) == 4);
     int letters1=0, digits1=0;
     for(int i=0;i<4;i++){ if(code1[i]>='A'&&code1[i]<='Z') letters1++; else if(code1[i]>='0'&&code1[i]<='9') digits1++; }
     assert(letters1==3 && digits1==1);
-    /* Тот же ник (без учёта регистра) - тот же код, другой ник - другой. */
+    /* The same nick, case aside, gives the same code; another nick gives another. */
     assert(strcmp(code1, again) == 0);
     assert(strcmp(code1, code2) != 0);
-    assert(strcmp(net_promo_code(), "") == 0);  /* без сессии кода нет */
-    /* Стрик и флаг живут в promo.dat. */
+    assert(strcmp(net_promo_code(), "") == 0);  /* no session, no code */
+    /* The streak and the flag live in promo.dat. */
     assert(net_promo_used() == 0);
     assert(net_promo_streak() == 0);
     net_promo_bump_streak();
@@ -125,8 +125,8 @@ static int run_read(const char *dir) {
     return 0;
 }
 
-/* Чистое устройство: облако решает — promo_used=1 переносится локально,
- * отсутствующий promo дописывается (PATCH без JVM - no-op, как и везде). */
+/* Clean device: the cloud decides, so promo_used=1 is taken locally and a missing
+ * promo is appended (a PATCH without a JVM is a no-op, as everywhere). */
 static int run_cloud(const char *dir) {
     net_set_data_path(dir);
     lg_lock();
@@ -135,7 +135,7 @@ static int run_cloud(const char *dir) {
     lg_unlock();
     assert(promo_sync_with_cloud("{\"nick\":\"tester\",\"promo_used\":1}") == 1);
     assert(net_promo_used() == 1);
-    assert(strlen(net_promo_code()) == 4); /* код не пустой, формат 3L+1D */
+    assert(strlen(net_promo_code()) == 4); /* the code is not empty: 3L+1D */
     {
         const char *c = net_promo_code();
         int l=0,d=0;

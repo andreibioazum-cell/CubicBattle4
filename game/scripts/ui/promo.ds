@@ -1,8 +1,9 @@
--- Карточки и промокоды. Карточка выпадает в соло-матче с шансом 6/100
--- (+1% за матч без карточки, до 20%; стрик — в promo.dat). На карточке
--- личный промокод: 3 буквы + 1 цифра, выводится из ника (net_promo_code).
--- Код вводится на экране ST_PROMO и даёт разовую награду; код и флаг
--- активации дублируются в Firebase. Код показывается только после сбора карточки.
+-- Cards and promo codes. A card drops in a solo match with a chance of 6 in 100
+-- (plus 1 per cent per cardless match, up to 20; the streak lives in promo.dat).
+-- The card carries a personal code of 3 letters and 1 digit derived from the nick
+-- (net_promo_code). The code is entered on ST_PROMO for a one-off reward, and both
+-- the code and the activation flag are mirrored to Firebase. The code is only
+-- shown after the card was collected.
 public number promo_focus=0
 public string promo_input=""
 public number promo_msg_t=0

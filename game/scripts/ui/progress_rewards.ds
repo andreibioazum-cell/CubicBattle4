@@ -21,8 +21,8 @@ public function check_achievements()
     end
 end
 public function save_progress()
-    -- Батл пасс удалён из игры, но его поле в прогрессе храним как было,
-    -- чтобы старые сохранения читались без сдвига остальных полей.
+    -- The battle pass is gone, but its progress field is kept so old saves still
+    -- read without shifting the other fields.
     local number bp_lv = net_load_bp_level()
     net_save_progress_all(cups, candies, player_class,
         class_owned_of(CLASS_AZUM), class_owned_of(CLASS_SANTA), class_owned_of(CLASS_EBUC),
@@ -89,8 +89,8 @@ public function progress_from_storage()
     check_achievements()
     quest_load()
 end
--- Лимита FPS и апскейла в игре больше нет, поэтому и читать/сохранять их не
--- откуда: старые строки "fps"/"scale" в settings.dat просто игнорируются.
+-- There is no fps cap or upscale anymore, so there is nothing to read or write:
+-- the old "fps" and "scale" lines in settings.dat are ignored.
 public function settings_from_storage()
     language = net_load_language()
     show_hitboxes = net_load_hitboxes()
@@ -103,9 +103,9 @@ public function save_settings()
     net_save_winter_theme(winter_theme)
     net_save_fps_meter(show_fps)
 end
--- Кнопка «Музыка» листает громкость по кругу: выкл (0) → вкл (100) → 50%
--- от общей громкости → снова выкл. Значение сразу сохраняется и применяется
--- к играющей музыке.
+-- The music button cycles the volume: off (0), on (100), 50 per cent of the
+-- sound volume, then off again. The value is saved at once and applied to the
+-- music that is playing.
 public function music_volume_cycle()
     if music_volume <= 0 then
         music_volume = 100

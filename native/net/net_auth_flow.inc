@@ -1,13 +1,14 @@
-/* Вход по нику и паролю: net_auth целиком.
+/* Login by nick and password: net_auth as a whole.
  *
- * Тело функции исторически было разорвано между auth_session.inc и
- * moderation.inc - одна функция на два файла, из-за чего между ними нельзя
- * было ничего подключить. Теперь обе половины лежат здесь, а порядок
- * подключения в net.c прежний: auth_session.inc → net_auth_flow.inc →
+ * The body of the function used to be split between auth_session.inc and
+ * moderation.inc, one function across two files, which left no room to include
+ * anything between them. Both halves now live here, and the include order in
+ * net.c stays as it was: auth_session.inc, net_auth_flow.inc,
  * moderation.inc.
  *
- * Разбор профиля (apply_user_json / apply_user_json_keep_local) и отправка
- * локального прогресса в облако (push_pg_to_cloud) - в profile_apply.inc.
+ * Parsing the profile (apply_user_json and apply_user_json_keep_local) and
+ * pushing the local progress into the cloud (push_pg_to_cloud) live in
+ * profile_apply.inc.
  */
 double net_auth(const char *url, const char *nick, const char *pass) {
     if (!nick || !nick_valid(nick)) return (double)NET_LOGIN_BAD_NICK;
@@ -26,8 +27,8 @@ double net_auth(const char *url, const char *nick, const char *pass) {
         int registered = 0;
         int r;
         if (!nick_ascii_ok(nick)) {
-            /* Из ника собирается e-mail аккаунта, поэтому в защищённом режиме
-             * допустимы только латиница, цифры и «_». */
+            /* The account e-mail is built from the nick, so the protected mode
+             * allows Latin letters, digits and "_" only. */
             LOGERR("'%s': in secured mode nick must be latin letters, digits or '_'", nick);
             return (double)NET_LOGIN_BAD_NICK;
         }
@@ -41,8 +42,8 @@ double net_auth(const char *url, const char *nick, const char *pass) {
             return (double)NET_ERROR;
         }
         if (code != 200 || !p || !*p || !strncmp(p, "null", 4)) {
-            /* Записи ещё нет (новый аккаунт или старый без записи) - создаём
-             * дефолтную без пароля. */
+            /* No record yet, either a new account or an old one without a record,
+             * so a default record without a password is created. */
             int put_code = put_default_user(req_url, nick, NULL);
             if (put_code != 200) {
                 if (net_log_ok()) LOGERR("net_auth: create user record failed HTTP %d", put_code);

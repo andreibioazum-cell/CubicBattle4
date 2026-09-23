@@ -10,7 +10,7 @@
 #include <android/log.h>
 #include <android/native_window.h>
 typedef struct {
-    uint32_t *pixels; /* больше не используется: рендер идёт через Vulkan */
+    uint32_t *pixels; /* unused: rendering goes through Vulkan */
     int width;
     int height;
     int stride;
@@ -51,10 +51,10 @@ void arr_free(DSArray* a);
 double clamp(double v, double lo, double hi);
 double lerp(double a, double b, double t);
 double dist(double x1, double y1, double x2, double y2);
-/* Математика для скриптов (реализация в native/runtime/core.inc): минимум,
- * максимум, модуль, округление до целого, знак, остаток от деления и отбрасывание
- * дробной части. В DimScript они пишутся без префикса ds_: min, max, abs, round,
- * sign, mod, trunc (см. BUILTINS в ds_compiler.py и LANGUAGE.md). */
+/* Maths for scripts, implemented in native/runtime/core.inc: minimum, maximum,
+ * absolute value, rounding to whole, sign, remainder and truncation. DimScript
+ * writes them without the ds_ prefix: min, max, abs, round, sign, mod and trunc
+ * (see BUILTINS in ds_compiler.py and LANGUAGE.md). */
 double ds_min(double a, double b);
 double ds_max(double a, double b);
 double ds_abs(double v);
@@ -88,9 +88,9 @@ void keyboard_backspace(void);
 void keyboard_commit_utf8(const char *utf8);
 void rect(float x, float y, float w, float h, uint32_t color);
 void roundrect(float x, float y, float w, float h, float r, uint32_t color);
-/* Повёрнутый прямоугольник: x,y - левый верхний угол НЕ повёрнутой фигуры,
- * angle - поворот вокруг её центра. Рисуется с альфа-смешиванием (как rect),
- * поэтому годится для полупрозрачных зон хитбоксов с острыми углами. */
+/* Rotated rectangle: x and y give the top left corner of the unrotated shape and
+ * angle turns it around its centre. It blends by alpha like rect, which suits the
+ * translucent hitbox zones with their sharp corners. */
 void rect_rot(float x, float y, float w, float h, float angle, uint32_t color);
 void circle(float x, float y, float r, uint32_t color);
 void ring(float x, float y, float r, float t, uint32_t color);
@@ -101,11 +101,11 @@ void ds_release_assets(void);
 int png_load(const char *name);
 void tex(float x, float y, const char *name, float angle, float scale);
 void tex_tint(float x, float y, const char *name, float angle, float scale, uint32_t color);
-/* Звуки: WAV-файлы из game/sounds (см. sound.c). snd_load возвращает 1/0,
- * snd_playing — 1/0; snd_volume задаёт громкость конкретного звука (0..1). */
+/* Sounds: WAV files from game/sounds (sound.c). snd_load returns 1 or 0, so does
+ * snd_playing, and snd_volume sets the volume of one sound (0..1). */
 int snd_load(const char *name);
 int snd_play(const char *name);
-/* короткий синоним snd_play(), чтобы скрипты могли писать sound_play(...) */
+/* a short synonym of snd_play(), so scripts can write sound_play(...) */
 int sound_play(const char *name);
 int snd_loop(const char *name);
 void snd_stop(const char *name);
@@ -117,29 +117,29 @@ void ds_sound_shutdown(void);
 void ds_sound_pause(void);
 void ds_sound_resume(void);
 void ds_sound_set_java_vm(void *vm);
-/* Игровой шрифт: Comic Relief — метрически эквивалентная Comic Sans MS гарнитура
- * под свободной лицензией SIL OFL 1.1 (текст лицензии лежит рядом с файлом,
- * game/assets/fonts/ComicRelief-OFL.txt). Кириллица и латиница в нём есть,
- * поэтому оба языка интерфейса рисуются одной гарнитурой. */
+/* The game font: Comic Relief, a metric equivalent of Comic Sans MS under the
+ * free SIL OFL 1.1 licence, whose text sits next to the file in
+ * game/assets/fonts/ComicRelief-OFL.txt. It covers Cyrillic and Latin, so both
+ * interface languages use one typeface. */
 #define DS_FONT_ASSET "fonts/ComicRelief-Regular.ttf"
 #define DS_FONT_PIXEL_HEIGHT 32
 void text(const char *string, float x, float y, uint32_t color);
 void text_scaled(const char *string, float x, float y, uint32_t color, float scale);
-/* Алиасы text_ink_* для более наглядного API из примера "Кликер". */
+/* Aliases of text_ink_* for the clearer API of the clicker example. */
 int text_width(const char *string);
 int text_height(const char *string);
 int text_ink_width(const char *string);
 int text_ink_height(const char *string);
 int text_ink_top(const char *string);
-/* Автоматическое внутреннее разрешение (без кнопки и без настройки): главный
- * цикл сообщает фактический интервал кадров, а графика при накоплении промахов
- * по vsync рисует кадр в оффскрин в 2..3 раза меньше окна и растягивает его
- * (LINEAR), возвращаясь к 1:1, как только появляется запас. ds_graphics_pixel_scale
- * нужен логам и хост-тестам. */
+/* Automatic internal resolution, with no button and no setting: the main loop
+ * reports the real frame interval, and after enough vsync misses the graphics
+ * layer draws into an offscreen target two or three times smaller than the
+ * window and stretches it (LINEAR), returning to 1:1 as soon as there is slack.
+ * ds_graphics_pixel_scale serves the logs and the host tests. */
 void ds_graphics_report_frame_interval(double seconds);
 int ds_graphics_pixel_scale(void);
-/* Создание Vulkan-рендера: менеджер активов плюс окно (для поверхности
- * VK_KHR_android_surface). Возвращает 1 при успехе; при 0 кадры не рисуются. */
+/* Creates the Vulkan renderer: an asset manager plus a window, which provides the
+ * VK_KHR_android_surface. Returns 1 on success; at 0 no frames are drawn. */
 int ds_graphics_init(AAssetManager *assets, ANativeWindow *window);
 int ds_graphics_begin_frame(Buffer *buffer);
 void ds_graphics_end_frame(void);
@@ -150,8 +150,8 @@ void init(AAssetManager *assets);
 void update(void);
 void draw(Buffer *buffer);
 void touch(float x, float y, int action, int pointer_id);
-/* Системная кнопка «Назад»: 1 - скрипт обработал (закрыл чат/вернулся на
- * прошлый экран), 0 - пусть Android закрывает активити. */
+/* System Back button: 1 means the script handled it, closing the chat or returning
+ * to the previous screen, while 0 lets Android close the activity. */
 int back_pressed(void);
 void reset(void);
 #endif

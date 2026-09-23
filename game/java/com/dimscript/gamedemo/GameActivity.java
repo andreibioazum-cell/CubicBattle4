@@ -1,14 +1,15 @@
 /*
- * ВАЖНО: пакет — com.cb4, он же в AndroidManifest.xml и в именах JNI-функций
- * runtime.c (Java_com_cb4_GameActivity_*). Все три места обязаны совпадать:
- * если хотя бы одно расходится, System.loadLibrary отработает, но нативные
- * методы редактора (nativeReplaceText/nativeSubmitText/nativeKeyboardHidden)
- * не найдутся, nativeReady станет false — клавиатура откроется, а текст в
- * поле ввода не попадёт.
+ * The package is com.cb4, in AndroidManifest.xml and in the JNI names of
+ * runtime.c (Java_com_cb4_GameActivity_*). All three must agree: if one of them
+ * differs, System.loadLibrary still works, but the native editor methods
+ * (nativeReplaceText, nativeSubmitText, nativeKeyboardHidden) are not found,
+ * nativeReady stays false, and the keyboard opens while nothing reaches the input
+ * field.
  *
- * Файл намеренно лежит в старом каталоге com/dimscript/gamedemo: путь зашит
- * в шаг сборки .github/workflows/main.yml. Для javac это неважно — класс
- * компилируется по объявленному пакету (classes/com/cb4/GameActivity.class).
+ * The file deliberately sits in the old com/dimscript/gamedemo directory, whose
+ * path is baked into the build step of .github/workflows/main.yml. javac does not
+ * care: the class is compiled by its declared package, into
+ * classes/com/cb4/GameActivity.class.
  */
 package com.cb4;
 
@@ -44,7 +45,7 @@ import android.widget.FrameLayout;
  */
 public final class GameActivity extends NativeActivity {
     /*
-     * NativeActivity loads the game .so with dlopen(), which does NOT register
+     * NativeActivity loads the game .so with dlopen(), which does not register
      * it with the Java runtime: without an explicit System.loadLibrary the
      * first call to any native method below threw UnsatisfiedLinkError and
      * crashed the app the moment the keyboard was opened.
@@ -64,13 +65,13 @@ public final class GameActivity extends NativeActivity {
     private boolean keyboardWasVisible;
     /* Game asked for the IME. Stays true across transient focus losses. */
     private volatile boolean wantKeyboard;
-    /* Читается из игрового потока: пока true, весь текст ведёт этот редактор. */
+    /* Read from the game thread: while true this editor owns the whole text. */
     private volatile boolean editorActive;
-    /* Видна ли IME прямо сейчас (по реальному размеру экрана в onGlobalLayout). */
+    /* Whether the IME is on screen, judged by the real screen size in onGlobalLayout. */
     private volatile boolean imeLooksVisible;
     private int showAttempts;
-    /* Зажатый Backspace: подряд идущие удаления с малым интервалом — это
-     * автоповтор зажатой клавиши; после нескольких подряд стираем всё сразу. */
+    /* A held Backspace gives a run of quick deletions from key repeat, and after
+     * several in a row the whole text is cleared at once. */
     private long lastDeleteAt;
     private int deleteStreak;
     private boolean pendingDelete;
@@ -109,15 +110,15 @@ public final class GameActivity extends NativeActivity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        /* Частоту экрана намеренно не фиксируем: на TECNO она не заперта на
-         * 30 Гц (игра реально колеблется между 30 и 40 fps), а запрос ровно
-         * 60 Гц лишь мешает Android выбрать подходящий режим панели. */
+        /* The display refresh rate is deliberately left alone: on TECNO it is not
+         * locked to 30 Hz, the game really swings between 30 and 40 fps, and asking
+         * for exactly 60 only gets in the way of Android picking a panel mode. */
         enterImmersiveMode();
 
         chatEditor = new EditText(this);
         chatEditor.setSingleLine(true);
-        // Прозрачный текст, но alpha=1: при alpha=0 Gboard/системная IME
-        // считают поле мёртвым и не отдают символы (даже латиницу).
+        // Transparent text with alpha=1: at alpha=0 Gboard and the system IME
+        // treat the field as dead and hand over no characters at all.
         chatEditor.setTextColor(Color.TRANSPARENT);
         chatEditor.setHintTextColor(Color.TRANSPARENT);
         chatEditor.setBackgroundColor(Color.TRANSPARENT);
@@ -128,9 +129,9 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setFocusableInTouchMode(true);
         chatEditor.setClickable(false);
         chatEditor.setLongClickable(false);
-        /* Пока редактор видим, он лежит поверх маленькой полосы native-surface.
-         * Тап по этой полосе тоже считается тапом вне игрового поля и закрывает
-         * IME, а не возвращает ей фокус. */
+        /* While the editor is visible it covers the thin strip of the native
+         * surface, so a tap there counts as a tap outside the game field and closes
+         * the IME instead of returning focus to it. */
         chatEditor.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, android.view.MotionEvent event) {
@@ -140,12 +141,11 @@ public final class GameActivity extends NativeActivity {
                 return true;
             }
         });
-        // Раньше здесь был VISIBLE_PASSWORD: он отключает composing у Gboard,
-        // каждая латинская буква сразу коммитится в поле. Но заодно включает
-        // «парольную» раскладку — Gboard показывает цифровую строку, которой
-        // у пользователя в других приложениях нет. FILTER (textFilter) даёт
-        // то же прямое коммитирование без composing, но с обычной раскладкой
-        // без цифровой строки.
+        // VISIBLE_PASSWORD used to sit here: it disables composing in Gboard, so
+        // every Latin letter is committed at once, but it also switches on the
+        // password layout with a number row the user does not get elsewhere. The
+        // text filter gives the same direct committing without composing and keeps
+        // the ordinary layout.
         chatEditor.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 | InputType.TYPE_TEXT_VARIATION_FILTER);
@@ -155,8 +155,8 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setFilters(new InputFilter[] { new InputFilter.LengthFilter(95) });
         chatEditor.setVisibility(View.INVISIBLE);
 
-        /* Полноширинная полоса сверху: крошечный 1×1/угол IME считает мёртвым
-         * и не отдаёт символы. Касания всё равно идут в native InputQueue. */
+        /* A full-width strip at the top: a tiny 1x1 field or one in a corner reads
+         * as dead and receives nothing. Touches still reach the native InputQueue. */
         float density = getResources().getDisplayMetrics().density;
         int editorH = Math.max(48, (int) (48f * density));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
@@ -165,8 +165,8 @@ public final class GameActivity extends NativeActivity {
 
         chatEditor.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                // Реальное удаление с клавиатуры: текст сократился, а не был
-                // заменён целиком синхронизацией с нативной стороной.
+                // A real deletion from the keyboard: the text got shorter rather
+                // than replaced wholesale by a sync from the native side.
                 pendingDelete = !syncingFromNative && count > 0 && after == 0;
             }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
@@ -178,9 +178,9 @@ public final class GameActivity extends NativeActivity {
                     deleteStreak = (now - lastDeleteAt <= 200) ? deleteStreak + 1 : 1;
                     lastDeleteAt = now;
                     pendingDelete = false;
-                    /* Зажатый Backspace: после шести удалений подряд с интервалом
-                     * не больше 200 мс стираем всё остаток разом. Обычный быстрый
-                     * тап по одному символу этот порог не достигает. */
+                    /* A held Backspace: after six deletions in a row, no slower
+                     * than 200 ms apart, the rest is cleared at once. Ordinary quick
+                     * taps remove one character and never reach the threshold. */
                     if (deleteStreak >= 6 && chatEditor.length() > 0) {
                         deleteStreak = 0;
                         chatEditor.post(new Runnable() {
@@ -233,11 +233,11 @@ public final class GameActivity extends NativeActivity {
         // Android does not send a direct callback when the user dismisses an IME
         // with the system Back gesture. Track an actual visible->hidden transition;
         // importantly, do not report "hidden" during the short show request delay.
-        // Когда клавиатуру смахнули, сообщаем игре ВСЕГДА, даже если поле ещё
-        // «хочет» ввод (wantKeyboard=true). Иначе нативный флаг видимости
-        // навсегда застревал в «открыто»: повторный тап по полю считал IME уже
-        // показанной и не переоткрывал её, а ввод шёл в никуда — поле выглядело
-        // мёртвым (именно это ломало ввод ника).
+        // When the keyboard is swiped away the game is told ALWAYS, even if the
+        // field still wants input, because otherwise the native visibility flag got
+        // stuck on "open": a second tap on the field thought the IME was already up,
+        // never reopened it, and input went nowhere, which is what broke the nick
+        // field.
         chatEditor.getRootView().getViewTreeObserver().addOnGlobalLayoutListener(
                 new ViewTreeObserver.OnGlobalLayoutListener() {
                     @Override
@@ -281,7 +281,7 @@ public final class GameActivity extends NativeActivity {
                         WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
                                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 if (imeLooksVisible) {
-                    /* IME уже на экране: не перезапускаем её, просто держим фокус. */
+                    /* The IME is already on screen: keep the focus, restart nothing. */
                     claimEditorFocus();
                     return;
                 }
@@ -291,11 +291,11 @@ public final class GameActivity extends NativeActivity {
         });
     }
 
-    /* showSoftInput молча возвращает false, пока редактор не стал целью IME:
-     * фокус и input-подключение привязываются только на следующем
-     * layout-проходе после setVisibility(VISIBLE)/requestFocus. Поэтому первый
-     * запрос отложен, и пока клавиатура реально не появилась (onGlobalLayout
-     * видит уменьшившийся экран), запрос повторяется. */
+    /* showSoftInput quietly returns false until the editor becomes the target of
+     * the IME, since focus and the input connection settle only on the next layout
+     * pass after setVisibility(VISIBLE) and requestFocus. The first request is
+     * therefore delayed, and while the keyboard has not really appeared, judged by
+     * the shrunken screen in onGlobalLayout, the request repeats. */
     private void requestShowWhenReady() {
         if (chatEditor == null) return;
         final int attempt = showAttempts++;
@@ -349,14 +349,14 @@ public final class GameActivity extends NativeActivity {
                 }
                 editorActive = false;
                 imeLooksVisible = false;
-                showAttempts = 10; /* остановить незавершённые повторы показа */
+                showAttempts = 10; /* stop the pending show retries */
                 getWindow().setSoftInputMode(
                         WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 chatEditor.clearFocus();
                 chatEditor.setVisibility(View.INVISIBLE);
-                /* Текст хранится в native-буфере: закрытие IME не должно
-                 * стирать введённый ник/пароль/сообщение. Игра очищает его
-                 * сама после отправки или выхода из экрана. */
+                /* The text lives in the native buffer, which closing the IME must
+                 * not wipe: the game clears it itself after sending or leaving the
+                 * screen. */
                 keyboardHiddenNative();
             }
         });
@@ -371,8 +371,8 @@ public final class GameActivity extends NativeActivity {
         chatEditor.setText(safe);
         chatEditor.setSelection(chatEditor.length());
         syncingFromNative = false;
-        // restartInput только при удалении/очистке: иначе IME сбрасывает
-        // только что введённую латинскую букву, и поле Ник остаётся пустым.
+        // restartInput only on a deletion or a clear: otherwise the IME drops the
+        // Latin letter just typed and the nick field stays empty.
         if (shrinking) {
             InputMethodManager input = (InputMethodManager)
                     getSystemService(Context.INPUT_METHOD_SERVICE);

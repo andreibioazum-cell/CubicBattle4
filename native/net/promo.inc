@@ -1,23 +1,23 @@
-/* Персональный промокод игрока: карточки в соло-матчах и экран ввода кода.
+/* The player's personal promo code, the solo match cards and the code entry screen.
  *
- * Код детерминированно выводится из ника (два FNV-1a с солью проекта):
- * тот же ник - тот же код всегда, у разных игроков - разные коды. Поэтому
- * код известен даже без сети, и «записать в базу чужой код» бесполезно:
- * клиент всегда пересчитает его из собственного ника.
+ * The code is derived from the nick in a deterministic way, two FNV-1a passes with
+ * a project salt, so the same nick always gives the same code and different players
+ * get different ones. The code is known offline, and writing a foreign code into
+ * the database is useless, because a client recomputes it from its own nick.
  *
- * В облако код пишется отдельным PATCH'ем в профиль /users/<ник> (как
- * настройки в settings_storage.inc): promo - сам код, promo_used -
- * активирован ли он (одна награда на аккаунт). Отдельный запрос намеренно:
- * пока правила Firebase не опубликованы заново, эти PATCH'и просто не
- * пройдут, а прогресс (кубки, классы, уровни) продолжит сохраняться.
+ * The cloud gets the code in a PATCH of its own into /users/<nick>, the way settings
+ * do in settings_storage.inc: promo holds the code and promo_used says whether it was
+ * activated, one reward per account. The separate request is deliberate: until the
+ * Firebase rules are republished those PATCHes simply fail and progress, cups, classes
+ * and levels, keeps saving.
  *
- * Локально - promo.dat рядом с progress.dat:
+ * Locally it is promo.dat next to progress.dat:
  *   used 1
  *   streak 7
- * used - активирован ли промокод на этом устройстве, streak - сколько матчей
- * подряд без карточки (растёт шанс выпадения, см. card_roll в promo.ds).
- * Неизвестные строки при чтении игнорируются, запись атомарная
- * (временный файл + rename).
+ * used says whether the code was activated on this device and streak counts the
+ * consecutive matches without a card, which raises the drop chance (card_roll in
+ * promo.ds). Unknown lines are ignored while reading and the write is atomic, a
+ * temporary file plus rename.
  */
 #define PROMO_FILE "promo.dat"
 #define PROMO_MAX 24
@@ -34,7 +34,7 @@ static void pr_lock(void) { ds_mutex_lock(pr.lock); }
 static void pr_unlock(void) { ds_mutex_unlock(pr.lock); }
 static char s_promo_ret[PROMO_MAX];
 
-/* FNV-1a с солью: код стабилен между сборками */
+/* FNV-1a with a salt, so the code is stable across builds */
 static unsigned long long promo_hash(const char *nick, unsigned long long basis) {
     const unsigned long long prime = 1099511628211ull;
     unsigned long long h = basis;
@@ -47,7 +47,7 @@ static unsigned long long promo_hash(const char *nick, unsigned long long basis)
     return h;
 }
 
-/* Новый формат: 3 англ буквы + 1 цифра, например ABC7. Детерминированно из ника. */
+/* Current format: 3 Latin letters plus 1 digit, such as ABC7, derived from the nick. */
 static void promo_code_for_nick(const char *nick, char *out, size_t cap) {
     out[0] = 0;
     if (!nick || !*nick || cap < 8) return;
@@ -58,7 +58,7 @@ static void promo_code_for_nick(const char *nick, char *out, size_t cap) {
     char l2 = 'A' + ((h >> 5) % 26);
     char l3 = 'A' + ((h >> 10) % 26);
     char d = '0' + (h2 % 10);
-    /* Перемешиваем позицию цифры по хешу, чтобы было не всегда в конце */
+    /* The digit position is shuffled by the hash, so it is not always last */
     int pos = h % 4;
     char code[5];
     code[4] = 0;
@@ -70,7 +70,7 @@ static void promo_code_for_nick(const char *nick, char *out, size_t cap) {
     snprintf(out, cap, "%s", code);
 }
 
-/* Личный код текущего игрока (пусто, если не в аккаунте). */
+/* The personal code of the current player, empty when not logged in. */
 const char *net_promo_code(void) {
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
@@ -144,7 +144,7 @@ double net_promo_used(void) {
     return v;
 }
 
-/* Сколько соло-матчей подряд без карточки (для роста шанса в card_roll). */
+/* How many solo matches in a row went without a card, used by card_roll. */
 double net_promo_streak(void) {
     double v;
     promo_read();
@@ -152,7 +152,7 @@ double net_promo_streak(void) {
     return v;
 }
 
-/* Матч закончился без карточки - шанс в следующем растёт. */
+/* A match ended without a card, so the next chance is higher. */
 void net_promo_bump_streak(void) {
     promo_read();
     pr_lock();
@@ -161,7 +161,7 @@ void net_promo_bump_streak(void) {
     promo_write();
 }
 
-/* Карточка выпала - счётчик сбрасывается. */
+/* A card dropped, so the counter resets. */
 void net_promo_reset_streak(void) {
     promo_read();
     pr_lock();
@@ -170,7 +170,7 @@ void net_promo_reset_streak(void) {
     promo_write();
 }
 
-/* Активировать промокод: локально + отдельным PATCH'ем в облако. */
+/* Activates the promo code: locally and through a PATCH into the cloud. */
 void net_promo_mark_used(void) {
     char nick[LOGIN_NICK_MAX + 1] = "";
     promo_read();
@@ -191,8 +191,8 @@ void net_promo_mark_used(void) {
     if (net_log_ok()) LOG("promo marked used for %s", nick);
 }
 
-/* Записать личный код в облачный профиль (идемпотентно): при сборе
- * карточки и при входе, если в профиле кода ещё нет. */
+/* Writes the personal code into the cloud profile, idempotently: when a card is
+ * collected and at login if the profile has no code yet. */
 void net_promo_register(void) {
     char nick[LOGIN_NICK_MAX + 1] = "";
     char code[PROMO_MAX] = "";
@@ -210,9 +210,9 @@ void net_promo_register(void) {
     if (net_log_ok()) LOG("promo registered for %s: %s", nick, code);
 }
 
-/* После загрузки профиля из облака (см. profile_apply.inc): кода в записи
- * нет - дописываем его; promo_used=1 в облаке - не даём активировать код
- * заново на чистом устройстве (локальный файл мог потеряться). */
+/* After a cloud profile load (profile_apply.inc): a missing code is appended, and
+ * promo_used=1 in the cloud stops the code from being activated again on a clean
+ * device, where the local file may be gone. */
 int promo_sync_with_cloud(const char *resp) {
     char stored[PROMO_MAX] = "";
     int changed = 0;

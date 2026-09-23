@@ -1,10 +1,9 @@
-/* Публичный API графики для скриптов и main.c: загрузка текстур и шрифта,
- * команды рисования (rect/roundrect/rect_rot/circle/ring/line/tex/tex_tint/
- * text), кадры begin/end/cancel и экран ошибки DimScript.
+/* Public graphics API for the scripts and main.c: texture and font loading,
+ * the draw commands (rect, roundrect, rect_rot, circle, ring, line, tex,
+ * tex_tint, text), begin/end/cancel of a frame and the DimScript error screen.
  *
- * Команды только накапливаются: всю отрисовку делает Vulkan-бэкенд
- * (vulkan_backend.inc) в конце кадра. Растеризация на CPU больше не
- * выполняется вовсе. */
+ * The commands are only collected; the Vulkan backend (vulkan_backend.inc)
+ * draws them at the end of the frame. Nothing is rasterised on the CPU. */
 static Texture *find_tx(const char *n) {
     for (Texture *t = textures; t; t = t->next) if (strcmp(t->name, n) == 0) return t;
     return NULL;
@@ -44,10 +43,10 @@ static Texture *load_png(const char *req) {
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
     Texture *t = find_tx(n);
     if (t) {
-        /* Если первая GPU-загрузка временно не удалась, не оставляем текстуру
-         * навсегда невидимой в CPU-кэше: следующий вызов tex() снова поставит
-         * её в очередь. Это исправляет исчезновение idle-спрайта, когда при
-         * ударе внезапно показывалась только уже загруженная punch-поза. */
+        /* A temporarily failed upload must not leave the texture invisible in
+         * the CPU cache forever: the next tex() call queues it again. This fixes
+         * the idle sprite disappearing and only the already uploaded punch pose
+         * showing up during a hit. */
         if (t->pixels && !t->gpu.uploaded) ds_vk_pending_texture(t);
         return t->pixels ? t : NULL;
     }
@@ -78,7 +77,7 @@ static Texture *load_png(const char *req) {
         if (a != 255) t->opaque = 0;
     }
     stbi_image_free(dec);
-    ds_vk_pending_texture(t); /* зальётся на GPU в конце текущего кадра */
+    ds_vk_pending_texture(t); /* uploaded to the GPU at the end of this frame */
     ds_log("texture loaded: %s (%dx%d)", n, t->w, t->h);
     return t;
 }
@@ -94,12 +93,12 @@ static int ensure_font(void) {
     font = ds_font_create(data, sz, DS_FONT_PIXEL_HEIGHT);
     free(data);
     if (!font) { ds_log_err("font not loaded: could not parse TrueType font"); return 0; }
-    vk_pending_font = 1; /* атлас зальётся на GPU в конце текущего кадра */
+    vk_pending_font = 1; /* atlas is uploaded at the end of this frame */
     ds_log("font loaded: %s", DS_FONT_ASSET);
     return 1;
 }
 
-/* --- список команд кадра --- */
+/* --- list of frame commands --- */
 
 static DSCmd *push(DSCommand t) {
     if (!frame_open) return NULL;
@@ -123,10 +122,10 @@ static void discard_commands(void) {
     cmd_n = 0;
 }
 
-/* --- активы --- */
+/* --- assets --- */
 
 void ds_release_assets(void) {
-    /* GPU-копии (если были) - под чистую: зальются заново при загрузке. */
+    /* GPU copies, if any, are dropped: the next load uploads them again. */
     for (Texture *t = textures; t; t = t->next) ds_vk_texture_gpu_release(t);
     ds_vk_pending_reset();
     ds_vk_font_gpu_release();
@@ -142,7 +141,7 @@ void ds_set_asset_manager(AAssetManager *a) {
 }
 int png_load(const char *n) { return load_png(n) != NULL; }
 
-/* --- команды рисования (API скриптов, не меняется) --- */
+/* --- draw commands (script API, unchanged) --- */
 
 void rect(float x, float y, float w, float h, uint32_t c) {
     DSCmd *p = push(DS_CMD_RECT); if (!p) return;
@@ -155,9 +154,9 @@ void roundrect(float x, float y, float w, float h, float r, uint32_t c) {
     DSCmd *p = push(DS_CMD_ROUND); if (!p) return;
     p->v.rr.x=x; p->v.rr.y=y; p->v.rr.w=w; p->v.rr.h=h; p->v.rr.r=r; p->v.rr.c=pack_c(c);
 }
-/* Повёрнутый прямоугольник со смешиванием (обычный конвейер, как у rect):
- * хитбоксы рисуются им — ровная фигура с острыми углами вместо круглой
- * капсулы line() и вместо непрозрачного roundrect(). */
+/* Rotated rectangle with blending, on the same pipeline as rect: hitboxes use
+ * it for a straight shape with sharp corners instead of the rounded capsule of
+ * line() or the opaque roundrect(). */
 void rect_rot(float x, float y, float w, float h, float ang, uint32_t c) {
     DSCmd *p = push(DS_CMD_RECT_ROT); if (!p) return;
     p->v.rot.x=x; p->v.rot.y=y; p->v.rot.w=w; p->v.rot.h=h; p->v.rot.ang=ang; p->v.rot.c=pack_c(c);
@@ -187,19 +186,18 @@ void tex_tint(float x, float y, const char *name, float a, float s, uint32_t c) 
     DSCmd *p = push(DS_CMD_TEX_TINT); if (!p) return;
     p->v.tx2.x=x; p->v.tx2.y=y; p->v.tx2.a=a; p->v.tx2.sc=s; p->v.tx2.tx=t; p->v.tx2.c=pack_c(c);
 }
-/* Весь текст в игре рисуется чисто белым (255,255,255). Скрипты по-прежнему
- * передают цвет, но из него остаётся только альфа - она нужна плавным
- * затуханиям подписей (fade_color в core/ui.ds, админский баннер, экран
- * предупреждения). RGB подменяется на белый, поэтому ни золотые/зелёные
- * надписи достижений, ни красные/голубые ники админов на экране не
- * появляются: одно правило на всю игру вместо правки каждого вызова. */
+/* All text in the game is pure white (255,255,255). Scripts still pass a
+ * colour, but only its alpha survives, which the smooth fades of labels need
+ * (fade_color in core/ui.ds, the admin banner, the warning screen). The RGB is
+ * replaced by white, so no tinted achievement labels or coloured admin nicks
+ * appear: one rule for the whole game instead of editing every call. */
 static uint32_t text_force_white(uint32_t c) {
     // Preserve admin nickname colors (red for Dimasi4ek229, blue for qwetyuiopaj1234)
     if (c == 0xFFFF4444u || c == 0xFF4FC3F7u || c == 0xFFFF3333u || c == 0xFF33A8FFu)
         return c;
-    /* Тёмные чернила пузыря чата (chat_bubble_ink из config.ds): белый текст
-     * на белом окошке нечитаем, поэтому тёмный RGB оставляем как есть,
-     * сохраняя альфу плавного затухания. Сверяем только RGB. */
+    /* Dark ink of the chat bubble (chat_bubble_ink from config.ds): white text
+     * on a white bubble cannot be read, so the dark RGB is kept while the fade
+     * alpha survives. Only the RGB is compared. */
     if ((c & 0x00ffffffu) == 0x00202020u)
         return c;
     return (c & 0xff000000u) | 0x00ffffffu;
@@ -215,7 +213,7 @@ void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
 }
 void text(const char *s, float x, float y, uint32_t c) { text_scaled(s, x, y, c, 1.0f); }
 
-/* --- метрики текста (остаются на CPU, как и были) --- */
+/* --- text metrics (still measured on the CPU) --- */
 
 int text_ink_width(const char *s) {
     if (!s || !ensure_font()) return 0;
@@ -243,10 +241,10 @@ int text_ink_height(const char *s) {
         const DSFontGlyph *g = ds_font_glyph(font, (uint32_t)cp);
         if (!g) continue;
         float dt = base - g->bearing_top, db = dt + g->height;
-        /* Нижние выносные элементы ('р','у','д','g','y' и т.п.) не должны
-         * раздувать высоту ink-бокса: иначе строка с ними центрируется выше
-         * строк без них, и текст «уезжает вверх» на часть выносного элемента.
-         * Обрезаем низ по базовой линии - она ровно в dt == base. */
+        /* Descenders (p, y, g and the like) must not inflate the ink box:
+         * otherwise a line with them is centred differently and the text drifts
+         * up by part of a descender. The bottom is cut at the baseline, which
+         * sits exactly at dt == base. */
         if (db > base) db = base;
         if (first || dt < minT) minT = dt;
         if (first || db > maxB) maxB = db;
@@ -272,119 +270,16 @@ int text_ink_top(const char *s) {
     return first ? 0 : (int)floorf(minT);
 }
 
-/* --- кадры --- */
+/* --- frames --- */
 
 int ds_graphics_init(AAssetManager *a, ANativeWindow *window) {
     if (amgr != a) { ds_release_assets(); amgr = a; }
     return ds_vk_init_backend(window);
 }
-/* Автоматическое внутреннее разрешение: ни кнопки, ни настройки, ни сохранённого
- * значения — только реакция на фактическую скорость кадров. Vsync (FIFO)
- * квантует частоту: стоит кадру стать чуть дольше 16.6 мс, и вместо 60 будет 30.
- * На слабых GPU в бою (много слоёв смешивания на весь экран) полный размер окна
- * в этот бюджет не укладывается, поэтому при накоплении промахов кадр рисуется
- * в оффскрин в scale раз меньше и растягивается на окно; как только запас
- * появляется — возвращаемся к 1:1. Картинка всегда резкая, пока устройство
- * держит 60 fps; мягче она становится только вместо провала в 30.
- *
- * Гистерезис здесь принципиально несимметричный, чтобы масштаб не «дышал»:
- * грубее уходим быстро (4 промаха подряд или 4 из 24 кадров), чтобы слабый
- * телефон не оставался на 20-35 fps несколько секунд, а пробу «резче»
- * допускаем только после 300 кадров (~5 с) вообще без промахов и не
- * чаще раза в 15 с; две провалившиеся пробы за сеанс навсегда фиксируют
- * текущий масштаб (gfx_finer_off) — лучше стабильная мягкость, чем видимая
- * пульсация резкости и пересоздание оффскрина каждые несколько секунд.
- * История промахов сбрасывается на каждом новом окне (gfx_autoscale_new_window):
- * первые кадры после возврата в приложение всегда медленные и не должны
- * сразу тянуть масштаб вниз. */
-static int gfx_auto_scale = 1;
-static int gfx_cooldown = 0;        /* кадров до любых решений после смены */
-static int gfx_finer_cooldown = 0;  /* кадров до следующей пробы «резче» */
-static int gfx_probe_finer = 0;     /* идёт проба «резче»: промах откатит */
-static int gfx_probe_left = 0;      /* кадров вердикта пробы; дожил до 0 - успех */
-static int gfx_probe_fails = 0;     /* сколько проб провалилось за сеанс */
-static int gfx_finer_off = 0;       /* после двух провалов пробы выключены */
-static int gfx_clean = 0;           /* кадров подряд без промаха */
-static int gfx_miss_streak = 0, gfx_win_frames = 0, gfx_win_misses = 0;
-
-int ds_graphics_pixel_scale(void) { return gfx_auto_scale; }
-
-/* Старт/возврат в приложение/смена размера окна: история скорости устарела. */
-static void gfx_autoscale_new_window(void) {
-    /* Первую оценку производительности делаем быстро: на слабом GPU секунда
-     * кадров в полном разрешении визуально ощущается как зависание интерфейса. */
-    gfx_cooldown = 15;
-    gfx_probe_finer = 0;
-    gfx_probe_left = 0;
-    gfx_miss_streak = 0; gfx_win_frames = 0; gfx_win_misses = 0; gfx_clean = 0;
-}
-
-static void gfx_set_scale(int s, int cooldown) {
-    if (s < 1) s = 1;
-    /* На слабых 1080p-устройствах (включая Unisoc T615) 1/4 всё ещё может
-     * упираться в 30 fps. Разрешаем аварийные 1/5 и 1/6: интерфейс станет
-     * мягче, зато управление и анимации останутся отзывчивыми. */
-    if (s > 6) s = 6;
-    if (s == gfx_auto_scale) return;
-    gfx_auto_scale = s;
-    gfx_cooldown = cooldown;
-    gfx_miss_streak = 0; gfx_win_frames = 0; gfx_win_misses = 0;
-    ds_log("graphics: internal resolution 1/%d (auto)", s);
-}
-
-/* Кадровый интервал главного цикла (секунды): вызывается после каждого кадра. */
-void ds_graphics_report_frame_interval(double sec) {
-    if (!(sec > 0.0) || sec > 0.25) return;   /* пауза, сворачивание, отладчик */
-    if (gfx_finer_cooldown > 0) gfx_finer_cooldown--;
-    /* Промах по vsync 60 Гц: кадр пришёл ко второму вертикальному интервалу
-     * (33 мс) или позже. 20 мс — граница с запасом против дрожания 16.7. */
-    int missed = sec > 0.020;
-    gfx_clean = missed ? 0 : gfx_clean + 1;
-    if (gfx_cooldown > 0) { gfx_cooldown--; return; }
-    /* Вердикт пробы «резче»: окно кадров после её кулдауна. Одиночный поздний
-     * промах спустя минуту не должен откатывать уже прижившийся масштаб. */
-    if (gfx_probe_finer && gfx_probe_left > 0) {
-        gfx_probe_left--;
-        if (gfx_probe_left == 0) gfx_probe_finer = 0;  /* проба прижилась */
-    }
-    if (missed) {
-        if (gfx_probe_finer) {   /* проба «резче» провалилась — откат и надолго */
-            gfx_probe_finer = 0;
-            gfx_probe_left = 0;
-            gfx_probe_fails++;
-            if (gfx_probe_fails >= 2) gfx_finer_off = 1;
-            gfx_finer_cooldown = gfx_finer_off ? 1000000000 : 1800;
-            gfx_set_scale(gfx_auto_scale + 1, 90);
-            return;
-        }
-        gfx_miss_streak++;
-    } else {
-        gfx_miss_streak = 0;
-    }
-    gfx_win_frames++;
-    if (missed) gfx_win_misses++;
-    if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
-        int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
-        if (bad) {
-            /* Пересоздание оффскрина ждёт GPU и само даёт заметный рывок.
-             * Перепрыгиваем сразу две ступени (1→3→5→6), чтобы вместо пяти
-             * подвисаний при подборе масштаба было максимум три. */
-            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 2, 12);
-        } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
-                   gfx_finer_cooldown == 0 && !gfx_finer_off) {
-            gfx_probe_finer = 1;
-            gfx_finer_cooldown = 900;
-            gfx_set_scale(gfx_auto_scale - 1, 45);
-            gfx_probe_left = 45 + 60;  /* кулдаун пробы плюс окно вердикта */
-        }
-        gfx_win_frames = 0; gfx_win_misses = 0;
-    }
-}
-
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;
-    /* b->pixels больше не используется: рисуем через Vulkan. Оффскрин равен
-     * окну, пока автомасштаб не увидел промахов по vsync. */
+    /* b->pixels is unused: drawing goes through Vulkan. The offscreen matches
+     * the window until the autoscale sees vsync misses. */
     uint32_t s = (uint32_t)gfx_auto_scale;
     uint32_t ow = (uint32_t)b->width / s, oh = (uint32_t)b->height / s;
     if (ow < 1) ow = 1;
@@ -397,17 +292,18 @@ int ds_graphics_begin_frame(Buffer *b) {
 void ds_graphics_end_frame(void) {
     if (!frame_open) return;
     ds_vk_end_frame_backend();
+    ds_vk_pace_frame();
     cmd_n = 0; frame_open = 0; cur_buf = NULL;
 }
 void ds_graphics_cancel_frame(void) {
     discard_commands();
     frame_open = 0; cur_buf = NULL;
-    /* Захваченный кадр Vulkan оставляет держаться: следующий begin_frame
-     * переиспользует его без повторного acquire. */
+    /* A cancelled frame keeps its Vulkan image: the next begin_frame reuses it
+     * without acquiring again. */
 }
 void ds_graphics_error_screen(const char *m) {
     if (!frame_open) return;
-    /* Экран ошибки рисуется теми же командами и тем же Vulkan-конвейером. */
+    /* The error screen is drawn with the same commands and the same pipeline. */
     discard_commands();
     rect(0.0f, 0.0f, (float)(cur_buf ? cur_buf->width : screen_w),
          (float)(cur_buf ? cur_buf->height : screen_h), pack_c(0xff1c0b10));
@@ -435,7 +331,7 @@ void ds_graphics_error_screen(const char *m) {
 }
 void ds_graphics_shutdown(void) {
     ds_graphics_cancel_frame();
-    ds_vk_shutdown_backend(); /* GPU уходит первым; CPU-пиксели остаются */
+    ds_vk_shutdown_backend(); /* the GPU goes first, CPU pixels stay */
     ds_release_assets();
     free(cmds); cmds = NULL; cmd_cap = 0; cmd_n = 0;
     free(geo_verts); geo_verts = NULL; geo_vcap = geo_vn = 0;

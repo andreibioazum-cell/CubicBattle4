@@ -8,10 +8,10 @@ static void achievements_read(void) {
     data_file_path(path, sizeof(path), ACHIEVEMENTS_FILE);
     f = fopen(path, "r");
     if (f) {
-        /* Современный формат - битмаск и (со 2-го числа) счётчик возрождений
-         * Азума. Старые сборки писали «welcome all_characters» (0/1 0/1) или
-         * одно число-битмаск: такие файлы тоже читаем. Достижение «Привет!»
-         * удалено, его бит (0) при чтении старого формата не ставится. */
+        /* Current format: a bitmask plus, from the second number on, the Azum revive
+         * counter. Old builds wrote "welcome all_characters" as two 0/1 flags or a single
+         * bitmask number, and those files are read too. The "hello" achievement is gone,
+         * so its bit 0 is never set while reading the old format. */
         char line[64];
         if (fgets(line, sizeof(line), f)) {
             int a = 0, b = 0;
@@ -76,7 +76,7 @@ void net_mark_achievement_flag(double flag) {
     r = ach_revives;
     ds_mutex_unlock(ach_lock);
     achievements_write(f, r);
-    /* Синхронизация достижений в Firebase: PATCH в профиль игрока. */
+    /* Syncing achievements to Firebase: a PATCH into the player profile. */
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
     if (lg.status == NET_LOGIN_OK && lg.session_nick[0]) {
@@ -92,8 +92,8 @@ void net_mark_achievement_flag(double flag) {
     }
 }
 
-/* Счётчик возрождений за Азума - второе число в achievements.dat. Лежит рядом
- * с флагами, чтобы достижение «Легенды не умирают...» переживало перезаход. */
+/* The Azum revive counter is the second number of achievements.dat, kept next to
+ * the flags so the legends achievement survives a restart. */
 double net_load_azum_revives(void) {
     double value;
     achievements_read();
@@ -110,7 +110,7 @@ void net_save_azum_revives(double revives) {
     ach_loaded = 1;
     ds_mutex_unlock(ach_lock);
     achievements_write(f, r);
-    /* Синхронизация счётчика возрождений в Firebase. */
+    /* Syncing the revive counter to Firebase. */
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
     if (lg.status == NET_LOGIN_OK && lg.session_nick[0]) {
@@ -237,9 +237,9 @@ static int http_ex(const char *method,const char *url,const char *body,char *out
     urlobj=(*env)->NewObject(env,urlc,(*env)->GetMethodID(env,urlc,"<init>","(Ljava/lang/String;)V"),ju); JNI_CHECK();
     conn=(*env)->CallObjectMethod(env,urlobj,(*env)->GetMethodID(env,urlc,"openConnection","()Ljava/net/URLConnection;")); JNI_CHECK();
     {
-        /* HttpURLConnection бросает ProtocolException на PATCH, а сохранение
-         * прогресса и банов идёт именно им. Firebase умеет принимать такой
-         * запрос как POST с заголовком X-HTTP-Method-Override. */
+        /* HttpURLConnection throws ProtocolException on PATCH, and progress and bans are
+         * saved with exactly that method. Firebase accepts the request as a POST carrying
+         * an X-HTTP-Method-Override header. */
         const char *send_method = method;
         const char *override = NULL;
         if (!strcmp(method, "PATCH")) { send_method = "POST"; override = "PATCH"; }
@@ -374,32 +374,32 @@ static void json_escape(const char *src, char *dst, size_t cap){
 }
 
 /*
- * Firebase Auth: базу могут читать и писать только запросы с ?auth=<idToken>.
+ * Firebase Auth: only requests with ?auth=<idToken> may read or write the database.
  *
- * Раньше правила базы были открыты («users: .read true»), а URL лежал в
- * открытом репозитории - любой мог выкачать чужие пароли (они хранились в
- * открытом виде), затереть чат, слоты или баны и просто завалить базу
- * запросами. Теперь клиент логинится в Firebase Auth по e-mail/паролю
- * <ник>@cb4.game (пароль = игровой пароль + суффикс), получает idToken и
- * подписывает им каждый запрос. API-ключ ограничен нашим Android-пакетом
- * com.cb4 в Google Cloud Console, поэтому токен можно получить только из
- * нашего приложения, а правила firebase.rules.json пускают одних лишь
- * authenticated-запросов. Пароли из базы исчезают совсем.
+ * The database rules used to be open ("users: .read true") while the URL sat in a
+ * public repository, so anyone could download other players' passwords, which were
+ * stored in the clear, wipe the chat, the slots or the bans, and flood the database
+ * with requests. Now the client logs into Firebase Auth with the e-mail
+ * <nick>@cb4.game and the game password plus a suffix, gets an idToken and signs
+ * every request with it. The API key is restricted to our com.cb4 Android package
+ * in the Google Cloud Console, so a token can only come from our app, and
+ * firebase.rules.json admits authenticated requests alone. Passwords disappear from
+ * the database entirely.
  *
- * Если FB-ключ не задан (config.ds: FB_KEY=""), клиент работает по-старому -
- * это переходный режим для уже собранных версий.
+ * With no Firebase key set (config.ds: FB_KEY="") the client works the old way,
+ * which is a transition mode for builds that are already out.
  */
 #define FB_EMAIL_DOMAIN "@cb4.game"
-/* Пароль Firebase = игровой + суффикс: у Firebase минимум 6 символов, а игра
- * разрешает короткие пароли; суффикс добивает длину и не даёт использовать
- * базу паролей Firebase как самостоятельный вход. */
+/* The Firebase password is the game password plus a suffix: Firebase wants at least
+ * six characters while the game allows short ones, and the suffix both fills the
+ * length and keeps the Firebase password store from doubling as a login. */
 #define FB_PASS_SUFFIX "|cb4v1"
 typedef struct {
     DSMutex lock;
     char key[128];
     char id_token[FB_ID_MAX];
     char refresh_token[FB_REFRESH_MAX];
-    long long expires_at;   /* мс; обновляем за минуту до истечения */
+    long long expires_at;   /* milliseconds; refreshed a minute before it expires */
 } FirebaseAuth;
 static FirebaseAuth fb = { .lock = DS_MUTEX_INIT };
 
@@ -426,9 +426,9 @@ static void fb_store_tokens(const char *id_token, const char *refresh_token, dou
     ds_mutex_unlock(fb.lock);
 }
 
-/* URL auth-эндпоинтов. Боевой путь - googleapis.com; если же базой указан
- * локальный http:// тестовый сервер, auth-эндпоинты тоже ищутся на нём -
- * так тестовый прогон проходит ровно тот же код, что и бой. */
+/* URLs of the auth endpoints. The live path is googleapis.com, but when the
+ * database points at a local http test server the auth endpoints are looked up
+ * there too, so a test run goes through exactly the same code as production. */
 static void fb_auth_endpoint(char *dst, size_t cap, const char *path) {
     if (net.base[0] && !strncmp(net.base, "http://", 7)) {
         snprintf(dst, cap, "%s%s?key=%s", net.base, path, fb.key);
@@ -437,9 +437,8 @@ static void fb_auth_endpoint(char *dst, size_t cap, const char *path) {
     if (!strcmp(path, "/v1/token"))
         snprintf(dst, cap, "https://securetoken.googleapis.com/v1/token?key=%s", fb.key);
     else
-        /* path уже содержит /v1/... (например /v1/accounts:signInWithPassword),
-         * поэтому второй раз «v1» подставлять нельзя - иначе получится
-         * /v1/v1/... и Firebase Auth ответит ошибкой, а клиент покажет
-         * «No connection». */
+        /* The path already holds /v1/... (for example /v1/accounts:signInWithPassword), so
+         * a second "v1" must not be prepended: /v1/v1/... would make Firebase Auth answer
+         * with an error, and the client would show "No connection". */
         snprintf(dst, cap, "https://identitytoolkit.googleapis.com%s?key=%s", path, fb.key);
 }

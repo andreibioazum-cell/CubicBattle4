@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-"""Предпросмотр экранов игры на хосте: PNG без Android и Vulkan.
+"""Preview of the game screens on a host: PNG without Android or Vulkan.
 
-Игра (game/game.c) рисуется настоящими функциями отрисовки, но поверх копии
-прежнего CPU-растеризатора (tools/host_test/legacy_raster.inc) и настоящего
-разбора TTF (ttf_font.c): текст выходит реальным шрифтом, текстуры читаются
-прямо из game/assets, раскладка считается боевыми функциями layout-скриптов.
-Зачем: правки меню/карточек/настроек можно увидеть и проверить на хосте, не
-собирая APK (например, что длинный девиз не вылезает за карточку).
+The game (game/game.c) is drawn by its real drawing functions, on top of a copy
+of the old CPU rasteriser (tools/host_test/legacy_raster.inc) and real TTF
+parsing (ttf_font.c): the text uses the real font, textures are read from
+game/assets and the layout comes from the real layout functions. Screen changes
+can be checked on a host without building an APK, for example that a long motto
+does not overflow its card.
 
-Запуск из корня репозитория (нужен cc и сгенерированный game/game.c):
+Run from the repository root (needs cc and a generated game/game.c):
 
     python3 gen.py
     python3 tools/ui_preview.py preview classes settings lobby
 
-Аргументы: каталог для PNG (создаётся) и имена экранов: classes (карточки
-классов с девизами), settings (настройки, 8 строк), lobby (главное меню).
-Без имён экранов рисуются classes и settings. Сетевые и звуковые вызовы
-заглушены, поэтому прогресс выставляется в main() руками.
+Arguments: a directory for the PNGs (created on demand) and screen names:
+classes (class cards with their mottos), settings (8 rows), lobby (main menu).
+Without screen names classes and settings are drawn. Network and sound calls are
+stubbed, so progress values are set by hand in main().
 
-Недостающие заглушки догенерируются автоматически по прототипам из
-runtime.h/net.h (сигнатуры настоящие, тела возвращают 0/""/ничего), поэтому
-инструмент не ломается при добавлении новых net_* функций.
+Missing stubs are generated automatically from the prototypes in runtime.h and
+net.h: the signatures are real and the bodies return 0, "" or nothing, so the
+tool keeps working when new net_* functions appear.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CC = shlex.split(__import__("os").environ.get("CC", "cc"))
-SCREENS = ("classes", "settings")
+SCREENS = ("classes", "settings", "warn", "warn_fade")
 
 STUBS = r"""
 #include <assert.h>
@@ -54,7 +54,7 @@ double str_index_of(const char *hay, const char *needle) { const char *p = hay &
 int str_starts_with(const char *s, const char *pref) { return s && pref && strncmp(s, pref, strlen(pref)) == 0; }
 int str_ends_with(const char *s, const char *suf) { size_t ls = s ? strlen(s) : 0, lf = suf ? strlen(suf) : 0; return ls >= lf && suf && strcmp(s + ls - lf, suf) == 0; }
 const char *str_sub(const char *s, double start, double len) {
-    /* Как в нативе: каждый вызов — отдельная выделенная строка. */
+    /* As in the native code: every call gets its own allocated string. */
     size_t sl = s ? strlen(s) : 0, st = (size_t)start, ln = (size_t)len;
     if (st > sl) st = sl;
     if (st + ln > sl) ln = sl - st;
@@ -64,9 +64,9 @@ const char *str_sub(const char *s, double start, double len) {
     out[ln] = 0;
     return out;
 }
-/* Конкатенация и числа - через пул буферов, как ds_string_pool в рантайме:
- * вложенные ds_concat(ds_concat(a, b), c) не должны затирать левый операнд
- * (одна статическая строка на все вызовы режет надписи на куски). */
+/* Concatenation and numbers go through a pool of buffers, like the runtime
+ * string pool: nested ds_concat(ds_concat(a, b), c) must not overwrite the left
+ * operand, which a single static buffer would do. */
 #define PREV_POOL 16
 static char prev_pool[PREV_POOL][1024];
 static int prev_pool_i;
@@ -89,7 +89,7 @@ double dist(double x1, double y1, double x2, double y2) { return hypot(x1 - x2, 
 void ds_log(const char *format, ...) { (void)format; }
 void ds_runtime_error(const char *format, ...) { fputs(format, stderr); abort(); }
 
-/* ---------- array stubs (ds_main инициализирует глобальные массивы) ---------- */
+/* ---------- array stubs (ds_main initialises the global arrays) ---------- */
 struct DSArray { int len; double values[4096]; };
 DSArray *arr_new(void) { DSArray *a = calloc(1, sizeof(*a)); assert(a); return a; }
 void arr_free(DSArray *a) { free(a); }
@@ -143,20 +143,20 @@ double net_chat_count(void) { return chat_msg_count; }
 const char *net_chat_text(double idx) { return idx >= 0 && idx < chat_msg_count ? chat_msgs[(int)idx] : ""; }
 const char *net_chat_uid(double idx) { (void)idx; return "Tester"; }
 const char *net_chat_key(double idx) { (void)idx; return "key"; }
-/* Переменные ввода из runtime.h (на хосте их никто не двигает). */
+/* Input variables from runtime.h, nothing moves them on a host. */
 int mouse_clicked = 0;
 double ds_mouse_x = 0, ds_mouse_y = 0;
 """
 
 LAYER = r"""
-/* ================== настоящий растеризатор вместо моков ==================
- * legacy_raster.inc - дословная копия прежнего CPU-растеризатора игры,
- * ttf_font.c - настоящий разбор TTF и запекание атласа. Вместе они рисуют
- * кадр ровно так, как его видел бы игрок (текст - настоящим шрифтом). */
+/* ================== the real rasteriser instead of mocks ==================
+ * legacy_raster.inc is a copy of the old CPU rasteriser of the game and
+ * ttf_font.c is the real TTF parsing and atlas baking, so together they draw a
+ * frame the way the player would see it, text included. */
 #include "tools/host_test/legacy_raster.inc"
 #include "ttf_font.c"
 
-/* Ассеты читаем прямо из game/assets - как AAssetManager на устройстве. */
+/* Assets are read from game/assets, the way AAssetManager does on a device. */
 struct AAsset { FILE *fp; long len; };
 static int dummy_amgr_storage;
 AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) {
@@ -178,8 +178,8 @@ int AAsset_close(AAsset *a) { if (!a) return 0; fclose(a->fp); free(a); return 0
 static Buffer g_buf;
 void ds_set_asset_manager(AAssetManager *a) { amgr = a ? a : (AAssetManager *)&dummy_amgr_storage; }
 
-/* Весь текст в игре рисуется белым (кроме ников админов и тёмных чернил чата) -
- * правило дословно из native/graphics/lifecycle.inc. */
+/* All in-game text is white except admin nicks and the dark chat ink, the same
+ * rule as in native/graphics/lifecycle.inc. */
 static uint32_t prev_text_force_white(uint32_t c) {
     if (c == 0xFFFF4444u || c == 0xFF4FC3F7u || c == 0xFFFF3333u || c == 0xFF33A8FFu) return c;
     if ((c & 0x00ffffffu) == 0x00202020u) return c;
@@ -188,9 +188,9 @@ static uint32_t prev_text_force_white(uint32_t c) {
 
 void rect(float x, float y, float w, float h, uint32_t c) { render_rect(&g_buf, x, y, w, h, pack_c(c)); }
 void roundrect(float x, float y, float w, float h, float r, uint32_t c) { render_roundrect(&g_buf, x, y, w, h, r, pack_c(c)); }
-/* Повёрнутый прямоугольник (хитбоксы): те же углы, что считает geo_rect_rot
- * (поворот вокруг центра фигуры), заполняются по строкам со смешиванием -
- * поэтому зона прозрачная и с острыми углами. */
+/* Rotated rectangle (hitboxes): the same angles as geo_rect_rot computes, a
+ * rotation around the centre of the shape, filled span by span with blending, so
+ * the zone is translucent with sharp corners. */
 void rect_rot(float x, float y, float w, float h, float ang, uint32_t c) {
     if (!g_buf.pixels || !isfinite(x + y + w + h + ang) || w <= 0 || h <= 0) return;
     uint32_t col = pack_c(c);
@@ -248,7 +248,7 @@ void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
 }
 void text(const char *s, float x, float y, uint32_t c) { text_scaled(s, x, y, c, 1.0f); }
 
-/* Метрики текста - дословно из native/graphics/lifecycle.inc. */
+/* Text metrics, the same as in native/graphics/lifecycle.inc. */
 int text_ink_width(const char *s) {
     if (!s || !ensure_font()) return 0;
     const DSFontGlyph *ref = ds_font_glyph(font, 'S');
@@ -300,7 +300,7 @@ int text_ink_top(const char *s) {
 int text_width(const char *s) { return text_ink_width(s); }
 int text_height(const char *s) { return text_ink_height(s); }
 
-/* --------- запись PNG без zlib: deflate «stored»-блоками --------- */
+/* --------- PNG writing without zlib, using stored deflate blocks --------- */
 static uint32_t png_crc(const uint8_t *p, size_t n) {
     static uint32_t tab[256]; static int ready = 0;
     if (!ready) { for (uint32_t i = 0; i < 256; i++) { uint32_t c = i; for (int k = 0; k < 8; k++) c = c & 1 ? 0xedb88320u ^ (c >> 1) : c >> 1; tab[i] = c; } ready = 1; }
@@ -369,11 +369,11 @@ static int write_png(const char *path, const Buffer *b) {
 }"""
 
 MAIN = r"""
-/* ================================ сцена ================================
- * Экраны рисуются настоящими функциями игры (game.c), поэтому PNG показывает
- * ровно то, что увидел бы игрок: реальная раскладка, реальный шрифт, реальные
- * текстуры из game/assets. Прогресс выставляется руками, чтобы карточки были
- * открыты, а настройки соответствуют значениям по умолчанию из settings.dat. */
+/* ================================ scene ================================
+ * The screens are drawn by the real game functions (game.c), so the PNG shows
+ * what a player would see: real layout, real font, real textures from
+ * game/assets. Progress is set by hand so the cards are unlocked, and the
+ * settings match the defaults from settings.dat. */
 int main(int argc, char **argv) {
     const char *screen = argc > 1 ? argv[1] : "classes";
     const char *out = argc > 2 ? argv[2] : "ui_preview.png";
@@ -382,14 +382,14 @@ int main(int argc, char **argv) {
     uint32_t *px = (uint32_t *)calloc((size_t)W * H, sizeof *px);
     if (!px) { fprintf(stderr, "out of memory for framebuffer\n"); return 1; }
     g_buf.width = W; g_buf.height = H; g_buf.stride = W; g_buf.pixels = px;
-    amgr = (AAssetManager *)&dummy_amgr_storage;   /* ассеты читаются с диска */
-    ds_main();                                     /* глобальные массивы игры */
-    ds_fn_init();                                  /* текстуры, шрифт, настройки */
-    /* Значения по умолчанию из settings.dat (сетевые заглушки вернули нули). */
+    amgr = (AAssetManager *)&dummy_amgr_storage;   /* assets come from disk */
+    ds_main();                                     /* the global game arrays */
+    ds_fn_init();                                  /* textures, font, settings */
+    /* Defaults from settings.dat (the network stubs returned zeroes). */
     language = 1; show_hitboxes = 1; music_volume = 70;
     winter_theme = 1; show_fps = 1;
     ds_fn_apply_winter_theme();
-    /* Прогресс: все классы куплены, выбран Азум - как у играющего человека. */
+    /* Progress: every class owned, Azum selected, as in a played account. */
     ds_fn_set_class_owned(CLASS_AZUM, 1);
     ds_fn_set_class_owned(CLASS_SANTA, 1);
     ds_fn_set_class_owned(CLASS_EBUC, 1);
@@ -399,15 +399,23 @@ int main(int argc, char **argv) {
     if (strcmp(screen, "classes") == 0) { game_state = ST_CLASSES; ds_fn_draw_classes(); }
     else if (strcmp(screen, "settings") == 0) { game_state = ST_SETTINGS; ds_fn_draw_settings(); }
     else if (strcmp(screen, "lobby") == 0) { game_state = ST_LOBBY; ds_fn_draw_lobby(); }
-    else { fprintf(stderr, "неизвестный экран: %s (классы: classes/settings/lobby)\n", screen); return 2; }
-    if (!write_png(out, &g_buf)) { fprintf(stderr, "не удалось записать %s\n", out); return 1; }
+    else if (strcmp(screen, "warn") == 0 || strcmp(screen, "warn_fade") == 0) {
+        /* The whole warning screen, consent button with its outline. warn_fade
+         * is the middle of the fade (warn_a = 0.5) and shows that the white
+         * outline does not flash on the fading translucent fill. */
+        warn_open = 1; warn_ready = 1; warn_t = warn_wait; warn_closing = 0;
+        warn_a = strcmp(screen, "warn_fade") == 0 ? 0.5 : 1;
+        ds_fn_draw_warning();
+    }
+    else { fprintf(stderr, "unknown screen: %s (valid: classes/settings/lobby/warn/warn_fade)\n", screen); return 2; }
+    if (!write_png(out, &g_buf)) { fprintf(stderr, "cannot write %s\n", out); return 1; }
     printf("%s -> %s (%dx%d)\n", screen, out, W, H);
     return 0;
 }
 """
 
 HEADER_PROTOS = (ROOT / "runtime.h", ROOT / "net.h")
-VAR_DECLS = {  # переменные, которые компилятор не найдёт по прототипу функции
+VAR_DECLS = {  # variables the compiler cannot see through a function prototype
     "mouse_clicked": "int mouse_clicked = 0;",
     "ds_mouse_x": "double ds_mouse_x = 0;",
     "ds_mouse_y": "double ds_mouse_y = 0;",
@@ -415,7 +423,7 @@ VAR_DECLS = {  # переменные, которые компилятор не 
 
 
 def prototypes() -> dict[str, tuple[str, str]]:
-    """Имя функции -> (тип возврата, аргументы) из заголовков рантайма/сети."""
+    """Function name -> (return type, arguments) from the runtime and net headers."""
     protos: dict[str, tuple[str, str]] = {}
     for header in HEADER_PROTOS:
         text = header.read_text(encoding="utf-8", errors="ignore")
@@ -428,9 +436,9 @@ def prototypes() -> dict[str, tuple[str, str]]:
 
 
 def stub_source(name: str, ret: str, args: str) -> str:
-    if name == "lerp":  # математика, а не заглушка: от неё зависят координаты
+    if name == "lerp":  # real maths, not a stub: the layout depends on it
         return "double lerp(double a, double b, double t) { return a + (b - a) * t; }"
-    if name == "ds_log_err":  # ошибки загрузки ассетов полезно видеть в консоли
+    if name == "ds_log_err":  # asset load errors are worth seeing in the log
         return ("void ds_log_err(const char *f, ...) { va_list ap; va_start(ap, f); "
                 "vfprintf(stderr, f, ap); va_end(ap); fputc(10, stderr); }")
     ret = ret.replace("static", "").strip()
@@ -460,8 +468,8 @@ def compile_preview(temp: Path) -> Path:
         if not missing:
             if run.returncode == 0:
                 return binary
-            sys.exit(f"сборка предпросмотра не удалась:\n{run.stderr}")
-        lines = ["/* Автозаглушки: сигнатуры из runtime.h/net.h, тела нейтральные. */",
+            sys.exit(f"failed to build the preview:\n{run.stderr}")
+        lines = ["/* Autostubs: signatures from runtime.h and net.h, neutral bodies. */",
                  "#include <stdarg.h>", "#include <stdio.h>"]
         unknown = []
         for name in missing:
@@ -476,15 +484,15 @@ def compile_preview(temp: Path) -> Path:
                 continue
             done.add(name)
         if unknown:
-            sys.exit("нет прототипов для заглушек: " + ", ".join(unknown))
+            sys.exit("no prototypes for these stubs: " + ", ".join(unknown))
         stubs.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    sys.exit("не удалось слинковать предпросмотр за 10 итераций автозаглушек")
+    sys.exit("could not link the preview in 10 rounds of auto stubs")
 
 
 def main(argv: list[str]) -> int:
     args = argv[1:]
     known = SCREENS + ("lobby",)
-    # первый аргумент - каталог для PNG, если он не имя экрана
+    # the first argument is the PNG directory unless it names a screen
     if args and args[0] not in known:
         out_dir = Path(args[0])
         screens = [a for a in args[1:] if a in known] or list(SCREENS)
@@ -501,7 +509,7 @@ def main(argv: list[str]) -> int:
             sys.stderr.write(run.stderr)
             if run.returncode != 0:
                 failed = 1
-                print(f"{screen}: ОШИБКА рендера", file=sys.stderr)
+                print(f"{screen}: render failed", file=sys.stderr)
             else:
                 print(run.stdout.strip())
     return failed

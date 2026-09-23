@@ -22,8 +22,8 @@ void net_set_java_vm(JavaVM *vm);
 void net_connect(const char *url, const char *room);
 void net_disconnect(void);
 void net_set_data_path(const char *path);
-/* Ключ Firebase (API key, ограниченный пакетом com.cb4): включает защищённый
- * режим — все запросы к базе подписываются токеном Firebase Auth. */
+/* Firebase API key, restricted to the com.cb4 package: it turns on the protected
+ * mode, where every database request is signed with a Firebase Auth token. */
 void net_set_firebase_key(const char *key);
 void net_autologin(const char *url);
 double net_auth(const char *url, const char *nick, const char *pass);
@@ -36,20 +36,20 @@ const char *net_login_pass(void);
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
 void net_publish_snow(double x, double y, double dx, double dy, double snow);
-/* Турели бука: до трёх живых турелей, каждая со своим положением и HP.
- * count — сколько турелей живо сейчас (0..3). Поля station1_, station2_,
- * station3_ держат турели 1/2/3 по порядку установки. */
+/* Buk turrets: up to three live turrets, each with its own position and HP.
+ * count is how many are alive right now (0..3), and station1_ to station3_ hold
+ * turrets 1, 2 and 3 in the order they were placed. */
 void net_publish_turrets(double x1, double y1, double hp1,
                          double x2, double y2, double hp2,
                          double x3, double y3, double hp3,
                          double count);
-/* Рывок Азума: стартовая точка, направление и счётчик рывка. Счётчик меняется
- * на каждом рывке — получатели ловят по нему начало рывка. */
+/* Azum dash: the start point, the direction and a counter. The counter changes on
+ * every dash, which is how receivers spot that one started. */
 void net_publish_dash(double x, double y, double dx, double dy, double dash);
 void net_publish_universe(double x, double y, double counter);
-/* Контрудар турели бука: счётчик событий «по моей турели ударили». Каждый
- * клиент, увидевший новый счётчик у соперника, сам у себя списывает небольшой
- * урон (каждый авторитетен только над своим бойцом, см. net_player_thud). */
+/* Buk turret counter hit: an event counter for "my turret was hit". A client that
+ * sees a new counter on the remote side takes a little damage on its own fighter,
+ * since each client is authoritative over its own fighter (net_player_thud). */
 void net_publish_thud(double counter);
 void net_set_class(double cls);
 double net_status(void);
@@ -83,13 +83,13 @@ double net_player_station2_hp(double slot);
 double net_player_station3_x(double slot);
 double net_player_station3_y(double slot);
 double net_player_station3_hp(double slot);
-/* Сколько турелей живо у игрока (0..3). */
+/* How many turrets the player has alive (0..3). */
 double net_player_station(double slot);
 double net_player_universe_x(double slot);
 double net_player_universe_y(double slot);
 double net_player_universe(double slot);
-/* Счётчик контрударов турелей у игрока (0 у старых клиентов — поле просто
- * не присылается, и смешанные версии в онлайне работают). */
+/* Player turret counter hit counter. Old clients send no such field at all, which
+ * keeps mixed versions working online. */
 double net_player_thud(double slot);
 double net_player_dash(double slot);
 double net_player_dash_x(double slot);
@@ -99,12 +99,12 @@ double net_player_dash_dy(double slot);
 double net_player_class(double slot);
 double net_player_level(double slot);
 void net_set_level(double level);
-/* Скин бойца (0 — обычный, 1 — «Зомби» у Азума): передаётся в снимке комнаты,
- * чтобы его видели соперники. */
+/* Fighter skin, 0 for ordinary and 1 for the Azum zombie: it travels in the room
+ * snapshot so remotes see it. */
 void net_set_skin(double skin);
 double net_player_skin(double slot);
 
-/* Прогресс без праймов */
+/* Progress without primes */
 double net_load_cups(void);
 double net_load_candies(void);
 double net_load_class(void);
@@ -121,9 +121,9 @@ double net_load_santa_level(void);
 double net_load_santa_levels_unlocked(void);
 double net_load_ebuc_level(void);
 double net_load_ebuc_levels_unlocked(void);
-/* Скины Азума. bp_level из батл пасса (убран из игры) остаётся в том же
- * позиционном поле прогресса, чтобы старые сохранения читались как раньше;
- * игра его больше не использует. */
+/* Azum skins. The bp_level field of the removed battle pass stays in the same
+ * positional spot of the progress record so old saves still read the same way,
+ * but the game no longer uses it. */
 double net_load_bp_level(void);
 double net_load_azum_skin(void);
 void net_save_progress(double cups, double candies, double cls, double azum, double santa, double ebuc,
@@ -136,15 +136,15 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
                            double ebuc_level, double ebuc_levels_unlocked,
                            double bp_level, double azum_skin);
 
-/* Достижения профиля: единый битмаск в achievements.dat. ACH_FLAG_* ниже —
- * код отдельных наград. Добавление новой — это новый бит, старые файлы
- * читаются как есть.
- *  FIRST_WIN      — первая победа;
- *  FIRST_BUY      — первая покупка класса;
- *  ALL_CHARACTERS — собраны все открываемые классы;
- *  LEGENDS        — 25 возрождений за Азума (скин «Зомби»).
- * Бит 0 занимало удалённое достижение «Привет!» — новый код его не
- * выставляет и не читает (старые файлы с ним просто теряют этот бит). */
+/* Profile achievements: one bitmask in achievements.dat, with the ACH_FLAG_*
+ * values below as the individual rewards. A new achievement takes a new bit, and
+ * old files keep reading as they are:
+ *  FIRST_WIN       first win;
+ *  FIRST_BUY       first class purchase;
+ *  ALL_CHARACTERS  every unlockable class collected;
+ *  LEGENDS         25 revives as Azum, which gives the zombie skin.
+ * Bit 0 belonged to the removed "hello" achievement; the current code neither sets
+ * nor reads it, so old files simply lose that bit. */
 #define ACH_FLAG_FIRST_WIN       (1u << 1)
 #define ACH_FLAG_FIRST_BUY       (1u << 2)
 #define ACH_FLAG_ALL_CHARACTERS  (1u << 3)
@@ -153,17 +153,18 @@ double net_load_achievement_flags(void);
 void net_save_achievement_flags(double flags);
 double net_has_achievement_flag(double flag);
 void net_mark_achievement_flag(double flag);
-/* Счётчик возрождений за Азума: хранится вторым числом в achievements.dat,
- * чтобы переживать перезаход и не трогать формат progress.dat. */
+/* Azum revive counter, stored as the second number of achievements.dat so it
+ * survives a restart without touching the progress.dat format. */
 double net_load_azum_revives(void);
 void net_save_azum_revives(double revives);
 
-/* Персональный промокод: выводится детерминированно из ника (тот же ник —
- * тот же код, у разных игроков — разные коды), поэтому известен даже без
- * сети. net_promo_register пишет код в облачный профиль, net_promo_mark_used
- * помечает его активированным (локально и в облаке) — одна награда на
- * аккаунт. net_promo_streak/bump/reset — счётчик матчей без карточки
- * (растёт шанс выпадения, см. promo.ds). Реализация — native/net/promo.inc. */
+/* Personal promo code, derived from the nick in a deterministic way, so the same
+ * nick gives the same code and different players get different ones, known even
+ * offline. net_promo_register writes the code into the cloud profile and
+ * net_promo_mark_used flags it as activated locally and in the cloud, which keeps
+ * the reward to one per account. net_promo_streak, bump and reset maintain the
+ * count of cardless matches that raises the drop chance (promo.ds). The
+ * implementation is native/net/promo.inc. */
 const char *net_promo_code(void);
 void net_promo_register(void);
 double net_promo_used(void);
@@ -177,8 +178,9 @@ double net_load_playtime(void);
 void net_save_playtime(double seconds);
 void net_add_playtime(double delta);
 
-/* Задания: состояние переживает выход из игры (см. native/net/quests.inc).
- * net_quest_now — текущий epoch, чтобы отсчёт продолжался и после выхода. */
+/* Quests: the state survives a restart (native/net/quests.inc), and
+ * net_quest_now gives the current epoch so the countdown keeps running while the
+ * game is closed. */
 double net_quest_now(void);
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
@@ -192,13 +194,14 @@ double net_leaderboard_count(void);
 const char *net_leaderboard_nick(double idx);
 double net_leaderboard_cups(double idx);
 
-/* Настройки игрока: язык (0 — English, 1 — русский, как в ui/locale_core.ds),
- * хитбоксы (1 — видны), громкость музыки (0..100, по умолчанию 70),
- * зимняя тема (1 — снежный фон арены и снегопад, по умолчанию) и счётчик FPS
- * в бою (0 — выключен, по умолчанию). Лимита FPS и апскейла в игре больше нет
- * (по просьбе игрока), поэтому и настроек таких не осталось. Живут в
- * settings.dat на устройстве и в профиле /users/<ник> в облаке — то есть
- * сохраняются и там, и там, как прогресс. Реализация — settings_storage.inc. */
+/* Player settings: language (0 English, 1 Russian, as in ui/locale_core.ds),
+ * hitboxes (1 means visible), music volume (0..100, 70 by default), the winter
+ * theme (1 for the snowy arena and the snowfall, the default) and the battle
+ * frame counter (0, off, by default). The fps cap and the upscale were removed
+ * at the player's request, so those settings are gone too. They live in
+ * settings.dat on the device and in the /users/<nick> profile in the cloud,
+ * saving to both like progress does. The implementation is
+ * settings_storage.inc. */
 double net_load_language(void);
 double net_load_hitboxes(void);
 void net_save_settings(double language, double hitboxes);
@@ -209,12 +212,12 @@ void net_save_winter_theme(double on);
 double net_load_fps_meter(void);
 void net_save_fps_meter(double on);
 
-/* Согласие с предупреждением об эпилепсии (settings_storage.inc): метка
- * времени нажатия кнопки согласия, хранится только на устройстве. */
+/* Epilepsy warning consent (settings_storage.inc): the timestamp of the consent
+ * button press, kept on the device only. */
 void settings_mark_legal(void);
 double settings_legal_ts(void);
 
-/* Бан система */
+/* Ban system */
 double net_banned(void);
 double net_is_banned(const char *nick);
 void net_ban_set(const char *nick, double banned);
@@ -223,7 +226,7 @@ double net_chat_is_unban(const char *msg);
 const char* net_chat_ban_target(const char *msg);
 const char* net_chat_unban_target(const char *msg);
 
-/* Команда админа "text <сообщение> <цвет>" — баннер сверху экрана у всех. */
+/* The admin command "text <message> <colour>" shows a banner on every screen. */
 double net_chat_is_text_cmd(const char *msg);
 const char* net_chat_text_cmd_text(const char *msg);
 const char* net_chat_text_cmd_color(const char *msg);
@@ -232,14 +235,14 @@ double net_banner_ts(void);
 const char *net_banner_text(void);
 const char *net_banner_color(void);
 
-/* Чат */
+/* Chat */
 void net_chat_send(const char *text);
 void net_chat_trim(double keep);
 double net_chat_count(void);
 const char *net_chat_text(double idx);
 const char *net_chat_uid(double idx);
-/* Серверный ключ сообщения: уникален на сообщение (uid автора — нет),
- * по нему скрипт понимает, какие сообщения уже показаны пузырями. */
+/* Server key of a message: unique per message, unlike the author uid, and the
+ * script uses it to tell which messages already have bubbles. */
 const char *net_chat_key(double idx);
 
 #endif

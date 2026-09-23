@@ -391,9 +391,9 @@ static void draw_tx(Buffer *b, const Texture *t, float x, float y, float a, floa
     if (fabsf(a) < 0.0005f) { draw_tx_unrot(b, t, x, y, sc); return; }
     draw_tx_rot(b, t, x, y, a, sc);
 }
-/* Тонированная текстура: рисуется силуэт по альфа-каналу текстуры, залитый
- * цветом tint (0xAARRGGBB). Нужно для теней - текстура становится полностью
- * чёрной, сохраняя форму персонажа. */
+/* Tinted texture: a silhouette from the texture alpha filled with the tint
+ * colour (0xAARRGGBB), used for shadows, where the texture turns fully black
+ * while keeping the shape of the character. */
 static void draw_tx_unrot_tint(Buffer *b, const Texture *t, float x, float y, float sc, uint32_t tint) {
     if (!b || !t || !t->pixels || !isfinite(x+y+sc) || sc <= 0) return;
     float w = t->w*sc, h = t->h*sc;

@@ -1,8 +1,8 @@
-/* Память и буферы, дескрипторы, загрузка текстур и шрифтового атласа на GPU.
- * Часть Vulkan-бэкенда: включается из vulkan_backend.inc, всё собирается
- * одним translation unit'ом (graphics.c), поэтому состояние общее. */
+/* Memory and buffers, descriptors, and the upload of textures and the font atlas
+ * to the GPU. Part of the Vulkan backend: included from vulkan_backend.inc into
+ * one translation unit (graphics.c), so the state is shared. */
 
-/* --- память и буферы --- */
+/* --- memory and buffers --- */
 
 static uint32_t ds_vk_find_mem_type(uint32_t req, VkMemoryPropertyFlags props) {
     VkPhysicalDeviceMemoryProperties mp;
@@ -45,7 +45,7 @@ static void ds_vk_destroy_buffer(VkBuffer *buf, VkDeviceMemory *mem) {
     *buf = VK_NULL_HANDLE; *mem = VK_NULL_HANDLE;
 }
 
-/* --- дескрипторы (combined image sampler на текстуру) --- */
+/* --- descriptors: one combined image sampler per texture --- */
 
 static int ds_vk_new_descriptor_set(VkImageView view, VkDescriptorSet *out) {
     *out = VK_NULL_HANDLE;
@@ -81,11 +81,11 @@ static int ds_vk_new_descriptor_set(VkImageView view, VkDescriptorSet *out) {
     return 1;
 }
 
-/* --- загрузка изображений на GPU --- */
+/* --- uploading images to the GPU --- */
 
-/* Заливка staging -> image одной разовой командой с ожиданием. Вызывается
- * редко (ленивая загрузка текстур и атласа шрифта), поэтому простота важнее
- * параллельности. */
+/* Fills an image from staging with one one-off command that waits. It is called
+ * rarely, since textures and the font atlas load lazily, so simplicity beats
+ * parallelism. */
 static int ds_vk_upload_image(uint32_t w, uint32_t h, const uint32_t *pixels,
                               VkImage *out_image, VkDeviceMemory *out_mem,
                               VkImageView *out_view, VkDescriptorSet *out_desc) {
@@ -133,7 +133,7 @@ static int ds_vk_upload_image(uint32_t w, uint32_t h, const uint32_t *pixels,
     bar.image = *out_image;
     bar.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     bar.subresourceRange.levelCount = 1; bar.subresourceRange.layerCount = 1;
-    /* UNDEFINED -> TRANSFER_DST: запись копии. */
+    /* UNDEFINED to TRANSFER_DST: the copy is written. */
     VkImageMemoryBarrier to_dst = bar;
     to_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -145,7 +145,7 @@ static int ds_vk_upload_image(uint32_t w, uint32_t h, const uint32_t *pixels,
     region.imageSubresource.layerCount = 1;
     region.imageExtent.width = w; region.imageExtent.height = h; region.imageExtent.depth = 1;
     vkCmdCopyBufferToImage(vk_upload_cmd, staging, *out_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    /* TRANSFER_DST -> SHADER_READ_ONLY: чтение во фрагментном шейдере. */
+    /* TRANSFER_DST to SHADER_READ_ONLY: the fragment shader reads it. */
     VkImageMemoryBarrier to_read = bar;
     to_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     to_read.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -181,8 +181,9 @@ fail:
     return 0;
 }
 
-/* Шрифтовый атлас хранится как 8-битное покрытие; для GPU превращаем его в
- * белый RGBA8-тексель с альфой = покрытие (цвет задаёт вершина, см. image.frag). */
+/* The font atlas holds 8-bit coverage, which becomes a white RGBA8 texel on the
+ * GPU with the coverage in the alpha, the colour coming from the vertex
+ * (image.frag). */
 static int ds_vk_upload_font_atlas(void) {
     if (!font || vk_font_desc != VK_NULL_HANDLE) return font != NULL;
     int aw = ds_font_aw(font), ah = ds_font_ah(font);
@@ -227,7 +228,7 @@ static void ds_vk_pending_texture(Texture *t) {
     if (vk_pending_n < DS_VK_PENDING_CAP) vk_pending_tex[vk_pending_n++] = t;
 }
 
-/* Отложенные загрузки обрабатываются в начале end_frame. */
+/* Deferred uploads are handled at the start of end_frame. */
 static void ds_vk_process_pending_uploads(void) {
     if (!vk_ready) { vk_pending_n = 0; vk_pending_font = 0; return; }
     for (int i = 0; i < vk_pending_n; i++) {

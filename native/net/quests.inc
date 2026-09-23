@@ -1,6 +1,6 @@
-/* Состояние заданий переживает выход из игры: 3 слота × {тип, прогресс,
- * норма, метка появления следующего}. Метка — реальное время (epoch), поэтому
- * отсчёт «5 минут» продолжается, даже если игра закрыта. */
+/* Quest state survives leaving the game: 3 slots of {type, progress, target,
+ * timestamp of the next one}. The timestamp is real time in epoch seconds, so a
+ * five minute countdown keeps running while the game is closed. */
 #define QUESTS_FILE "quests.dat"
 #define QUEST_SLOTS 3
 #define QUEST_FIELDS 4

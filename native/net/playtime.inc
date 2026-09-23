@@ -1,4 +1,4 @@
-/* Время игры: total_play_time в секундах, хранится локально и в облаке */
+/* Play time: total_play_time in seconds, stored locally and in the cloud */
 #define PLAYTIME_FILE "playtime.dat"
 
 typedef struct {
@@ -58,7 +58,7 @@ void net_save_playtime(double seconds) {
     if (sec < 0) sec = 0;
     playtime_read();
     playtime_write(sec);
-    /* В облако */
+    /* To the cloud */
     char nick[LOGIN_NICK_MAX + 1] = "";
     lg_lock();
     if (lg.status == NET_LOGIN_OK && lg.session_nick[0]) {
@@ -81,7 +81,7 @@ void net_add_playtime(double delta) {
     net_save_playtime((double)sec);
 }
 
-/* Синхронизация с облаком: облако может быть больше локального */
+/* Sync with the cloud: the cloud may hold a larger play time than the device */
 int playtime_sync_with_cloud(const char *resp) {
     long long cloud = (long long)num(resp, "playtime", -1);
     if (cloud < 0) return 0;

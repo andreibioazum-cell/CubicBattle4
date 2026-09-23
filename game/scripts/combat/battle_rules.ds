@@ -1,6 +1,6 @@
--- Спрайт замаха обязан быть загружен: tex() с незагруженной текстурой просто
--- ничего не рисует, и боец на время удара исчезал с арены. Поэтому запасной
--- вариант — обычный спрайт того же класса, он виден всегда.
+-- The swing sprite must load: tex() draws nothing for a missing texture, which
+-- made a fighter disappear while punching. The fallback is the ordinary sprite
+-- of the same class, which is always there.
 public function punch_tex_or_idle(string punch_tex, number ok, number cls)
     if ok==1 then
         return punch_tex

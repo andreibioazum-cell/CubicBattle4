@@ -1,4 +1,4 @@
-/* Пишет бан в облако отдельным потоком и проверяет, что запись прошла. */
+/* Writes a ban into the cloud on a thread of its own and checks that it landed. */
 typedef struct { char url[FB_URL_MAX]; char nick[LOGIN_NICK_MAX + 1]; int banned; } BanJob;
 static void *ban_write_job(void *arg) {
     BanJob *j = (BanJob *)arg;
@@ -65,11 +65,11 @@ void net_ban_set(const char *nick, double banned) {
     }
 }
 
-/* event - скаляр, поэтому PUT, а не PATCH: Firebase принимает PATCH только с
- * объектом в теле («Patch requires a JSON object ...»), и запись с телом "2"
- * сервер отклонял - ивент загорался лишь у того, кто ввёл команду, и пропадал
- * после следующего опроса базы. Пишем асинхронно и проверяем код ответа, как в
- * банах: молчаливый «успех» здесь так же не нужен. */
+/* event is a scalar, so it needs a PUT: Firebase accepts PATCH only with an object
+ * body ("Patch requires a JSON object ...") and rejected the write of "2", which
+ * left the event lit only for whoever typed the command and only until the next
+ * database poll. The write is asynchronous here and the answer code is checked as it
+ * is for bans, since a silent success is as unwanted. */
 static void *event_write_job(void *arg) {
     HttpJob *j = (HttpJob *)arg;
     int code;
@@ -104,11 +104,11 @@ void net_event_set(double mode) {
     LOG("event set %d", m);
 }
 
-/* Админская команда баннера "text <сообщение> [цвет]".
- * Разбор команды живёт в C, а не в скрипте: из DimScript нет подстрок, только
- * str_eq/str_len. Формат: "text hello, world! green" - сообщение всё между
- * "text " и последним словом; последнее слово, если это известное имя цвета,
- * становится цветом баннера, иначе остаётся частью сообщения (цвет - белый).
+/* The admin banner command "text <message> [colour]". The parsing lives in C rather
+ * than in a script, because DimScript has no substrings, only str_eq and str_len.
+ * Format: "text hello, world! green", where the message is everything between
+ * "text " and the last word, and that last word becomes the banner colour if it is a
+ * known colour name, staying part of the message, which is white, otherwise.
  */
 static const char *banner_color_names[] = {
     "white", "red", "green", "blue", "yellow", "orange", "purple", "pink",
@@ -139,11 +139,11 @@ static void banner_split_cmd(const char *msg, char *text_out, size_t tcap, char 
     if (!msg || strncmp(msg, "text ", 5) != 0) return;
     t = msg + 5;
     while (*t==' '||*t=='\t') t++;
-    /* Последняя граница слова: пробел, после которого идёт не-пробел. */
+    /* The last word boundary: a space followed by a non-space. */
     for (c = t; *c; c++)
         if ((*c==' '||*c=='\t') && c[1] && c[1]!=' ' && c[1]!='\t') last_space = c;
     if (last_space) {
-        /* Хвост слова чистим от концевых пробелов: "green  " - тот же цвет. */
+        /* The trailing spaces of that word are trimmed, so "green  " is the same colour. */
         snprintf(word, sizeof(word), "%s", last_space + 1);
         n = strlen(word);
         while (n > 0 && (word[n-1]==' '||word[n-1]=='\t')) word[--n] = 0;
@@ -169,8 +169,8 @@ const char* net_chat_text_cmd_color(const char *msg) {
                      s_text_cmd_color_ret, sizeof(s_text_cmd_color_ret));
     return s_text_cmd_color_ret;
 }
-/* Пишем banner.json в базу (правило - только для админов, как event.json).
- * PUT целиком: старый текст баннера заменяется новым. */
+/* Writes banner.json into the database, under an admins-only rule like event.json,
+ * with a full PUT: the old banner text is replaced. */
 void net_banner_send(const char *text, const char *color) {
     char url[URL], body[BODY], esc[CHAT_TEXT_MAX * 2], ecol[BANNER_COLOR_MAX * 2];
     if (!net.started || !net.run) return;
@@ -184,7 +184,7 @@ void net_banner_send(const char *text, const char *color) {
     LOG("banner send: %s (%s)", text, color);
 }
 
-/* Чат парсеры для админ команд */
+/* Chat parsers for the admin commands */
 double net_chat_is_ban(const char *msg) {
     if (!msg) return 0;
     // check starts with "ban "
@@ -234,7 +234,7 @@ const char* net_chat_unban_target(const char *msg) {
     return s_ban_target_ret;
 }
 
-/* Лидерборд */
+/* Leaderboard */
 typedef struct {
     char nick[24];
     int cups;
@@ -394,8 +394,8 @@ static void chat_delete_key_async(const char *key) {
     if (t) { ds_thread_detach(t); return; }
     free(url);
 }
-/* Анти-флуд (меньше нагрузки на базу): сравнение полей актора - если игрок
- * стоит на месте и ничего не меняет, PUT можно пропустить. */
+/* Anti-flood to load the database less: the actor fields are compared, so a PUT can
+ * be skipped while the player stands still and changes nothing. */
 static int actor_same(const Actor *x, const Actor *y) {
     return x->x==y->x && x->y==y->y && x->a==y->a && x->hp==y->hp && x->alive==y->alive
         && x->punch_x==y->punch_x && x->punch_y==y->punch_y && x->punch_dx==y->punch_dx && x->punch_dy==y->punch_dy && x->punch==y->punch
@@ -408,9 +408,9 @@ static int actor_same(const Actor *x, const Actor *y) {
         && x->thud==y->thud
         && x->cls==y->cls && x->level==y->level && x->skin==y->skin && !strcmp(x->nick,y->nick);
 }
-/* Поля позиции в базе валидируются правилами Firebase как 0..1 (снаряды -
- * -1..1). Одно значение вне диапазона отклоняет PUT целиком, и клиент
- * застревает в подключении. На всякий случай обрезаем всё прямо перед
- * отправкой: нормализация в скрипте уже есть, но это последний рубеж. */
+/* The position fields in the database are validated by the Firebase rules as 0..1,
+ * while projectiles use -1..1. One value out of range rejects the whole PUT and the
+ * client hangs on connecting, so everything is clamped right before the send, as a
+ * last line of defence behind the normalisation in the script. */
 static double clamp01(double v) { return v < 0 ? 0 : (v > 1 ? 1 : safe(v)); }
 static double clamp11(double v) { v = safe(v); return v < -1 ? -1 : (v > 1 ? 1 : v); }

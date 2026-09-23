@@ -46,20 +46,20 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 }
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 
-/* Облако «забыло» бука и помнит старые леденцы. */
+/* The cloud forgot the buk and still holds old candies. */
 static const char *CLOUD_NO_BUK =
     "{\"nick\":\"tester\",\"cups\":100,\"candies\":200,\"cls\":0,\"azum\":1,\"santa\":0,"
     "\"level\":0,\"levels\":0}";
-/* Облако свежее устройства: на другом телефоне выбрали Азума и заработали кубки. */
+/* The cloud is newer than the device: another phone picked Azum and earned cups. */
 static const char *CLOUD_FRESH =
     "{\"nick\":\"tester\",\"cups\":120,\"candies\":50,\"cls\":1,\"azum\":1,\"santa\":0,"
     "\"ebuc\":1,\"level\":0,\"levels\":0}";
 
-/* Первый запуск: бук уже куплен ранее (файл есть), скрипт сохраняет ДО того,
- * как кто-либо вызвал net_load_*. Владение не должно потеряться. */
+/* First run: the buk was bought earlier, the file is there, and the script saves
+ * before anyone calls net_load_*. Ownership must survive. */
 static int run_first_save(const char *dir) {
     net_set_data_path(dir);
-    /* Скрипт с «пустой» памятью сохраняет только кубки. */
+    /* A script with empty memory saves cups only. */
     net_save_progress_all(7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     assert(net_load_ebuc() == 1);
     assert(net_load_azum() == 1);
@@ -68,7 +68,7 @@ static int run_first_save(const char *dir) {
     return 0;
 }
 
-/* Покупка без сессии, затем вход. */
+/* A purchase without a session, then a login. */
 static int run_offline_buy(const char *dir) {
     net_set_data_path(dir);
     assert(net_load_ebuc() == 0);
@@ -78,13 +78,13 @@ static int run_offline_buy(const char *dir) {
     assert(push == 1);
     assert(net_load_ebuc() == 1);
     assert(net_load_class() == 3);
-    assert(net_load_candies() == 50);   /* леденцы не «вернулись» из облака */
+    assert(net_load_candies() == 50);   /* the candies did not come back from the cloud */
     assert(net_load_cups() == 100);
     puts("offline buy: the buk, its selection and the spent candies come back from the device");
     return 0;
 }
 
-/* Чистое состояние: облако свежее, метки нет - облако побеждает. */
+/* Clean state: the cloud is newer and no stamp is set, so the cloud wins. */
 static int run_clean(const char *dir) {
     net_set_data_path(dir);
     net_save_progress_all(100, 50, 3, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);

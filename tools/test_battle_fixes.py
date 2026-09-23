@@ -56,9 +56,10 @@ double arr_len(DSArray *a) { return a ? a->len : 0; }
 double clamp(double v, double lo, double hi) { return v < lo ? lo : v > hi ? hi : v; }
 double dist(double x, double y, double a, double b) { return hypot(x - a, y - b); }
 double lerp(double a, double b, double t) { return a + (b - a) * t; }
-/* Строковые хелперы рантайма: нужны экранам боя (подписи кнопок, «+N кубков»). */
-/* Как в настоящем рантайме: каждый вызов возвращает свежий буфер, чтобы
- * вложенные конкатенации («a»+n+«b») не затирали друг друга. */
+/* Runtime string helpers: the battle screens need them for the button labels
+ * and the "+N cups" counters. */
+/* As in the real runtime every call returns a fresh buffer, so nested
+ * concatenations cannot overwrite each other. */
 char *ds_concat(const char *left, const char *right) {
     const char *l = left ? left : "", *r = right ? right : "";
     size_t la = strlen(l), lb = strlen(r);
@@ -72,15 +73,15 @@ char *ds_num_to_string(double value) {
     snprintf(buf, sizeof(buf), "%g", value);
     return buf;
 }
-/* Текстуры замаха можно «сломать»: tex() с незагруженной текстурой не рисует
- * ничего, и боец на время удара исчезал с арены. */
+/* The swing textures can be broken on purpose: tex() draws nothing for a
+ * missing texture, which used to make a fighter vanish while punching. */
 static int punch_tex_broken = 0;
 int png_load(const char *name) {
     if (punch_tex_broken && name && strstr(name, "punch")) return 0;
     return 1;
 }
 void tex(float x, float y, const char *name, float a, float sc) { (void)x; (void)y; (void)name; (void)a; (void)sc; }
-/* Тени рисуются tex_tint: считаем вызовы и запоминаем текстуру. */
+/* Shadows go through tex_tint, so the calls are counted and the texture kept. */
 static int tint_calls = 0;
 static char tint_last[64] = "";
 void tex_tint(float x, float y, const char *name, float a, float sc, uint32_t c) {
@@ -92,8 +93,8 @@ void tex_tint(float x, float y, const char *name, float a, float sc, uint32_t c)
 int text_ink_width(const char *s) { (void)s; return 10; }
 int text_ink_height(const char *s) { (void)s; return 10; }
 int text_ink_top(const char *s) { (void)s; return 2; }
-/* Последняя нарисованная строка: кнопка согласия в конце draw_warning
- * выводит свою подпись последней, поэтому по last_text видно её текст. */
+/* The last drawn string: the consent button at the end of draw_warning prints
+ * its label last, so last_text holds that text. */
 static char last_text[160];
 void text_scaled(const char *s, float x, float y, uint32_t c, float scale) {
     (void)x; (void)y; (void)c; (void)scale;
@@ -106,7 +107,7 @@ void net_save_progress_all(double, double, double, double, double, double,
     double, double, double, double, double, double,
     double, double, double, double, double, double) {}
 void net_save_progress(double, double, double, double, double, double, double, double) {}
-/* Снимок комнаты управляется тестами: по умолчанию слота нет (соло-режим). */
+/* The room snapshot is test driven: by default there is no slot, so solo. */
 static double stub_slot = -1;
 static double stub_online[4], stub_alive[4], stub_punch[4];
 double net_slot(void) { return stub_slot; }
@@ -138,8 +139,8 @@ double net_has_achievement_flag(double) { return 0; }
 double net_load_achievement_flags(void) { return 0; }
 void net_save_azum_revives(double) {}
 double net_load_azum_revives(void) { return 0; }
-/* Промокоды (promo.inc): в тестах код детерминированно фиксированный,
- * флаг активации и стрик матчей не меняются. */
+/* Promo codes (promo.inc): the tests pin the code and leave the activation flag
+ * and the match streak alone. */
 const char *net_promo_code(void) { return "ABC1"; }
 void net_promo_register(void) {}
 double net_promo_used(void) { return 0; }
@@ -152,7 +153,7 @@ void net_promo_mark_card_found(void) {}
 double net_load_playtime(void) { return 0; }
 void net_save_playtime(double s) { (void)s; }
 void net_add_playtime(double d) { (void)d; }
-/* Квесты: управляемое «реальное» время и хранилище состояния заданий. */
+/* Quests: a controllable clock and a store for the quest state. */
 double fake_now = 0;
 static double quest_state[12] = {0};
 static int quest_state_valid = 0;
@@ -173,7 +174,7 @@ double net_load_quest_state(double slot, double field) {
 double net_quest_has_state(void) { return quest_state_valid; }
 void net_set_mode(double v) { (void)v; }
 void net_set_room(double v) { (void)v; }
-/* Публикации в сеть: в соло-тестах не нужны, но update_game тянет их в линк. */
+/* Network publishing is unused in solo tests, but update_game links it in. */
 void net_publish(double a, double b, double c, double d, double e) {
     (void)a; (void)b; (void)c; (void)d; (void)e;
 }
@@ -201,7 +202,7 @@ void keyboard_show(void) {}
 const char *keyboard_get_text(void) { return ""; }
 int keyboard_visible(void) { return 0; }
 int keyboard_enter_pressed(void) { return 0; }
-/* Строковые/клавиатурные хелперы для экрана промокодов (promo.ds). */
+/* String and keyboard helpers for the promo screen (promo.ds). */
 double str_len(const char *s) { return s ? (double)strlen(s) : 0.0; }
 int str_eq(const char *a, const char *b) { return a && b && strcmp(a, b) == 0; }
 int str_starts_with(const char *s, const char *pref) {
@@ -292,15 +293,15 @@ void circle(float x, float y, float r, uint32_t c) { record('c', x, y, r, 0, c);
 void ring(float x, float y, float r, float t, uint32_t c) { record('r', x, y, r, t, c); }
 void line(float x1, float y1, float x2, float y2, float t, uint32_t c) {
     record('l', x1, y1, x2, y2, c);
-    calls[call_count - 1].t = t;   /* толщина полосы — она и есть ширина зоны */
+    calls[call_count - 1].t = t;   /* the strip thickness is the zone width */
 }
 void rect(float x, float y, float w, float h, uint32_t c) { record('q', x, y, w, h, c); }
-/* Повёрнутый прямоугольник (ровные зоны удара и полосы): угол пишем в .t. */
+/* Rotated rectangle, used by the straight punch zones and the strips: the angle goes into .t. */
 void rect_rot(float x, float y, float w, float h, float ang, uint32_t c) {
     record('t', x, y, w, h, c);
     calls[call_count - 1].t = ang;
 }
-/* roundrect пишут и меню, и зоны рывка: запоминаем вызов вместе с радиусом. */
+/* Both menus and dash zones use roundrect, so the call is kept with its radius. */
 void roundrect(float x, float y, float w, float h, float r, uint32_t color) {
     record('o', x, y, w, h, color);
     calls[call_count - 1].r = r;
@@ -338,14 +339,14 @@ static void test_shield_player(void) {
     own_turret(0, 500, 460, 10);
     ds_fn_take_damage(4);
     near(arr_get(turret_hp, 0), 6);
-    near(player->hp, 20);           /* турель забрала весь урон */
+    near(player->hp, 20);           /* the turret took all the damage */
     ds_fn_take_damage(8);
-    near(arr_get(turret_hp, 0), 0); /* турель разбита */
-    near(player->hp, 18);           /* остаток урона дошёл до бука */
+    near(arr_get(turret_hp, 0), 0); /* the turret is destroyed */
+    near(player->hp, 18);           /* the rest of the damage reached the buk */
     ds_fn_take_damage(3);
-    near(player->hp, 15);           /* без турелей урон идёт напрямую */
+    near(player->hp, 15);           /* without turrets the damage lands directly */
     assert(arr_len(station_boom_ts) == 1);
-    /* Урон в онлайне (вселенная соперника) идёт через тот же щит. */
+    /* Damage online, from a remote universe, goes through the same shield. */
     own_turret(0, 500, 460, 9);
     ds_fn_universe_collapse_remote(5);
     near(arr_get(turret_hp, 0), 4);
@@ -371,7 +372,7 @@ static void test_shield_enemy(void) {
     near(enemy->hp, 49);
     ds_fn_enemy_apply_damage(10);
     near(enemy->hp, 39);
-    /* Ульта бука в соло: урон уходит в турели врага и свои. */
+    /* The buk super in solo damages the enemy turrets and its own. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     enemy_class = CLASS_EBUC;
@@ -383,20 +384,20 @@ static void test_shield_enemy(void) {
     own_turret(0, 500, 460, 8);
     foe_turret(0, 900, 340, 8);
     ds_fn_universe_collapse(6);
-    near(arr_get(turret_hp, 0), 2);      /* своя вселенная бьёт и свой щит */
-    near(player->hp, 30);                /* урон поглощён полностью */
+    near(arr_get(turret_hp, 0), 2);      /* our own universe hits our own shield too */
+    near(player->hp, 30);                /* the damage is fully absorbed */
     near(arr_get(enemy_turret_hp, 0), 2);
     near(enemy->hp, 30);
     ds_fn_universe_collapse(10);
     near(arr_get(turret_hp, 0), 0);
-    near(player->hp, 22);                /* остаток (10-2) дошёл до бука */
+    near(player->hp, 22);                /* the rest, 10 minus 2, reached the buk */
     near(arr_get(enemy_turret_hp, 0), 0);
     near(enemy->hp, 22);
     puts("shield: enemy buk turret absorbs damage, own universe absorbed by own shield");
 }
 
 static void test_snow_pierce_enemy_turrets(void) {
-    /* Снежинка игрока летит к врагу-буку и проходит сквозь его турель. */
+    /* The player's snowflake flies at the enemy buk and pierces its turret. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     player_class = CLASS_SANTA;
@@ -405,7 +406,7 @@ static void test_snow_pierce_enemy_turrets(void) {
     enemy->x = 900; enemy->y = 400; enemy->size = 25;
     player->hp = 999; player->max_hp = 999;
     enemy->hp = 500; enemy->max_hp = 500;
-    foe_turret(0, 600, 400, 100);  /* прямо на траектории, HP больше урона */
+    foe_turret(0, 600, 400, 100);  /* right on the path, with more HP than the damage */
     gift->x = player->x; gift->y = player->y;
     gift->dx = 1; gift->dy = 0;
     gift->active = 1; gift->t = 0; gift->pierce = 0;
@@ -417,14 +418,14 @@ static void test_snow_pierce_enemy_turrets(void) {
         if (!gift->active) exploded = 1;
         (void)px;
     }
-    assert(exploded == 1);                 /* в итоге долетела и взорвалась */
-    /* Турель чинится ровно один раз за полёт (pierce-бит), не каждый кадр. */
+    assert(exploded == 1);                 /* it arrived and exploded in the end */
+    /* The turret is repaired once per flight through the pierce bit, not every frame. */
     near(before - arr_get(enemy_turret_hp, 0), santa_super_damage);
     puts("snow: pierces enemy turret (single chip) and keeps flying to the buk");
 }
 
 static void test_snow_pierce_player_turrets(void) {
-    /* Снежинка врага летит к игроку и проходит сквозь турель игрока. */
+    /* The enemy snowflake flies at the player and pierces the player's turret. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     enemy_class = CLASS_SANTA;
@@ -447,24 +448,24 @@ static void test_snow_pierce_player_turrets(void) {
 }
 
 static void test_dash_real_length(void) {
-    /* Онлайн-рывок бьёт только по уже проеханному отрезку. */
+    /* An online dash hits only the segment it has already travelled. */
     ds_fn_reset_battle();
     game_state = ST_ONLINE;
     player_class = CLASS_ORDINARY;
     player->y = 500; player->size = 25;
     player->hp = 999; player->max_hp = 999;
     enemy->x = 100; enemy->y = 100; enemy->size = 25;
-    double total = azum_dash_speed * azum_dash_time;  /* весь путь рывка */
+    double total = azum_dash_speed * azum_dash_time;  /* the whole dash path */
     assert(total > 0);
-    /* Турель на полпути, игрок чуть раньше конца пути. */
+    /* The turret sits halfway and the player is a little before the end of the path. */
     player->x = 200 + total - 40;
     own_turret(0, 200 + total * 0.5, 500, 50);
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, total * 0.2) == -1);
     double got = ds_fn_dash_resolve_target(200, 500, 1, 0, total * 0.7);
-    assert(got == 1);                                  /* турель на пути */
+    assert(got == 1);                                  /* the turret is on the path */
     got = ds_fn_dash_resolve_target(200, 500, 1, 0, total);
-    assert(got == 1);                                  /* щит впереди игрока */
-    arr_set(turret_hp, 0, 0);                          /* турель мертва */
+    assert(got == 1);                                  /* the shield is ahead of the player */
+    arr_set(turret_hp, 0, 0);                          /* the turret is dead */
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, total) == 0);
     puts("dash: damage only on the traveled segment, turret shield priority");
 }
@@ -476,11 +477,11 @@ static void test_hitbox_fades(void) {
     player->x = 500; player->y = 400; player->size = 25;
     enemy->x = 900; enemy->y = 400; enemy->size = 25;
     dt = 0.05;
-    /* Рывок: альфа плавно набирается. */
+    /* Dash: the alpha grows smoothly. */
     dash_active = 1; dash_box_a = 0;
     for (int i = 0; i < 4; i++) ds_fn_tick_hitbox_fades();
     near(dash_box_a, 1);
-    /* После конца — плавно гаснет (0.05/0.2 за кадр). */
+    /* After the end it fades out by 0.05 of 0.2 per frame. */
     dash_active = 0;
     ds_fn_tick_hitbox_fades();
     near(dash_box_a, 0.75);
@@ -488,7 +489,7 @@ static void test_hitbox_fades(void) {
     near(dash_box_a, 0.5);
     for (int i = 0; i < 20; i++) ds_fn_tick_hitbox_fades();
     near(dash_box_a, 0);
-    /* Снежинка: снаряд и взрыв набираются и гаснут. */
+    /* Snowflake: the projectile and the explosion appear and fade. */
     gift->active = 1; snow_ball_a = 0;
     boom_t = 1; boom_x = 300; boom_y = 300; snow_boom_a = 0;
     for (int i = 0; i < 4; i++) ds_fn_tick_hitbox_fades();
@@ -496,7 +497,7 @@ static void test_hitbox_fades(void) {
     gift->active = 0; boom_t = 0;
     for (int i = 0; i < 20; i++) ds_fn_tick_hitbox_fades();
     near(snow_ball_a, 0); near(snow_boom_a, 0);
-    /* Турель набирает альфу, после смерти — гаснет. */
+    /* The turret builds up its alpha and fades out on death. */
     own_turret(0, 500, 460, 10);
     for (int i = 0; i < 4; i++) ds_fn_tick_hitbox_fades();
     near(arr_get(turret_box_a, 0), 1);
@@ -516,78 +517,75 @@ static void test_hitbox_drawing(void) {
     enemy->x = 1000; enemy->y = 400; enemy->size = 25;
     enemy->hp = 999; enemy->max_hp = 999;
     player->hp = 999; player->max_hp = 999;
-    uint32_t dark = 0x00000000;            /* hitbox_rgb: тёмные, как раньше */
-    uint32_t zone = (96u << 24) | dark;    /* hitbox_zone_alpha: одна на всех */
-    /* Снежинка: снаряд и взрыв залиты ОДНИМ цветом и одной прозрачностью,
-     * путь - ровная полоса (rect_rot): ни круглых заглушек line(), ни
-     * контуров ring() поверх заливки. */
+    uint32_t dark = 0x00000000;            /* hitbox_rgb: dark, as before */
+    uint32_t zone = (96u << 24) | dark;    /* hitbox_zone_alpha: one for every zone */
+    /* Snowflake: the projectile and the explosion share one colour and one alpha,
+     * and the path is a straight strip (rect_rot) with no round line() caps and no
+     * ring() outlines over the fill. */
     gift->active = 1; snow_ball_a = 1;
     gift->x = 400; gift->y = 400; gift->dx = 1; gift->dy = 0; gift->t = 0;
     boom_t = 1; boom_x = 700; boom_y = 400; snow_boom_a = 1;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('c', zone) >= 2);   /* снаряд + взрыв залиты */
-    assert(count_kind_color('t', zone) >= 1);   /* полоса пути */
-    assert(count_kind_color('r', zone) == 0);   /* контуров больше нет */
-    /* При альфе 0.5 зона полупрозрачная (плавное появление работает). */
+    assert(count_kind_color('c', zone) >= 2);   /* the projectile and the explosion are filled */
+    assert(count_kind_color('t', zone) >= 1);   /* the path strip */
+    assert(count_kind_color('r', zone) == 0);   /* no outlines are left */
+    /* At an alpha of 0.5 the zone is translucent, so the fade in works. */
     snow_ball_a = 0.5;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
     assert(count_kind_color('c', (48u << 24) | dark) >= 1);
     gift->active = 0; boom_t = 0;
     snow_ball_a = 0; snow_boom_a = 0;
-    /* Рывок: клетки зоны урона - ОСТРЫЕ квадраты (rect) того же цвета и той же
-     * прозрачности, что и остальные зоны; скруглений нет нигде. Клетки по
-     * уже проеханному отрезку, один слой. */
+    /* Dash: the damage zone is one strip (rect_rot) along the travelled segment,
+     * with the colour and alpha of every other zone. Its width is the damage
+     * diameter, so the drawing matches the damage. */
     dash_active = 1; dash_box_a = 1;
     dash_x0 = 300; dash_y0 = 400; dash_dx = 1; dash_dy = 0;
     player->x = 700; player->y = 400;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    double pr = ds_fn_dash_hit_radius_solo();    /* тот же радиус, что и урон */
-    double side = pr * dash_hitbox_zone_scale;   /* сторона большого квадрата */
-    double travel = azum_dash_speed * azum_dash_time;   /* 382.5 из 400 пути */
-    int squares = count_kind_color('q', zone);
-    assert(squares >= (int)(travel / side));
-    assert(squares >= 8);
-    assert(count_kind_color('o', zone) == 0);       /* roundrect в хитбоксах нет */
-    for (int i = 0; i < call_count; i++) {
-        if (calls[i].kind != 'q' || calls[i].color != zone) continue;
-        /* Все клетки одного большого размера и сидят на сетке мира. */
-        assert(fabs(calls[i].w - side) < 1e-3);
-        assert(fabs(calls[i].h - side) < 1e-3);
-        double gx = calls[i].x / side, gy = calls[i].y / side;
-        assert(fabs(gx - floor(gx + 0.5)) < 1e-3);   /* центр клетки сетки */
-        assert(fabs(gy - floor(gy + 0.5)) < 1e-3);
-    }
-    /* Ни капсул line(), ни кругов: слой ровно один. */
+    double pr = ds_fn_dash_hit_radius_solo();    /* the same radius as the damage */
+    double path = azum_dash_speed * azum_dash_time;   /* 382.5 out of a 400 path */
+    double travel = player->x - dash_x0;         /* travelled 400, so the whole path */
+    if (travel > path) travel = path;
+    assert(count_kind_color('t', zone) == 1);    /* exactly one strip */
+    assert(count_kind_color('q', zone) == 0);    /* the grid of squares is gone */
+    assert(count_kind_color('o', zone) == 0);    /* no roundrect in the hitboxes */
     assert(count_kind_color('l', zone) == 0);
     assert(count_kind_color('c', zone) == 0);
-    /* Рывок бота в соло рисуется тем же радиусом и тем же цветом. */
+    for (int i = 0; i < call_count; i++) {
+        if (calls[i].kind != 't' || calls[i].color != zone) continue;
+        assert(fabs(calls[i].h - 2 * pr) < 1e-3);          /* the width is the zone diameter */
+        assert(fabs(calls[i].y - (400 - pr)) < 1e-3);      /* the strip lies on the dash axis */
+        assert(fabs((calls[i].x + calls[i].w / 2) - (dash_x0 + travel / 2)) < 1e-3);
+    }
+    /* A solo bot dash uses the same radius, colour and strip. */
     dash_active = 0; dash_box_a = 0;
     enemy_dash_active = 1; edash_box_a = 1;
     enemy_dash_x0 = 1100; enemy_dash_y0 = 400; enemy_dash_dx = -1; enemy_dash_dy = 0;
     enemy->x = 800; enemy->y = 400;
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('q', zone) >= 5);
+    assert(count_kind_color('t', zone) == 1);
+    assert(count_kind_color('q', zone) == 0);
     assert(count_kind_color('o', zone) == 0);
     assert(count_kind_color('l', zone) == 0);
     assert(count_kind_color('c', zone) == 0);
     enemy_dash_active = 0;
-    /* Квадрат зоны вокруг деспенсера больше не рисуется: ни заливки, ни
-     * контура - у турели остаётся только тень-спрайт. */
+    /* No zone square is drawn around the dispenser anymore, neither a fill nor an
+     * outline: the turret keeps only its shadow sprite. */
     edash_box_a = 0;
     own_turret(0, 500, 460, 10);
     arr_set(turret_box_a, 0, 1);
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(count_kind_color('q', zone) == 0);  /* без заливки квадрата */
-    assert(count_kind_color('o', zone) == 0);  /* без скруглённой заливки */
-    assert(count_kind_color('t', zone) == 0);  /* без полос */
-    assert(count_kind_color('l', zone) == 0);  /* без капсул */
-    assert(count_kind_color('r', zone) == 0);  /* без круглого контура */
-    assert(count_kind_color('c', zone) == 0);  /* без круглой заливки */
+    assert(count_kind_color('q', zone) == 0);  /* no square fill */
+    assert(count_kind_color('o', zone) == 0);  /* no rounded fill */
+    assert(count_kind_color('t', zone) == 0);  /* no strips */
+    assert(count_kind_color('l', zone) == 0);  /* no capsules */
+    assert(count_kind_color('r', zone) == 0);  /* no round outline */
+    assert(count_kind_color('c', zone) == 0);  /* no circular fill */
     puts("hitboxes: one transparent colour everywhere, sharp corners only");
 }
 
@@ -596,7 +594,7 @@ static void test_poison_green(void) {
     game_state = ST_SOLO;
     enemy->x = 100; enemy->y = 100; enemy->size = 25;
     player->x = 300; player->y = 100; player->size = 25;
-    /* Яд зелёный — не сливается с голубой заморозкой. */
+    /* Poison is green, so it does not blend into the blue freeze. */
     poison_a = 1;
     call_count = 0;
     ds_fn_draw_poison();
@@ -607,7 +605,7 @@ static void test_poison_green(void) {
     ds_fn_draw_player_poison();
     assert(count_kind_color('c', (76u << 24) | 0xC853) == 1);
     assert(count_kind_color('r', (178u << 24) | 0x69F0AE) == 1);
-    /* Заморозка осталась голубой. */
+    /* Freeze stays blue. */
     freeze_a = 1;
     call_count = 0;
     ds_fn_draw_freeze();
@@ -617,9 +615,9 @@ static void test_poison_green(void) {
 }
 
 static void test_splash_screens(void) {
-    /* Предупреждение об эпилепсии больше не тает по таймеру: экран держится
-     * до явного согласия (legal_accept в скриптах), иначе предупреждение
-     * можно «проспать» и войти в игру без него. */
+    /* The epilepsy warning no longer fades on a timer: the screen stays until
+     * consent (legal_accept in the scripts), otherwise the warning could be slept
+     * through. */
     ds_fn_reset_battle();
     warn_open = 1; warn_a = 1; warn_ready = 0; warn_t = 0; warn_closing = 0;
     studio_open = 0;
@@ -636,13 +634,13 @@ static void test_splash_screens(void) {
     ds_fn_touch_warn(screen_w / 2, ds_fn_warn_btn_y() + 20, 1);
     assert(legal_marks == 0);
     ds_fn_touch_warn(screen_w / 2, ds_fn_warn_btn_y() + 20, 0);
-    /* Согласие запускает плавное затухание и не стартует заставку студии. */
+    /* Consent starts the smooth fade and no studio splash. */
     assert(legal_marks == 1 && warn_open == 1 && warn_closing == 1 && studio_open == 0);
     ds_fn_update_warning();
     assert(warn_a > 0 && warn_a < 1 && warn_open == 1);
     for (int i = 0; i < 10; i++) ds_fn_update_warning();
     assert(warn_a == 0 && warn_open == 0 && warn_closing == 0);
-    /* При затухании фон, текст и кнопка используют общую альфу. */
+    /* While fading, the background, the text and the button share one alpha. */
     warn_open = 1; warn_a = 0.5; warn_closing = 0;
     call_count = 0;
     ds_fn_draw_warning();
@@ -652,24 +650,24 @@ static void test_splash_screens(void) {
         if (calls[i].kind == 'o' && calls[i].color == 0x80000000) saw_accept_btn = 1;
     }
     assert(saw_accept_btn);
-    /* Кнопка сразу в полной яркости, а подпись держит отсчёт «(3)(2)(1)»;
-     * на 4-й секунде секунды пропадают и кнопка принимает нажатие. */
+    /* The button starts fully lit while its label counts "(3)(2)(1)"; on the
+     * fourth second the seconds disappear and the button accepts a tap. */
     warn_a = 1; warn_ready = 0; warn_t = 0.0;
     call_count = 0;
     ds_fn_draw_warning();
-    assert(strstr(last_text, "(3)") != NULL);          /* 1-я секунда */
+    assert(strstr(last_text, "(3)") != NULL);          /* first second */
     for (int i = 0; i < call_count; i++)
         if (calls[i].kind == 'o')
-            assert(calls[i].color == 0xFFFFFFFF || calls[i].color == 0xFF000000); /* строго монохромная */
+            assert(calls[i].color == 0xFFFFFFFF || calls[i].color == 0xFF000000); /* strictly monochrome */
     warn_t = 1.5; warn_ready = 0.5;
     ds_fn_draw_warning();
-    assert(strstr(last_text, "(2)") != NULL);          /* 2-я секунда */
+    assert(strstr(last_text, "(2)") != NULL);          /* second second */
     warn_t = 2.5; warn_ready = 0.83;
     ds_fn_draw_warning();
-    assert(strstr(last_text, "(1)") != NULL);          /* 3-я секунда */
+    assert(strstr(last_text, "(1)") != NULL);          /* third second */
     warn_t = 3.0; warn_ready = 1.0;
     ds_fn_draw_warning();
-    assert(strstr(last_text, "(") == NULL);            /* секунды исчезли */
+    assert(strstr(last_text, "(") == NULL);            /* the seconds are gone */
     int marks_before = legal_marks;
     ds_fn_touch_warn(screen_w / 2, ds_fn_warn_btn_y() + 20, 0);
     assert(legal_marks == marks_before + 1 && warn_open == 1 && warn_closing == 1 && studio_open == 0);
@@ -679,7 +677,7 @@ static void test_splash_screens(void) {
 static void test_quest_cooldown(void) {
     ds_main();
     ds_fn_quest_init();
-    /* Готовое задание (тип 0, прогресс достигнут) и фиксированное «сейчас». */
+    /* A finished quest (type 0, target reached) and a pinned now. */
     fake_now = 1000;
     arr_set(quest_type, 0, 0);
     arr_set(quest_prog, 0, 1);
@@ -687,18 +685,18 @@ static void test_quest_cooldown(void) {
     int cups0 = cups;
     int cand0 = candies;
     ds_fn_quest_complete(0);
-    /* Награда срезана до quest_cups / quest_candies. */
+    /* The reward is cut down to quest_cups and quest_candies. */
     assert(cups == cups0 + (int)quest_cups);
     assert(candies == cand0 + (int)quest_candies);
-    /* Слот ушёл в кулдаун, метка сохранена нативно (переживёт выход). */
+    /* The slot went into cooldown and the stamp is stored natively, surviving a restart. */
     assert(arr_get(quest_type, 0) == -1);
     near(arr_get(quest_next, 0), 1000 + quest_respawn);
     near(quest_state[3], 1000 + quest_respawn);
-    /* До истечения 5 минут новое задание НЕ появляется. */
+    /* No new quest appears before the five minutes are up. */
     fake_now = 1000 + quest_respawn - 1;
     ds_fn_quest_tick();
     assert(arr_get(quest_type, 0) == -1);
-    /* Прошло quest_respawn реальных секунд — появляется новое задание. */
+    /* After quest_respawn real seconds a new quest appears. */
     fake_now = 1000 + quest_respawn;
     ds_fn_quest_tick();
     assert(arr_get(quest_type, 0) != -1);
@@ -708,13 +706,13 @@ static void test_quest_cooldown(void) {
 }
 
 static void test_punch_hitbox_fades(void) {
-    /* Полоса удара бота больше не вспыхивает на один кадр: у неё своя альфа. */
+    /* The bot punch strip no longer flashes for a single frame: it has its own alpha. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     dt = 0.05;
     aim_fade_in = 0.09; aim_fade_out = 0.1;
     show_hitboxes = 1;
-    enemy->state = 2;                       /* удар бота */
+    enemy->state = 2;                       /* the bot punched */
     ds_fn_tick_hitbox_fades();
     assert(enemy_punch_a > 0 && enemy_punch_a < 1);
     for (int i = 0; i < 10; i++) ds_fn_tick_hitbox_fades();
@@ -724,14 +722,14 @@ static void test_punch_hitbox_fades(void) {
     assert(enemy_punch_a > 0 && enemy_punch_a < 1);
     for (int i = 0; i < 10; i++) ds_fn_tick_hitbox_fades();
     near(enemy_punch_a, 0);
-    /* Рисуется она той же альфой, а не единицей. */
+    /* It is drawn with that alpha rather than with one. */
     enemy_punch_a = 0.5;
     enemy->x = 400; enemy->y = 300; enemy->angle = 0;
     call_count = 0;
     ds_fn_draw_enemy_hitbox();
     assert(count_kind_color('t', (48u << 24) | 0x00000000) == 1);  /* floor(0.5*96) */
-    assert(count_kind_color('l', (48u << 24) | 0x00000000) == 0);  /* без капсул line() */
-    /* Конец боя: все хитбоксы гаснут плавно, а не исчезают разом. */
+    assert(count_kind_color('l', (48u << 24) | 0x00000000) == 0);  /* no line() capsules */
+    /* End of the battle: every hitbox fades out instead of vanishing at once. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     dash_active = 1; dash_box_a = 1;
@@ -749,8 +747,8 @@ static void test_punch_hitbox_fades(void) {
 }
 
 static void test_status_circles(void) {
-    /* Эффекты, которые враг наложил на бойца, видны тем же ровным кругом и
-     * так же плавно гаснут. */
+    /* Status effects the enemy put on the fighter use the same even circle and
+     * fade out the same way. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     dt = 0.05;
@@ -772,14 +770,14 @@ static void test_status_circles(void) {
     for (int i = 0; i < 20; i++) ds_fn_tick_status_fades();
     near(pfreeze_a, 0); near(ppoison_a, 0); near(pstun_a, 0);
     near(freeze_a, 0); near(poison_a, 0); near(stun_a, 0);
-    /* Круг вокруг бойца рисуется в соло (draw_game), тем же цветом, что у врага. */
+    /* The circle around the fighter is drawn in solo (draw_game) in the enemy colour. */
     pfreeze_a = 1; ppoison_a = 1; pstun_a = 1;
     call_count = 0;
     ds_fn_draw_game();
-    assert(count_kind_color('c', (76u << 24) | 0x1E88E5) == 1);   /* заморозка */
-    assert(count_kind_color('c', (76u << 24) | 0xC853) == 1);     /* яд */
-    assert(count_kind_color('c', (76u << 24) | 0xF9A825) == 1);   /* оглушение */
-    /* В конце боя таймеры состояний уже не тикают, но круги всё равно гаснут. */
+    assert(count_kind_color('c', (76u << 24) | 0x1E88E5) == 1);   /* freeze */
+    assert(count_kind_color('c', (76u << 24) | 0xC853) == 1);     /* poison */
+    assert(count_kind_color('c', (76u << 24) | 0xF9A825) == 1);   /* stun */
+    /* At the end of the battle the status timers stop, but the circles still fade. */
     player_freeze = 2; pfreeze_a = 1;
     finished = 2;
     ds_fn_tick_status_fades();
@@ -790,9 +788,9 @@ static void test_status_circles(void) {
 }
 
 static void test_dash_zone_narrow(void) {
-    /* Зона рывка в уроне и в рисунке одна: радиус задаётся масштабом.
-     * Масштаб чуть меньше единицы (рывок всё ещё прицельный), но заметно
-     * больше прежних 0.75 - рывок Азума должен попадать чаще. */
+    /* The dash zone is one and the same in damage and in drawing: its radius follows
+     * a scale. That scale stays under one, so the dash is still aimed, yet it is
+     * noticeably above the old 0.75 and lands more often. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     player->size = 45; enemy->size = 45;
@@ -801,8 +799,8 @@ static void test_dash_zone_narrow(void) {
     near(pr, old_r * dash_hit_radius_scale);
     assert(dash_hit_radius_scale < 1.0);
     assert(dash_hit_radius_scale >= 0.85);
-    assert(pr * dash_hitbox_zone_scale < old_r * 2);   /* полоса уже прежнего диаметра */
-    /* Рывок, прошедший в стороне между новым и старым радиусом, больше не бьёт. */
+    assert(pr < old_r);   /* the dash zone is narrower than it used to be */
+    /* A dash passing between the old and the new radius no longer hits. */
     game_state = ST_ONLINE;
     double remote_old = player->size * 0.65 + 14;
     double remote_pr = ds_fn_dash_hit_radius_remote();
@@ -811,13 +809,13 @@ static void test_dash_zone_narrow(void) {
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == -1);
     player->y = 500 + remote_pr - 1;
     assert(ds_fn_dash_resolve_target(200, 500, 1, 0, 600) == 0);
-    puts("dash: narrower damage zone, the drawn squares follow it");
+    puts("dash: narrower damage zone, the drawn strip follows it");
 }
 
 static void test_own_punch_spares_own_turret(void) {
-    /* Свой деспенсер не перехватывает свой удар: турель стоит прямо на буке,
-     * удар уходит в пустоту (турель цела, враг далеко — не ранен), а когда
-     * враг в полосе — урон доходит до врага, турель не теряет HP. */
+    /* Our own dispenser does not intercept our punch: it stands on the buk and
+     * lets the punch pass into empty air with the turret intact and the distant
+     * enemy unharmed, while an enemy on the strip takes the damage. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     player_class = CLASS_EBUC;
@@ -828,24 +826,24 @@ static void test_own_punch_spares_own_turret(void) {
     player->hp = 20; player->max_hp = 20;
     enemy->hp = 999; enemy->max_hp = 999;
     own_turret(0, 400, 400, 9);
-    enemy->cooldown = 5; enemy->think = 5;      /* бот не вмешивается */
+    enemy->cooldown = 5; enemy->think = 5;      /* the bot stays out of it */
     punch->active = 1; punch->hit = 0; punch_left = punch_time;
     ds_fn_update_game();
-    near(arr_get(turret_hp, 0), 9);             /* свой удар не грызёт деспенсер */
-    near(enemy->hp, 999);                       /* и не бьёт врага сквозь пустоту */
+    near(arr_get(turret_hp, 0), 9);             /* our own punch does not chew on the dispenser */
+    near(enemy->hp, 999);                       /* and does not hit the enemy through nothing */
     assert(punch->hit == 0);
-    enemy->x = 460; enemy->y = 400;             /* враг в полосе удара */
+    enemy->x = 460; enemy->y = 400;             /* the enemy is on the punch strip */
     punch->active = 1; punch->hit = 0; punch_left = punch_time;
     ds_fn_update_game();
-    near(enemy->hp, 999 - ebuc_damage);         /* урон дошёл до врага */
-    near(arr_get(turret_hp, 0), 9);             /* деспенсер цел */
+    near(enemy->hp, 999 - ebuc_damage);         /* the damage reached the enemy */
+    near(arr_get(turret_hp, 0), 9);             /* the dispenser is intact */
     assert(punch->hit == 1);
     puts("punch: buk's own despenser never eats his punch, damage reaches the foe");
 }
 
 static void test_enemy_shield_front_only(void) {
-    /* Деспенсер врага-буКа прикрывает только спереди: турель за спиной не
-     * подставляется под удар в лицо, и враг честно получает урон. */
+    /* An enemy buk's dispenser only guards the front: a turret behind his back
+     * does not take a punch to the face, so the enemy takes the damage. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     player_class = CLASS_ORDINARY;
@@ -854,22 +852,22 @@ static void test_enemy_shield_front_only(void) {
     enemy->x = 600; enemy->y = 400; enemy->size = 25;
     player->hp = 999; player->max_hp = 999;
     enemy->hp = 50; enemy->max_hp = 50;
-    /* Турель между игроком и врагом — щит принимает удар. */
+    /* With a turret between the player and the enemy the shield takes the punch. */
     foe_turret(0, 560, 400, 10);
     assert(ds_fn_enemy_punch_turret_target(500, 400, 1, 0) == 1);
-    /* Турель в полосе удара, но позади тела (дальше допуска 30px) — не щит:
-     * прямого чипа и контрудара нет, удар проходит в лицо врага (входящий
-     * урон бука по правилу класса принимает щит через absorb). */
+    /* A turret on the punch strip but behind the body, past the 30 px tolerance,
+     * is no shield: there is no direct chip and no counter hit, and the punch lands
+     * on the enemy's face, where the class rule makes absorb take the damage. */
     arr_set(enemy_turret_x, 0, 632);
     assert(ds_fn_enemy_punch_turret_target(500, 400, 1, 0) == -1);
     enemy->cooldown = 5; enemy->think = 5;
     punch->x = 500; punch->y = 400; punch->dx = 1; punch->dy = 0;
     punch->active = 1; punch->hit = 0; punch_left = punch_time;
     ds_fn_update_game();
-    assert(punch->hit == 1);                    /* удар в лицо прошёл */
-    near(arr_get(enemy_turret_hp, 0), 9);       /* absorb принял урон */
-    near(player->hp, 999);                      /* контрудара нет */
-    /* Турель спереди: прямой чип в щит плюс контрудар по игроку. */
+    assert(punch->hit == 1);                    /* the punch to the face landed */
+    near(arr_get(enemy_turret_hp, 0), 9);       /* absorb took the damage */
+    near(player->hp, 999);                      /* there is no counter hit */
+    /* A turret in front gives a direct chip into the shield plus a counter hit on the player. */
     arr_set(enemy_turret_x, 0, 560);
     punch->active = 1; punch->hit = 0; punch_left = punch_time;
     ds_fn_update_game();
@@ -879,20 +877,20 @@ static void test_enemy_shield_front_only(void) {
 }
 
 static void test_online_turret_punch_death(void) {
-    /* Онлайн-буК: удар соперника бьёт по турели напрямую (damage_turret), а
-     * удар по самому игроку поглощается щитом из турелей — в обоих случаях
-     * турель теряет HP и в итоге умирает (взрыв попадает в очередь). */
+    /* Online buk: a remote punch hits a turret directly through damage_turret,
+     * while a punch at the player is absorbed by the shield of turrets. Either way
+     * the turret loses HP and dies in the end, with the explosion queued. */
     ds_fn_reset_battle();
     game_state = ST_ONLINE;
     player_class = CLASS_EBUC;
     dt = 0.05;
     player->x = 500; player->y = 400; player->size = 25;
     player->hp = 20; player->max_hp = 20;
-    /* Слот 1 — живой соперник (обычный класс, урон 1). */
+    /* Slot 1 holds a live remote: an ordinary class with a damage of 1. */
     arr_set(remotes, 1*remote_fields+5, 1);
     arr_set(remotes, 1*remote_fields+10, CLASS_ORDINARY);
     double rb = 1*punch_fields;
-    /* 1) Удар точно по игроку (турель далеко от полосы): щит поглощает урон. */
+    /* 1) A punch right at the player, with the turret far from the strip: the shield absorbs it. */
     own_turret(0, 500, 560, 9);
     arr_set(remote_punches, rb, 1);
     arr_set(remote_punches, rb+1, 420);
@@ -900,10 +898,10 @@ static void test_online_turret_punch_death(void) {
     arr_set(remote_punches, rb+3, 1);
     arr_set(remote_punches, rb+4, 0);
     ds_fn_update_remote_punches();
-    near(player->hp, 20);                      /* игрок цел */
-    near(arr_get(turret_hp, 0), 8);            /* щит забрал удар */
-    assert(arr_get(remote_punches, rb) == 0);  /* удар обработан */
-    /* 2) Прямое попадание по турели: чип за чипом, после девяти ударов смерть. */
+    near(player->hp, 20);                      /* the player is unharmed */
+    near(arr_get(turret_hp, 0), 8);            /* the shield took the punch */
+    assert(arr_get(remote_punches, rb) == 0);  /* the punch was handled */
+    /* 2) Direct hits on the turret: chip after chip, dead after nine punches. */
     arr_set(turret_x, 0, 500); arr_set(turret_y, 0, 460); arr_set(turret_hp, 0, 9);
     arr_set(remote_punches, rb, 1);
     ds_fn_update_remote_punches();
@@ -918,9 +916,9 @@ static void test_online_turret_punch_death(void) {
 }
 
 static void test_punch_sprite_never_empty(void) {
-    /* tex() с незагруженной текстурой не рисует ничего, поэтому пустой спрайт
-     * замаха означал невидимого бойца: на время удара игрок пропадал с арены.
-     * Теперь поза замаха откатывается на обычный спрайт своего класса. */
+    /* tex() draws nothing for a missing texture, so an empty swing sprite meant an
+     * invisible fighter who left the arena while punching. The swing pose now falls
+     * back to the ordinary sprite of the class. */
     ds_fn_reset_battle();
     punch_tex_broken = 1;
     ds_fn_load_textures();
@@ -930,13 +928,13 @@ static void test_punch_sprite_never_empty(void) {
     assert(strcmp(ds_fn_fighter_sprite(CLASS_AZUM, 1, SKIN_NORMAL), "azum.png") == 0);
     assert(strcmp(ds_fn_fighter_sprite(CLASS_SANTA, 1, SKIN_NORMAL), "santa.png") == 0);
     assert(strcmp(ds_fn_fighter_sprite(CLASS_EBUC, 1, SKIN_NORMAL), "ebuc.png") == 0);
-    /* Скину «Зомби» тоже есть куда падать: зомби-замах -> Азум -> обычный. */
+    /* The zombie skin has a fallback too: zombie swing, then Azum, then ordinary. */
     azum_zombie_punch_tex_ok = 0;
     assert(strcmp(ds_fn_fighter_sprite(CLASS_AZUM, 1, SKIN_ZOMBIE), "azum.png") == 0);
     azum_zombie_punch_tex_ok = 1;
     punch_tex_broken = 0;
     ds_fn_load_textures();
-    /* Всё на месте — играем настоящими спрайтами замаха, как и раньше. */
+    /* Everything is in place, so the real swing sprites are used as before. */
     assert(ordinary_punch_tex_ok == 1 && azum_punch_tex_ok == 1);
     assert(strcmp(ds_fn_fighter_sprite(CLASS_ORDINARY, 1, SKIN_NORMAL), "ordinary_punch.png") == 0);
     assert(strcmp(ds_fn_fighter_sprite(CLASS_AZUM, 1, SKIN_NORMAL), "azum_punch.png") == 0);
@@ -948,31 +946,31 @@ static void test_punch_sprite_never_empty(void) {
 }
 
 static void test_remote_punch_pose_expires(void) {
-    /* Поза замаха соперника живёт punch_time и гаснет сама. Раньше
-     * remote_punches чистил только update_remote_punches(), а до него не
-     * доходит ни конец боя, ни потеря слота — соперник навсегда оставался
-     * «бьющим» (спрайт замаха висел и на экране результатов, и дальше). */
+    /* A remote swing pose lives punch_time and fades by itself. Only
+     * update_remote_punches() used to clear remote_punches, and neither the end of
+     * the battle nor a lost slot reaches it, so a remote stayed mid swing forever,
+     * on the results screen and beyond. */
     ds_fn_reset_battle();
     game_state = ST_ONLINE;
     dt = 1.0 / 60.0;
     stub_slot = 0;
     stub_online[1] = 1; stub_alive[1] = 1; stub_punch[1] = 0;
-    arr_set(remotes, 1*remote_fields, 1);          /* слот уже виден */
+    arr_set(remotes, 1*remote_fields, 1);          /* the slot is already visible */
     arr_set(remotes, 1*remote_fields+5, 1);
-    stub_punch[1] = 3;                             /* соперник ударил */
+    stub_punch[1] = 3;                             /* the remote punched */
     ds_fn_read_remotes();
     assert(arr_get(remote_punches, 1*punch_fields) == 1);
-    finished = 1;                                  /* бой закончился в тот же кадр */
+    finished = 1;                                  /* the battle ended in the same frame */
     int frames = 0;
     while (arr_get(remote_punches, 1*punch_fields) == 1 && frames < 120) {
         ds_fn_tick_remote_punches();
         frames++;
     }
     assert(arr_get(remote_punches, 1*punch_fields) == 0);
-    assert(frames > 5 && frames < 30);             /* punch_time, а не вечность */
+    assert(frames > 5 && frames < 30);             /* punch_time rather than forever */
     finished = 0;
-    /* finish_game() гасит чужие удары сразу, как и остальные эффекты. */
-    cups_awarded = 1;                              /* без наград и сохранения */
+    /* finish_game() drops remote punches at once, as it does with the other effects. */
+    cups_awarded = 1;                              /* no rewards and no saving */
     stub_punch[1] = 5;
     ds_fn_read_remotes();
     assert(arr_get(remote_punches, 1*punch_fields) == 1);
@@ -985,26 +983,26 @@ static void test_remote_punch_pose_expires(void) {
 }
 
 static void test_no_phantom_punch_on_join(void) {
-    /* Счётчик удара живёт в комнате и не сбрасывается, а «последний виденный»
-     * после reset_battle() равен нулю: первый же снимок новой игры считался
-     * ударом — соперник рисовался бьющим, а его прошлогодний удар ещё и бил
-     * по игроку. Первый снимок теперь сверяется, а не принимается за удар. */
+    /* The punch counter lives in the room and never resets, while our last seen
+     * value is zero after reset_battle(), so the first snapshot of a new game used
+     * to count as a punch and the remote was drawn mid swing, with his punch from
+     * the last match even hurting the player. The snapshot is compared now. */
     ds_fn_reset_battle();
     game_state = ST_ONLINE;
     online_ready = 1;
     dt = 1.0 / 60.0;
     stub_slot = 0;
     stub_online[1] = 1; stub_alive[1] = 1;
-    stub_punch[1] = 7;                             /* счётчик из прошлого матча */
+    stub_punch[1] = 7;                             /* the counter from the last match */
     player->x = 400; player->y = 360; player->size = 25;
     player->hp = 10; player->max_hp = 10;
     finished = 0;
     ds_fn_read_remotes();
-    assert(arr_get(remote_punches, 1*punch_fields) == 0);   /* замаха нет */
-    assert(arr_get(remotes, 1*remote_fields+6) == 7);       /* счётчик запомнен */
+    assert(arr_get(remote_punches, 1*punch_fields) == 0);   /* no swing pose */
+    assert(arr_get(remotes, 1*remote_fields+6) == 7);       /* the counter is remembered */
     ds_fn_update_remote_punches();
-    near(player->hp, 10);                                   /* чужого урона нет */
-    /* Настоящий следующий удар виден как раньше. */
+    near(player->hp, 10);                                   /* no remote damage */
+    /* The real next punch still shows up as before. */
     stub_punch[1] = 8;
     ds_fn_read_remotes();
     assert(arr_get(remote_punches, 1*punch_fields) == 1);
@@ -1013,8 +1011,8 @@ static void test_no_phantom_punch_on_join(void) {
 }
 
 static void test_turret_shadow_square(void) {
-    /* Тень деспенсера — тем же спрайтом (tex_tint), что и сам деспенсер:
-     * ни кругов, ни колец под турелью. Хитбокс турели — квадрат. */
+    /* The dispenser shadow is the dispenser sprite through tex_tint, with no
+     * circles and no rings under the turret. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     show_hitboxes = 1;
@@ -1023,18 +1021,18 @@ static void test_turret_shadow_square(void) {
     ds_fn_draw_turret_shadows();
     assert(tint_calls == 1);
     assert(strcmp(tint_last, "despenser.png") == 0);
-    assert(call_count == 0);                    /* тень — спрайт, не круг */
+    assert(call_count == 0);                    /* the shadow is a sprite, not a circle */
     arr_set(turret_box_a, 0, 1);
     call_count = 0;
     ds_fn_draw_ability_hitboxes();
-    assert(call_count == 0);   /* квадрат зоны вокруг деспенсера убран */
+    assert(call_count == 0);   /* the zone square around the dispenser is gone */
     puts("turret: square sprite shadow stays, no hit square around the despenser");
 }
 
 static void test_station_beam_stable(void) {
-    /* Луч бука плотный и не мигает: рисуется даже вплотную к турели (раньше
-     * обрезался при d<40), альфа всегда непрозрачна, а в конце боя гаснет один
-     * раз и больше не возвращается — и у своего, и у вражеского бука. */
+    /* The buk beam is solid and never blinks: it is drawn even right next to the
+     * turret, where it used to be cut off below d<40, its alpha is always opaque,
+     * and at the end of the battle it fades once and never returns. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     player_class = CLASS_EBUC;
@@ -1043,25 +1041,25 @@ static void test_station_beam_stable(void) {
     player->x = 500; player->y = 400; player->hp = 10; player->max_hp = 10;
     enemy->x = 900; enemy->y = 400; enemy->hp = 10; enemy->max_hp = 10;
     uint32_t outer = (255u << 24) | 0x0000E676;   /* station_beam_alpha + rgb */
-    uint32_t core = (255u << 24) | 0x00C8FAD6;    /* сплошное ядро луча */
+    uint32_t core = (255u << 24) | 0x00C8FAD6;    /* the solid beam core */
     finished = 0;
-    own_turret(0, 512, 416, 6);                   /* d=20: вплотную к буку */
+    own_turret(0, 512, 416, 6);                   /* d=20, right next to the buk */
     last_turret_slot = 0;
     call_count = 0;
     ds_fn_draw_station();
     assert(count_kind_color('l', outer) == 1);
     assert(count_kind_color('l', core) == 1);
-    own_turret(0, 700, 100, 6);                   /* далеко: та же пара линий */
+    own_turret(0, 700, 100, 6);                   /* far away: the same pair of lines */
     call_count = 0;
     ds_fn_draw_station();
     assert(count_kind_color('l', outer) == 1);
     assert(count_kind_color('l', core) == 1);
-    player->hp = 0;                               /* мёртвый бук: луча нет */
+    player->hp = 0;                               /* a dead buk has no beam */
     call_count = 0;
     ds_fn_draw_station();
     assert(count_kind_color('l', outer) == 0 && count_kind_color('l', core) == 0);
     player->hp = 10;
-    finished = 1;                                 /* конец боя: луч ушёл навсегда */
+    finished = 1;                                 /* end of the battle: the beam is gone for good */
     call_count = 0;
     ds_fn_draw_station();
     assert(count_kind_color('l', outer) == 0 && count_kind_color('l', core) == 0);
@@ -1079,7 +1077,7 @@ static void test_station_beam_stable(void) {
 }
 
 static void test_universe_fade(void) {
-    /* Вспышка вселенной не обрывается в момент схлопывания. */
+    /* The universe flash does not stop the moment it collapses. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     dt = 0.05;
@@ -1091,7 +1089,7 @@ static void test_universe_fade(void) {
     assert(universe_fx_a > 0 && universe_fx_a < 1);
     call_count = 0;
     ds_fn_draw_universe();
-    assert(call_count >= 1);                  /* точка и кольца ещё доигрывают */
+    assert(call_count >= 1);                  /* the point and the rings are still playing out */
     for (int i = 0; i < 40; i++) ds_fn_tick_hitbox_fades();
     near(universe_fx_a, 0);
     call_count = 0;
@@ -1101,7 +1099,7 @@ static void test_universe_fade(void) {
 }
 
 static void test_enemy_class_chances(void) {
-    /* буК выпадает врагом редко — 8%; Азум 20%, Дед Мороз 30%. */
+    /* The buk rarely drops as an enemy, 8 per cent against 20 for Azum and 30 for Santa. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     near(enemy_class_ebuc_chance, 8);
@@ -1152,12 +1150,12 @@ int main(void) {
 
 
 def check_firebase_rules_cover_request_bodies():
-    """Правила RTDB должны объявлять КАЖДЫЙ ключ тел запросов клиента.
+    """The RTDB rules must declare EVERY key of a client request body.
 
-    У узлов правил есть "$other": {".validate": false}, поэтому одно новое
-    поле в PUT/PATCH без правила отклоняет всю запись: именно так онлайн
-    когда-то завис на вечном «подключении» (claim слота не проходил
-    валидацию). Проверка ловит рассинхрон firebase.rules.json и native/net.
+    Rule nodes have "$other": {".validate": false}, so one new field in a
+    PUT or PATCH without a rule rejects the whole write, which is how online
+    once hung on an endless "connecting" while the slot claim failed
+    validation. This check catches drift between firebase.rules.json and native/net.
     """
     rules = json.loads((ROOT / "firebase.rules.json").read_text(encoding="utf-8"))["rules"]
 
@@ -1175,8 +1173,8 @@ def check_firebase_rules_cover_request_bodies():
 
     missing = body_keys("room_sync.inc") - slot
     assert not missing, f"rooms/$room/players/$slot rules miss: {sorted(missing)}"
-    # auth_session.inc также шлёт тела логина в identitytoolkit — их ключи
-    # не относятся к базе и в проверке не участвуют.
+    # auth_session.inc also sends login bodies to identitytoolkit, whose keys
+    # are not part of the database and are skipped here.
     auth_only = {"email", "password", "grant_type", "refresh_token"}
     profile = (body_keys("state_storage.inc") | body_keys("settings_storage.inc")
                | body_keys("promo.inc")
@@ -1190,19 +1188,19 @@ def check_firebase_rules_cover_request_bodies():
 
 
 def check_sprite_assets_exist():
-    """Каждая текстура, на которую ссылаются скрипты, лежит в game/assets.
+    """Every texture the scripts refer to exists in game/assets.
 
-    После отката к 76ed6fc из ассетов выпали azum.png и azum_punch.png: класс
-    Азум был невидимым в бою, и игрока выдавали только эффекты удара («игрока
-    нет, при ударе видно»). Проверка читает все строковые имена *.png из
-    скриптов и требует файл под каждое из них.
+    After the rollback to 76ed6fc azum.png and azum_punch.png fell out of the
+    assets: the Azum class was invisible in battle and only the hit effects gave
+    him away. The check reads every *.png string name from the scripts and
+    requires a file for each of them.
     """
     names = set()
     for ds in (ROOT / "game" / "scripts").rglob("*.ds"):
         names |= set(re.findall(r'"([A-Za-z0-9_./-]+\.png)"', ds.read_text(encoding="utf-8")))
-    assert names, "не найдено ни одной ссылки на png в скриптах"
+    assert names, "no png reference found in the scripts"
     missing = [n for n in sorted(names) if not (ROOT / "game" / "assets" / n.split("/")[-1]).exists()]
-    assert not missing, f"в game/assets не хватает текстур: {missing}"
+    assert not missing, f"game/assets is missing textures: {missing}"
 
 
 def main():
@@ -1220,25 +1218,25 @@ def main():
             body = fns[name][2]
             for hook in ("tick_hitbox_fades()", "tick_status_fades()"):
                 assert body.count(hook) == 1, f"{name} must call {hook} once"
-        # Поза чужого замаха гаснет сама: её тик стоит ДО ветки finished и до
-        # проверки слота, иначе соперник оставался «бьющим» навсегда.
+        # A remote swing pose fades by itself: its tick sits before the finished branch
+        # and the slot check, otherwise a remote stayed mid swing forever.
         online_upd = fns["update_online"][2]
         assert online_upd.count("tick_remote_punches()") == 1, \
             "update_online must tick remote punches exactly once"
         assert online_upd.index("tick_remote_punches()") < online_upd.index("if finished!=0 then"), \
             "tick_remote_punches must run before the finished early-return"
-        # Первый снимок слота не считается ударом (счётчик живёт в комнате).
+        # The first slot snapshot does not count as a punch (the counter lives in the room).
         assert "arr_set(remotes,b+6,net_player_punch(s))" in "".join(fns["read_remotes"][2]), \
             "read_remotes must prime the punch counter of a freshly seen slot"
-        # Конец боя гасит чужие удары вместе с остальными эффектами.
+        # The end of the battle drops remote punches with the other effects.
         finish_body = "".join(fns["finish_game"][2])
         assert "clear_remote_punch(i)" in finish_body, \
             "finish_game must clear remote punches"
-        # Эффекты, наложенные врагом, рисуются и вокруг бойца (соло).
+        # Effects the enemy applied are drawn around the fighter too (solo).
         solo_body = "".join(fns["draw_game"][2])
         for fn in ("draw_player_freeze()", "draw_player_poison()", "draw_player_stun()"):
             assert solo_body.count(fn) == 1, f"draw_game must call {fn}"
-        # Шансы классов врага берутся из конфига, а не зашиты числами.
+        # The enemy class chances come from the config rather than hard-coded numbers.
         pick_body = "".join(fns["enemy_pick_random_class"][2])
         for name in ("enemy_class_azum_chance", "enemy_class_ebuc_chance",
                      "enemy_class_santa_chance"):
@@ -1268,12 +1266,12 @@ def main():
         assert "line(" not in dash_body
         assert "hitbox_corner" not in dash_body, "dash cells must be sharp squares"
         assert "arr_new()" not in dash_body, "dash cells must reuse one array"
-        # Зоны с острыми углами: удар и все полосы - rect_rot, не line().
+        # Sharp-cornered zones: the punch and every strip use rect_rot, not line().
         punch_body = "".join(fns["draw_punch_box"][2])
         assert "draw_hit_strip(" in punch_body and "line(" not in punch_body
         strip_body = "".join(fns["draw_hit_strip"][2])
         assert "rect_rot(" in strip_body and "line(" not in strip_body
-        # Прозрачность одна на все зоны: альфы берёт hb_zone_col.
+        # One alpha for every zone: hb_zone_col supplies it.
         zone_body = "".join(fns["hb_zone_col"][2])
         assert "hitbox_zone_alpha" in zone_body
         # Own turret can never intercept the owner's punch.
@@ -1281,7 +1279,7 @@ def main():
         # Turret shadow is the despenser sprite itself (square, tinted).
         shadow_body = "".join(fns["draw_turret_shadow_at"][2])
         assert "tex_tint(" in shadow_body and "DESPENSER_TEX" in shadow_body
-        # Видимость луча бука решается одним предикатом во всех трёх местах.
+        # The visibility of the buk beam comes from one predicate in all three places.
         for name in ("draw_station", "draw_remote_station", "draw_enemy_turrets"):
             assert "station_beam_visible(" in "".join(fns[name][2]), \
                 f"{name} must gate the buk beam through station_beam_visible"
@@ -1300,7 +1298,7 @@ def main():
         studio_body = "".join(fns["update_studio"][2]).replace(" ", "")
         assert "studio_bg_a=studio_a" in studio_body
 
-        # ── Чат: пузыри сообщений над бойцами и кнопка закрытия по центру ──
+        # -- Chat: message bubbles above the fighters and a close button in the centre --
         online_body = "".join(fns["draw_online"][2])
         assert online_body.count("draw_chat_bubbles()") == 1, \
             "draw_online must draw chat bubbles once"
@@ -1308,16 +1306,16 @@ def main():
         assert upd_body.count("chat_bubbles_watch()") == 1, \
             "update_online must tick chat bubbles once"
         assert "chat_bubbles_reset()" in "".join(fns["init_online"][2])
-        # Закрытие чата — там же, где draw_back: вверху по центру.
+        # The chat closes where draw_back sits: top centre.
         close_x = "".join(fns["chat_close_x"][2]).replace(" ", "")
         assert "(screen_w-btn_w)/2" in close_x, \
             "chat close button must sit centered like every other close button"
         assert "back_y" in "".join(fns["chat_top_y"][2])
-        # Новые сообщения находятся по серверному ключу (устойчиво к обрезке).
+        # New messages are found by their server key, which survives trimming.
         watch_body = "".join(fns["chat_bubbles_watch"][2])
         assert "net_chat_key(" in watch_body and "chat_seen_key" in watch_body
 
-        # ── Настройки: громкость музыки ──
+        # -- Settings: music volume --
         settings_body = "".join(fns["draw_settings"][2])
         assert "tr_music_vol()" in settings_body and "music_half_w()" in settings_body
         touch_body = "".join(fns["touch_settings"][2])
@@ -1326,7 +1324,7 @@ def main():
         assert "net_load_music_volume()" in "".join(fns["settings_from_storage"][2])
         assert "net_save_music_volume(" in "".join(fns["music_volume_step"][2])
 
-        # ── Карточки и промокоды: дроп только в соло, код персональный ──
+        # -- Cards and promo codes: solo drops only, a personal code --
         solo_upd = "".join(fns["update_game"][2])
         assert solo_upd.count("card_update()") == 1, \
             "update_game must tick cards once"
@@ -1340,16 +1338,16 @@ def main():
         reset_body = "".join(fns["reset_battle"][2])
         assert "card_active=0" in reset_body and "card_open=0" in reset_body, \
             "reset_battle must clear the card state"
-        # Онлайн карточки не видит: тик и ролл только в соло.
+        # Online never sees cards: the tick and the roll are solo only.
         assert "card_update()" not in "".join(fns["update_online"][2])
         assert "card_roll()" not in "".join(fns["init_online"][2])
         assert "card_open!=0" in "".join(fns["touch_game"][2]), \
             "touch_game must be blocked while the card overlay is open"
-        # Экран промокодов: кнопка в меню, маршрутизация ввода.
+        # The promo screen: a menu button and the input routing.
         assert "tr_promo()" in "".join(fns["draw_modes"][2])
         assert "start_transition(ST_PROMO)" in "".join(fns["touch_modes"][2])
         assert "touch_promo(" in "".join(fns["touch_menu"][2])
-        # Код детерминированно выводится из ника в C (не в конфиге и не на клиенте).
+        # The code is derived from the nick in C, not in the config or on the client.
         promo_c = (ROOT / "native/net/promo.inc").read_text(encoding="utf-8")
         # new format 3 letters + 1 digit, e.g. ABC1, deterministic from nick
         assert "code[4] = 0" in promo_c
@@ -1357,7 +1355,7 @@ def main():
         assert "promo_sync_with_cloud(resp)" in (
             ROOT / "native/net/profile_apply.inc").read_text(encoding="utf-8")
 
-        # ── Рывок Азума: быстрее при той же дистанции (300 * 1.275 = 382.5) ──
+        # -- Azum dash: faster at the same distance (300 * 1.275 = 382.5) --
         config_text = (ROOT / "game/scripts/core/config.ds").read_text(encoding="utf-8")
         assert "azum_dash_time=1.275" in config_text and "azum_dash_speed=300" in config_text
 

@@ -100,9 +100,9 @@ public function start_music()
     snd_loop(LOBBY_MUSIC)
     ds_log("init: lobby music on")
 end
--- Снежная плитка подгружается только для зимней темы: настройка читается из
--- хранилища после текстур, поэтому тему применяем отдельным шагом (и повторно —
--- на каждом тапе по «Зимней теме» в настройках).
+-- The snow tile is loaded only for the winter theme. The setting is read from
+-- storage after the textures, so the theme is applied as a separate step and
+-- again on every tap of the winter theme row.
 public function apply_winter_theme()
     if winter_theme == 1 then
         snow_tex_ok = png_load(SNOW_TEX)
@@ -141,14 +141,14 @@ public function update_music()
     snd_volume(LOBBY_MUSIC, music_volume / 100 * music_level)
 end
 public function update_warning()
-    -- Предупреждение держится до явного согласия. После нажатия не убираем
-    -- его одним кадром: плавно гасим весь слой и только затем открываем лобби.
+    -- The warning stays until consent. A press does not remove it in one frame:
+    -- the whole layer fades and only then the lobby opens.
     if warn_open != 1 then
         return
     end
     if warn_closing == 1 then
-        -- Smoothstep вместо линейного шага: начало и конец затухания мягкие
-        -- даже на устройствах, которые держат только 20-35 кадров в секунду.
+        -- Smoothstep instead of a linear step, so the fade starts and ends
+        -- softly even on devices that hold only 20-35 fps.
         warn_close_t = clamp(warn_close_t + dt / warn_fade, 0, 1)
         local number p=warn_close_t
         warn_a = 1 - p*p*(3-2*p)
@@ -188,8 +188,8 @@ end
 public function tick_achievement_toast()
     ach_toast_t = tick_down(ach_toast_t)
 end
--- Счётчик FPS для боя: среднее за fps_interval секунд (dt — время между
--- кадрами, которое считает main.c), поэтому цифра не прыгает каждый кадр.
+-- Battle frame counter: the average over fps_interval seconds, from the frame
+-- time dt measured in main.c, so the number does not jump every frame.
 public function tick_fps_meter()
     if show_fps == 0 then
         fps_acc = 0
@@ -317,8 +317,8 @@ public function draw()
 end
 public function back_pressed()
     if warn_open == 1 then
-        -- Не нажал «принимаю риск» — системный «Назад» закрывает игру:
-        -- войти без осознанного согласия нельзя.
+        -- Without accepting the risk the system Back button closes the game:
+        -- there is no way in without consent.
         return 0
     end
     if studio_open == 1 then

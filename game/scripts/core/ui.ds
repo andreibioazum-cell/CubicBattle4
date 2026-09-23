@@ -45,9 +45,9 @@ public function text_in_field(string label, number x, number y, number h, color 
     local number tt = text_ink_top(label) * scale
     text_scaled(label, x, y + (h - th) / 2 - tt + 1.5, c, scale)
 end
--- Длинная надпись не должна вылезать за отведённую ширину: масштаб считается по
--- фактической ширине текста (как в поле промокода), но не больше max_scale —
--- короткие надписи остаются своего размера.
+-- A long label must fit its width: the scale follows the real text width (as in
+-- the promo field) and never exceeds max_scale, so short labels keep their
+-- size.
 public function fit_text_scale(string s, number w, number max_scale)
     local number tw = text_ink_width(s)
     if tw <= 0 || w <= 0 then
@@ -86,6 +86,34 @@ end
 public function button_scaled(string label, number x, number y, number w, number h, number scale)
     roundrect(x, y, w, h, btn_radius, ui_purple)
     text_in_box(label, x, y, w, h, text_color, scale)
+end
+-- Outline of a rounded rectangle: a stroke of thickness t outside the edge
+-- (x, y, w, h, rad) that never covers the shape itself. It has to be drawn
+-- after the fill: white geometry under a fading translucent fill shows through
+-- and makes the button flash white at the end of the animation.
+-- The stroke is made of lines with round caps, so the corners of the sides and
+-- arcs meet without gaps; a corner is three segments (22.5 degrees per step,
+-- which is within a third of a pixel of a real arc at button radii).
+public function roundrect_outline(number x, number y, number w, number h, number rad, number t, color c)
+    local number o = t / 2
+    local number rr = rad + o
+    line(x + rad, y - o, x + w - rad, y - o, t, c)
+    line(x + rad, y + h + o, x + w - rad, y + h + o, t, c)
+    line(x - o, y + rad, x - o, y + h - rad, t, c)
+    line(x + w + o, y + rad, x + w + o, y + h - rad, t, c)
+    outline_arc(x + rad, y + rad, rr, t, c, -1, -1)
+    outline_arc(x + w - rad, y + rad, rr, t, c, 1, -1)
+    outline_arc(x + w - rad, y + h - rad, rr, t, c, 1, 1)
+    outline_arc(x + rad, y + h - rad, rr, t, c, -1, 1)
+end
+-- Quarter of an outline arc of radius rr around (cx, cy) in the quadrant
+-- (mx, my). The unit circle points are plain numbers (0, 22.5, 45, 67.5 and 90
+-- degrees) so no trigonometry runs per frame.
+public function outline_arc(number cx, number cy, number rr, number t, color c, number mx, number my)
+    line(cx + mx * rr, cy, cx + mx * 0.9239 * rr, cy + my * 0.3827 * rr, t, c)
+    line(cx + mx * 0.9239 * rr, cy + my * 0.3827 * rr, cx + mx * 0.7071 * rr, cy + my * 0.7071 * rr, t, c)
+    line(cx + mx * 0.7071 * rr, cy + my * 0.7071 * rr, cx + mx * 0.3827 * rr, cy + my * 0.9239 * rr, t, c)
+    line(cx + mx * 0.3827 * rr, cy + my * 0.9239 * rr, cx, cy + my * rr, t, c)
 end
 public function draw_back()
     button(tr_back(), (screen_w - btn_w) / 2, back_y, btn_w, btn_h)

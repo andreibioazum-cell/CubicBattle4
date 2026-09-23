@@ -1,24 +1,24 @@
-/* Хост-тест эквивалентности: новый тесселятор (geometry.inc, эмулируется
- * GPU-растеризация треугольников) против прежнего попиксельного рендера
- * (legacy_raster.inc - дословная копия старого native/graphics/raster.inc).
+/* Host equivalence test: the new tessellator (geometry.inc, with GPU triangle
+ * rasterisation emulated) against the old per-pixel renderer
+ * (legacy_raster.inc, a verbatim copy of the old native/graphics/raster.inc).
  *
- * Собирается и запускается так (из корня репозитория):
+ * Build and run it this way, from the repository root:
  *   gcc -std=gnu99 -O1 -o /tmp/test_geometry \
  *       tools/host_test/test_geometry.c tools/host_test/test_geo_side.c \
  *       -I tools/host_test/stub -I /tmp/vktools/Vulkan-Headers/include -I . -lm
- *   /tmp/test_geometry [dir_для_bmp]
+ *   /tmp/test_geometry [dir_for_bmp]
  *
- * Проверки: выровненные прямоугольники должны совпадать попиксельно; круги,
- * кольца, линии, скруглённые прямоугольники и текстуры - совпадать с точностью
- * до краевых пикселей (у legacy границы «раздувались» наружу до целого пикселя,
- * GPU красит по центрам пикселей). Раскладка текста проверяется численно по
- * формуле прежнего render_text_now. */
+ * Checks: aligned rectangles must match pixel for pixel, while circles, rings,
+ * lines, rounded rectangles and textures must match up to the edge pixels, since
+ * the legacy renderer grew its edges outward to whole pixels and the GPU paints by
+ * pixel centres. The text layout is checked numerically against the formula of the
+ * old render_text_now. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-/* --- заглушки среды legacy-растеризатора --- */
+/* --- environment stubs of the legacy rasteriser --- */
 #include "runtime.h"
 void ds_log(const char *format, ...) { (void)format; }
 void ds_log_err(const char *format, ...) { (void)format; }
@@ -29,12 +29,12 @@ int console_count(void) { return 0; }
 const char *console_line(int i) { (void)i; return ""; }
 int console_type(int i) { (void)i; return 0; }
 
-/* --- прежний программный растеризатор, дословно --- */
+/* --- the old software rasteriser, verbatim --- */
 #include "legacy_raster.inc"
 
-/* Заглушки шрифтового API живут в test_geo_side.c (этот TU их не вызывает). */
+/* The font API stubs live in test_geo_side.c; this unit never calls them. */
 
-/* --- обёртки новой геометрии (другой трансляционный юнит) --- */
+/* --- wrappers of the new geometry (another translation unit) --- */
 typedef struct { float x, y, u, v; uint32_t c; } GeoVert;
 void geo_side_reset(void);
 size_t geo_side_vert_count(void);
@@ -51,17 +51,17 @@ int geo_side_tex(float, float, float, float, float, float, uint32_t);
 int geo_side_text(const char *, float, float, uint32_t, float);
 
 
-/* --- эмуляция GPU-растеризации: треугольники, центры пикселей --- */
+/* --- emulation of the GPU rasteriser: triangles, pixel centres --- */
 
 static int edge_fn(float ax, float ay, float bx, float by, float px, float py) {
     return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 }
 
-/* Пиксель на общем ребре двух треугольников должен достаться ровно одному
- * из них (иначе альфа-смешивание накопится дважды - на настоящем GPU такого
- * нет: он применяет правило top-left). edge (a->b) владеет своей границей,
- * если она "левая" (b.y > a.y) или "верхняя" (горизонталь, b.x < a.x); для
- * треугольников обратной ориентации правило зеркальное. */
+/* A pixel on the shared edge of two triangles may belong to exactly one of them,
+ * otherwise the alpha blending accumulates twice, which cannot happen on real
+ * hardware because it applies the top-left rule. The edge a->b owns its boundary
+ * when it is a left edge (b.y > a.y) or a top edge (horizontal, b.x < a.x); for
+ * triangles with the opposite winding the rule is mirrored. */
 static int edge_owns(int e0, float ax, float ay, float bx, float by, int ccw) {
     if (e0 != 0) return 0;
     int forward = (by > ay) || (by == ay && bx < ax);
@@ -99,16 +99,16 @@ static void raster_tri(Buffer *b, const GeoVert *v) {
                           (w1 < 0 || edge_owns((int)w1, v[2].x, v[2].y, v[0].x, v[0].y, ccw)) &&
                           (w2 < 0 || edge_owns((int)w2, v[0].x, v[0].y, v[1].x, v[1].y, ccw));
             if (!inside) continue;
-            /* У сплошного примитива цвет у всех вершин одинаковый, uv не
-             * используется - красим цветом вершины. */
+            /* A solid primitive has one colour on all its vertices and no uv, so
+             * the vertex colour is used. */
             uint32_t col = v[0].c;
             b->pixels[py * b->stride + px] = blend(b->pixels[py * b->stride + px], col);
         }
     }
 }
 
-/* Текстурированный вариант: сэмплер nearest + правило смешивания как у GPU
- * (image.frag: color * texel; tint.frag: rgb вершины, альфа tex.a*col.a). */
+/* Textured variant: a nearest sampler with the blending rule of the GPU
+ * (image.frag: color * texel; tint.frag: vertex rgb, alpha tex.a * col.a). */
 static void raster_tri_tex(Buffer *b, const GeoVert *v, const Texture *t, int tint) {
     float minx = v[0].x, maxx = v[0].x, miny = v[0].y, maxy = v[0].y;
     for (int i = 1; i < 3; i++) {
@@ -145,7 +145,7 @@ static void raster_tri_tex(Buffer *b, const GeoVert *v, const Texture *t, int ti
             w0 /= area; w1 /= area; w2 /= area;
             float u = (float)(w0 * v[0].u + w1 * v[1].u + w2 * v[2].u);
             float vv = (float)(w0 * v[0].v + w1 * v[1].v + w2 * v[2].v);
-            /* Сэмплер nearest: центр текселя - floor(uv * size). */
+            /* Nearest sampler: the texel centre is floor(uv * size). */
             int tx = (int)floorf(u * t->w);
             int ty = (int)floorf(vv * t->h);
             if (tx < 0) tx = 0; if (tx >= t->w) tx = t->w - 1;
@@ -156,7 +156,7 @@ static void raster_tri_tex(Buffer *b, const GeoVert *v, const Texture *t, int ti
                 uint32_t a = ((p >> 24) & 0xff) * ca / 255;
                 src = cr | (cg << 8) | (cb << 16) | (a << 24);
             } else {
-                src = p; /* image.frag: col(белый) * texel = texel */
+                src = p; /* image.frag: col(white) * texel = texel */
             }
             if ((src >> 24) == 0) continue;
             b->pixels[py * b->stride + px] = blend(b->pixels[py * b->stride + px], src);
@@ -164,10 +164,11 @@ static void raster_tri_tex(Buffer *b, const GeoVert *v, const Texture *t, int ti
     }
 }
 
-/* Прогон геометрии через «GPU»: mode 0 - смешивание, 1 - текстурированный
- * (сэмпл тестовой текстуры; tint определяется цветом вершины: белый -
- * обычная текстура, остальное - tint), 2 - замена без смешивания (roundrect,
- * как fill_span в софтрендере). */
+/* Running geometry through the "GPU": mode 0 blends, mode 1 draws a textured
+ * quad (a sample of the test texture, with tint taken from the vertex colour:
+ * white means an ordinary texture, anything else a tint) and mode 2 replaces
+ * without blending, as roundrect does through fill_span in the software
+ * renderer. */
 static void raster_tri_repl(Buffer *b, const GeoVert *v) {
     float minx = v[0].x, maxx = v[0].x, miny = v[0].y, maxy = v[0].y;
     for (int i = 1; i < 3; i++) {
@@ -199,7 +200,7 @@ static void raster_tri_repl(Buffer *b, const GeoVert *v) {
                           (w1 < 0 || edge_owns((int)w1, v[2].x, v[2].y, v[0].x, v[0].y, ccw)) &&
                           (w2 < 0 || edge_owns((int)w2, v[0].x, v[0].y, v[1].x, v[1].y, ccw));
             if (!inside) continue;
-            b->pixels[py * b->stride + px] = v[0].c; /* замена, как fill_span */
+            b->pixels[py * b->stride + px] = v[0].c; /* replace, as fill_span does */
         }
     }
 }
@@ -216,7 +217,7 @@ static void rasterize_geo(Buffer *b, const Texture *t, int mode) {
     }
 }
 
-/* --- сравнение и вывод --- */
+/* --- comparison and output --- */
 
 static void buf_alloc(Buffer *b, int w, int h) {
     b->width = w; b->height = h; b->stride = w;
@@ -278,13 +279,13 @@ static CmpStat compare(const Buffer *a, const Buffer *g) {
     return st;
 }
 
-/* --- сцены --- */
+/* --- scenes --- */
 
 static Texture test_texture;
 static Buffer *gpu_buf_sink;
 
-/* Каждый примитив = отдельная пачка бэкенда: геометрия строится и сразу
- * растеризуется в буфер с нужным режимом смешивания. */
+/* Every primitive is a batch of its own: the geometry is built and rasterised
+ * into the buffer with the blending mode that fits it. */
 static Buffer *gpu_target;
 static void gpu_rect(float x, float y, float w, float h, uint32_t c) {
     geo_side_reset(); geo_side_rect(x, y, w, h, c);
@@ -304,7 +305,7 @@ static void gpu_line(float x1, float y1, float x2, float y2, float th, uint32_t 
 }
 static void gpu_roundrect(float x, float y, float w, float h, float r, uint32_t c) {
     geo_side_reset(); geo_side_roundrect(x, y, w, h, r, c);
-    rasterize_geo(gpu_target, NULL, 2); /* fill_span: замена */
+    rasterize_geo(gpu_target, NULL, 2); /* fill_span: replace */
 }
 static void gpu_tex(float x, float y, float a, float sc, float w, float h, uint32_t c) {
     geo_side_reset(); geo_side_tex(x, y, a, sc, w, h, c);
@@ -323,7 +324,7 @@ static void make_texture(void) {
 }
 
 static void draw_scene_1(Buffer *b, int legacy) {
-    /* Выровненные непрозрачные прямоугольники - ожидание: пиксель в пиксель. */
+    /* Aligned opaque rectangles must match pixel for pixel. */
     uint32_t red = pack_c(0xFFE23B3B), green = pack_c(0xFF30C060), blue = pack_c(0xFF3080E0);
     if (legacy) {
         render_rect(b, 10, 8, 40, 26, red);
@@ -338,18 +339,18 @@ static void draw_scene_1(Buffer *b, int legacy) {
 }
 
 static void draw_scene_2(Buffer *b, int legacy) {
-    /* Полупрозрачные круги/кольца/линии/скругления поверх базовых плашек. */
+    /* Translucent circles, rings, lines and rounded corners over base plates. */
     uint32_t base = pack_c(0xFF202830), alpha_w = pack_c(0x90FFFFFF), alpha_r = pack_c(0x60E04040);
     if (legacy) {
         render_rect(b, 0, 0, 120, 100, base);
         render_circle(b, 30, 30, 22, alpha_w);
         render_circle(b, 80, 35, 15, alpha_r);
         render_ring(b, 60, 70, 24, 6, alpha_w);
-        render_ring(b, 95, 25, 8, 14, alpha_w);   /* th >= r -> диск */
+        render_ring(b, 95, 25, 8, 14, alpha_w);   /* th >= r makes a disc */
         render_line(b, 8, 90, 90, 15, 5, alpha_r);
-        render_line(b, 40, 40, 40.0001f, 40, 7, alpha_w); /* вырожденная -> круг */
+        render_line(b, 40, 40, 40.0001f, 40, 7, alpha_w); /* degenerate: a circle */
         render_roundrect(b, 15, 78, 60, 18, 9, alpha_w);
-        render_roundrect(b, 60, 55, 50, 30, 0, alpha_r);  /* r=0 -> прямоугольник */
+        render_roundrect(b, 60, 55, 50, 30, 0, alpha_r);  /* r=0 gives a rectangle */
     } else {
         gpu_target = gpu_buf_sink;
         gpu_rect(0, 0, 120, 100, base);
@@ -382,7 +383,7 @@ static void draw_scene_3(Buffer *b, int legacy) {
 }
 
 static void draw_scene_4(Buffer *b, int legacy) {
-    /* Клип: формы пересекают края экрана. */
+    /* Clipping: shapes crossing the screen edges. */
     uint32_t alpha_g = pack_c(0xA030C060);
     if (legacy) {
         render_circle(b, -10, 10, 30, alpha_g);
@@ -428,11 +429,11 @@ int main(int argc, char **argv) {
         int ok;
         if (scenes[s].exact) ok = st.diff_big == 0 && st.diff_small == 0 && st.changed_union == 0;
         else ok = ratio <= 0.05 && st.diff_big <= 450;
-        /* Криволинейные сцены сверяются с допуском: софтрендер считал спены
-         * по аналитической окружности, GPU красит по центрам пикселей внутри
-         * полигонов - по границе фигур расходится тонкая (около пикселя)
-         * полоса, а на повёрнутых текстурах байт совпадает не на всех
-         * граничных текселях (монетка float на точной границе). */
+        /* Curved scenes are compared with a tolerance: the software renderer
+         * computed coverage from the analytic circle, while the GPU paints by
+         * pixel centres inside polygons, so a thin band of about a pixel differs
+         * along the border, and on rotated textures the bytes differ on some
+         * boundary texels, a float coin flip on an exact edge. */
         printf("%-14s: diff>40: %ld, diff<=40: %ld, changed: %ld, max_delta: %d -> %s\n",
                scenes[s].name, st.diff_big, st.diff_small, st.changed_union, st.max_delta,
                ok ? "OK" : "FAIL");
@@ -446,9 +447,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* Повёрнутый прямоугольник (rect_rot - хитбоксы): четыре угла должны быть
-     * повёрнутыми на ang углами НЕповёрнутого прямоугольника вокруг его центра,
-     * а при ang == 0 геометрия обязана совпасть с geo_rect бит в бит. */
+    /* Rotated rectangle (rect_rot, the hitboxes): its four corners must be the
+     * corners of the unrotated rectangle turned by ang around its centre, and at
+     * ang == 0 the geometry must match geo_rect bit for bit. */
     {
         int ok = 1;
         float x = 100.0f, y = 50.0f, w = 40.0f, h = 80.0f, ang = 0.6f;
@@ -466,13 +467,13 @@ int main(int argc, char **argv) {
                 if (fabsf(v[i].x - ex) > 1e-3f || fabsf(v[i].y - ey) > 1e-3f) ok = 0;
             }
         }
-        /* Без поворота - ровно geo_rect. */
+        /* Without a rotation it is exactly geo_rect. */
         geo_side_reset();
         geo_side_rect_rot(x, y, w, h, 0.0f, pack_c(0xFFFFFFFF));
         const GeoVert *q = geo_side_verts();
         if (geo_side_vert_count() != 4) ok = 0;
         else if (q[0].x != x || q[0].y != y || q[2].x != x + w || q[2].y != y + h) ok = 0;
-        /* Площадь четырёхугольника при повороте не меняется (шнуровка). */
+        /* The area of the quad does not change under rotation (shoelace). */
         geo_side_reset();
         geo_side_rect_rot(x, y, w, h, 1.1f, pack_c(0xFFFFFFFF));
         const GeoVert *r = geo_side_verts();
@@ -487,20 +488,20 @@ int main(int argc, char **argv) {
         if (!ok) failures++;
     }
 
-    /* Численная проверка раскладки текста: формула прежнего render_text_now.
-     * pen = x - lb*sc; base = y + asc*sc (asc = bearing_top опорного 'S');
-     * квад глифа: dx = pen + bearing_x*sc, top = base - bearing_top*sc,
-     * размеры width*sc x height*sc; отсутствующие символы -> '?'. */
+    /* Numerical check of the text layout, from the old render_text_now formula.
+     * pen = x - lb*sc; base = y + asc*sc, where asc is bearing_top of 'S'; a glyph
+     * quad sits at dx = pen + bearing_x*sc and top = base - bearing_top*sc with a
+     * size of width*sc by height*sc, and missing characters become '?'. */
     geo_side_reset();
     if (!geo_side_text("SAЯ\nA!", 10, 5, pack_c(0xFFFFFFFF), 2.0f)) {
-        printf("text_layout: не удалось построить геометрию -> FAIL\n");
+        printf("text_layout: could not build the geometry -> FAIL\n");
         failures++;
     } else {
         const GeoVert *verts = geo_side_verts();
         size_t vn = geo_side_vert_count();
-        /* опорные метрики: S: adv20 bx2 bt30 w14 h30; A: adv18 bx1 bt28 w16 h28; ? : adv16 bx1 bt28 w14 h28 */
+        /* reference metrics: S adv20 bx2 bt30 w14 h30; A adv18 bx1 bt28 w16 h28; ? adv16 bx1 bt28 w14 h28 */
         float pen = 10.0f - 2.0f * 2.0f, base = 5.0f + 30.0f * 2.0f;
-        float expect[7][4]; /* x, y, w, h для 'S','A','?','\n','A','?' */
+        float expect[7][4]; /* x, y, w, h for 'S','A','?','\n','A','?' */
         int gi = 0;
         float p = pen, bse = base;
         /* 'S' */ { expect[gi][0]=p+2*2; expect[gi][1]=bse-30*2; expect[gi][2]=14*2; expect[gi][3]=30*2; p+=20*2; gi++; }
@@ -517,19 +518,19 @@ int main(int argc, char **argv) {
                 float qw = v[1].x - v[0].x, qh = v[3].y - v[0].y;
                 if (fabs(qx - expect[q][0]) > 0.01f || fabs(qy - expect[q][1]) > 0.01f ||
                     fabs(qw - expect[q][2]) > 0.01f || fabs(qh - expect[q][3]) > 0.01f) {
-                    printf("  глиф %d: quad (%.2f, %.2f, %.2f, %.2f), ожидалось (%.2f, %.2f, %.2f, %.2f)\n",
+                    printf("  glyph %d: quad (%.2f, %.2f, %.2f, %.2f), expected (%.2f, %.2f, %.2f, %.2f)\n",
                            q, qx, qy, qw, qh, expect[q][0], expect[q][1], expect[q][2], expect[q][3]);
                     text_ok = 0;
                 }
             }
         } else {
-            printf("  глифов %zu, ожидалось %d\n", vn / 4, gi);
+            printf("  %zu glyphs, expected %d\n", vn / 4, gi);
         }
         printf("%-14s: %s\n", "text_layout", text_ok ? "OK" : "FAIL");
         if (!text_ok) failures++;
     }
 
-    /* Санитарность индексов на большой сцене. */
+    /* Index sanity on a large scene. */
     geo_side_reset();
     for (int i = 0; i < 300; i++)
         geo_side_circle((float)(i % 60) * 2, (float)(i % 40) * 2, 30.0f + (float)i, pack_c(0x80FFFFFF));
@@ -542,6 +543,6 @@ int main(int argc, char **argv) {
 
     free(legacy_buf.pixels);
     free(gpu_buf.pixels);
-    printf(failures ? "ИТОГ: %d сцена(ы) со сбоями\n" : "ИТОГ: все проверки пройдены\n", failures);
+    printf(failures ? "RESULT: %d scene(s) failed\n" : "RESULT: every check passed\n", failures);
     return failures ? 1 : 0;
 }

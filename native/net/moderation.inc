@@ -1,8 +1,9 @@
 double net_set_nick(const char *nick) {
     if (!nick || !nick_valid(nick)) return 0.0;
-    /* В защищённом режиме «примерить» чужой ник с дефолтным паролем нельзя:
-     * это создало бы аккаунт Firebase Auth на чужое имя. Ник меняется только
-     * через полноценный net_auth со своим паролем. */
+    /* The protected mode does not allow putting on a foreign nick with the
+     * default password, as that would create a Firebase Auth account under
+     * someone else's name. A nick changes only through a full net_auth call
+     * with a password of its own. */
     if (fb_enabled()) return 0.0;
     return net_auth(net.base, nick, "123456") == (double)NET_LOGIN_OK ? 1.0 : 0.0;
 }
@@ -81,7 +82,7 @@ const char *net_login_pass(void) {
     return s_lg_pass_ret;
 }
 
-/* Бан система */
+/* Ban handling */
 static void bans_file_path(char *path, size_t cap) {
     data_file_path(path, cap, BANS_FILE);
 }
@@ -139,7 +140,7 @@ static void remove_ban_from_file(const char *nick) {
     }
 }
 
-/* Кэш облачного списка банов: заменяется целиком при каждом ban_sync(). */
+/* Cache of the cloud ban list, replaced as a whole by every ban_sync() call. */
 static int ban_cache_has(const char *nick) {
     int i, found = 0;
     if (!nick || !*nick) return 0;
@@ -177,7 +178,7 @@ static void ban_cache_drop(const char *nick) {
 static int ban_synced(void) { int v; ban_lock(); v = banlist.synced; ban_unlock(); return v; }
 static void ban_invalidate(void) { ban_lock(); banlist.synced = 0; ban_unlock(); }
 
-/* Читает /bans.json целиком. Возвращает 1, если список удалось обновить. */
+/* Reads /bans.json as a whole and returns 1 when the list was refreshed. */
 static int ban_sync(void) {
     char url[URL], resp[RESP], keys[BAN_MAX][LOGIN_NICK_MAX + 1];
     const char *p;
@@ -224,14 +225,15 @@ static int ban_sync(void) {
     return 1;
 }
 
-/* Забанен ли ник по данным этого клиента: облачный список или локальный bans.dat. */
+/* Whether a nick is banned as far as this client knows, from the cloud list or
+ * from the local bans.dat. */
 static int nick_banned_locally(const char *nick) {
     if (!nick || !*nick) return 0;
     return ban_cache_has(nick) || is_banned_in_file(nick);
 }
 
-/* Синхронная облачная проверка бана: только для фоновых потоков сети
- * (thread_main), из игрового потока её звать нельзя - блокирует кадр. */
+/* Synchronous cloud ban check, for the background network threads only
+ * (thread_main): calling it from the game thread blocks a frame. */
 static int ban_check_cloud_sync(const char *nick) {
     char url[URL], resp[RESP];
     const char *p;
@@ -244,7 +246,7 @@ static int ban_check_cloud_sync(const char *nick) {
     if (code == 200) {
         p = skip_ws(resp);
         if (p && *p && strncmp(p, "null", 4) != 0) {
-            // true или объект - считаем забаненным
+            // true or an object both mean banned
             ban_cache_put(nick);
             return 1;
         }
@@ -254,7 +256,8 @@ static int ban_check_cloud_sync(const char *nick) {
     return 0;
 }
 
-/* Фоновая проверка бана: результат оседает в кеше, игровой поток не ждёт. */
+/* Background ban check: the answer lands in the cache and the game thread does
+ * not wait for it. */
 typedef struct { char nick[LOGIN_NICK_MAX + 1]; } BanCheckJob;
 static void *ban_check_job(void *arg) {
     BanCheckJob *j = (BanCheckJob *)arg;
@@ -262,11 +265,11 @@ static void *ban_check_job(void *arg) {
     return NULL;
 }
 
-/* Забанен ли ник с точки зрения игрового потока. Раньше здесь был
- * синхронный HTTP-запрос: при отсутствии соединения он держал игровой
- * поток до таймаута сети, кадры и ввод замирали, и система показывала
- * «Приложение не отвечает». Теперь ответ даётся мгновенно по локальному
- * кешу, а облачная проверка уходит в отдельный поток и пополняет кеш. */
+/* Whether a nick is banned as far as the game thread knows. A synchronous HTTP
+ * request used to sit here: with no connection it held the game thread until the
+ * network timed out, frames and input froze, and the system showed an
+ * application-not-responding dialog. The answer is now instant from the local
+ * cache while the cloud check goes to a thread of its own and refills it. */
 double net_is_banned(const char *nick) {
     static long long s_last_check;
     long long t;

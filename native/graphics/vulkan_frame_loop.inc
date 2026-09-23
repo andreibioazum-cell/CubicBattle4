@@ -1,16 +1,82 @@
-/* Инициализация и выключение бэкенда, покадровый цикл begin/end/cancel.
- * Часть Vulkan-бэкенда: включается из vulkan_backend.inc, всё собирается
- * одним translation unit'ом (graphics.c), поэтому состояние общее. */
+/* Backend init and shutdown plus the per frame begin/end/cancel loop. Part of
+ * the Vulkan backend, included by vulkan_backend.inc and compiled into one
+ * translation unit (graphics.c), so the state is shared between the parts. */
 
-/* --- инициализация и выключение --- */
+/* --- init and shutdown --- */
+
+/* --- asking the system for a frame rhythm ---
+ * See the DS_VK_TARGET_FPS comment in vulkan_state.inc for why 60 fps is asked
+ * for. ANativeWindow_setFrameRate arrived in API 30 and is not always present
+ * in libandroid, so it is resolved dynamically and simply skipped if missing. */
+static void ds_vk_lookup_frame_rate_api(void) {
+#ifdef __ANDROID__
+    if (!vk_set_frame_rate)
+        vk_set_frame_rate = (DsVkSetFrameRateFn)dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate");
+    if (!vk_set_frame_rate_strategy)
+        vk_set_frame_rate_strategy = (DsVkSetFrameRateStrategyFn)dlsym(RTLD_DEFAULT,
+                                        "ANativeWindow_setFrameRateWithChangeStrategy");
+    if (!vk_clear_frame_rate)
+        vk_clear_frame_rate = (DsVkClearFrameRateFn)dlsym(RTLD_DEFAULT, "ANativeWindow_clearFrameRate");
+#endif
+}
+
+static int ds_vk_request_frame_rate(ANativeWindow *window) {
+    if (!window) return 0;
+    ds_vk_lookup_frame_rate_api();
+    /* ALWAYS instead of ONLY_IF_SEAMLESS: a 120 to 60 Hz switch usually has no
+     * black frame, but a system that calls it not seamless would silently
+     * ignore the seamless-only variant and leave the fps steps in place. */
+    int32_t rc = -1;
+    if (vk_set_frame_rate_strategy)
+        rc = vk_set_frame_rate_strategy(window, (float)DS_VK_TARGET_FPS,
+                                        (int8_t)DS_VK_FRAME_RATE_FIXED_SOURCE,
+                                        (int8_t)DS_VK_FRAME_RATE_ALWAYS);
+    if (rc != 0 && vk_set_frame_rate)
+        rc = vk_set_frame_rate(window, (float)DS_VK_TARGET_FPS, (int8_t)DS_VK_FRAME_RATE_FIXED_SOURCE);
+    if (rc == 0)
+        ds_log("vulkan: asked the platform for %d fps (panel mode vsync interval 16.7 ms)", DS_VK_TARGET_FPS);
+    else if (vk_set_frame_rate || vk_set_frame_rate_strategy)
+        ds_log_err("vulkan: ANativeWindow_setFrameRate(%d) failed (%d)", DS_VK_TARGET_FPS, (int)rc);
+    else
+        ds_log("vulkan: ANativeWindow_setFrameRate unavailable (API < 30), panel mode left to the system");
+    return rc == 0;
+}
+
+/* Drop the request when the window closes, otherwise the system would keep the
+ * panel mode for a game that is gone. */
+static void ds_vk_release_frame_rate(void) {
+    if (vk_window && vk_clear_frame_rate) vk_clear_frame_rate(vk_window);
+}
+
+/* --- keeping the frame rate at DS_VK_TARGET_FPS ---
+ * A present mode without vsync wait (MAILBOX) lets the loop run as fast as the
+ * device allows: the frame counter showed 350+ fps, which wastes battery and
+ * makes the speed of the game depend on the device. The remaining time of the
+ * 60 fps budget is therefore slept out at the end of the frame. A frame that
+ * took longer than the budget goes out at once. */
+static void ds_vk_pace_frame(void) {
+    if (!vk_pace_on) return;
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return;
+    uint64_t now_ns = (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
+    uint64_t period = 1000000000ull / DS_VK_TARGET_FPS;
+    /* Resync after a long frame (loading, a hitch) instead of catching up. */
+    if (vk_pace_next_ns == 0 || now_ns > vk_pace_next_ns + period) vk_pace_next_ns = now_ns;
+    vk_pace_next_ns += period;
+    if (vk_pace_next_ns <= now_ns) return;
+    struct timespec left;
+    left.tv_sec = (time_t)((vk_pace_next_ns - now_ns) / 1000000000ull);
+    left.tv_nsec = (long)((vk_pace_next_ns - now_ns) % 1000000000ull);
+    nanosleep(&left, NULL);
+}
 
 static void ds_vk_shutdown_backend(void);
 
 static int ds_vk_init_backend(ANativeWindow *window) {
-    /* NativeActivity иногда присылает INIT_WINDOW для новой Surface раньше,
-     * чем старое окно полностью забыто. Нельзя продолжать рисовать swapchain,
-     * созданным для другого ANativeWindow — на повторном входе это приводило
-     * к падению внутри vkAcquireNextImageKHR. */
+    /* NativeActivity sometimes sends INIT_WINDOW for a new Surface before the
+     * old window is fully gone. Drawing through a swapchain made for another
+     * ANativeWindow used to crash inside vkAcquireNextImageKHR when the app was
+     * reopened. */
     if (vk_ready && vk_window == window) return 1;
     if (vk_ready) ds_vk_shutdown_backend();
     vk_window = window;
@@ -33,6 +99,10 @@ static int ds_vk_init_backend(ANativeWindow *window) {
     sci.window = window;
     if (!ds_vk_check_result(vkCreateAndroidSurfaceKHR(vk_instance, &sci, NULL, &vk_surface),
                             "vkCreateAndroidSurfaceKHR")) { ds_vk_shutdown_backend(); return 0; }
+
+    /* Ask for the frame rate before the swapchain is created: it decides the
+     * vsync interval the frames are shown with (see ds_vk_request_frame_rate). */
+    ds_vk_request_frame_rate(window);
 
     uint32_t ndev = 0;
     if (!ds_vk_check_result(vkEnumeratePhysicalDevices(vk_instance, &ndev, NULL),
@@ -90,7 +160,7 @@ static int ds_vk_init_backend(ANativeWindow *window) {
     }
     vkGetDeviceQueue(vk_device, vk_queue_family, 0, &vk_queue);
 
-    /* Пул разовых загрузок. */
+/* Pool for one-off uploads. */
     VkCommandPoolCreateInfo upi = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
     upi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     upi.queueFamilyIndex = vk_queue_family;
@@ -110,7 +180,7 @@ static int ds_vk_init_backend(ANativeWindow *window) {
         ds_vk_shutdown_backend(); return 0;
     }
 
-    /* Раскладка дескрипторов и сэмплер. */
+/* Descriptor layout and sampler. */
     VkDescriptorSetLayoutBinding lb = { 0 };
     lb.binding = 0;
     lb.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -122,7 +192,7 @@ static int ds_vk_init_backend(ANativeWindow *window) {
     if (!ds_vk_check_result(vkCreateDescriptorSetLayout(vk_device, &dli, NULL, &vk_desc_layout),
                             "vkCreateDescriptorSetLayout")) { ds_vk_shutdown_backend(); return 0; }
     VkSamplerCreateInfo smi = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
-    smi.magFilter = VK_FILTER_NEAREST; /* как попиксельный софтрендер */
+    smi.magFilter = VK_FILTER_NEAREST; /* like the pixel exact softrenderer */
     smi.minFilter = VK_FILTER_NEAREST;
     smi.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     smi.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -132,12 +202,13 @@ static int ds_vk_init_backend(ANativeWindow *window) {
         ds_vk_shutdown_backend(); return 0;
     }
 
-    /* Swapchain нужен до render pass (формат оффскрина = формат swapchain). */
+    /* The swapchain comes before the render pass: the offscreen format is the
+     * swapchain format. */
     if (!ds_vk_recreate_swapchain()) { ds_vk_shutdown_backend(); return 0; }
     if (!ds_vk_create_renderpass()) { ds_vk_shutdown_backend(); return 0; }
 
-    /* Раскладки конвейеров: push-константа с масштабом экрана; у текстурных
-     * ещё и дескриптор сэмплера во фрагментном шейдере. */
+    /* Pipeline layouts: a push constant with the screen scale, plus a sampler
+     * descriptor in the fragment shader for the textured ones. */
     VkPushConstantRange pcr = { VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4 };
     VkPipelineLayoutCreateInfo pli = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
     pli.pushConstantRangeCount = 1;
@@ -162,9 +233,10 @@ static int ds_vk_init_backend(ANativeWindow *window) {
 
 static void ds_vk_shutdown_backend(void) {
     ds_vk_pending_reset();
+    ds_vk_release_frame_rate();
     if (vk_device) {
         vkDeviceWaitIdle(vk_device);
-        /* Сначала swapchain: он попутно утилизирует семафоры захвата кадров. */
+        /* Swapchain first: it also disposes of the image acquired semaphores. */
         ds_vk_destroy_swapchain();
         ds_vk_destroy_frame_resources();
         ds_vk_destroy_offscreen();
@@ -189,8 +261,8 @@ static void ds_vk_shutdown_backend(void) {
         free(vk_desc_pools);
         vk_desc_pools = NULL; vk_desc_pool_n = vk_desc_pool_cap = vk_desc_pool_used = 0;
         ds_vk_font_gpu_release();
-        /* GPU-копии текстур умирают вместе с устройством; CPU-пиксели остаются,
-         * чтобы перезалить их при повторной инициализации окна. */
+        /* GPU copies of textures die with the device; the CPU pixels stay so
+         * they can be uploaded again when the window comes back. */
         for (Texture *t = textures; t; t = t->next) ds_vk_texture_gpu_release(t);
         if (vk_upload_fence != VK_NULL_HANDLE) vkDestroyFence(vk_device, vk_upload_fence, NULL);
         if (vk_upload_pool != VK_NULL_HANDLE) vkDestroyCommandPool(vk_device, vk_upload_pool, NULL);
@@ -214,15 +286,16 @@ static void ds_vk_shutdown_backend(void) {
     vk_batches = NULL; vk_batch_n = vk_batch_cap = 0;
 }
 
-/* --- покадровый цикл --- */
+/* --- per frame loop --- */
 
 static int ds_vk_acquire_image(void) {
     DsVkFrame *f = &vk_frames[vk_frame_cur];
     VkResult r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
                                        VK_NULL_HANDLE, &vk_sw_index);
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_NOT_READY || r == VK_TIMEOUT) {
-        /* OUT_OF_DATE - пересоздаём; остальное может дать "протухший" swapchain
-         * после recreate окна: тоже пробуем один раз пересоздать. */
+        /* OUT_OF_DATE means the surface really is out of date, rebuild at once;
+         * anything else can be a stale swapchain after the window was recreated,
+         * so try one rebuild as well. */
         if (!ds_vk_recreate_swapchain()) return 0;
         r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
                                   VK_NULL_HANDLE, &vk_sw_index);
@@ -232,7 +305,9 @@ static int ds_vk_acquire_image(void) {
             ds_log_err("vulkan: vkAcquireNextImageKHR failed (%d)", (int)r);
         return 0;
     }
-    if (r == VK_SUBOPTIMAL_KHR) vk_need_recreate = 1;
+    /* SUBOPTIMAL only asks to check the surface: ds_vk_swapchain_stale()
+     * decides about a rebuild by comparing the real surface parameters. */
+    if (r == VK_SUBOPTIMAL_KHR) vk_sw_stale = 1;
     vk_image_held = 1;
     return 1;
 }
@@ -241,26 +316,26 @@ static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32
     if (!vk_ready) return 0;
     if (w == 0 || h == 0 || ow == 0 || oh == 0) return 0;
     vk_log_w = w; vk_log_h = h;
-    /* Не запрашиваем capabilities у драйвера каждый кадр: на некоторых
-     * Android/Vulkan-драйверах синхронный вызов съедал несколько миллисекунд
-     * и даже мощный телефон держал лишь около 30 fps. Устаревший swapchain
-     * штатно сообщит OUT_OF_DATE/SUBOPTIMAL при acquire/present, после чего
-     * vk_need_recreate пересоздаст его в следующем кадре. */
-    if (vk_swap == VK_NULL_HANDLE || vk_need_recreate) {
+    /* Capabilities are not queried every frame: on some Android Vulkan drivers
+     * that synchronous call ate milliseconds and held even a fast phone at about
+     * 30 fps. A stale swapchain reports OUT_OF_DATE or SUBOPTIMAL during
+     * acquire or present, and vk_need_recreate rebuilds it next frame. */
+    if (vk_need_recreate || ds_vk_swapchain_stale()) {
         if (!ds_vk_recreate_swapchain()) return 0;
     }
-    /* Если новый swapchain оказался другого формата, чем тот, под который
-     * собраны render pass и конвейеры, пересобираем их: framebuffer оффскрина
-     * строится в формате swapchain, а render pass собран под старый. */
+    /* A new swapchain may have another format than the render pass and
+     * pipelines were built for: the offscreen framebuffer follows the swapchain
+     * format while the render pass still targets the old one. */
     if (vk_sw_format != vk_rp_format && !ds_vk_rebuild_pipelines()) return 0;
-    /* Заливки текстур ждём на хосте ДО записи команд кадра: к моменту
-     * submit'а кадра transfer уже завершён (фенс), гонок отправок нет. */
+    /* Texture uploads are waited for on the host before the frame is recorded:
+     * by the time the frame is submitted the transfer is already done, so no
+     * uploads race with it. */
     ds_vk_process_pending_uploads();
     if (!ds_vk_ensure_offscreen(ow, oh, vk_sw_format)) return 0;
 
-    /* Слот кадра: новый - только если прошлый начатый кадр был завершён
-     * (submit или полный сброс); иначе переиспользуем текущий слот вместе
-     * с его уже захваченным изображением. */
+    /* Frame slot: a new one only if the previous started frame was finished
+     * (submitted or fully reset), otherwise the current slot and its already
+     * acquired image are reused. */
     if (!vk_begun) {
         vk_frame_cur = (vk_frame_cur + 1) % DS_VK_FRAMES_IN_FLIGHT;
         vk_begun = 1;
@@ -301,8 +376,8 @@ static void ds_vk_end_frame_backend(void) {
         ds_vk_frame_ensure_capacity(f, geo_vn, geo_in)) {
         memcpy(f->vmap, geo_verts, geo_vn * sizeof(GeoVert));
         memcpy(f->imap, geo_idx, geo_in * sizeof(uint16_t));
-        /* Привязка здесь, а не в begin: ёмкость буферов могла вырасти, и это
-         * уже новые объекты - биндим финальные. */
+        /* Binding happens here and not in begin: the buffers may have grown
+         * since, and those are new objects, so the final ones are bound. */
         VkDeviceSize zero = 0;
         vkCmdBindVertexBuffers(f->cmd, 0, 1, &f->vbuf, &zero);
         vkCmdBindIndexBuffer(f->cmd, f->ibuf, 0, VK_INDEX_TYPE_UINT16);
@@ -310,7 +385,7 @@ static void ds_vk_end_frame_backend(void) {
     }
     vkCmdEndRenderPass(f->cmd);
     if (vk_swap == VK_NULL_HANDLE || vk_sw_index >= vk_sw_count || vk_off_image == VK_NULL_HANDLE)
-        return; /* показывать нечего: vk_begun остаётся 1, слот переиспользуется */
+        return; /* nothing to show: vk_begun stays 1 and the slot is reused */
     ds_vk_record_present_blit(f->cmd);
     if (!ds_vk_check_result(vkEndCommandBuffer(f->cmd), "vkEndCommandBuffer(frame)"))
         return;
@@ -324,12 +399,12 @@ static void ds_vk_end_frame_backend(void) {
     si.pCommandBuffers = &f->cmd;
     si.signalSemaphoreCount = 1;
     si.pSignalSemaphores = &vk_sw_present[vk_sw_index];
-    /* Фенс сбрасываем ровно перед submit: к этому моменту его предыдущий
-     * submit уже дождался в begin_frame (см. флаг submitted). */
+    /* The fence is reset right before the submit: its previous submit was
+     * already waited for in begin_frame (see the submitted flag). */
     if (!ds_vk_check_result(vkResetFences(vk_device, 1, &f->fence), "vkResetFences(frame)"))
         return;
     if (!ds_vk_check_result(vkQueueSubmit(vk_queue, 1, &si, f->fence), "vkQueueSubmit(frame)"))
-        return; /* фенс остался сброшенным; submitted=0 - ждать его не будем */
+        return; /* the fence stays reset and submitted=0, so nothing waits for it */
     f->submitted = 1;
     VkPresentInfoKHR pi = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
     pi.waitSemaphoreCount = 1;
@@ -338,7 +413,8 @@ static void ds_vk_end_frame_backend(void) {
     pi.pSwapchains = &vk_swap;
     pi.pImageIndices = &vk_sw_index;
     VkResult pr = vkQueuePresentKHR(vk_queue, &pi);
-    if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) vk_need_recreate = 1;
+    if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk_need_recreate = 1;
+    else if (pr == VK_SUBOPTIMAL_KHR) vk_sw_stale = 1;
     else if (pr != VK_SUCCESS) ds_log_err("vulkan: vkQueuePresentKHR failed (%d)", (int)pr);
     vk_image_held = 0;
     vk_begun = 0;

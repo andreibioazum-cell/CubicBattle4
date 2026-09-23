@@ -38,9 +38,9 @@ void net_publish_universe(double x, double y, double counter) {
     if(net.slot>=0){ net.players[net.slot]=net.me; net.players[net.slot].online=1; }
     unlock();
 }
-/* Контрудар турели: новый счётчик уезжает в снимок слота; клиенты, бившие по
- * турели, сами у себя списывают урон (см. update_remote_thuds в
- * battle_online.ds). */
+/* Turret counter hit: the new counter travels in the slot snapshot, and the
+ * clients that hit the turret subtract the damage on their own side, see
+ * update_remote_thuds in battle_online.ds. */
 void net_publish_thud(double counter) {
     lock();
     net.me.thud=counter;
@@ -96,9 +96,9 @@ const char* net_chat_text(double idx){
     unlock();
     return s_chat_text_ret;
 }
-/* Серверный ключ сообщения: уникален на каждое сообщение, в отличие от uid
- * автора. Скрипт использует его, чтобы понимать, какие сообщения чата уже
- * показаны пузырями над бойцами (chat_bubbles_watch в ui/chat.ds). */
+/* Server key of a message: unique per message, unlike the uid of the author. The
+ * script uses it to tell which chat messages already show as bubbles above the
+ * fighters (chat_bubbles_watch in ui/chat.ds). */
 const char* net_chat_key(double idx){
     static char ret[28];
     int i=(int)idx;
@@ -130,8 +130,8 @@ double net_status(void){ double v; lock(); v=net.status; unlock(); return v; }
 double net_slot(void){ double v; lock(); v=net.slot; unlock(); return v; }
 double net_event(void){ double v; lock(); v=net.event; unlock(); return v; }
 
-/* Баннер админа: последний баннер, прочитанный из облака. Скрипт сравнивает
- * ts с тем, что уже показывал, и решает, показывать ли текст заново. */
+/* Admin banner: the last banner read from the cloud. The script compares its ts
+ * with the one it already showed and decides whether to display the text again. */
 double net_banner_ts(void){ double v; lock(); v=(double)net.banner_ts; unlock(); return v; }
 const char *net_banner_text(void){
     lock();
@@ -203,8 +203,8 @@ double net_player_level(double slot) {
     if(v>LEVEL_MAX) v=LEVEL_MAX;
     return v;
 }
-/* Скин бойца в снимке комнаты. Старые клиенты поле не присылают - тогда оно
- * читается как 0 (обычный скин), поэтому смешанные версии в онлайне работают. */
+/* The fighter skin in the room snapshot. Old clients send no such field, which
+ * then reads as 0, the normal skin, so mixed versions work online. */
 double net_player_skin(double slot) {
     int i=sidx(slot); double v=0;
     if(i>=0){ lock(); v=net.players[i].skin; unlock(); }

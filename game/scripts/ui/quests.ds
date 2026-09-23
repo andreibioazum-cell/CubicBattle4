@@ -1,5 +1,5 @@
--- Задания: 3 активных, при выполнении появляется новое
--- Типы: 0 - выиграй соло, 1 - выиграй онлайн, 2 - собери леденцы, 3 - сыграй боев
+-- Quests: 3 active at a time, a finished one respawns.
+-- Types: 0 win solo, 1 win online, 2 collect candies, 3 play battles.
 public function quest_init()
     if arr_len(quest_type) >= quest_count then
         return
@@ -29,9 +29,9 @@ public function quest_init()
     end
     quest_save()
 end
--- Состояние заданий (тип/прогресс/норма/метка появления следующего) хранится
--- нативно и переживает выход из игры; net_quest_now() — реальное время, поэтому
--- отсчёт «5 минут» идёт даже когда игра закрыта, а задания не сбрасываются.
+-- Quest state (type, progress, target, stamp of the next spawn) is stored
+-- natively and survives a restart; net_quest_now() is real time, so the five
+-- minute count runs while the game is closed.
 public function quest_save()
     net_save_quest_state(
         arr_get(quest_type, 0), arr_get(quest_prog, 0), arr_get(quest_need, 0), arr_get(quest_next, 0),
@@ -63,15 +63,14 @@ public function quest_cooldown_left(number i)
     return left
 end
 public function quest_load()
-    -- Если есть сохранение — восстанавливаем задания целиком (тип/прогресс/
-    -- норма/кулдаун), иначе создаём новые. Так задания НЕ сбрасываются при
-    -- перезаходе, а кулдаун сохраняется.
+    -- With a save the quests are restored whole (type, progress, target,
+    -- cooldown), otherwise new ones are made, so they survive a restart.
     if net_quest_has_state() == 1 then
         quest_restore()
     else if arr_len(quest_type) < quest_count then
         quest_init()
     end
-    -- Откатываем истёкшие кулдауны: если метка прошла — сразу новое задание.
+    -- Expired cooldowns roll over: a finished stamp gives a new quest.
     local number now = net_quest_now()
     local number i = 0
     while i < quest_count do
@@ -83,8 +82,8 @@ public function quest_load()
     end
     quest_save()
 end
--- Откатывает истёкшие кулдауны (зовётся из update): новое задание появляется
--- само, когда прошло quest_respawn реальных секунд.
+-- Rolls expired cooldowns over (called from update): a new quest appears by
+-- itself once quest_respawn real seconds have passed.
 public function quest_tick()
     local number now = net_quest_now()
     local number i = 0
@@ -134,7 +133,7 @@ public function quest_is_done(number i)
     return 0
 end
 public function quest_roll_new(number idx)
-    -- Новый рандомный квест на место выполненного
+    -- A random quest takes the place of the finished one.
     local number t = rand() % 4
     local number need = 1
     if t == 0 then
@@ -155,14 +154,14 @@ public function quest_complete(number idx)
     if quest_is_done(idx) == 0 then
         return
     end
-    -- Награда (срезана: quest_cups / quest_candies)
+    -- Reward, cut down to quest_cups and quest_candies.
     cups = cups + quest_cups
     candies = candies + quest_candies
     save_progress()
     quest_msg_t = msg_time
     ds_log("quest %g completed", idx)
-    -- Следующее задание появляется не сразу, а через quest_respawn реальных
-    -- секунд; слот уходит в кулдаун и отсчёт идёт даже при закрытой игре.
+    -- The next quest appears after quest_respawn real seconds; the slot goes
+    -- into cooldown and the count runs even while the game is closed.
     arr_set(quest_type, idx, -1)
     arr_set(quest_prog, idx, 0)
     arr_set(quest_need, idx, 1)
@@ -170,8 +169,7 @@ public function quest_complete(number idx)
     quest_save()
 end
 public function quest_on_win(number result)
-    -- result 1 = победа, 2 = поражение
-    -- Для всех активных квестов
+    -- result 1 is a win and 2 a loss, applied to every active quest.
     local number i = 0
     while i < quest_count do
         local number t = arr_get(quest_type, i)
@@ -183,7 +181,7 @@ public function quest_on_win(number result)
                 arr_set(quest_prog, i, arr_get(quest_prog, i) + 1)
             end
             if t == 3 then
-                -- сыграй боев - любой финиш
+                -- play battles: any finish counts.
                 arr_set(quest_prog, i, arr_get(quest_prog, i) + 1)
             end
             if quest_is_done(i) == 1 then
@@ -192,7 +190,7 @@ public function quest_on_win(number result)
         end
         i = i + 1
     end
-    -- Сохраняем прогресс заданий после боя, чтобы он не сбрасывался при выходе.
+    -- Quest progress is saved after a battle, so it survives a restart.
     quest_save()
 end
 public function quest_on_candy()
@@ -218,7 +216,7 @@ public function draw_quest_card(number i)
     local color c = panel_text(locked)
     local number t = arr_get(quest_type, i)
     if t == -1 then
-        -- Слот в кулдауне: показываем, через сколько появится следующее.
+        -- The slot is in cooldown: show how soon the next quest appears.
         local number left = quest_cooldown_left(i)
         local number mins = floor(left / 60)
         if left - mins * 60 > 0 then

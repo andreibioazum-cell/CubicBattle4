@@ -1,12 +1,65 @@
-/* Swapchain (создание/пересоздание/уничтожение) и кадры в полёте.
- * Часть Vulkan-бэкенда: включается из vulkan_backend.inc, всё собирается
- * одним translation unit'ом (graphics.c), поэтому состояние общее. */
+/* Swapchain (create, rebuild, destroy) and the frames in flight. Part of the
+ * Vulkan backend, included by vulkan_backend.inc and compiled into one
+ * translation unit (graphics.c), so the state is shared between the parts. */
 
-/* Контроллер автомасштаба живёт в lifecycle.inc (подключается позже); новое
- * окно = устаревшая история кадров, решения на ней принимать нельзя. */
+/* The autoscale controller lives in autoscale.inc and is included later; a new
+ * window means the old frame history is stale and cannot be judged by. */
 static void gfx_autoscale_new_window(void);
 
 /* --- swapchain --- */
+
+static const char *ds_vk_present_mode_name(VkPresentModeKHR mode) {
+    switch (mode) {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE";
+        case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED";
+        case VK_PRESENT_MODE_FIFO_KHR: return "FIFO";
+        default: return "unknown";
+    }
+}
+
+/* The present mode is chosen once per swapchain, but the available list is
+ * always logged: without that line a frame rate report cannot be traced back to
+ * the mode the driver offered. */
+static VkPresentModeKHR ds_vk_choose_present_mode(char *listed, size_t listed_cap) {
+    /* Order of preference:
+     *   MAILBOX      - the compositor takes the newest ready frame, so a late
+     *                  frame never costs a whole extra interval;
+     *   FIFO_RELAXED - vsync without the penalty interval: a late frame is shown
+     *                  right away. This is the fallback for drivers without
+     *                  MAILBOX, where a 120 Hz panel turned misses into steep
+     *                  60/40/30 fps steps;
+     *   FIFO         - the last resort: steps are unavoidable, the image is
+     *                  always whole. */
+    VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
+    int have_mailbox = 0, have_relaxed = 0;
+    if (listed && listed_cap) listed[0] = '\0';
+    uint32_t npm = 0;
+    if (vkGetPhysicalDeviceSurfacePresentModesKHR(vk_phys, vk_surface, &npm, NULL) == VK_SUCCESS && npm > 0) {
+        VkPresentModeKHR *pm = (VkPresentModeKHR *)malloc(npm * sizeof(*pm));
+        if (pm && vkGetPhysicalDeviceSurfacePresentModesKHR(vk_phys, vk_surface, &npm, pm) == VK_SUCCESS) {
+            for (uint32_t i = 0; i < npm; i++) {
+                if (pm[i] == VK_PRESENT_MODE_MAILBOX_KHR) have_mailbox = 1;
+                if (pm[i] == VK_PRESENT_MODE_FIFO_RELAXED_KHR) have_relaxed = 1;
+                if (listed && listed_cap > 1) {
+                    size_t used = strlen(listed);
+                    if (used && used + 1 < listed_cap) {
+                        listed[used++] = ' ';
+                        listed[used] = '\0';
+                    }
+                    const char *name = ds_vk_present_mode_name(pm[i]);
+                    if (used + strlen(name) < listed_cap) {
+                        strcpy(listed + used, name);
+                    }
+                }
+            }
+        }
+        free(pm);
+    }
+    if (have_mailbox) mode = VK_PRESENT_MODE_MAILBOX_KHR;
+    else if (have_relaxed) mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    return mode;
+}
 
 static void ds_vk_destroy_swapchain(void) {
     if (!vk_device) return;
@@ -21,39 +74,30 @@ static void ds_vk_destroy_swapchain(void) {
     vk_image_held = 0;
 }
 
-static int ds_vk_recreate_swapchain(void) {
-    if (!vk_surface || !vk_phys) return 0;
-    if (vk_device) vkQueueWaitIdle(vk_queue);
-    ds_vk_destroy_swapchain();
+/* Surface parameters that require a new swapchain. They must be queried before
+ * a rebuild: SUBOPTIMAL on its own means nothing. */
+typedef struct {
+    VkExtent2D extent;
+    VkFormat format;
+    VkColorSpaceKHR colorspace;
+    VkSurfaceTransformFlagBitsKHR transform;
+    uint32_t images;
+} DsVkSurfaceState;
+
+static int ds_vk_query_surface(DsVkSurfaceState *out) {
+    if (!out || !vk_surface || !vk_phys) return 0;
+    memset(out, 0, sizeof(*out));
     VkSurfaceCapabilitiesKHR caps;
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_phys, vk_surface, &caps),
                             "vkGetPhysicalDeviceSurfaceCapabilitiesKHR")) return 0;
     if (caps.currentExtent.width == UINT32_MAX || caps.currentExtent.width == 0 || caps.currentExtent.height == 0)
-        return 0; /* окно схлопнулось - попробуем в следующем кадре */
-
+        return 0; /* the window collapsed: retry next frame */
     uint32_t want = caps.minImageCount + 1;
     if (want < 3) want = 3;
     if (caps.maxImageCount && want > caps.maxImageCount) want = caps.maxImageCount;
 
-    /* FIFO на Android жёстко роняет 60 сразу до 30 fps при малейшем промахе
-     * vsync. MAILBOX не рвёт кадр, но разрешает композитору взять самый свежий
-     * готовый кадр: поэтому игра может держать реальные 40-55 fps вместо
-     * искусственной ступеньки 30. Если драйвер его не даёт, остаётся FIFO. */
-    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    uint32_t npm = 0;
-    if (vkGetPhysicalDeviceSurfacePresentModesKHR(vk_phys, vk_surface, &npm, NULL) == VK_SUCCESS && npm > 0) {
-        VkPresentModeKHR *pm = (VkPresentModeKHR *)malloc(npm * sizeof(*pm));
-        if (pm && vkGetPhysicalDeviceSurfacePresentModesKHR(vk_phys, vk_surface, &npm, pm) == VK_SUCCESS) {
-            for (uint32_t i = 0; i < npm; i++) {
-                if (pm[i] == VK_PRESENT_MODE_MAILBOX_KHR) { present_mode = pm[i]; break; }
-            }
-        }
-        free(pm);
-    }
-
-    /* Формат: обязательно с поддержкой blit (нужен автоматическому
-     * внутреннему масштабу); для R8G8B8A8/B8G8R8A8_UNORM это гарантия
-     * спецификации. */
+    /* The format must support blit, which the internal scale needs; for
+     * R8G8B8A8/B8G8R8A8_UNORM the specification guarantees that. */
     uint32_t nf = 0;
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_phys, vk_surface, &nf, NULL),
                             "vkGetPhysicalDeviceSurfaceFormatsKHR")) return 0;
@@ -69,8 +113,75 @@ static int ds_vk_recreate_swapchain(void) {
         if (f == VK_FORMAT_R8G8B8A8_UNORM || f == VK_FORMAT_B8G8R8A8_UNORM) { chosen = formats[i]; break; }
     }
     free(formats);
-    /* VK_FORMAT_UNDEFINED означает "подойдёт любой" - выбираем сами. */
-    vk_sw_format = chosen.format == VK_FORMAT_UNDEFINED ? VK_FORMAT_R8G8B8A8_UNORM : chosen.format;
+    out->format = chosen.format == VK_FORMAT_UNDEFINED ? VK_FORMAT_R8G8B8A8_UNORM : chosen.format;
+    out->colorspace = chosen.colorSpace;
+    out->extent = caps.currentExtent;
+    out->images = want;
+    /* preTransform = IDENTITY is required on Android. Swapchain images live in
+     * window coordinates (the landscape the player sees), and the rotation of
+     * the window against the display is applied by the system compositor - that
+     * rotation is caps.currentTransform (ROTATE_90 in landscape). Setting
+     * preTransform to currentTransform, as some samples do, makes the
+     * presentation engine rotate the image once more: the landscape game comes
+     * out vertical and stretched. */
+    out->transform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+        ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+        : caps.currentTransform;
+    return 1;
+}
+
+/* What exactly changed on the surface, NULL for nothing. */
+static const char *ds_vk_surface_diff(const DsVkSurfaceState *s) {
+    if (vk_swap == VK_NULL_HANDLE) return "no swapchain";
+    if (s->extent.width != vk_sw_extent.width || s->extent.height != vk_sw_extent.height) return "window size";
+    if (s->format != vk_sw_format) return "surface format";
+    if (s->colorspace != vk_sw_colorspace) return "colour space";
+    if (s->transform != vk_sw_transform) return "surface transform";
+    if (s->images != vk_sw_want_images) return "image count";
+    return NULL;
+}
+
+/* Whether the swapchain has to be rebuilt. Drivers also report SUBOPTIMAL_KHR
+ * when the surface did not change at all (preTransform IDENTITY against a
+ * ROTATE_90 surface is the usual case), so the surface parameters are compared,
+ * and not more often than once per DS_VK_SW_CHECK_FRAMES frames. Trusting every
+ * SUBOPTIMAL rebuilt the swapchain each frame - vkQueueWaitIdle, new images and
+ * semaphores, autoscale history dropped - which costs the 30-45 fps steps that
+ * no draw call optimisation can fix. OUT_OF_DATE_KHR (vk_need_recreate) skips
+ * these checks: there the surface really is out of date. */
+#define DS_VK_SW_CHECK_FRAMES 30
+
+static int ds_vk_swapchain_stale(void) {
+    if (vk_swap == VK_NULL_HANDLE) return 1;
+    if (!vk_sw_stale) return 0;
+    if (vk_sw_check_timer > 0) { vk_sw_check_timer--; return 0; }
+    vk_sw_check_timer = DS_VK_SW_CHECK_FRAMES;
+    DsVkSurfaceState now;
+    if (!ds_vk_query_surface(&now)) return 0;
+    const char *why = ds_vk_surface_diff(&now);
+    if (!why) {
+        /* First time, then every 300 checks: the log must not flood. */
+        if (vk_sw_ignored++ == 0 || (vk_sw_ignored % 300) == 0)
+            ds_log("vulkan: SUBOPTIMAL ignored (%u), surface unchanged", vk_sw_ignored);
+        return 0;
+    }
+    ds_log("vulkan: swapchain stale: %s", why);
+    vk_sw_stale = 0;
+    vk_sw_check_timer = 0;
+    return 1;
+}
+
+static int ds_vk_recreate_swapchain(void) {
+    if (!vk_surface || !vk_phys) return 0;
+    DsVkSurfaceState s;
+    if (!ds_vk_query_surface(&s)) return 0;
+    if (vk_device) vkQueueWaitIdle(vk_queue);
+    ds_vk_destroy_swapchain();
+
+    vk_sw_format = s.format;
+    vk_sw_colorspace = s.colorspace;
+    vk_sw_transform = s.transform;
+    vk_sw_want_images = s.images;
 
     VkFormatProperties fp;
     vkGetPhysicalDeviceFormatProperties(vk_phys, vk_sw_format, &fp);
@@ -81,27 +192,21 @@ static int ds_vk_recreate_swapchain(void) {
     if (!vk_blit_ok)
         ds_log_err("vulkan: format %d lacks blit support, auto-scale degrades to copy", (int)vk_sw_format);
 
+    char listed[128];
+    vk_sw_present_mode = ds_vk_choose_present_mode(listed, sizeof(listed));
+
     VkSwapchainCreateInfoKHR si = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
     si.surface = vk_surface;
-    si.minImageCount = want;
+    si.minImageCount = s.images;
     si.imageFormat = vk_sw_format;
-    si.imageColorSpace = chosen.colorSpace;
-    si.imageExtent = caps.currentExtent;
+    si.imageColorSpace = vk_sw_colorspace;
+    si.imageExtent = s.extent;
     si.imageArrayLayers = 1;
     si.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     si.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    /* preTransform = IDENTITY — обязательно на Android. Изображения swapchain
-     * живут в системе координат ОКНА (ландшафт, как видит пользователь), а
-     * поворот окна относительно дисплея уже применяет системный композитор —
-     * этот поворот и есть caps.currentTransform (ROTATE_90 в ландшафте).
-     * Если задать preTransform = currentTransform (как в некоторых примерах),
-     * движок презентации проворачивает изображение ЕЩЁ на 90°: в ландшафте
-     * игра оказывается «вертикальной» и растянутой. */
-    si.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-        ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
-        : caps.currentTransform;
+    si.preTransform = s.transform;
     si.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    si.presentMode = present_mode; /* MAILBOX без ступеньки 60→30, иначе FIFO */
+    si.presentMode = vk_sw_present_mode;
     si.clipped = VK_TRUE;
     si.oldSwapchain = VK_NULL_HANDLE;
     if (!ds_vk_check_result(vkCreateSwapchainKHR(vk_device, &si, NULL, &vk_swap), "vkCreateSwapchainKHR")) return 0;
@@ -119,19 +224,23 @@ static int ds_vk_recreate_swapchain(void) {
         VkSemaphoreCreateInfo sci = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
         if (!ds_vk_check_result(vkCreateSemaphore(vk_device, &sci, NULL, &vk_sw_present[i]), "vkCreateSemaphore(present)")) return 0;
     }
-    vk_sw_extent = caps.currentExtent;
+    vk_sw_extent = s.extent;
     vk_need_recreate = 0;
+    vk_sw_stale = 0;
+    vk_sw_check_timer = 0;
     vk_image_held = 0;
-    /* Первое окно, возврат в приложение, поворот/ресайз: накопленные промахи
-     * относятся к прошлому окну, а первые кадры нового всегда медленные —
-     * контроллер автомасштаба начинает считать заново через секунду. */
+    vk_sw_recreates++;
+    /* First window, returning to the app, resize: the collected misses belong
+     * to the previous window and the first frames of a new one are always slow,
+     * so the autoscale controller starts counting from scratch. */
     gfx_autoscale_new_window();
-    ds_log("vulkan: swapchain %ux%u, %u images, format %d", vk_sw_extent.width, vk_sw_extent.height,
-           (unsigned)vk_sw_count, (int)vk_sw_format);
+    ds_log("vulkan: swapchain #%u %ux%u, %u images, format %d, present %s (available: %s)",
+           vk_sw_recreates, vk_sw_extent.width, vk_sw_extent.height, (unsigned)vk_sw_count,
+           (int)vk_sw_format, ds_vk_present_mode_name(vk_sw_present_mode), listed);
     return 1;
 }
 
-/* --- кадры в полёте --- */
+/* --- frames in flight --- */
 
 static void ds_vk_destroy_frame_resources(void) {
     for (int i = 0; i < DS_VK_FRAMES_IN_FLIGHT; i++) {
@@ -162,11 +271,11 @@ static int ds_vk_create_frame_resources(void) {
         ai.commandBufferCount = 1;
         if (!ds_vk_check_result(vkAllocateCommandBuffers(vk_device, &ai, &f->cmd), "vkAllocateCommandBuffers")) return 0;
         VkFenceCreateInfo fi = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-        fi.flags = VK_FENCE_CREATE_SIGNALED_BIT; /* первый проход не ждёт */
+        fi.flags = VK_FENCE_CREATE_SIGNALED_BIT; /* the first pass waits for nothing */
         if (!ds_vk_check_result(vkCreateFence(vk_device, &fi, NULL, &f->fence), "vkCreateFence(frame)")) return 0;
         VkSemaphoreCreateInfo si = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
         if (!ds_vk_check_result(vkCreateSemaphore(vk_device, &si, NULL, &f->image_available), "vkCreateSemaphore(frame)")) return 0;
-        /* Буферы геометрии растут по мере надобности; стартуем с разумного. */
+        /* Geometry buffers grow on demand and start at a sane size. */
         if (!ds_vk_create_buffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                  &f->vbuf, &f->vmem, (void **)&f->vmap)) return 0;

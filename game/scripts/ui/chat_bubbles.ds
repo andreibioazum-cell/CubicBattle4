@@ -122,7 +122,7 @@ public function draw_chat_bubble_at(number x, number y, string msg, number t)
     local number bw=0, bh=0, bx=0, by=0, sc=0.5
     local string st=chat_sticker_tex(msg)
     if str_len(st)>0 then
-        -- Стикеры показываем картинкой вместо текста «/sticker ...»
+        -- Stickers are shown as an image instead of the "/sticker ..." text.
         bw=56
         bh=56
     else

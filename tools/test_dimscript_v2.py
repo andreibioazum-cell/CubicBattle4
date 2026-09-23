@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Проверка синтаксиса DimScript v2 на примере из спецификации языка.
+"""Checks the DimScript v2 syntax on the example from the language spec.
 
-Пример ClickerGame (классы, private-поля, конструктор, self, static-вызовы,
-local с типом, new, интерполяция $"...", import Dim.System.Gui, top-level
-инструкции) компилируется дословно:
+The ClickerGame example (classes, private fields, a constructor, self, static
+calls, typed local, new, $"..." interpolation, import Dim.System.Gui, top level
+statements) has to compile verbatim:
 
-  * против настоящего стандартного модуля std/Dim/System/Gui.ds — проверка,
-    что стандартная библиотека и пример сходятся без правок;
-  * против тестового мока Gui — программа реально выполняется на хосте:
-    игровой цикл крутится, клики и апгрейды считаются, а интерполированные
-    строки $"Баланс: {self.score}" приходят в ds_log ровно теми, которые
-    даёт независимая симуляция на Python.
+  * against the real std/Dim/System/Gui.ds module, to show that the standard
+    library and the example match without edits;
+  * against the Gui mock, where the program really runs on the host: the game
+    loop spins, clicks and upgrades are counted, and the interpolated strings
+    reach ds_log exactly as the independent Python simulation computes them.
 
-Запуск: python3 tools/test_dimscript_v2.py
+Run: python3 tools/test_dimscript_v2.py
 """
 
 import os
@@ -31,29 +30,29 @@ from ds_compiler import DimScriptCompiler  # noqa: E402
 CLICKER_EXAMPLE = '''import Dim.System.Gui
 
 class ClickerGame
-    -- Приватные поля с типами данных (как в Java/C#)
+    -- Private fields with data types, as in Java or C#
     private int score = 0
     private int clickPower = 1
     private int upgradeCost = 10
     private Window win
 
-    -- Конструктор класса
+    -- Class constructor
     public function new()
-        -- Инициализируем окно через встроенный GUI движок
+        -- The window is initialised through the built-in GUI engine
         self.win = Gui.init("DimScript Lua-C# Hybrid", 400, 500)
     end
 
-    -- Главный игровой цикл
+    -- Main game loop
     public function start() -> void
         while self.win.isOpen() do
             self.win.beginFrame()
 
-            -- Вывод текста. Строки из C# ($), блоки из Lua (end)
+            -- Text output: strings from C# ($), blocks from Lua (end)
             Gui.text(24, $"Баланс: {self.score}")
             Gui.text(18, $"Сила клика: +{self.clickPower}")
             Gui.space(20)
 
-            -- Настройка кнопки в объектном стиле Java/C#
+            -- Button setup in the object style of Java and C#
             local ButtonStyle clickBtnStyle = new ButtonStyle()
             clickBtnStyle.bgColor = Color.fromRGB(41, 128, 185)
             clickBtnStyle.textColor = Color.fromRGB(255, 255, 255)
@@ -64,7 +63,7 @@ class ClickerGame
 
             Gui.space(15)
 
-            -- Кнопка апгрейда с динамической сменой цвета
+            -- Upgrade button with a colour that changes
             local ButtonStyle upgradeStyle = new ButtonStyle()
             upgradeStyle.textColor = Color.fromRGB(255, 255, 255)
 
@@ -89,13 +88,14 @@ class ClickerGame
     end
 end
 
--- Точка входа (top-level выполнение как в Lua/Python)
+-- Entry point: top level execution, as in Lua or Python
 local ClickerGame game = new ClickerGame()
 game.start()
 '''
 
-MOCK_GUI = '''-- Тестовый мок Dim.System.Gui: кадров ограничен, кнопки всегда «нажаты»,
--- каждый Gui.text уходит в ds_log, чтобы Python мог сверить строки.
+MOCK_GUI = '''-- Mock of Dim.System.Gui for the test: the frame count is capped, the buttons
+-- are always pressed, and every Gui.text goes to ds_log so Python can compare
+-- the lines.
 private number mock_frames = 0
 
 class ButtonStyle
@@ -192,14 +192,14 @@ FRAMES = 40
 
 
 def simulate():
-    """Независимая симуляция примера: те же строки, что печатает программа."""
+    """Independent simulation of the example: the same lines the program prints."""
     score, power, cost = 0.0, 1.0, 10.0
     lines = []
     for _ in range(FRAMES):
         lines.append(f"Баланс: {'%g' % score}")
         lines.append(f"Сила клика: +{'%g' % power}")
-        score += power                      # кнопка «КЛИКНУТЬ!» всегда нажата
-        if score >= cost:                   # кнопка «Улучшение» всегда нажата
+        score += power                      # the click button is always pressed
+        if score >= cost:                   # the upgrade button is always pressed
             score -= cost
             power += 1
             cost = (cost * 15) / 10
@@ -216,7 +216,7 @@ def check_compiles_with_real_std():
         text = (temp / "game.c").read_text(encoding="utf-8")
     assert 'ds_stc_Gui_init(' in text and 'ds_mth_Window_isOpen(' in text
     assert 'ds_new_ButtonStyle()' in text and 'ds_stc_Color_fromRGB(' in text
-    print("example v2: компилируется дословно против std/Dim/System/Gui.ds")
+    print("example v2: compiles verbatim against std/Dim/System/Gui.ds")
 
 
 def check_runs_with_mock():
@@ -250,8 +250,8 @@ def check_runs_with_mock():
     got = proc.stdout.splitlines()
     want = simulate()
     assert got == want, f"first diff: {next((i, a, b) for i, (a, b) in enumerate(zip(got, want)) if a != b) if len(got) == len(want) else (len(got), len(want))}"
-    print(f"example v2: выполнен на хосте, {len(got)} строк вывода совпали "
-          f"с симуляцией (интерполяция $\"...\" верна)")
+    print(f"example v2: ran on the host, {len(got)} output lines match the "
+          f"simulation (the $\"...\" interpolation is correct)")
 
 
 def main():

@@ -45,7 +45,7 @@ public number stun_a=0
 public number player_poison=0, player_poison_tick=0, player_poison_damage=0, ppoison_a=0
 public number poison_a=0
 public number player_stun=0, pstun_a=0
--- Альфы красной вспышки урона (1 в момент удара, плавно тают в tick_hurt_fades).
+-- Alphas of the red damage flash: 1 on a hit, faded in tick_hurt_fades.
 public number player_hurt_a=0, enemy_hurt_a=0
 public number dash_active=0, dash_t=0, dash_dx=0, dash_dy=0, dash_hit=0
 public number dash_seq=0, dash_pub=0, dash_x0=0, dash_y0=0
