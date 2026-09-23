@@ -1,4 +1,4 @@
-/* Заглушка для хост-тестов. */
+/* Stub for the host tests. */
 #ifndef HOST_STUB_ANDROID_KEYCODES_H
 #define HOST_STUB_ANDROID_KEYCODES_H
 enum { AKEYCODE_BACK = 4 };

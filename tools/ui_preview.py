@@ -8,19 +8,19 @@ game/assets and the layout comes from the real layout functions. Screen changes
 can be checked on a host without building an APK, for example that a long motto
 does not overflow its card.
 
-Запуск из корня репозитория (нужен cc и сгенерированный game/game.c):
+Run from the repository root (needs cc and a generated game/game.c):
 
     python3 gen.py
     python3 tools/ui_preview.py preview classes settings lobby
 
-Аргументы: каталог для PNG (создаётся) и имена экранов: classes (карточки
-классов с девизами), settings (настройки, 8 строк), lobby (главное меню).
-Без имён экранов рисуются classes и settings. Сетевые и звуковые вызовы
-заглушены, поэтому прогресс выставляется в main() руками.
+Arguments: a directory for the PNGs (created on demand) and screen names:
+classes (class cards with their mottos), settings (8 rows), lobby (main menu).
+Without screen names classes and settings are drawn. Network and sound calls are
+stubbed, so progress values are set by hand in main().
 
-Недостающие заглушки догенерируются автоматически по прототипам из
-runtime.h/net.h (сигнатуры настоящие, тела возвращают 0/""/ничего), поэтому
-инструмент не ломается при добавлении новых net_* функций.
+Missing stubs are generated automatically from the prototypes in runtime.h and
+net.h: the signatures are real and the bodies return 0, "" or nothing, so the
+tool keeps working when new net_* functions appear.
 """
 from __future__ import annotations
 
@@ -407,15 +407,15 @@ int main(int argc, char **argv) {
         warn_a = strcmp(screen, "warn_fade") == 0 ? 0.5 : 1;
         ds_fn_draw_warning();
     }
-    else { fprintf(stderr, "неизвестный экран: %s (классы: classes/settings/lobby/warn/warn_fade)\n", screen); return 2; }
-    if (!write_png(out, &g_buf)) { fprintf(stderr, "не удалось записать %s\n", out); return 1; }
+    else { fprintf(stderr, "unknown screen: %s (valid: classes/settings/lobby/warn/warn_fade)\n", screen); return 2; }
+    if (!write_png(out, &g_buf)) { fprintf(stderr, "cannot write %s\n", out); return 1; }
     printf("%s -> %s (%dx%d)\n", screen, out, W, H);
     return 0;
 }
 """
 
 HEADER_PROTOS = (ROOT / "runtime.h", ROOT / "net.h")
-VAR_DECLS = {  # переменные, которые компилятор не найдёт по прототипу функции
+VAR_DECLS = {  # variables the compiler cannot see through a function prototype
     "mouse_clicked": "int mouse_clicked = 0;",
     "ds_mouse_x": "double ds_mouse_x = 0;",
     "ds_mouse_y": "double ds_mouse_y = 0;",
@@ -436,9 +436,9 @@ def prototypes() -> dict[str, tuple[str, str]]:
 
 
 def stub_source(name: str, ret: str, args: str) -> str:
-    if name == "lerp":  # математика, а не заглушка: от неё зависят координаты
+    if name == "lerp":  # real maths, not a stub: the layout depends on it
         return "double lerp(double a, double b, double t) { return a + (b - a) * t; }"
-    if name == "ds_log_err":  # ошибки загрузки ассетов полезно видеть в консоли
+    if name == "ds_log_err":  # asset load errors are worth seeing in the log
         return ("void ds_log_err(const char *f, ...) { va_list ap; va_start(ap, f); "
                 "vfprintf(stderr, f, ap); va_end(ap); fputc(10, stderr); }")
     ret = ret.replace("static", "").strip()
@@ -468,7 +468,7 @@ def compile_preview(temp: Path) -> Path:
         if not missing:
             if run.returncode == 0:
                 return binary
-            sys.exit(f"сборка предпросмотра не удалась:\n{run.stderr}")
+            sys.exit(f"failed to build the preview:\n{run.stderr}")
         lines = ["/* Autostubs: signatures from runtime.h and net.h, neutral bodies. */",
                  "#include <stdarg.h>", "#include <stdio.h>"]
         unknown = []
@@ -484,9 +484,9 @@ def compile_preview(temp: Path) -> Path:
                 continue
             done.add(name)
         if unknown:
-            sys.exit("нет прототипов для заглушек: " + ", ".join(unknown))
+            sys.exit("no prototypes for these stubs: " + ", ".join(unknown))
         stubs.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    sys.exit("не удалось слинковать предпросмотр за 10 итераций автозаглушек")
+    sys.exit("could not link the preview in 10 rounds of auto stubs")
 
 
 def main(argv: list[str]) -> int:
@@ -509,7 +509,7 @@ def main(argv: list[str]) -> int:
             sys.stderr.write(run.stderr)
             if run.returncode != 0:
                 failed = 1
-                print(f"{screen}: ОШИБКА рендера", file=sys.stderr)
+                print(f"{screen}: render failed", file=sys.stderr)
             else:
                 print(run.stdout.strip())
     return failed

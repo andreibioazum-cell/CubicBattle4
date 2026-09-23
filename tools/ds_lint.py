@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Статическая проверка скриптов DimScript v2 (game/scripts/*.ds).
+"""Static check of the DimScript v2 scripts (game/scripts/*.ds).
 
-Компилятор v2 строгий: необъявленная переменная, неизвестное имя, неизвестный
-вызов, несовпадение арности и типов, чужое приватное поле — ошибки компиляции.
-Линтер дублирует часть проверок именами (без генерации кода), чтобы падать на
-опечатках до сборки C, и дополнительно проверяет то, что компилятор терпит:
-чтение неизвестного идентификатора в выражении, `name.field` несуществующего
-поля, вызов функции скрипта с другим числом аргументов.
+The v2 compiler is strict: an undeclared variable, an unknown name or call, a
+mismatched arity or type, a private field of another class are compile errors.
+The linter repeats part of those checks by name alone, without generating code,
+so typos fail before the C build, and it also catches what the compiler tolerates:
+reading an unknown identifier in an expression, `name.field` of a missing field,
+and a script function called with the wrong number of arguments.
 
-Запуск: python3 tools/ds_lint.py [каталог-со-скриптами]
+Run: python3 tools/ds_lint.py [scripts directory]
 """
 
 from __future__ import annotations
@@ -30,15 +30,15 @@ _DECL_RE = re.compile(
     r'^(?:(public|private)\s+)?(local\s+)?(' + _NAME + r')\s+(.+)$')
 _TYPES = {'number', 'string', 'color', 'array', 'num', 'str', 'col', 'arr',
           'int', 'float', 'double', 'bool'}
-# В бою есть несколько мест, где в выражение вставлен честный C-каст:
-# такие слова не имена скрипта, а часть нативного выражения.
+# A few battle lines paste a real C cast into an expression: those words are
+# not script names but part of the native expression.
 _RAW_C_WORDS = {'unsigned', 'int', 'double', 'char', 'float'}
 _NUM_RE = re.compile(r'\b0[xX][0-9a-fA-F]+\b|\b\d+(?:\.\d+)?\b')
 _BLOCK_OPEN = ('if ', 'while ', 'for ')
 
 
 def iter_blocks(lines):
-    """Разбивает модуль на ('function'|'method', class, name, params, body)."""
+    """Splits a module into ('function'|'method', class, name, params, body)."""
     i = 0
     cur_class = None
     while i < len(lines):
@@ -90,7 +90,7 @@ def parse_params(text):
 
 
 def identifiers(text):
-    """Идентификаторы выражения вне строк, чисел и точек (поля/методы)."""
+    """Identifiers of an expression outside strings, numbers and dots."""
     depth, quoted = _scan(text)
     text = _NUM_RE.sub(lambda m: ' ' * len(m.group(0)), text)
     out = []
@@ -98,7 +98,7 @@ def identifiers(text):
         if quoted[m.start()] or depth[m.start()]:
             continue
         if m.start() > 0 and text[m.start() - 1] == '.':
-            continue  # поле/метод: проверяются отдельно
+            continue  # a field or method is checked separately
         out.append((m.group(0), m.start()))
     return out
 
@@ -136,9 +136,9 @@ def _scan(text):
 
 class Lint:
     def __init__(self):
-        self.globals = {}          # имя -> тип ('Class' для классовых)
-        self.objects = {}          # имя класса -> set(поля)
-        self.functions = {}        # имя -> [параметры]
+        self.globals = {}          # name -> type ('Class' for class ones)
+        self.objects = {}          # class name -> set of fields
+        self.functions = {}        # name -> [parameters]
         self.errors = []
 
     def error(self, where, msg):
@@ -169,7 +169,7 @@ class Lint:
         for line in lines:
             m = _DECL_RE.match(line)
             if not m or m.group(2) or not m.group(1):
-                continue  # local и объявления без модификатора — не глобалки
+                continue  # local and modifier-free declarations are not globals
             if m.group(3) not in _TYPES and m.group(3) not in self.objects:
                 continue
             for part in split_top(m.group(4), ','):
@@ -227,7 +227,8 @@ class Lint:
                                 class_fields)
                 continue
             if re.match(r'^(self|' + _NAME + r')\.', line):
-                # методов/цепочек компилятор проверяет сам; имена аргументов — наши
+                # the compiler checks methods and chains itself; argument names
+                # are ours to check
                 for arg in _dotted_args(line):
                     self.check_expression(where, name, arg, scope, class_fields)
 
@@ -238,20 +239,20 @@ class Lint:
         self_ref, name, field = m.group(1), m.group(2), m.group(3)
         if self_ref:
             if class_fields is not None and name not in class_fields:
-                self.error(where, f"функция '{fn}': у класса нет поля '{name}'")
+                self.error(where, f"function '{fn}': the class has no field '{name}'")
             return
         if name not in scope and name not in self.globals and name not in ENGINE_VARS:
-            self.error(where, f"функция '{fn}': присваивание необъявленной "
-                              f"переменной '{name}'")
+            self.error(where, f"function '{fn}': assignment to the undeclared "
+                              f"variable '{name}'")
             return
         if field:
             holder = self.globals.get(name) or self._scope_type(scope, name)
             fields = self.objects.get(holder)
             if fields is not None and field not in fields:
-                self.error(where, f"функция '{fn}': у объекта '{holder}' нет поля '{field}'")
+                self.error(where, f"function '{fn}': object '{holder}' has no field '{field}'")
 
     def _scope_type(self, scope, name):
-        return None  # типы локальных линтер не выводит: это работа компилятора
+        return None  # locals are left untyped: that is the compiler's job
 
     def check_expression(self, where, fn, expr, scope, class_fields):
         for m in re.finditer(r'\$"(?:[^"\\]|\\.)*"', expr):
@@ -262,7 +263,7 @@ class Lint:
         for ident, _pos in identifiers(masked):
             if ident in scope or self.known(ident):
                 continue
-            self.error(where, f"функция '{fn}': неизвестное имя '{ident}' в выражении")
+            self.error(where, f"function '{fn}': unknown name '{ident}' in an expression")
         depth, quoted = _scan(masked)
         for m in re.finditer(r'(?<![.\w])(' + _NAME + r')\s*\(', masked):
             if quoted[m.start()]:
@@ -275,22 +276,22 @@ class Lint:
             holder = m.group(1)
             if holder == 'self':
                 if class_fields is not None and m.group(2) not in class_fields:
-                    self.error(where, f"функция '{fn}': у класса нет поля '{m.group(2)}'")
+                    self.error(where, f"function '{fn}': the class has no field '{m.group(2)}'")
                 continue
             if holder in scope or holder in self.globals:
                 fields = self.objects.get(self.globals.get(holder) or '', set())
                 if fields and m.group(2) not in fields:
-                    self.error(where, f"функция '{fn}': у объекта '{holder}' нет поля '{m.group(2)}'")
+                    self.error(where, f"function '{fn}': object '{holder}' has no field '{m.group(2)}'")
 
     def check_call(self, where, fn, name, args_text, scope, class_fields=True):
         if name in self.functions:
             args = split_top(args_text, ',') if args_text.strip() else []
             want = len(self.functions[name])
             if len(args) != want:
-                self.error(where, f"функция '{fn}': вызов '{name}' ждёт {want} "
-                                  f"аргумент(а), передано {len(args)}")
+                self.error(where, f"function '{fn}': call '{name}' wants {want} "
+                                  f"argument(s), {len(args)} given")
         elif name not in BUILTINS and name not in _RAW_C_WORDS and name not in NATIVE_MATH:
-            self.error(where, f"функция '{fn}': неизвестный вызов '{name}'")
+            self.error(where, f"function '{fn}': unknown call '{name}'")
         if args_text.strip():
             for arg in split_top(args_text, ','):
                 self.check_expression(where, fn, arg, scope,
@@ -335,7 +336,7 @@ def args_of(expr, open_paren):
 
 
 def lint_dir(scripts):
-    """Проверяет каталог со скриптами, возвращает список строк-ошибок."""
+    """Checks a directory of scripts and returns the list of error lines."""
     sources = find_ds_files(scripts)
     modules = {}
     unfinished = []
@@ -355,7 +356,7 @@ def lint_dir(scripts):
                 pending = ''
                 lines.extend(q for q in (p.strip() for p in split_top(line, ';')) if q)
         if pending:
-            unfinished.append(f"{path}: незакрытая скобка: {pending}")
+            unfinished.append(f"{path}: unclosed bracket: {pending}")
         modules[path] = lines
 
     lint = Lint()
@@ -366,7 +367,7 @@ def lint_dir(scripts):
     for path, lines in modules.items():
         for kind, cls, name, params, body in iter_blocks(lines):
             if name in lint.functions:
-                lint.error(path, f"повторное объявление функции '{name}'")
+                lint.error(path, f"function '{name}' declared twice")
             lint.functions[name] = params
     for path, lines in modules.items():
         for kind, cls, name, params, body in iter_blocks(lines):

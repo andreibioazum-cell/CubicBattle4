@@ -473,26 +473,26 @@ int main(int argc, char **argv) {
         frame_open = 0;
     }
 
-    printf("Бой на хосте: %d кадров, окно %dx%d, хитбоксы вкл.\n", frames, W, H);
-    printf("Время этапов, мс на кадр (среднее / максимум):\n");
-    printf("  update (скрипты):   %.3f / %.3f\n", s_upd.sum / frames, s_upd.max);
-    printf("  draw   (команды):   %.3f / %.3f\n", s_draw.sum / frames, s_draw.max);
-    printf("  геометрия + пачки:  %.3f / %.3f\n", s_geo.sum / frames, s_geo.max);
-    printf("  итого CPU:          %.3f / %.3f\n", s_total.sum / frames, s_total.max);
-    printf("Наполнение кадра (среднее, пик):\n");
-    printf("  команд:             %.0f, пик %zu\n", s_cmds.sum / frames, peak_cmds);
-    printf("  вершин:             %.0f, пик %zu\n", s_verts.sum / frames, peak_verts);
-    printf("  треугольников:      %.0f\n", s_tris.sum / frames);
-    printf("  draw call'ов:       %.1f (пик %zu), пачек до слияния: %.1f\n",
+    printf("Battle on a host: %d frames, window %dx%d, hitboxes on.\n", frames, W, H);
+    printf("Stage times, ms per frame (average / peak):\n");
+    printf("  update (scripts):   %.3f / %.3f\n", s_upd.sum / frames, s_upd.max);
+    printf("  draw   (commands):  %.3f / %.3f\n", s_draw.sum / frames, s_draw.max);
+    printf("  geometry + batches: %.3f / %.3f\n", s_geo.sum / frames, s_geo.max);
+    printf("  CPU total:          %.3f / %.3f\n", s_total.sum / frames, s_total.max);
+    printf("Frame contents (average, peak):\n");
+    printf("  commands:           %.0f, peak %zu\n", s_cmds.sum / frames, peak_cmds);
+    printf("  vertices:           %.0f, peak %zu\n", s_verts.sum / frames, peak_verts);
+    printf("  triangles:          %.0f\n", s_tris.sum / frames);
+    printf("  draw calls:         %.1f (peak %zu), batches before merging: %.1f\n",
            s_calls.sum / frames, peak_calls, s_batches.sum / frames);
-    printf("  команд по типам (последний кадр): rect %zu, round %zu, circle %zu, ring %zu, "
+    printf("  commands by type (last frame): rect %zu, round %zu, circle %zu, ring %zu, "
            "line %zu, tex %zu, text %zu, tint %zu, rect_rot %zu\n",
            b_cmds_by_type[DS_CMD_RECT], b_cmds_by_type[DS_CMD_ROUND], b_cmds_by_type[DS_CMD_CIRCLE],
            b_cmds_by_type[DS_CMD_RING], b_cmds_by_type[DS_CMD_LINE], b_cmds_by_type[DS_CMD_TEX],
            b_cmds_by_type[DS_CMD_TEXT], b_cmds_by_type[DS_CMD_TEX_TINT], b_cmds_by_type[DS_CMD_RECT_ROT]);
     if (peak_verts >= 65535)
-        printf("ВНИМАНИЕ: кадр упирается в предел индексов uint16 (65535 вершин) - "
-               "часть геометрии молча теряется (%zu кадров).\n", cap_hits);
+        printf("WARNING: the frame hits the uint16 index limit (65535 vertices), so "
+               "part of the geometry is dropped silently (%zu frames).\n", cap_hits);
     return 0;
 }
 """

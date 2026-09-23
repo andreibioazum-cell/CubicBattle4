@@ -80,19 +80,19 @@ int main(void) {
     double path = azum_dash_speed * azum_dash_time;
     double travel = player->x - dash_x0;
     if (travel > path) travel = path;
-    check(n_rot == 1, "рывок игрока: полосы зоны нет");
-    check(n_rect == 0 && n_round == 0, "рывок игрока: клетки или скруглённые плиты");
-    check(n_line == 0 && n_circle == 0, "рывок игрока: капсула или круг вместо полосы");
+    check(n_rot == 1, "player dash: no zone strip");
+    check(n_rect == 0 && n_round == 0, "player dash: cells or rounded plates");
+    check(n_line == 0 && n_circle == 0, "player dash: capsule or circle instead of a strip");
     int found = 0;
     for (size_t k = 0; k < cmd_n; k++) {
         if (cmds[k].t != DS_CMD_RECT_ROT || cmds[k].v.rot.c != 0x60000000u) continue;
         found = 1;
-        check(fabs(cmds[k].v.rot.h - 2 * pr) < 1e-3, "ширина полосы не равна диаметру зоны урона");
-        check(fabs(cmds[k].v.rot.y - (400 - pr)) < 1e-3, "полоса не по оси рывка");
+        check(fabs(cmds[k].v.rot.h - 2 * pr) < 1e-3, "strip width is not the damage diameter");
+        check(fabs(cmds[k].v.rot.y - (400 - pr)) < 1e-3, "strip is off the dash axis");
         check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (dash_x0 + travel / 2)) < 1e-3,
-              "полоса не по уже проеханному отрезку");
+              "strip does not cover the travelled segment");
     }
-    check(found, "рывок игрока: полоса не найдена");
+    check(found, "player dash: strip not found");
 
     /* Bot dash in solo: same strip, drawn backwards. */
     dash_active = 0; dash_box_a = 0;
@@ -102,7 +102,7 @@ int main(void) {
     cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
-    check(n_rot == 1 && n_rect == 0, "рывок бота: зона рисуется не одной полосой");
+    check(n_rot == 1 && n_rect == 0, "bot dash: the zone is not one strip");
     enemy_dash_active = 0; edash_box_a = 0;
 
     /* Remote dash in online: the traveled part of the snapshot is drawn. */
@@ -118,7 +118,7 @@ int main(void) {
     cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
-    check(n_rot == 1 && n_rect == 0, "рывок сетевого соперника: зона рисуется не одной полосой");
+    check(n_rot == 1 && n_rect == 0, "remote dash: the zone is not one strip");
 
     /* Hitboxes off: no zone at all. */
     show_hitboxes = 0;
@@ -126,9 +126,9 @@ int main(void) {
     ds_fn_draw();
     count_hitboxes();
     check(n_rot == 0 && n_rect == 0 && n_circle == 0 && n_line == 0 && n_round == 0,
-          "с выключенными хитбоксами зона всё равно рисуется");
+          "the zone is drawn even with hitboxes off");
 
-    puts("рывок: зона урона рисуется одной полосой по проеханному отрезку (игрок, бот, соперник)");
+    puts("dash: the damage zone is one strip over the travelled segment (player, bot, remote)");
     return 0;
 }
 """
@@ -151,7 +151,7 @@ def build(temp: Path) -> Path:
         if not missing:
             if run.returncode == 0:
                 return binary
-            sys.exit("сборка теста не удалась:\n" + run.stderr)
+            sys.exit("failed to build the test:\n" + run.stderr)
         lines = ["/* Autostubs: signatures from runtime.h and net.h, neutral bodies. */",
                  "#include <stdarg.h>", "#include <stdio.h>"]
         unknown = []
@@ -167,9 +167,9 @@ def build(temp: Path) -> Path:
                 continue
             done.add(name)
         if unknown:
-            sys.exit("нет прототипов для заглушек: " + ", ".join(unknown))
+            sys.exit("no prototypes for these stubs: " + ", ".join(unknown))
         stubs.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    sys.exit("не удалось слинковать тест за 10 итераций")
+    sys.exit("could not link the test in 10 rounds of auto stubs")
 
 
 def main() -> int:

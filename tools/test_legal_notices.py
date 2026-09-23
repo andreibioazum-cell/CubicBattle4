@@ -73,8 +73,13 @@ def main():
     draw_warn = function_body(menu_input, "draw_warning")
     assert "tr_legal_accept()" in draw_warn and "warn_btn_y()" in draw_warn, \
         "на экране предупреждения нет кнопки согласия"
-    # The button does not light up: brightness stays at its final value.
-    assert "brightness" not in draw_warn, \
+    # The button does not light up: its colours are constant and warn_ready only
+    # gates the countdown label. Comments are stripped, so an English note about
+    # brightness cannot trip this.
+    warn_code = re.sub(r"(?m)^\s*--[^\n]*\n", "", draw_warn)
+    assert "brightness" not in warn_code, \
+        "кнопка согласия снова меняет яркость со временем"
+    assert warn_code.count("warn_ready") == 1 and "warn_ready < 1 then" in warn_code, \
         "кнопка согласия снова меняет яркость со временем"
     # While counting down the label holds "(N)" seconds, then drops them.
     assert "warn_wait - floor(warn_t)" in draw_warn and "warn_ready < 1" in draw_warn, \

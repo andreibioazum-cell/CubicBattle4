@@ -1,6 +1,6 @@
 #version 450
-/* Сплошные примитивы (rect/roundrect/circle/ring/line): цвет берётся целиком
- * из вершины, смешивание делает фиксированный конвейер (src-alpha). */
+/* Solid primitives (rect, roundrect, circle, ring, line): the colour comes
+ * entirely from the vertex and the fixed pipeline blends it (src-alpha). */
 layout(location = 1) in vec4 v_col;
 layout(location = 0) out vec4 out_color;
 void main() {
