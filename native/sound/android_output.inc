@@ -45,7 +45,7 @@ static void *snd_at_thread_fn(void *arg) {
         jint written = (*env)->CallIntMethod(env, snd_at_track, snd_at_write, snd_at_buf, 0, (jint)(AT_FRAMES * 2));
         if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); ds_log_err("audio: AudioTrack.write failed"); break; }
         if (written < 0) break;
-        /* The buffer goes to the system as a whole, so mixing happens AFTER the write
+        /* The buffer goes to the system as a whole, so mixing happens after the write
          * while the first block was filled in advance, in snd_backend_start. */
         if (!snd_at_run) break;
         snd_frame((int16_t *)snd_at_mixbuf, AT_FRAMES);

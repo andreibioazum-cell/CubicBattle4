@@ -1218,7 +1218,7 @@ def main():
             body = fns[name][2]
             for hook in ("tick_hitbox_fades()", "tick_status_fades()"):
                 assert body.count(hook) == 1, f"{name} must call {hook} once"
-        # A remote swing pose fades by itself: its tick sits BEFORE the finished branch
+        # A remote swing pose fades by itself: its tick sits before the finished branch
         # and the slot check, otherwise a remote stayed mid swing forever.
         online_upd = fns["update_online"][2]
         assert online_upd.count("tick_remote_punches()") == 1, \

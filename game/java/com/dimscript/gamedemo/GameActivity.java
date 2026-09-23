@@ -45,7 +45,7 @@ import android.widget.FrameLayout;
  */
 public final class GameActivity extends NativeActivity {
     /*
-     * NativeActivity loads the game .so with dlopen(), which does NOT register
+     * NativeActivity loads the game .so with dlopen(), which does not register
      * it with the Java runtime: without an explicit System.loadLibrary the
      * first call to any native method below threw UnsatisfiedLinkError and
      * crashed the app the moment the keyboard was opened.

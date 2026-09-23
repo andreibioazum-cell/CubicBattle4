@@ -264,7 +264,7 @@ done:
 int keyboard_handle_key(int keycode, int action, int meta) {
     (void)action;
     /* NativeActivity takes the InputQueue of the window, so the Gboard KeyEvents
-     * of plain Latin input arrive HERE rather than in the EditText. Swallowing
+     * of plain Latin input arrive here rather than in the EditText. Swallowing
      * them because of wantKeyboard opened the keyboard on the nick field while no
      * letters appeared. JNI nativeReplaceText still replaces the whole buffer when
      * the IME did deliver a character to the editor, in which case the append
