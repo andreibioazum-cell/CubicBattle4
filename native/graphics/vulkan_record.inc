@@ -1,8 +1,9 @@
-/* Команды скрипта -> пачки геометрии, запись draw/blit, render pass и пересборка конвейеров.
- * Часть Vulkan-бэкенда: включается из vulkan_backend.inc, всё собирается
- * одним translation unit'ом (graphics.c), поэтому состояние общее. */
+/* Script commands become geometry batches, then draw and blit recording, the
+ * render pass and pipeline rebuilds. Part of the Vulkan backend: included from
+ * vulkan_backend.inc into one translation unit (graphics.c), so the state is
+ * shared. */
 
-/* --- разбор команд скрипта в геометрию и пачки --- */
+/* --- script commands into geometry and batches --- */
 
 static int ds_vk_batch_push(int pipeline, const void *desc, size_t first, size_t count) {
     if (count == 0) return 1;
@@ -33,18 +34,18 @@ static int ds_vk_build_geometry(void) {
                 geo_rect(c->v.rc.x, c->v.rc.y, c->v.rc.w, c->v.rc.h, c->v.rc.c);
                 break;
             case DS_CMD_ROUND:
-                /* Скруглённые кнопки теперь смешивают альфу так же, как rect.
-                 * Это позволяет кнопке согласия плавно исчезать вместе со
-                 * всем предупреждением без вспышки replace-конвейера. Для
-                 * обычных непрозрачных кнопок результат не меняется. */
+                /* Rounded buttons blend by alpha just as rect does now, which lets
+                 * the consent button fade out with the whole warning instead of
+                 * flashing through the replacing pipeline. Opaque buttons look
+                 * exactly the same. */
                 pipeline = 0;
                 desc = NULL;
                 geo_roundrect(c->v.rr.x, c->v.rr.y, c->v.rr.w, c->v.rr.h, c->v.rr.r, c->v.rr.c);
                 break;
             case DS_CMD_RECT_ROT:
-                /* pipeline 0: обычное альфа-смешивание, поэтому повёрнутый
-                 * прямоугольник хитбокса прозрачный, а не «залитый» наглухо,
-                 * как roundrect на fill_span-конвейере. */
+                /* Pipeline 0 blends by alpha, so a rotated hitbox rectangle is
+                 * translucent rather than filled solid the way a roundrect was on
+                 * the fill_span pipeline. */
                 geo_rect_rot(c->v.rot.x, c->v.rot.y, c->v.rot.w, c->v.rot.h,
                              c->v.rot.ang, c->v.rot.c);
                 break;
@@ -70,8 +71,9 @@ static int ds_vk_build_geometry(void) {
             case DS_CMD_TEX_TINT: {
                 Texture *t = c->v.tx2.tx;
                 if (t && t->gpu.uploaded && t->gpu.desc) {
-                    /* Силуэт по альфа-каналу текстуры, залитый tint (как было
-                     * у софтрендера): цвет = tint.rgb, альфа = tex.a * tint.a. */
+                    /* A silhouette from the texture alpha, filled with the tint as
+                     * the software renderer did: colour = tint.rgb and
+                     * alpha = tex.a * tint.a. */
                     pipeline = 2;
                     desc = (const void *)(uintptr_t)t->gpu.desc;
                     geo_tex(c->v.tx2.x, c->v.tx2.y, c->v.tx2.a, c->v.tx2.sc,
@@ -92,12 +94,12 @@ static int ds_vk_build_geometry(void) {
     return 1;
 }
 
-/* Запись пачек в командный буфер: подряд идущие пачки одного конвейера и
- * одной текстуры сливаются в один vkCmdDrawIndexed. */
+/* Recording the batches into the command buffer: consecutive batches of one
+ * pipeline and one texture merge into a single vkCmdDrawIndexed. */
 static void ds_vk_record_draws(VkCommandBuffer cmd) {
     if (vk_off_w == 0 || vk_off_h == 0) return;
-    /* Координаты скриптов → NDC: масштаб берём из логического размера окна,
-     * иначе при апскейле весь интерфейс вырос бы в scale раз. */
+    /* Script coordinates to NDC: the scale comes from the logical window size,
+     * otherwise the whole interface would grow by the scale factor. */
     uint32_t lw = vk_log_w ? vk_log_w : vk_off_w, lh = vk_log_h ? vk_log_h : vk_off_h;
     float pc[4] = { 2.0f / (float)lw, 2.0f / (float)lh, -1.0f, -1.0f };
     int cur_pipe = -1;
@@ -137,7 +139,7 @@ static void ds_vk_record_draws(VkCommandBuffer cmd) {
     }
 }
 
-/* --- вывод кадра: blit оффскрина в swapchain --- */
+/* --- presenting a frame: blit the offscreen into the swapchain --- */
 
 static void ds_vk_record_present_blit(VkCommandBuffer cmd) {
     VkImage sw_image = vk_sw_images[vk_sw_index];
@@ -165,9 +167,10 @@ static void ds_vk_record_present_blit(VkCommandBuffer cmd) {
         bl.dstOffsets[1].x = (int32_t)vk_sw_extent.width;
         bl.dstOffsets[1].y = (int32_t)vk_sw_extent.height;
         bl.dstOffsets[1].z = 1;
-        /* 1:1 копируем без фильтрации; растягивание уменьшенного оффскрина
-         * (автомасштаб) - LINEAR, если формат позволяет: картинка мягкая,
-         * а не «пиксели», которыми прежний апскейл бесил игрока. */
+        /* A 1:1 copy uses no filtering, while stretching a smaller offscreen,
+         * which the automatic scaling does, uses LINEAR where the format allows it,
+         * so the picture is soft rather than the blocky pixels the old upscale
+         * produced. */
         VkFilter filter = VK_FILTER_NEAREST;
         if (vk_blit_linear && (vk_off_w != vk_sw_extent.width ||
                                vk_off_h != vk_sw_extent.height))
@@ -175,7 +178,7 @@ static void ds_vk_record_present_blit(VkCommandBuffer cmd) {
         vkCmdBlitImage(cmd, vk_off_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        sw_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl, filter);
     } else {
-        /* Запасной путь без blit: попиксельная копия 1:1 (без апскейла). */
+        /* Fallback without a blit: a per-pixel 1:1 copy, no scaling. */
         VkImageCopy cp;
         memset(&cp, 0, sizeof(cp));
         cp.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -203,19 +206,19 @@ static int ds_vk_create_renderpass(void) {
     VkAttachmentDescription att = { 0 };
     att.format = vk_sw_format;
     att.samples = VK_SAMPLE_COUNT_1_BIT;
-    att.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;      /* каждый кадр с чистого листа */
+    att.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;      /* every frame starts clear */
     att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; /* содержимое не нужно */
-    att.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; /* дальше blit */
+    att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; /* the contents do not matter */
+    att.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; /* the blit follows */
     VkAttachmentReference ref = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
     VkSubpassDescription sub = { 0 };
     sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     sub.colorAttachmentCount = 1;
     sub.pColorAttachments = &ref;
-    /* Кадр N+1 пишет оффскрин, пока кадр N ещё может читать его в blit
-     * (два кадра в полёте): подпаиваемся под предыдущий transfer. */
+    /* Frame N+1 writes the offscreen while frame N may still read it in the blit,
+     * so two frames are in flight and this waits on the previous transfer. */
     VkSubpassDependency dep = { 0 };
     dep.srcSubpass = VK_SUBPASS_EXTERNAL;
     dep.dstSubpass = 0;
@@ -232,8 +235,8 @@ static int ds_vk_create_renderpass(void) {
     return ok;
 }
 
-/* Создание всех четырёх конвейеров под текущий render pass. SPIR-V спечён,
- * поэтому модули можно пересоздавать в любой момент (при смене формата). */
+/* Creates all four pipelines against the current render pass. SPIR-V is prebaked,
+ * so the modules can be recreated at any moment, which a format change needs. */
 static int ds_vk_create_all_pipelines(void) {
     VkShaderModule frag_solid = VK_NULL_HANDLE, frag_image = VK_NULL_HANDLE, frag_tint = VK_NULL_HANDLE;
     int ok = ds_vk_create_shader_module(ds_spirv_solid_frag,
@@ -246,18 +249,18 @@ static int ds_vk_create_all_pipelines(void) {
              ds_vk_create_pipeline(frag_solid, vk_layout_solid, 0, &vk_pipe_replace) &&
              ds_vk_create_pipeline(frag_image, vk_layout_image, 1, &vk_pipe_image) &&
              ds_vk_create_pipeline(frag_tint, vk_layout_tint, 1, &vk_pipe_tint);
-    /* Модули больше не нужны при любом исходе - конвейеры их скопировали. */
+    /* The modules are done either way: the pipelines copied them. */
     if (frag_solid != VK_NULL_HANDLE) vkDestroyShaderModule(vk_device, frag_solid, NULL);
     if (frag_image != VK_NULL_HANDLE) vkDestroyShaderModule(vk_device, frag_image, NULL);
     if (frag_tint != VK_NULL_HANDLE) vkDestroyShaderModule(vk_device, frag_tint, NULL);
     return ok;
 }
 
-/* Пересборка render pass и конвейеров после смены формата swapchain
- * (поворот/пересоздание окна может дать другой формат). Покадровый оффскрин
- * подтянется под новый формат в ds_vk_ensure_offscreen; если этого не сделать,
- * формат привязки framebuffer не совпадёт с форматом render pass - драйвер
- * (особенно бюджетные Mali) на этом роняет device или падает с SIGSEGV. */
+/* Rebuilds the render pass and the pipelines after the swapchain format changed,
+ * which a rotation or a re-created window can cause. The frame offscreen follows
+ * the new format in ds_vk_ensure_offscreen, and skipping that would make the
+ * framebuffer attachment format differ from the render pass format, which makes
+ * drivers, budget Mali ones especially, lose the device or hit a SIGSEGV. */
 static int ds_vk_rebuild_pipelines(void) {
     if (vk_device) vkDeviceWaitIdle(vk_device);
     if (vk_pipe_solid != VK_NULL_HANDLE) vkDestroyPipeline(vk_device, vk_pipe_solid, NULL);

@@ -1,19 +1,17 @@
-/* Разбиение примитивов DrawScript на треугольники для GPU.
+/* Turns DrawScript primitives into triangles for the GPU.
  *
- * Эквивалентно софтрендеру, который здесь был раньше: прямоугольник —
- * выровненный quad, круг — веер с адаптивным числом сегментов, кольцо —
- * лента между двумя окружностями, линия — quad с круглыми заглушками на
- * концах (как и раньше: покрытие = «расстояние до отрезка <= толщина/2»),
- * скруглённый прямоугольник — центр + боковые полосы + четверти-веера,
- * повёрнутый прямоугольник (rect_rot) — quad вокруг центра фигуры, как у
- * текстуры, но без UV: им рисуются хитбоксы, которым нужны острые углы и
- * настоящее альфа-смешивание,
- * текстура — повёрнутый quad с UV (тот же поворот, что был в попиксельном
- * цикле), текст — по кваду на глиф из шрифтового атласа.
+ * It matches the software renderer that used to sit here: a rectangle is an
+ * aligned quad, a circle a fan with an adaptive segment count, a ring a band
+ * between two circles, a line a quad with round caps on its ends, where coverage
+ * is "distance to the segment <= thickness / 2" as before, a rounded rectangle a
+ * centre plus side bands plus quarter fans, a rotated rectangle (rect_rot) a quad
+ * around the centre of the shape like a texture but without UV, used by the
+ * hitboxes that need sharp corners and real alpha blending, a texture a rotated
+ * quad with UV, with the rotation of the old per-pixel loop, and text one quad
+ * per glyph from the font atlas.
  *
- * Тут нет ничего вулкановского: модуль проверяется юнит-тестом на хосте
- * (tools/host_test), сравнивающим растр треугольников со старым
- * программным растеризатором. */
+ * Nothing here is Vulkan specific: a host unit test (tools/host_test) compares the
+ * triangle raster with the old software rasteriser. */
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -26,9 +24,9 @@ static uint16_t *geo_idx;
 static size_t geo_in, geo_icap;
 
 static int geo_push_vert(float x, float y, float u, float v, uint32_t c) {
-    /* Индексы uint16 адресуют максимум 65536 вершин: переполнение давало бы
-     * чтение мусорных вершин на GPU (вплоть до device lost) - лишнее
-     * молча не добавляем. */
+    /* uint16 indices address 65536 vertices at most, and an overflow would make
+     * the GPU read garbage vertices, up to a lost device, so extra geometry is
+     * dropped silently. */
     if (geo_vn >= 65535) return 0;
     if (geo_vn == geo_vcap) {
         size_t cap = geo_vcap ? geo_vcap * 2 : 1024;
@@ -52,7 +50,7 @@ static int geo_push_index(uint16_t i) {
     geo_idx[geo_in++] = i;
     return 1;
 }
-/* Готовый quad из четырёх вершин в порядке (0,1,2,3). */
+/* A ready quad of four vertices in the order (0, 1, 2, 3). */
 static int geo_quad(const GeoVert q[4]) {
     size_t base = geo_vn;
     for (int i = 0; i < 4; i++)
@@ -64,21 +62,21 @@ static int geo_quad(const GeoVert q[4]) {
 }
 static void geo_reset(void) { geo_vn = 0; geo_in = 0; }
 
-/* --- кэш тригонометрии для вееров ---
+/* --- trigonometry cache for the fans ---
  *
- * Круги и кольца встречаются в кадре сотнями (пыль, кнопки управления,
- * хитбоксы, частицы вселенной и взрывы), и почти все они тесселируются с одним
- * и тем же числом сегментов. cosf/sinf — самая дорогая часть построения
- * геометрии, поэтому значения считаются один раз на пару (число сегментов,
- * формула) и переиспользуются. Формулы углов ровно те же, что были при прямом
- * вычислении, поэтому вершины получаются идентичными прежним. */
+ * Circles and rings appear in the hundreds per frame (dust, controls, hitboxes,
+ * universe particles, explosions) and almost all of them tessellate with the same
+ * segment count. cosf and sinf are the most expensive part of building geometry,
+ * so the values are computed once per (segment count, formula) pair and reused.
+ * The angle formulas are exactly the ones used when computing directly, so the
+ * vertices come out identical to before. */
 #define GEO_TRIG_SLOTS 12
 typedef struct { int n, mode; float *cosv, *sinv; } GeoTrig;
 static GeoTrig geo_trig[GEO_TRIG_SLOTS];
 static int geo_trig_next;
 
-/* mode 0 — веер круга: a = i * 2pi / n (float-арифметика, как и раньше);
- * mode 1 — лента кольца: a = (i / n) * 2pi (double-арифметика, как и раньше). */
+/* mode 0 is a circle fan with a = i * 2pi / n in float, as before, and mode 1 is
+ * a ring band with a = (i / n) * 2pi in double, as before. */
 static const GeoTrig *geo_trig_table(int n, int mode) {
     if (n < 3 || n > 4096) return NULL;
     for (int i = 0; i < GEO_TRIG_SLOTS; i++) {
@@ -109,7 +107,7 @@ static void geo_trig_free(void) {
     }
 }
 
-/* --- примитивы --- */
+/* --- primitives --- */
 
 static int geo_rect(float x, float y, float w, float h, uint32_t c) {
     if (!isfinite(x + y + w + h) || w <= 0 || h <= 0) return 1;
@@ -120,11 +118,11 @@ static int geo_rect(float x, float y, float w, float h, uint32_t c) {
     return geo_quad(q);
 }
 
-/* Адаптивное число сегментов окружности. Прежние 1.5 сегмента на пиксель
- * давали 105 треугольников даже обычной кнопке радиуса 70; несколько колец
- * управления каждый кадр перегружали слабые CPU/GPU сильнее всей 2D-сцены.
- * 0.6 с пределом 64 визуально остаётся гладким на мобильном экране, но
- * сокращает геометрию больших кругов более чем вдвое. */
+/* Adaptive segment count of a circle. The old 1.5 segments per pixel gave 105
+ * triangles even for an ordinary button of radius 70, and a few control rings per
+ * frame cost weak CPUs and GPUs more than the whole 2D scene. At 0.6 with a cap of
+ * 64 the result still looks smooth on a phone screen while the geometry of large
+ * circles more than halves. */
 static int geo_circle_segs(float r) {
     if (r < 0) r = -r;
     int n = (int)(r * 0.6f);
@@ -175,8 +173,8 @@ static int geo_ring(float x, float y, float r, float th, uint32_t c) {
     return 1;
 }
 
-/* Линия = прямоугольник вдоль отрезка + две полукруглые заглушки (у
- * попиксельного варианта покрытие было дисковым радиусом толщины/2). */
+/* A line is a rectangle along the segment plus two round caps, since the
+ * per-pixel version used disc coverage of radius thickness / 2. */
 static int geo_line(float x1, float y1, float x2, float y2, float th, uint32_t c) {
     if (!isfinite(x1 + y1 + x2 + y2 + th) || th <= 0) return 1;
     float dx = x2 - x1, dy = y2 - y1;
@@ -193,7 +191,7 @@ static int geo_line(float x1, float y1, float x2, float y2, float th, uint32_t c
     if (n < 6) n = 6;
     for (int cap = 0; cap < 2; cap++) {
         float cx = cap ? x2 : x1, cy = cap ? y2 : y1;
-        float dir = cap ? -1.0f : 1.0f; /* заглушка наружу от отрезка */
+        float dir = cap ? -1.0f : 1.0f; /* the cap points away from the segment */
         float base_ang = atan2f(dy, dx) + (float)M_PI * 0.5f;
         size_t base = geo_vn;
         if (!geo_push_vert(cx, cy, 0, 0, c)) return 0;
@@ -215,12 +213,12 @@ static int geo_roundrect(float x, float y, float w, float h, float rad, uint32_t
     if (rad > w * 0.5f) rad = w * 0.5f;
     if (rad > h * 0.5f) rad = h * 0.5f;
     if (rad < 0.5f) return geo_rect(x, y, w, h, c);
-    if (!geo_rect(x + rad, y, w - rad * 2, h, c)) return 0;               /* центр */
-    if (!geo_rect(x, y + rad, rad, h - rad * 2, c)) return 0;             /* слева */
-    if (!geo_rect(x + w - rad, y + rad, rad, h - rad * 2, c)) return 0;   /* справа */
-    /* Шести сегментов на четверть достаточно для кнопок мобильного размера.
-     * Раньше один roundrect мог создавать до 256 треугольников — особенно
-     * дорого для FPS-плашки, которая перестраивается каждый кадр. */
+    if (!geo_rect(x + rad, y, w - rad * 2, h, c)) return 0;               /* centre */
+    if (!geo_rect(x, y + rad, rad, h - rad * 2, c)) return 0;             /* left */
+    if (!geo_rect(x + w - rad, y + rad, rad, h - rad * 2, c)) return 0;   /* right */
+    /* Six segments per quarter are enough for buttons of phone size. A single
+     * roundrect used to cost up to 256 triangles, which hurt most in the frame
+     * counter that is rebuilt every frame. */
     int n = (int)ceilf(rad * 0.35f);
     if (n < 6) n = 6;
     if (n > 20) n = 20;
@@ -243,14 +241,14 @@ static int geo_roundrect(float x, float y, float w, float h, float rad, uint32_t
     return 1;
 }
 
-/* Повёрнутый прямоугольник: тот же поворот, что у текстуры (углы вокруг центра
- * фигуры), но без UV и без выборки — сплошная заливка цветом вершин. Нужен
- * хитбоксам: зона удара и клетки рывка рисуются ровными прямоугольниками с
- * острыми углами (у line концы круглые, а roundrect идёт конвейером без
- * смешивания и потому непрозрачный). */
+/* Rotated rectangle: the same rotation as a texture, corners around the centre of
+ * the shape, but without UV or sampling, so it is a solid fill of the vertex
+ * colour. The hitboxes need it, since the punch zone and the dash strip are
+ * straight rectangles with sharp corners, while line() has round caps and
+ * roundrect goes through a non-blending pipeline and stays opaque. */
 static int geo_rect_rot(float x, float y, float w, float h, float ang, uint32_t c) {
     if (!isfinite(x + y + w + h + ang) || w <= 0 || h <= 0) return 1;
-    /* Без поворота результат обязан совпадать с geo_rect бит в бит. */
+    /* Without a rotation the result must match geo_rect bit for bit. */
     if (ang == 0.0f) return geo_rect(x, y, w, h, c);
     float hw = w * 0.5f, hh = h * 0.5f;
     float ca = cosf(ang), sa = sinf(ang);
@@ -266,14 +264,15 @@ static int geo_rect_rot(float x, float y, float w, float h, float ang, uint32_t 
     return geo_quad(q);
 }
 
-/* Текстура: тот же поворот, что в старом попиксельном цикле (обратное
- * отображение p -> R(a)*p + центр, поэтому вершины — R(-a)*углы). x,y — левый
- * верхний угол невыровненной текстуры, sc — масштаб, a — угол. */
+/* Texture: the rotation of the old per-pixel loop, which mapped p backwards
+ * through R(a) * p + centre, so the vertices use R(-a) applied to the corners.
+ * x and y are the top left corner of the unaligned texture, sc the scale and a the
+ * angle. */
 static int geo_tex(float x, float y, float ang, float sc, float tw, float th_, uint32_t c) {
     if (!isfinite(x + y + ang + sc) || sc <= 0 || tw <= 0 || th_ <= 0) return 1;
     float hw = tw * 0.5f * sc, hh = th_ * 0.5f * sc;
-    /* Плитка фона арены — это десятки текстур без поворота за кадр: для нуля
-     * косинус и синус известны наперёд, лишний вызов тригонометрии не нужен. */
+    /* The arena background tile is dozens of unrotated textures per frame, and at
+     * zero the cosine and sine are known, so no trigonometry call is needed. */
     float ca = ang == 0.0f ? 1.0f : cosf(ang), sa = ang == 0.0f ? 0.0f : sinf(ang);
     float cx = x + hw, cy = y + hh;
     static const float sx[4] = { -1, 1, 1, -1 }, sy[4] = { -1, -1, 1, 1 };
@@ -288,8 +287,8 @@ static int geo_tex(float x, float y, float ang, float sc, float tw, float th_, u
     return geo_quad(q);
 }
 
-/* Текст: квад на глиф, UV — окно глифа в шрифтовом атласе. Метрики и
- * раскладка пера — один в один с прежним render_text_now. */
+/* Text: one quad per glyph, with UV as the glyph window in the font atlas. The
+ * metrics and the pen layout match the old render_text_now exactly. */
 static int geo_text(const char *s, float x, float y, uint32_t c, float sc, const DSFont *fnt) {
     if (!s || !fnt || !isfinite(x + y + sc) || sc <= 0) return 1;
     float asc = ds_font_ascent(fnt), lb = 0;

@@ -1,7 +1,7 @@
-/* Общие типы и состояние графической части: команда рендера, текстура,
- * шейдерные поля вершины, общие статические переменные. Части рендера
- * (geometry/vulkan_backend/lifecycle) включаются одним трансляционным юнитом
- * из graphics.c и опираются на объявленное здесь. */
+/* Shared types and state of the graphics side: the render command, textures, the
+ * shader vertex fields and the common statics. The parts of the renderer
+ * (geometry, vulkan_backend, lifecycle) are included into one translation unit
+ * from graphics.c and rely on what is declared here. */
 #include "runtime.h"
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO
@@ -38,15 +38,15 @@ const uint8_t *ds_font_alpha(const DSFont *font);
 float ds_font_lineh(const DSFont *font);
 float ds_font_ascent(const DSFont *font);
 
-/* GPU-часть текстуры; заполняет vulkan_backend (при недоступном Vulkan остаётся
- * нулевой, а CPU-пиксели всё равно хранятся, чтобы перезагрузить их при
- * повторной инициализации окна). */
+/* The GPU half of a texture, filled in by vulkan_backend. It stays zero when
+ * Vulkan is unavailable, and the CPU pixels are kept anyway so they can be
+ * uploaded again when the window is created anew. */
 typedef struct {
     long long image;   /* VkImage */
     long long memory;  /* VkDeviceMemory */
     long long view;    /* VkImageView */
     long long desc;    /* VkDescriptorSet */
-    int uploaded;      /* копия уже лежит на GPU */
+    int uploaded;      /* the copy already sits on the GPU */
 } TexGpu;
 
 struct Texture {
@@ -71,18 +71,18 @@ typedef struct {
         struct { float x1, y1, x2, y2, th; uint32_t c; } ln;
         struct { float x, y, a, sc; Texture *tx; } tx;
         struct { float x, y, a, sc; Texture *tx; uint32_t c; } tx2;
-        /* Повёрнутый прямоугольник: x,y — левый верхний угол НЕповёрнутого
-         * прямоугольника, ang — поворот вокруг его центра (как у текстуры).
-         * Нужен хитбоксам: зоны удара и рывка должны быть ровными
-         * прямоугольниками с острыми углами, а не круглыми капсулами line().
-         * Рисуется обычным (смешивающим) конвейером, поэтому прозрачность
-         * цвета работает так же, как у rect. */
+        /* Rotated rectangle: x and y are the top left corner of the unrotated
+         * rectangle and ang turns it around its centre, as a texture does. The
+         * hitboxes need it, since the punch zones and the dash strip must be
+         * straight rectangles with sharp corners rather than line() capsules. It
+         * goes through the ordinary blending pipeline, so the colour alpha works
+         * just as it does for rect. */
         struct { float x, y, w, h, ang; uint32_t c; } rot;
         struct { char *s; float x, y, sc; uint32_t c; } tt;
     } v;
 } DSCmd;
 
-/* 0xRRGGBBAA (как в скриптах) -> байты RGBA в памяти (R|G<<8|B<<16|A<<24). */
+/* 0xRRGGBBAA, as in scripts, becomes the in-memory RGBA bytes R|G<<8|B<<16|A<<24. */
 static uint32_t pack_c(uint32_t c) {
     uint32_t a = (c >> 24) & 0xff, r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
     if (!a) a = 255;
@@ -107,7 +107,7 @@ static int utf8_dec(const char **c) {
     *c = (const char *)p; return r;
 }
 
-/* Общее состояние кадра и ресурсов (общее для lifecycle и бэкенда). */
+/* Shared frame and resource state, used by both lifecycle and the backend. */
 static Buffer *cur_buf;
 static DSCmd *cmds;
 static size_t cmd_n, cmd_cap;

@@ -1,8 +1,8 @@
-/* Конвейеры со спечёнными SPIR-V шейдерами и оффскрин-таргет кадра.
- * Часть Vulkan-бэкенда: включается из vulkan_backend.inc, всё собирается
- * одним translation unit'ом (graphics.c), поэтому состояние общее. */
+/* Pipelines with the prebaked SPIR-V shaders and the offscreen frame target.
+ * Part of the Vulkan backend: included from vulkan_backend.inc into one
+ * translation unit (graphics.c), so the state is shared. */
 
-/* --- конвейеры --- */
+/* --- pipelines --- */
 
 static int ds_vk_create_shader_module(const uint32_t *code, size_t words, VkShaderModule *out) {
     VkShaderModuleCreateInfo ci = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
@@ -12,13 +12,13 @@ static int ds_vk_create_shader_module(const uint32_t *code, size_t words, VkShad
 }
 
 static int ds_vk_create_pipeline(VkShaderModule frag, VkPipelineLayout layout, int blend, VkPipeline *out) {
-    /* Массив ОБЯЗАН быть нулевым: по спецификации Vulkan pNext = NULL и
-     * flags = 0 (reserved for future use). Без инициализации в этих полях
-     * остаётся мусор стека, а загрузчик и драйвер GPU обходят цепочку pNext
-     * каждого stage'а: мусор-указатель приводит к разыменованию несуществующего
-     * адреса прямо внутри драйвера (на Mali — SIGSEGV в libGLES_mali.so,
-     * tombstone «null pointer dereference» при создании конвейера в
-     * ds_graphics_init - игра вылетала при запуске). */
+    /* The array is zeroed on purpose, since Vulkan requires pNext = NULL and
+     * flags = 0, which is reserved for future use. Leaving stack garbage in those
+     * fields is fatal: the loader and the GPU driver walk the pNext chain of every
+     * stage, so a garbage pointer dereferences a bogus address inside the driver,
+     * which on Mali is a SIGSEGV in libGLES_mali.so and a null pointer dereference
+     * tombstone while creating pipelines in ds_graphics_init, crashing the game on
+     * start. */
     VkPipelineShaderStageCreateInfo stages[2] = { 0 };
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -28,8 +28,8 @@ static int ds_vk_create_pipeline(VkShaderModule frag, VkPipelineLayout layout, i
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stages[1].module = frag;
     stages[1].pName = "main";
-    /* При ошибке vkCreateGraphicsPipelines значение хендла по спецификации
-     * НЕ ОПРЕДЕЛЕНО: гоняем его в NULL, чтобы выключение не уничтожало мусор. */
+    /* On failure vkCreateGraphicsPipelines leaves the handle value undefined, so
+     * it is reset to NULL and shutdown never destroys garbage. */
     *out = VK_NULL_HANDLE;
     if (!ds_vk_create_shader_module(ds_spirv_sprite_vert,
                                     sizeof(ds_spirv_sprite_vert) / sizeof(uint32_t), &stages[0].module))
@@ -49,7 +49,7 @@ static int ds_vk_create_pipeline(VkShaderModule frag, VkPipelineLayout layout, i
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
     VkPipelineViewportStateCreateInfo vp = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
-    vp.viewportCount = 1; vp.scissorCount = 1; /* viewport/scissor задаются динамически */
+    vp.viewportCount = 1; vp.scissorCount = 1; /* viewport and scissor are dynamic */
 
     VkPipelineRasterizationStateCreateInfo rs = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
     rs.polygonMode = VK_POLYGON_MODE_FILL;
@@ -95,16 +95,16 @@ static int ds_vk_create_pipeline(VkShaderModule frag, VkPipelineLayout layout, i
     pi.subpass = 0;
     int ok = ds_vk_check_result(vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pi, NULL, out),
                                 "vkCreateGraphicsPipelines");
-    /* Вершинный модуль создан здесь - уничтожаем здесь. Фрагментный модуль
-     * принадлежит вызывающему коду: один frag_solid используется двумя
-     * конвейерами (обычным и replace), уничтожать его после первого же
-     * создания конвейера значило бы строить второй по освобождённому
-     * хендлу - мгновенный краш на устройстве. */
+    /* The vertex module is created here and destroyed here. The fragment module
+     * belongs to the caller, since one frag_solid serves two pipelines, the
+     * ordinary one and the replacing one: destroying it after the first pipeline
+     * was built would leave the second built on a freed handle, an instant crash on
+     * a device. */
     vkDestroyShaderModule(vk_device, stages[0].module, NULL);
     return ok;
 }
 
-/* --- оффскрин-таргет --- */
+/* --- offscreen target --- */
 
 static int ds_vk_ensure_offscreen(uint32_t w, uint32_t h, VkFormat format) {
     if (vk_off_image != VK_NULL_HANDLE && vk_off_w == w && vk_off_h == h && vk_off_format == format) return 1;
