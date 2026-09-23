@@ -203,20 +203,29 @@ static int ds_vk_upload_font_atlas(void) {
     return ok;
 }
 
+/* The stored handles are always dropped, even when the device is already gone:
+ * they belong to that dead device. Keeping them (the old early return) left
+ * vk_font_desc and t->gpu.uploaded set after ds_release_assets ran with the
+ * device down - the relaunch after a backgrounded session then either skipped
+ * the re-upload for good or drew text through a descriptor of the destroyed
+ * pool, which crashed the game at the next launch. */
 static void ds_vk_font_gpu_release(void) {
-    if (!vk_device) return;
-    if (vk_font_view != VK_NULL_HANDLE) vkDestroyImageView(vk_device, vk_font_view, NULL);
-    if (vk_font_image != VK_NULL_HANDLE) vkDestroyImage(vk_device, vk_font_image, NULL);
-    if (vk_font_memory != VK_NULL_HANDLE) vkFreeMemory(vk_device, vk_font_memory, NULL);
+    if (vk_device) {
+        if (vk_font_view != VK_NULL_HANDLE) vkDestroyImageView(vk_device, vk_font_view, NULL);
+        if (vk_font_image != VK_NULL_HANDLE) vkDestroyImage(vk_device, vk_font_image, NULL);
+        if (vk_font_memory != VK_NULL_HANDLE) vkFreeMemory(vk_device, vk_font_memory, NULL);
+    }
     vk_font_image = VK_NULL_HANDLE; vk_font_memory = VK_NULL_HANDLE;
     vk_font_view = VK_NULL_HANDLE; vk_font_desc = VK_NULL_HANDLE;
 }
 
 static void ds_vk_texture_gpu_release(Texture *t) {
-    if (!t || !vk_device) return;
-    if (t->gpu.view) vkDestroyImageView(vk_device, (VkImageView)(uintptr_t)t->gpu.view, NULL);
-    if (t->gpu.image) vkDestroyImage(vk_device, (VkImage)(uintptr_t)t->gpu.image, NULL);
-    if (t->gpu.memory) vkFreeMemory(vk_device, (VkDeviceMemory)(uintptr_t)t->gpu.memory, NULL);
+    if (!t) return;
+    if (vk_device) {
+        if (t->gpu.view) vkDestroyImageView(vk_device, (VkImageView)(uintptr_t)t->gpu.view, NULL);
+        if (t->gpu.image) vkDestroyImage(vk_device, (VkImage)(uintptr_t)t->gpu.image, NULL);
+        if (t->gpu.memory) vkFreeMemory(vk_device, (VkDeviceMemory)(uintptr_t)t->gpu.memory, NULL);
+    }
     memset(&t->gpu, 0, sizeof(t->gpu));
 }
 

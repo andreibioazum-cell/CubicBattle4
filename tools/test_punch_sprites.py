@@ -30,6 +30,17 @@ import ui_preview  # noqa: E402
 import frame_bench  # noqa: E402
 
 MAIN = r"""
+/* The sprite loads of this test: the brain idle misses its first three asks,
+ * like a decode hiccup on a cold start, and everything else lands at once. */
+static int zombie_asks = 0;
+int png_load(const char *name) {
+    if (name && !strcmp(name, "zombie_azum.png") && zombie_asks < 3) {
+        zombie_asks++;
+        return 0;
+    }
+    return 1;
+}
+
 static void check(int cond, const char *what) {
     if (cond) return;
     printf("FAIL: %s\n", what);
@@ -123,6 +134,26 @@ int main(void) {
     printf("everything missing: idle = %s ; punch = %s\n", s0, s1);
     check(!strcmp(s0, "ordinary.png") && !strcmp(s1, "ordinary.png"),
           "with every sprite missing the fighter is not one uniform pair");
+
+    /* A sprite whose first loads hiccuped must be asked again: the first answer
+     * latches the flags and the fallback cubes used to stay for the whole
+     * session. reload_textures retries the failed loads until they land. */
+    azum_tex_ok = 1; azum_punch_tex_ok = 1; ordinary_punch_tex_ok = 1;
+    santa_punch_tex_ok = 1; ebuc_punch_tex_ok = 1; candy_tex_ok = 1;
+    azum_zombie_tex_ok = 0; azum_zombie_punch_tex_ok = 1;
+    zombie_asks = 0; /* three misses again */
+    tex_reload_left = 60; tex_reload_t = 0;
+    for (int i = 0; i < 60 && azum_zombie_tex_ok == 0; i++) {
+        tex_reload_t = 0; /* the half second between the asks is up */
+        ds_fn_reload_textures();
+    }
+    printf("reloaded after the hiccups: zombie idle ok = %g, misses = %d\n",
+           azum_zombie_tex_ok, zombie_asks);
+    check(azum_zombie_tex_ok == 1, "a failed sprite load is never asked again");
+    check(zombie_asks == 3, "the retry does not keep asking while the load misses");
+    s0 = ds_fn_fighter_sprite(CLASS_AZUM, 0, SKIN_ZOMBIE);
+    check(!strcmp(s0, "zombie_azum.png"), "the healed sprite is still not used");
+    check(tex_reload_left == 0, "the retries keep asking after every load landed");
 
     puts("punch and dash close with their windows, closing frames hit, sprites never mix");
     return 0;

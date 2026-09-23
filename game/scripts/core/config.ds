@@ -74,6 +74,11 @@ public number azum_tex_ok=0, azum_zombie_tex_ok=0, azum_zombie_punch_tex_ok=0
 -- (battle_rules.ds) a fighter vanished while punching.
 public number ordinary_punch_tex_ok=0, azum_punch_tex_ok=0
 public number santa_punch_tex_ok=0, ebuc_punch_tex_ok=0
+-- Retry of the failed sprite loads (engine.ds reload_textures): the first load
+-- can hiccup on a cold start and the ok-flags latch that answer for good. The
+-- retries ask the failed ones again a couple of times per second until they
+-- land and the right art appears instead of the fallback cubes.
+public number tex_reload_t=0, tex_reload_left=0
 public number azum_skin=SKIN_NORMAL
 public number arena_tile_size=256, snow_tex_ok=0, snow_t=0, candy_tex_ok=0
 -- Winter theme, a menu setting: one tap turns the snowy arena and the snowfall
