@@ -41,8 +41,8 @@ void ds_runtime_error(const char *format, ...) { fputs(format, stderr); abort();
 void keyboard_hide(void) {}
 void net_disconnect(void) {}
 
-/* Строковые хелперы рантайма: моды приходят из поля ввода, поэтому str_trim
- * здесь настоящий — скрипт сохраняет уже обрезанное имя. */
+/* Runtime string helpers: mods come from an input field, so str_trim is the real
+ * one here and the script saves a name that is already trimmed. */
 double str_len(const char *s) { return s ? (double)strlen(s) : 0; }
 int str_eq(const char *a, const char *b) { return a && b && strcmp(a, b) == 0; }
 const char *str_trim(const char *s) {
@@ -72,7 +72,7 @@ void arr_set(DSArray *a, double i, double v) {
     a->values[(int)i] = v;
 }
 double arr_len(DSArray *a) { return a ? a->len : 0; }
-/* Задания: нативное состояние в этом тесте не нужно — безопасные заглушки. */
+/* Quests: this test needs no native state, only safe stubs. */
 double net_quest_now(void) { return 0; }
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
@@ -94,10 +94,10 @@ int snd_playing(const char *name) { (void)name; return 0; }
 void net_set_firebase_key(const char *key) { (void)key; }
 void net_autologin(const char *url) { (void)url; }
 
-/* ── «Устройство и облако»: net.c в миниатюре ─────────────────────────────
- * Каждый net_save_* пишет сюда, каждый net_load_* читает отсюда — ровно как
- * progress.dat/settings.dat на телефоне. Счётчики save_* показывают, что игра
- * вообще пыталась сохраниться. */
+/* -- Device and cloud: net.c in miniature -------------------------------
+ * Every net_save_* writes here and every net_load_* reads from here, just like
+ * progress.dat and settings.dat on the phone. The save_* counters show that the
+ * game tried to save at all. */
 static struct {
     int progress_saves, settings_saves, cloud_pushes;
     double cups, candies, cls, azum, santa, ebuc, level, levels;
@@ -155,7 +155,7 @@ void net_save_winter_theme(double v) { store.winter = v; }
 double net_load_fps_meter(void) { return store.showfps; }
 void net_save_fps_meter(double v) { store.showfps = v; }
 
-/* Снимок сети (класс/уровень/скин своего бойца) — просто считаем вызовы. */
+/* The network snapshot (class, level and skin of our fighter) just counts calls. */
 void net_set_class(double v) { (void)v; store.cloud_pushes++; }
 void net_set_level(double v) { (void)v; }
 void net_set_skin(double v) { (void)v; }
@@ -168,14 +168,14 @@ static void near(const char *what, double a, double b) {
 }
 static void fresh_device(void) {
     memset(&store, 0, sizeof(store));
-    store.hitboxes = 1;  /* как в settings.dat по умолчанию */
-    store.musicvol = 70; /* громкость музыки по умолчанию */
-    store.winter = 1;    /* зимняя тема по умолчанию включена */
-    store.showfps = 0;   /* счётчик FPS в бою по умолчанию выключен */
+    store.hitboxes = 1;  /* the settings.dat default */
+    store.musicvol = 70; /* the default music volume */
+    store.winter = 1;    /* the winter theme is on by default */
+    store.showfps = 0;   /* the battle frame counter is off by default */
     reset();
 }
 
-/* Покупка бука обязана уйти в сохранение: валюта, владелец класса, выбор. */
+/* Buying the buk has to reach the save: currency, class owner, selection. */
 static void test_buy_buk_saves(void) {
     fresh_device();
     candies = 500;
@@ -185,13 +185,13 @@ static void test_buy_buk_saves(void) {
     near("store.cls, CLASS_EBUC", store.cls, CLASS_EBUC);
     near("store.candies, 500 - ebuc_candy_cost", store.candies, 500 - ebuc_candy_cost);
     near("ds_fn_class_owned_of(CLASS_EBUC), 1", ds_fn_class_owned_of(CLASS_EBUC), 1);
-    /* Уровень ветки и скин уходят тем же сохранением. */
+    /* The branch level and the skin go through the same save. */
     cups = 100;
     assert(ds_fn_buy_level(CLASS_EBUC, 1) == 1);
     near("store.el, 1", store.el, 1);
     near("store.eu, 1", store.eu, 1);
     near("store.cls, CLASS_EBUC", store.cls, CLASS_EBUC);
-    /* Скины есть только у Азума: покупаем его и берём «Зомби». */
+    /* Only Azum has skins: buy him and take the zombie one. */
     achievement_mask = ACH_LEGENDS;
     cups = 500;
     ds_fn_pick_class(CLASS_AZUM);
@@ -201,7 +201,7 @@ static void test_buy_buk_saves(void) {
     puts("save: buk, its level and skin reach net_save_progress_all");
 }
 
-/* Перезапуск игры: то, что сохранилось, обязано читаться обратно. */
+/* A game restart: whatever was saved has to load back. */
 static void test_restart_keeps_buk(void) {
     fresh_device();
     candies = 400;
@@ -209,11 +209,11 @@ static void test_restart_keeps_buk(void) {
     ds_fn_pick_class(CLASS_EBUC);
     ds_fn_buy_level(CLASS_EBUC, 1);
     int before = store.progress_saves;
-    /* «Перезаход»: память скрипта обнуляется, файл на устройстве остаётся. */
+    /* A restart clears the script memory while the device file stays. */
     reset();
     assert(ds_fn_class_owned_of(CLASS_EBUC) == 0);
     ds_fn_progress_from_storage();
-    assert(store.progress_saves == before);  /* чтение не должно перезаписывать файл */
+    assert(store.progress_saves == before);  /* reading must not rewrite the file */
     near("ds_fn_class_owned_of(CLASS_EBUC), 1", ds_fn_class_owned_of(CLASS_EBUC), 1);
     near("player_class, CLASS_EBUC", player_class, CLASS_EBUC);
     near("candies, 400 - ebuc_candy_cost", candies, 400 - ebuc_candy_cost);
@@ -223,7 +223,7 @@ static void test_restart_keeps_buk(void) {
     puts("restart: buk, currencies and its level survive a full script reset");
 }
 
-/* Настройки: свой файл на устройстве и свои вызовы сохранения. */
+/* Settings: a file of their own on the device and their own save calls. */
 static void test_settings_save(void) {
     fresh_device();
     language = 1;
@@ -233,7 +233,7 @@ static void test_settings_save(void) {
     near("store.language, 1", store.language, 1);
     near("store.hitboxes, 0", store.hitboxes, 0);
 
-    /* Перезапуск: язык и хитбоксы читаются из файла. */
+    /* After a restart the language and hitboxes come from the file. */
     reset();
     near("language, 0", language, 0);
     near("show_hitboxes, 1", show_hitboxes, 1);
@@ -241,7 +241,7 @@ static void test_settings_save(void) {
     near("language, 1", language, 1);
     near("show_hitboxes, 0", show_hitboxes, 0);
 
-    /* Громкость музыки: читается из «файла», шаг жмётся в 0..100 и сразу сохраняется. */
+    /* Music volume: read from the file, stepped inside 0..100 and saved at once. */
     store.musicvol = 45;
     reset();
     ds_fn_settings_from_storage();
@@ -255,7 +255,7 @@ static void test_settings_save(void) {
     near("music_volume, 100", music_volume, 100);
     near("store.musicvol, 100", store.musicvol, 100);
 
-    /* Зимняя тема и счётчик FPS: свои ключи файла, тот же путь чтения/записи. */
+    /* The winter theme and the frame counter: their own file keys, the same path. */
     reset();
     ds_fn_settings_from_storage();
     near("winter_theme, 1", winter_theme, 1);
@@ -265,7 +265,7 @@ static void test_settings_save(void) {
     ds_fn_save_settings();
     near("store.winter, 0", store.winter, 0);
     near("store.showfps, 1", store.showfps, 1);
-    /* Перезапуск: тема и счётчик читаются обратно из сохранённого. */
+    /* After a restart the theme and the counter load back. */
     reset();
     near("winter_theme, 1", winter_theme, 1);
     near("show_fps, 0", show_fps, 0);
@@ -275,7 +275,7 @@ static void test_settings_save(void) {
     puts("settings: language, hitboxes, music, winter theme and FPS meter survive a restart");
 }
 
-/* Стартовый путь целиком: init() обязан поднять и прогресс, и настройки. */
+/* The whole startup path: init() has to bring up both progress and settings. */
 static void test_init_loads_everything(void) {
     fresh_device();
     store.ebuc = 1;
@@ -298,7 +298,7 @@ static void test_init_loads_everything(void) {
     near("ds_fn_class_level_of(CLASS_EBUC), 2", ds_fn_class_level_of(CLASS_EBUC), 2);
     near("achievement_mask, ACH_LEGENDS", achievement_mask, ACH_LEGENDS);
     near("language, 1", language, 1);
-    /* Тема выключена — снежная плитка не грузится, арена остаётся в траве. */
+    /* The theme is off, so no snow tile loads and the arena stays grass. */
     store.winter = 0;
     reset();
     ds_fn_init();
@@ -307,7 +307,7 @@ static void test_init_loads_everything(void) {
     puts("init: startup reads progress and settings from the device");
 }
 
-/* Выход из боя сохраняет прогресс: подобранные леденцы не теряются. */
+/* Leaving a battle saves progress, so picked candies are not lost. */
 static void test_leaving_battle_saves(void) {
     fresh_device();
     game_state = ST_SOLO;
@@ -318,7 +318,7 @@ static void test_leaving_battle_saves(void) {
     near("store.candies, 5", store.candies, 5);
     before = store.progress_saves;
     ds_fn_leave_screen(ST_LOBBY);
-    assert(store.progress_saves == before);  /* уход из меню ничего не пишет */
+    assert(store.progress_saves == before);  /* leaving the menu writes nothing */
     puts("battle exit: progress is saved when leaving solo/online");
 }
 
@@ -341,7 +341,7 @@ def main():
         assert compiler.compile(find_ds_files(str(ROOT / "game/scripts")), str(temp / "game.c"))
         assert not compiler.errors and not compiler.warnings
 
-        # ── Проводка: сохранение действительно вызывается из игры ──
+        # -- Wiring: the game really calls the save functions --
         fns = compiler.functions
         save_body = "".join(fns["save_progress"][2])
         assert "net_save_progress_all(" in save_body, (

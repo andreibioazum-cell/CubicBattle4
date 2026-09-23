@@ -39,7 +39,7 @@ void arr_set(DSArray *a, double i, double v) {
     a->values[(int)i] = v;
 }
 double arr_len(DSArray *a) { return a ? a->len : 0; }
-/* Задания: нативное состояние в этом тесте не нужно — безопасные заглушки. */
+/* Quests: this test needs no native state, only safe stubs. */
 double net_quest_now(void) { return 0; }
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
@@ -96,8 +96,8 @@ static void test_background(void) {
         game_state = online ? ST_ONLINE : ST_SOLO;
         for (int enabled = 0; enabled < 2; enabled++) {
             for (int available = 0; available < 2; available++) {
-                /* Зимняя тема — отдельная настройка: она одна решает и фон, и
-                 * снегопад, а леденцы от неё больше не зависят. */
+                /* The winter theme is one setting for both the background and the
+                 * snowfall, and the candies no longer depend on it. */
                 winter_theme = enabled;
                 snow_available = available;
                 snow_loads = 0;
@@ -118,7 +118,7 @@ static void test_background(void) {
             }
         }
     }
-    /* Леденцы при выключенной зимней теме остаются: валюта не зависит от фона. */
+    /* Candies stay when the winter theme is off: the currency is not the background. */
     winter_theme = 0; candy_enabled = 1;
     assert(ds_fn_arena_ground_tex() != NULL);
     puts("background: winter theme toggle, missing PNG fallback, solo/online tiling OK");
@@ -181,8 +181,8 @@ static void test_weather(void) {
         near(calls[i].scale, solo[i].scale); near(calls[i].angle, solo[i].angle);
     }
     assert(event_reads == reads_before);
-    /* Кэш хлопьев: тот же snow_t — тот же кадр, а смена цикла пересчитывает
-     * только случайные значения хлопьев (картинка не меняется скачком). */
+    /* Flake cache: the same snow_t gives the same frame, and a new cycle only
+     * recomputes the random values, so the picture does not jump. */
     game_state = ST_SOLO; winter_theme = 1; event_mode = 0;
     snow_t = 12.5;
     call_count = 0; ds_fn_draw_snow();
@@ -195,7 +195,7 @@ static void test_weather(void) {
         near(calls[i].x, cached[i].x); near(calls[i].y, cached[i].y);
         near(calls[i].scale, cached[i].scale); near(calls[i].angle, cached[i].angle);
     }
-    /* Выключенная тема гасит и фон, и хлопья сразу. */
+    /* Turning the theme off drops both the background and the flakes at once. */
     winter_theme = 0;
     call_count = 0; ds_fn_draw_snow();
     assert(call_count == 0);
@@ -207,17 +207,17 @@ static void test_weather(void) {
 static void test_candies(void) {
     ds_fn_reset_battle();
     game_state = ST_SOLO; candy_enabled = 1;
-    candy_tex_ok = 1;   /* текстура загружена — рисуется спрайт, не заглушка */
-    player->x = -1000; player->y = -1000;   /* не подбирать случайно */
+    candy_tex_ok = 1;   /* the texture is there, so a sprite is drawn, not the fallback */
+    player->x = -1000; player->y = -1000;   /* keep the player from picking it up */
     ds_fn_spawn_all_candies();
-    /* Спавн: в пределах экрана с отступом, таймеры появления/сбора обнулены. */
+    /* Spawn: inside the screen with a margin, the spawn and pickup timers at zero. */
     for (int i = 0; i < candy_count; i++) {
         double x = arr_get(candy_x, i), y = arr_get(candy_y, i);
         assert(x >= candy_margin && x < screen_w - candy_margin);
         assert(y >= candy_margin && y < screen_h - candy_margin);
         assert(arr_get(candy_t, i) == 0 && arr_get(candy_pick, i) == 0);
     }
-    /* Появление как у Деда Мороза: за candy_pop_time дорастает до размера. */
+    /* The spawn matches Santa: it grows to its size over candy_pop_time. */
     dt = 0.1;
     ds_fn_tick_candies();
     call_count = 0;
@@ -230,19 +230,19 @@ static void test_candies(void) {
     ds_fn_draw_candies();
     assert(call_count == candy_count);
     for (int i = 0; i < call_count; i++) near(calls[i].scale, candy_scale);
-    /* Сбор: +1 леденец, и подобранный пропадает сразу — без pop-out он в том же
-     * тике возрождается в новой случайной точке и снова растёт с нуля. */
+    /* Pickup: plus one candy, and the picked one vanishes right away. Without a
+     * pop-out it respawns in the same tick at a new random point and grows again. */
     arr_set(candy_x, 0, player->x);
     arr_set(candy_y, 0, player->y);
     double before = candies;
     double old_x = arr_get(candy_x, 0), old_y = arr_get(candy_y, 0);
     ds_fn_tick_candies();
     assert(candies == before + candy_give);
-    assert(arr_get(candy_pick, 0) == 0);        /* подобран — снова свободен */
-    assert(arr_get(candy_t, 0) == 0);           /* новая точка растёт с нуля */
+    assert(arr_get(candy_pick, 0) == 0);        /* picked, so free again */
+    assert(arr_get(candy_t, 0) == 0);           /* the new point grows from zero */
     assert(arr_get(candy_x, 0) != old_x || arr_get(candy_y, 0) != old_y);
     assert(arr_get(candy_x, 0) >= candy_margin && arr_get(candy_x, 0) < screen_w - candy_margin);
-    /* Новый леденец появляется той же анимацией роста, что и в начале боя. */
+    /* The new candy uses the same grow animation as at the start of the battle. */
     dt = 0.1;
     ds_fn_tick_candies();
     call_count = 0;
@@ -265,7 +265,7 @@ static void test_candies(void) {
 
 static void test_plates(void) {
     ds_fn_reset_battle();
-    candy_tex_ok = 1;   /* текстура загружена — рисуется спрайт, не заглушка */
+    candy_tex_ok = 1;   /* the texture is there, so a sprite is drawn, not the fallback */
     game_state = ST_ONLINE; cloud_event = 3; candy_enabled = 0;
     ds_fn_update_event();
     assert(event_mode == 0);
@@ -281,8 +281,8 @@ static void test_plates(void) {
     arr_set(remotes, remote_fields+5, 1);
     ds_fn_update_event();
     assert(plates_phase == 1);
-    /* Луча больше нет: фаза «заряда» не рисует ни одной линии, плиты просто
-     * подсвечены и держат бойцов plates_charge_time секунд. */
+    /* The beam is gone: the charge phase draws no lines at all, the plates just
+     * light up and hold the fighters for plates_charge_time seconds. */
     dt = 0.1;
     player->x = ds_fn_plate_ax() + 18; player->y = ds_fn_plate_ay() - 12;
     arr_set(remotes, remote_fields+1, ds_fn_plate_bx() - 20);
@@ -291,7 +291,7 @@ static void test_plates(void) {
     line_count = 0; ring_calls = 0;
     ds_fn_draw_event_plates(); ds_fn_draw_event_candies(); ds_fn_draw_event_santa();
     assert(line_count == 0);
-    /* Фаза 1: заряд, потом сжатие, потом Санта (фаза 3). */
+    /* Phase 1 charges, then the squeeze, then Santa in phase 3. */
     dt = plates_charge_time;
     ds_fn_update_event();
     assert(plates_phase == 2);
@@ -305,15 +305,15 @@ static void test_plates(void) {
     call_count = 0; plate_rects = 0; ring_calls = 0;
     ds_fn_draw_event_plates(); ds_fn_draw_event_santa();
     assert(plate_rects == 0 && call_count == 2);
-    assert(ring_calls == 0);  /* появление без серого кольца */
+    assert(ring_calls == 0);  /* the spawn has no grey ring */
     assert(strcmp(calls[0].name, "santa.png") == 0 && calls[0].tint == 0x55000000);
     assert(strcmp(calls[1].name, "santa.png") == 0 && calls[1].tint == 0);
     near(calls[1].scale * 50, plates_santa_size);
     near(calls[1].x + 25*calls[1].scale, screen_w/2);
     near(calls[1].y + 25*calls[1].scale, screen_h/2 + 6*sin(plates_santa_t*3));
     near(calls[0].x - calls[1].x, 10); near(calls[0].y - calls[1].y, 12);
-    /* Случайное направление: цель броска в пределах отступов экрана, а
-     * второй бросок (seed детерминирован srand в main) летит не туда же. */
+    /* Random direction: the throw target stays inside the screen margins, and the
+     * second throw, with the seed of main, does not fly to the same place. */
     double m = candy_margin + 16;
     double tx0 = arr_get(plates_candies, 4), ty0 = arr_get(plates_candies, 5);
     assert(tx0 >= m && tx0 < screen_w - m);
@@ -321,9 +321,9 @@ static void test_plates(void) {
     ds_fn_plates_throw_candy();
     assert(arr_get(plates_candies, plates_candy_fields+4) != tx0 ||
            arr_get(plates_candies, plates_candy_fields+5) != ty0);
-    arr_set(plates_candies, plates_candy_fields, 0);   /* второй леденец убрали */
-    /* Появление как у Деда Мороза: пока t < pop_time, масштаб докручивается
-     * с оборотом; после — полный, с пульсацией полёта. */
+    arr_set(plates_candies, plates_candy_fields, 0);   /* the second candy is gone */
+    /* The spawn matches Santa: while t < pop_time the scale grows with a spin, and
+     * after that it is full with the flight pulse. */
     call_count = 0;
     ds_fn_draw_event_candies();
     assert(call_count == 1 && strcmp(calls[0].name, "candy.png") == 0);
@@ -332,12 +332,12 @@ static void test_plates(void) {
     if (p_now > 1) p_now = 1;
     double pop_now = 1-(1-p_now)*(1-p_now);
     near(calls[0].scale, candy_scale*pop_now);
-    arr_set(plates_candies, 1, 0.6);   /* t >= pop_time: полный масштаб, без пульсации */
+    arr_set(plates_candies, 1, 0.6);   /* t >= pop_time: full scale, no pulse */
     call_count = 0;
     ds_fn_draw_event_candies();
     near(calls[0].scale, candy_scale);
-    /* Сбор: леденец пропадает сразу, без pop-out на месте; второй вызов collect
-     * повторно не подбирает и второй леденец не начисляет. */
+    /* Pickup: the candy vanishes at once, without a pop-out; a second collect call
+     * neither picks it up again nor adds another candy. */
     player->x = arr_get(plates_candies, 4); player->y = arr_get(plates_candies, 5);
     double before = candies;
     arr_set(plates_candies, 1, plates_candy_flight);
@@ -349,14 +349,14 @@ static void test_plates(void) {
     call_count = 0;
     ds_fn_draw_event_candies();
     assert(call_count == 0);
-    /* Сохранение теперь с троттлингом: подбор помечает dirty, а
-     * tick_event_santa пишет прогресс и сбрасывает флаг. */
+    /* Saving is throttled: a pickup marks the state dirty and tick_event_santa
+     * writes the progress and clears the flag. */
     assert(plates_dirty == 1);
     ds_fn_update_event();
     assert(plates_dirty == 0);
-    /* Уход Деда Мороза: не уменьшается, а поворачивается вверх и улетает за
-     * верх экрана; колец вокруг него нет ни при появлении, ни при уходе. */
-    plates_thrown = plates_candy_total;   /* все леденцы розданы -> начало ухода */
+    /* Santa leaving: he does not shrink, he turns upward and flies off the top of
+     * the screen, with no rings at the spawn or on the way out. */
+    plates_thrown = plates_candy_total;   /* all candies thrown, so he starts leaving */
     plates_santa_out = 0;
     ds_fn_tick_event_santa();
     assert(plates_santa_out > 0 && plates_santa_gone == 0 && plates_phase == 3);
@@ -375,17 +375,17 @@ static void test_plates(void) {
         ds_fn_tick_event_santa();
         exit_time += dt;
         if (plates_phase == 3) {
-            assert(plates_santa_dy < dy_before);   /* движение только вверх */
+            assert(plates_santa_dy < dy_before);   /* upward movement only */
         } else {
-            left_up = 1;                           /* улетел: ивент сбросился */
+            left_up = 1;                           /* he flew off and the event reset */
         }
         steps++;
     }
     assert(left_up == 1);
-    near(min_scale * 50, plates_santa_size);       /* масштаб не уменьшался */
-    assert(min_cy < screen_h / 2);                 /* поднялся выше центра */
-    assert(exit_time < plates_santa_out_time);     /* ушёл полётом, не таймаутом */
-    assert(last_angle == 0);                       /* повернулся вверх */
+    near(min_scale * 50, plates_santa_size);       /* the scale never shrank */
+    assert(min_cy < screen_h / 2);                 /* he rose above the centre */
+    assert(exit_time < plates_santa_out_time);     /* left by flying, not by timeout */
+    assert(last_angle == 0);                       /* turned upward */
     cloud_event = 2;
     ds_fn_update_event();
     assert(plates_phase == 0 && plates_santa_t == 0 && arr_get(plates_candies, 0) == 0);
@@ -405,7 +405,7 @@ static void test_plates(void) {
 
 int main(void) {
     setbuf(stdout, NULL);
-    srand(20260913);   /* как в main.c: rand() сидится до первого броска */
+    srand(20260913);   /* as in main.c: rand() is seeded before the first throw */
     ds_main();
     test_background(); test_weather(); test_candies(); test_plates();
     return 0;
@@ -429,37 +429,37 @@ def main():
         assert frame[-1] == "update_weather()" and frame.count("update_weather()") == 1
         for name in ("draw_game", "draw_online"):
             body = compiler.functions[name][2]
-            # В draw_online первым может стоять чат-гард: пока чат открыт,
-            # рисуется только чат, без арены позади.
+            # draw_online may start with the chat guard: while the chat is open
+            # only the chat is drawn, with no arena behind it.
             if body[:4] == ["if chat_open==1 then", "draw_chat()", "return", "end"]:
                 body = body[4:]
             assert body[0] == "draw_arena_background()"
             assert body.count("draw_snow()") == 1
             assert body.index("draw_snow()") < next(i for i, line in enumerate(body) if line.startswith("hud_bar("))
         assert "update_event()" not in compiler.functions["update_game"][2]
-        # Луча ивента больше нет: фаза «заряда» держит бойцов, но линии не рисует.
+        # The event beam is gone: the charge phase holds the fighters and draws no lines.
         assert "draw_event_beam" not in compiler.functions, \
             "event beam must be removed from the plates event"
         assert "draw_event_beam()" not in "".join(compiler.functions["draw_online"][2])
         assert "plates_charge_time" in "".join(compiler.functions["tick_plates_event"][2])
-        # Леденцы (соло и ивент) появляются/собираются с анимацией, как Дед Мороз.
+        # Candies, solo and in the event, spawn and vanish with an animation like Santa.
         solo_draw = "".join(compiler.functions["draw_candies"][2])
         assert "candy_pop_time" in solo_draw and "candy_pick" in solo_draw, \
             "solo candies must pop in/out like Santa"
         solo_tick = "".join(compiler.functions["tick_candies"][2])
-        # Подобранный леденец пропадает сразу и респавнится в новой точке
-        # (задержки candy_pick_time в соло больше нет).
+        # A picked candy vanishes at once and respawns elsewhere: the solo
+        # candy_pick_time delay is gone.
         assert "candy_rand_pos(" in solo_tick, \
             "a picked candy must respawn in a new random spot"
         event_candy_draw = "".join(compiler.functions["draw_event_candies"][2])
-        # Ивентовые леденцы появляются тем же поп-временем, а исчезают за
-        # plates_candy_vanish_time (задержки подбора plates_candy_pick_time
-        # больше нет: подобранный леденец уходит сразу).
+        # Event candies use the same pop time and vanish over
+        # plates_candy_vanish_time; the plates_candy_pick_time delay is gone, a
+        # picked candy leaves at once.
         assert "plates_candy_pop_time" in event_candy_draw
         assert "plates_candy_vanish_time" in event_candy_draw
         event_candy_tick = "".join(compiler.functions["plates_collect_candies"][2])
         assert "plates_candy_vanish_time" in event_candy_tick
-        # Дед Мороз: без серого кольца при появлении, уход — полётом вверх.
+        # Santa: no grey ring at the spawn, and he leaves by flying upward.
         santa_body = "".join(compiler.functions["draw_event_santa"][2])
         assert "ring(" not in santa_body, "Santa must appear and leave without rings"
         assert "plates_santa_dy" in santa_body, "Santa must move up on exit"
@@ -467,7 +467,7 @@ def main():
             "Santa must not shrink away on exit"
         santa_tick = "".join(compiler.functions["tick_event_santa"][2])
         assert "plates_santa_fly_acc" in santa_tick and "plates_santa_up" in santa_tick
-        # Луч бука: без резкого обреза по дистанции и без мигающей альфы.
+        # The buk beam: no hard cut by distance and no flickering alpha.
         station_beam = "".join(compiler.functions["draw_station_beam"][2])
         assert "d<40" not in station_beam and "station_beam_min" in station_beam
         assert "station_beam_alpha" in station_beam and "floor(250)" not in station_beam

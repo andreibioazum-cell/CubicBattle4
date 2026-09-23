@@ -669,116 +669,116 @@ int main(void) {
     pthread_join(th, NULL);
     pthread_attr_destroy(&attr);
 
-    if (!g_res.init_ok) { fail = 1; printf("FAIL: ds_graphics_init вернул 0\n"); }
-    if (!g_res.frame1_ok) { fail = 1; printf("FAIL: begin_frame первого кадра вернул 0\n"); }
-    if (!g_res.frame2_ok) { fail = 1; printf("FAIL: begin_frame второго кадра (смена формата) вернул 0\n"); }
-    if (g_swapchain_creates < 2) { fail = 1; printf("FAIL: ожидалось 2+ пересоздания swapchain, было %d\n", g_swapchain_creates); }
-    if (g_pipeline_creates < 8) { fail = 1; printf("FAIL: ожидалось 8+ созданий конвейеров (4 init + 4 после смены формата), было %d\n", g_pipeline_creates); }
-    if (!g_res.frame3_ok) { fail = 1; printf("FAIL: begin_frame третьего кадра вернул 0\n"); }
+    if (!g_res.init_ok) { fail = 1; printf("FAIL: ds_graphics_init returned 0\n"); }
+    if (!g_res.frame1_ok) { fail = 1; printf("FAIL: begin_frame of the first frame returned 0\n"); }
+    if (!g_res.frame2_ok) { fail = 1; printf("FAIL: begin_frame of the second frame, after the format change, returned 0\n"); }
+    if (g_swapchain_creates < 2) { fail = 1; printf("FAIL: expected 2+ swapchain rebuilds, got %d\n", g_swapchain_creates); }
+    if (g_pipeline_creates < 8) { fail = 1; printf("FAIL: expected 8+ pipeline creations (4 at init and 4 after the format change), got %d\n", g_pipeline_creates); }
+    if (!g_res.frame3_ok) { fail = 1; printf("FAIL: begin_frame of the third frame returned 0\n"); }
     if (g_res.paced_ms < 40) {
-        fail = 1; printf("FAIL: три кадра прошли за %u мс - ритм 60 fps не держится\n", g_res.paced_ms);
+        fail = 1; printf("FAIL: three frames took %u ms, so the 60 fps pace is not held\n", g_res.paced_ms);
     }
     if (g_res.off_w != 720 || g_res.off_h != 1280) {
-        fail = 1; printf("FAIL: без апскейла оффскрин %ux%u, ожидалось 720x1280\n", g_res.off_w, g_res.off_h);
+        fail = 1; printf("FAIL: without upscale the offscreen is %ux%u, expected 720x1280\n", g_res.off_w, g_res.off_h);
     }
     if (g_res.log_w != 720 || g_res.log_h != 1280) {
-        fail = 1; printf("FAIL: логический размер %ux%u, ожидалось 720x1280\n", g_res.log_w, g_res.log_h);
+        fail = 1; printf("FAIL: logical size %ux%u, expected 720x1280\n", g_res.log_w, g_res.log_h);
     }
     if (fabsf(g_pc[0] - 2.0f / 720.0f) > 1e-9f || fabsf(g_pc[1] - 2.0f / 1280.0f) > 1e-9f) {
-        fail = 1; printf("FAIL: push-константы кадра с апскейлом %g %g, ожидалось %g %g (шейдер должен делить на окно, не на оффскрин)\n",
+        fail = 1; printf("FAIL: push constants of the upscaled frame are %g %g, expected %g %g (the shader must divide by the window, not the offscreen)\n",
                          g_pc[0], g_pc[1], 2.0f / 720.0f, 2.0f / 1280.0f);
     }
     if (g_res.blit_src_w != 720 || g_res.blit_src_h != 1280 || g_res.blit_dst_w != 720 || g_res.blit_dst_h != 1280) {
-        fail = 1; printf("FAIL: blit %dx%d -> %dx%d, ожидалось 720x1280 -> 720x1280 (масштаб 1:1)\n",
+        fail = 1; printf("FAIL: blit %dx%d -> %dx%d, expected 720x1280 -> 720x1280 (1:1)\n",
                          g_res.blit_src_w, g_res.blit_src_h, g_res.blit_dst_w, g_res.blit_dst_h);
     }
-    if (!g_res.frame4_ok) { fail = 1; printf("FAIL: begin_frame кадра с автомасштабом вернул 0\n"); }
-    if (g_res.scale0 != 1) { fail = 1; printf("FAIL: стартовый автомасштаб %d, ожидался 1\n", g_res.scale0); }
-    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: после промахов по vsync автомасштаб %d, ожидался 3 (шаг сразу на две ступени)\n", g_res.scale_miss); }
+    if (!g_res.frame4_ok) { fail = 1; printf("FAIL: begin_frame of the autoscaled frame returned 0\n"); }
+    if (g_res.scale0 != 1) { fail = 1; printf("FAIL: initial autoscale is %d, expected 1\n", g_res.scale0); }
+    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: after the vsync misses the autoscale is %d, expected 3 (two steps at once)\n", g_res.scale_miss); }
     if (g_res.off2_w != 240 || g_res.off2_h != 426) {
-        fail = 1; printf("FAIL: оффскрин автомасштаба %ux%u, ожидалось 240x426 (1/3 окна 720x1280)\n", g_res.off2_w, g_res.off2_h);
+        fail = 1; printf("FAIL: autoscale offscreen %ux%u, expected 240x426 (a third of the 720x1280 window)\n", g_res.off2_w, g_res.off2_h);
     }
     if (g_res.blit2_src_w != 240 || g_res.blit2_src_h != 426 ||
         g_res.blit2_dst_w != 720 || g_res.blit2_dst_h != 1280) {
-        fail = 1; printf("FAIL: blit автомасштаба %dx%d -> %dx%d, ожидалось 240x426 -> 720x1280\n",
+        fail = 1; printf("FAIL: autoscale blit %dx%d -> %dx%d, expected 240x426 -> 720x1280\n",
                          g_res.blit2_src_w, g_res.blit2_src_h, g_res.blit2_dst_w, g_res.blit2_dst_h);
     }
-    if (g_res.scale_probe != 2) { fail = 1; printf("FAIL: после окна без промахов автомасштаб %d, ожидался 2 (шаг на одну ступень назад)\n", g_res.scale_probe); }
+    if (g_res.scale_probe != 2) { fail = 1; printf("FAIL: after a clean window the autoscale is %d, expected 2 (one step back)\n", g_res.scale_probe); }
     if (g_res.probe_off_w != 360 || g_res.probe_off_h != 640) {
-        fail = 1; printf("FAIL: оффскрин на пробе %ux%u, ожидалось 360x640 (1/2 окна)\n", g_res.probe_off_w, g_res.probe_off_h);
+        fail = 1; printf("FAIL: probe offscreen %ux%u, expected 360x640 (half the window)\n", g_res.probe_off_w, g_res.probe_off_h);
     }
     if (g_res.probe_blit_src_w != 360 || g_res.probe_blit_src_h != 640 ||
         g_res.probe_blit_dst_w != 720 || g_res.probe_blit_dst_h != 1280) {
-        fail = 1; printf("FAIL: blit на пробе %dx%d -> %dx%d, ожидалось 360x640 -> 720x1280\n",
+        fail = 1; printf("FAIL: probe blit %dx%d -> %dx%d, expected 360x640 -> 720x1280\n",
                          g_res.probe_blit_src_w, g_res.probe_blit_src_h, g_res.probe_blit_dst_w, g_res.probe_blit_dst_h);
     }
-    if (g_res.scale_rollback != 3) { fail = 1; printf("FAIL: после промаха на пробе «резче» автомасштаб %d, ожидался 3 (откат пробы)\n", g_res.scale_rollback); }
-    if (g_res.scale_still != 3) { fail = 1; printf("FAIL: после отката пробы масштаб снова поехал (%d), ожидалась фиксация 3\n", g_res.scale_still); }
-    if (g_blits < 3) { fail = 1; printf("FAIL: blit не вызывался на каждом кадре (было %d)\n", g_blits); }
+    if (g_res.scale_rollback != 3) { fail = 1; printf("FAIL: after a miss on the finer probe the autoscale is %d, expected 3 (probe rolled back)\n", g_res.scale_rollback); }
+    if (g_res.scale_still != 3) { fail = 1; printf("FAIL: after the rollback the scale moved again (%d), expected it to stay at 3\n", g_res.scale_still); }
+    if (g_blits < 3) { fail = 1; printf("FAIL: blit was not called on every frame (%d calls)\n", g_blits); }
 
     /* Frame rate: the game has to ask for 60 fps once per window (FIXED_SOURCE
      * plus CHANGE_FRAME_RATE_ALWAYS) and drop the request when the window closes,
      * otherwise the panel mode stays reserved for a game that is gone. */
     if (g_frame_rate_strategy_calls != 1 || g_frame_rate_calls != 0) {
-        fail = 1; printf("FAIL: просьба о кадровом ритме вызвана %d раз (стратегия) + %d раз (простая), ожидалось 1 + 0\n",
+        fail = 1; printf("FAIL: the frame rate request ran %d times with a strategy and %d times without, expected 1 + 0\n",
                          g_frame_rate_strategy_calls, g_frame_rate_calls);
     }
     if (g_frame_rate_value != 60.0f || g_frame_rate_compat != 1 || g_frame_rate_strategy != 1) {
-        fail = 1; printf("FAIL: у системы просят fps=%g, compatibility=%d, strategy=%d; ожидалось 60 / FIXED_SOURCE(1) / ALWAYS(1)\n",
+        fail = 1; printf("FAIL: the platform is asked for fps=%g, compatibility=%d, strategy=%d; expected 60 / FIXED_SOURCE(1) / ALWAYS(1)\n",
                          g_frame_rate_value, (int)g_frame_rate_compat, (int)g_frame_rate_strategy);
     }
     if (g_frame_rate_window != g_test_window) {
-        fail = 1; printf("FAIL: просьба о кадровом ритме отправлена не тому окну\n");
+        fail = 1; printf("FAIL: the frame rate request went to the wrong window\n");
     }
     if (g_clear_frame_rate_calls != 1) {
-        fail = 1; printf("FAIL: просьба о кадровом ритме не снята при закрытии окна (%d)\n", g_clear_frame_rate_calls);
+        fail = 1; printf("FAIL: the frame rate request was not cleared on window close (%d)\n", g_clear_frame_rate_calls);
     }
     /* Present mode: MAILBOX when the driver offers it, FIFO_RELAXED instead of
      * FIFO where MAILBOX is missing, and FIFO when nothing else is there. */
     if (g_res.mode_init != (int)VK_PRESENT_MODE_MAILBOX_KHR) {
-        fail = 1; printf("FAIL: первый swapchain создан с presentMode %d, ожидался MAILBOX(%d)\n",
+        fail = 1; printf("FAIL: the first swapchain was created with presentMode %d, expected MAILBOX(%d)\n",
                          g_res.mode_init, (int)VK_PRESENT_MODE_MAILBOX_KHR);
     }
     if (g_res.mode_fifo_only != (int)VK_PRESENT_MODE_FIFO_KHR) {
-        fail = 1; printf("FAIL: на панели только с FIFO выбран режим %d\n", g_res.mode_fifo_only);
+        fail = 1; printf("FAIL: on a FIFO-only panel the chosen mode is %d\n", g_res.mode_fifo_only);
     }
     if (g_res.mode_relaxed != (int)VK_PRESENT_MODE_FIFO_RELAXED_KHR) {
-        fail = 1; printf("FAIL: при списке FIFO+FIFO_RELAXED выбран режим %d, ожидался FIFO_RELAXED(%d)\n",
+        fail = 1; printf("FAIL: with FIFO+FIFO_RELAXED available the chosen mode is %d, expected FIFO_RELAXED(%d)\n",
                          g_res.mode_relaxed, (int)VK_PRESENT_MODE_FIFO_RELAXED_KHR);
     }
     /* SUBOPTIMAL with an unchanged surface does not rebuild the swapchain. */
-    if (!g_res.storm_ok) { fail = 1; printf("FAIL: begin_frame упал в шторме SUBOPTIMAL\n"); }
+    if (!g_res.storm_ok) { fail = 1; printf("FAIL: begin_frame failed during the SUBOPTIMAL storm\n"); }
     if (g_res.creates_after_storm != g_res.creates_before_storm) {
-        fail = 1; printf("FAIL: SUBOPTIMAL без изменений поверхности пересобрал swapchain %d раз\n",
+        fail = 1; printf("FAIL: SUBOPTIMAL with an unchanged surface rebuilt the swapchain %d times\n",
                          g_res.creates_after_storm - g_res.creates_before_storm);
     }
     if (g_res.creates_after_storm2 != g_res.creates_before_storm2) {
-        fail = 1; printf("FAIL: повторный шторм SUBOPTIMAL пересобрал swapchain %d раз\n",
+        fail = 1; printf("FAIL: the second SUBOPTIMAL storm rebuilt the swapchain %d times\n",
                          g_res.creates_after_storm2 - g_res.creates_before_storm2);
     }
     /* A real surface change rebuilds exactly one swapchain. */
     if (g_res.creates_after_change != g_res.creates_before_storm + 1) {
-        fail = 1; printf("FAIL: после изменения поверхности пересборок %d, ожидалась одна\n",
+        fail = 1; printf("FAIL: after the surface change there were %d rebuilds, expected one\n",
                          g_res.creates_after_change - g_res.creates_before_storm);
     }
-    if (!g_res.frame5_ok || !g_res.frame6_ok) { fail = 1; printf("FAIL: кадры после смены поверхности не начались\n"); }
+    if (!g_res.frame5_ok || !g_res.frame6_ok) { fail = 1; printf("FAIL: the frames after the surface change never started\n"); }
     if (!strstr(g_log, "SUBOPTIMAL ignored")) {
-        fail = 1; printf("FAIL: игнор SUBOPTIMAL не попал в лог (на устройстве это единственный след)\n");
+        fail = 1; printf("FAIL: ignoring SUBOPTIMAL is missing from the log, the only trace on a device\n");
     }
     if (!strstr(g_log, "asked the platform for 60 fps")) {
-        fail = 1; printf("FAIL: в логе нет строки о просьбе 60 fps\n");
+        fail = 1; printf("FAIL: the log has no line about asking for 60 fps\n");
     }
     if (!strstr(g_log, "swapchain stale")) {
-        fail = 1; printf("FAIL: в логе нет причины пересборки swapchain\n");
+        fail = 1; printf("FAIL: the log does not say why the swapchain was rebuilt\n");
     }
-    if (g_violations) { fail = 1; printf("FAIL: строгий драйвер поймал невалидный create-info: %s\n", g_violation_msg); }
+    if (g_violations) { fail = 1; printf("FAIL: the strict driver caught an invalid create-info: %s\n", g_violation_msg); }
     if (!fail) {
-        printf("PASS: init + кадры + автомасштаб (промахи vsync -> грубее на 1/3, проба «резче» "
-               "-> 1/2, промах на пробе -> откат и фиксация) + смена формата swapchain; ступеньки "
-               "кадров: "
-               "SUBOPTIMAL без изменений поверхности не пересобирает swapchain, режим презентации "
-               "MAILBOX -> FIFO_RELAXED -> FIFO, у системы просят 60 fps один раз на окно; "
-               "pNext/flags чистые, конвейеров создано %d\n", g_pipeline_creates);
+        printf("PASS: init, frames and autoscale (vsync misses coarsen to 1/3, the finer probe "
+               "goes to 1/2, a miss on the probe rolls back and holds) plus a swapchain format "
+               "change; frame steps: SUBOPTIMAL with an unchanged surface does not rebuild the "
+               "swapchain, the present mode goes MAILBOX -> FIFO_RELAXED -> FIFO, and the platform "
+               "is asked for 60 fps once per window; pNext and flags are clean, %d pipelines "
+               "created\n", g_pipeline_creates);
     }
     return fail;
 }

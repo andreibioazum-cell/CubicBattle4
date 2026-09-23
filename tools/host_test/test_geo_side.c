@@ -1,15 +1,14 @@
-/* Обёртка над новым тесселятором (native/graphics/geometry.inc) для
- * хост-теста эквивалентности со старым программным растеризатором.
- * Компилируется отдельным трансляционным юнитом: у legacy-растеризатора и
- * новой геометрии общие имена статических функций, поэтому они не могут
- * жить в одном .c. */
+/* Wrapper over the new tessellator (native/graphics/geometry.inc) for the host
+ * test that compares it with the old software rasteriser. It is a translation
+ * unit of its own: the legacy rasteriser and the new geometry share static
+ * function names and cannot live in one .c. */
 #include "native/graphics/types.inc"
 #include "native/graphics/geometry.inc"
 
-/* Тестовый шрифт: один глиф с фиксированными метриками - достаточно, чтобы
- * проверить раскладку пера (позиции квадов) по сравнению с формулой
- * прежнего render_text_now. Структура завершается здесь собственной
- * раскладкой - в этом TU аксессоры шрифта тестовые. */
+/* Test font: one glyph with fixed metrics is enough to check the pen layout, the
+ * quad positions, against the formula of the old render_text_now. The structure
+ * ends with a layout of its own, since the font accessors in this unit are the
+ * test ones. */
 struct DSFont {
     int aw, ah;
     float ascent, line_h;
@@ -24,7 +23,7 @@ static int test_font_ready(void) {
     done = 1;
     test_font_storage.aw = 64; test_font_storage.ah = 64;
     test_font_storage.ascent = 30.0f; test_font_storage.line_h = 40.0f;
-    /* 'S' - опорный глиф: bearing_top=30, bearing_x=2 */
+    /* 'S' is the reference glyph: bearing_top=30, bearing_x=2 */
     test_glyphs[0] = (DSFontGlyph){ 'S', 20.0f, 2.0f, 30.0f, 14, 30, 0.0f, 0.0f, 14.0f/64.0f, 30.0f/64.0f };
     test_glyphs[1] = (DSFontGlyph){ 'A', 18.0f, 1.0f, 28.0f, 16, 28, 16.0f/64.0f, 0.0f, 32.0f/64.0f, 28.0f/64.0f };
     test_glyphs[2] = (DSFontGlyph){ '?', 16.0f, 1.0f, 28.0f, 14, 28, 32.0f/64.0f, 0.0f, 46.0f/64.0f, 28.0f/64.0f };
@@ -35,7 +34,7 @@ static int test_font_ready(void) {
 const DSFontGlyph *ds_font_glyph(const DSFont *f, uint32_t cp) {
     if (f != &test_font_storage) return NULL;
     for (int i = 0; i < 3; i++) if (test_glyphs[i].codepoint == cp) return &test_glyphs[i];
-    return &test_glyphs[2]; /* '?' - замена отсутствующих */
+    return &test_glyphs[2]; /* '?' stands in for the missing ones */
 }
 int ds_font_aw(const DSFont *f) { return f ? f->aw : 0; }
 int ds_font_ah(const DSFont *f) { return f ? f->ah : 0; }
@@ -43,7 +42,7 @@ const uint8_t *ds_font_alpha(const DSFont *f) { (void)f; return NULL; }
 float ds_font_lineh(const DSFont *f) { return f ? f->line_h : 0; }
 float ds_font_ascent(const DSFont *f) { return f ? f->ascent : 0; }
 
-/* --- обёртки для теста --- */
+/* --- wrappers for the test --- */
 
 void geo_side_reset(void) { geo_reset(); }
 size_t geo_side_vert_count(void) { return geo_vn; }
