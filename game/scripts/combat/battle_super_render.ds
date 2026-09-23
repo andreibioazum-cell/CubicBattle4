@@ -1,7 +1,7 @@
--- Луч виден, пока живы турель и её хозяин и пока бой не закончен: как только
--- условие пропадает, луч гаснет один раз и больше не возвращается. Альфа и
--- толщина постоянны, а короткий луч не обрезается резко, а плавно укорачивается
--- под спрайтами — поэтому миганий «виден/пропал» и скачков прозрачности нет.
+-- The beam is visible while the turret, its owner and the battle live; once the
+-- condition is gone the beam fades out for good. Its alpha and thickness stay
+-- constant, and a short beam is trimmed smoothly under the sprites, so it never
+-- blinks or jumps in opacity.
 public function station_beam_visible(number owner_hp)
     if finished!=0 then
         return 0
@@ -105,10 +105,10 @@ public function draw_turret_boom(number x, number y, number bt)
         return
     end
     local number r=30+95*p
-    -- Каждая доля альфы (0.85/0.7/0.65...) округляется вниз и при a=1 даёт
-    -- альфа-байт 0: движок (pack_c) рисит такой цвет ПОЛНОСТЬЮ НЕПРОЗРАЧНЫМ -
-    -- в начале и конце взрыва круги вспыхивали сплошной зеленью. Поэтому
-    -- каждый примитив с нулевым байтом пропускается.
+    -- Fractional alphas (0.85, 0.7, 0.65 and so on) round down and give an alpha
+    -- byte of 0 at a == 1, which the engine (pack_c) draws fully opaque; that
+    -- made the explosion circles flash solid green at both ends. Primitives with
+    -- a zero alpha byte are skipped instead.
     ring(x,y,r,9,(((unsigned)(int)a)<<24)|0x0000E676)
     local number a85=floor(a*0.85)
     if a85>0 then

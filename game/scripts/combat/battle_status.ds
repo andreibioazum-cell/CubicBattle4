@@ -1,7 +1,7 @@
--- Заморозка, оглушение и яд игрока: таймеры статусов и плавные альфы кругов
--- статусов (свои и врага). Таймеры считает tick_down (core/ui.ds), альфы —
--- hb_fade (combat/battle_hitbox_fades.ds): пока статус активен, круг плавно
--- проявляется; когда статус снят или бой кончен — так же плавно тает.
+-- Player freeze, stun and poison: the status timers and the smooth alphas of
+-- the status circles, for both fighters. tick_down (core/ui.ds) runs the timers
+-- and hb_fade (combat/battle_hitbox_fades.ds) the alphas: a circle appears while
+-- the status is active and fades out when it ends or the battle is over.
 public function tick_freeze()
     player_freeze=tick_down(player_freeze)
 end
@@ -23,7 +23,8 @@ public function tick_player_poison()
     player_poison=tick_down(player_poison)
     player_poison_tick=player_poison_tick-dt
     if player_poison_tick<=0 then
-        -- Тик яда — обычный урон: тот же take_damage (вспышка, возрождение).
+        -- Poison ticks deal ordinary damage through take_damage, flash and
+        -- revive included.
         take_damage(player_poison_damage)
         clear_player_poison()
         return

@@ -1,5 +1,5 @@
--- Зимняя тема (настройка в меню) включает сразу и снежный фон, и снегопад.
--- Как только она выключена, арена снова в траве и хлопьев нет.
+-- The winter theme (a menu setting) turns on both the snowy background and the
+-- snowfall; switching it off brings back the grass arena and no flakes.
 public function winter_theme_on()
     return winter_theme==1
 end
@@ -43,11 +43,10 @@ end
 public function frac01(number v)
     return v-floor(v)
 end
--- Хэш хлопьев считается один раз на «цикл» падения, а не каждый кадр: раньше
--- на каждую из 44 снежинок приходилось по шесть sin() за кадр, и именно это
--- заметнее всего съедало время кадра в бою. Кэш хранит по хлопью номер цикла и
--- все его случайные значения; пересчёт происходит только когда цикл сменился
--- (раз в 2-5 секунд на хлопье), поэтому картинка ровно та же, что и была.
+-- A flake's hash is computed once per fall cycle and not every frame: six sin()
+-- calls per flake per frame used to eat the most battle frame time. The cache
+-- keeps the cycle number and the random values of each flake and is refreshed
+-- only when the cycle changes, every 2-5 seconds, so the picture is unchanged.
 public number flake_fields=7
 public number flake_cached=0
 public array flake_cache=arr_new()

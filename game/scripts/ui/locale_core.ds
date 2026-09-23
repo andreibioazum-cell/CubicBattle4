@@ -427,9 +427,9 @@ end
 public function tr_class_ebuc_desc()
     return "You thought I was a regular cube, but it was me, buC!"
 end
--- Подпись кнопки музыки в настройках: кнопка листает выкл → вкл → 50%.
--- Неканоничное значение (например, 70 из старого сохранения) показывается
--- честно, процентом, и первым же тапом приводится к одному из трёх состояний.
+-- Music button label: it cycles off, on and 50 per cent. A value outside those
+-- three, such as 70 from an old save, is shown as an honest percentage and the
+-- first tap brings it back to the cycle.
 public function tr_music_state()
     if language == 1 then
         if music_volume <= 0 then
@@ -467,7 +467,7 @@ public function tr_hitboxes_toggle()
     end
     return "Hitboxes: OFF"
 end
--- Зимняя тема одним тапом включает и выключает снежный фон арены и снегопад.
+-- The winter theme turns the snowy arena and the snowfall on or off in one tap.
 public function tr_winter_toggle()
     if language == 1 then
         if winter_theme == 1 then
@@ -480,7 +480,7 @@ public function tr_winter_toggle()
     end
     return "Winter theme: OFF"
 end
--- Счётчик FPS показывается только в бою (соло, онлайн и ивенты).
+-- The frame counter shows in battle only, solo, online and events alike.
 public function tr_fps_meter_toggle()
     if language == 1 then
         if show_fps == 1 then

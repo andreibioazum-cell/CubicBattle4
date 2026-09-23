@@ -1,6 +1,6 @@
--- Схлопывание вселенной бьёт по всей арене: в соло — и по врагу, и по игроку.
--- Щиты, защита возрождения и смерть с возрождением считаются в общих правилах
--- урона — enemy_apply_damage (combat/battle_enemy_class.ds) и take_damage
+-- The universe collapse hits the whole arena: in solo it damages both fighters.
+-- Shields, revive protection and death are handled by the shared damage rules,
+-- enemy_apply_damage and take_damage.
 -- (combat/battle_damage.ds).
 public function universe_collapse(number dmg)
     if finished!=0 then
@@ -11,7 +11,7 @@ public function universe_collapse(number dmg)
     end
     take_damage(dmg)
 end
--- Чужая вселенная бьёт только по нашему бойцу — по тем же правилам урона.
+-- A remote universe hits only our fighter, through the same damage rules.
 public function universe_collapse_remote(number dmg)
     if finished!=0 then
         return
@@ -237,15 +237,15 @@ public function tick_dash()
         end
     end
 end
--- Соло-леденцы: появляются с анимацией только размером (без закрутки, в середину),
--- при сборе пропадают сразу и респавнятся в новой рандомной точке.
+-- Solo candies grow into their size where they spawn, vanish on pickup and
+-- respawn somewhere else.
 public function tick_candies()
     if candy_enabled==1 then
         local number ci=0
         while ci<candy_count do
             local number cp=arr_get(candy_pick,ci)
             if cp>0 then
-                -- Старая логика с задержкой больше не используется — сразу респавн
+                -- Picked up: respawn at once, no delay.
                 cp=0
                 candy_rand_pos(ci)
                 arr_set(candy_pick,ci,0)
@@ -256,7 +256,7 @@ public function tick_candies()
                     save_progress()
                     quest_on_candy()
                     ds_log("candy picked -> %g",candies)
-                    -- Пропадает сразу, без анимации уменьшения
+                    -- Gone at once, without a shrink animation.
                     candy_rand_pos(ci)
                     arr_set(candy_pick,ci,0)
                     arr_set(candy_t,ci,0)

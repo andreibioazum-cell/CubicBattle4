@@ -1,10 +1,10 @@
 public number chat_open=0
 public number sticker_menu_open=0
 public string chat_input=""
--- Стикеры: кнопка рядом с полем ввода, маленькое меню выбора. Нажатие на
--- стикер мгновенно закрывает чат и отправляет сообщение вида "/sticker <имя>"
--- — остальные клиенты вместо текста рисуют картинку из game/assets (PNG).
--- Заглушки: like.png, dislike.png, 75.png — можно заменить на свои.
+-- Stickers: a button next to the input field and a small choice menu. Tapping a
+-- sticker closes the chat and sends "/sticker <name>", and the other clients draw
+-- an image from game/assets instead of the text. The placeholders are like.png,
+-- dislike.png and 75.png; replace them with your own.
 public number STICKER_BTN=52
 public number STICKER_TILE=64
 public string STICKER_LIKE="like.png", STICKER_DISLIKE="dislike.png", STICKER_75="75.png"

@@ -45,9 +45,9 @@ public function text_in_field(string label, number x, number y, number h, color 
     local number tt = text_ink_top(label) * scale
     text_scaled(label, x, y + (h - th) / 2 - tt + 1.5, c, scale)
 end
--- Длинная надпись не должна вылезать за отведённую ширину: масштаб считается по
--- фактической ширине текста (как в поле промокода), но не больше max_scale —
--- короткие надписи остаются своего размера.
+-- A long label must fit its width: the scale follows the real text width (as in
+-- the promo field) and never exceeds max_scale, so short labels keep their
+-- size.
 public function fit_text_scale(string s, number w, number max_scale)
     local number tw = text_ink_width(s)
     if tw <= 0 || w <= 0 then

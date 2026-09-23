@@ -6,9 +6,9 @@ public function draw_candies()
     while i<candy_count do
         cp=arr_get(candy_pick,i)
         if cp>0 then
-            -- При сборе пропадает сразу — не рисуем
+            -- Picked up: gone, so nothing to draw.
         else
-            -- Появление: просто увеличивается к своей середине, без закрутки и без движения к игроку
+            -- Spawn: grows to its size in place, no spin, no drift to the player.
             p=clamp(arr_get(candy_t,i)/candy_pop_time,0,1)
             pop=1-(1-p)*(1-p)
             sc=candy_scale*pop
@@ -17,8 +17,8 @@ public function draw_candies()
                 if candy_tex_ok==1 then
                     tex(arr_get(candy_x,i)-hw,arr_get(candy_y,i)-hw,CANDY_TEX,0,sc)
                 else
-                    -- Текстура леденца не загрузилась: рисуем кружок-заглушку,
-                    -- иначе на её месте был бы «голубой шум» из памяти.
+                    -- The candy texture failed to load: a plain circle stands
+                    -- in, otherwise uninitialised memory shows through.
                     circle(arr_get(candy_x,i),arr_get(candy_y,i),hw,0xFFFF4081)
                 end
             end
@@ -26,9 +26,9 @@ public function draw_candies()
         i=i+1
     end
 end
--- Аура статуса (заморозка/яд/оглушение): ровный полупрозрачный круг вокруг
--- бойца с ярким ободком. Одна функция для всех статусов и для обоих бойцов —
--- цвета задаются в core/config.ds, альфу плавно ведёт tick_status_fades
+-- Status aura (freeze, poison, stun): a translucent circle around the fighter
+-- with a bright rim. One function serves every status and both fighters; the
+-- colours live in core/config.ds and tick_status_fades drives the alpha.
 -- (combat/battle_status.ds).
 public function draw_status_aura(number x, number y, number size, number rgb, number rim, number a)
     if a<=0 then
@@ -103,8 +103,8 @@ public function finish_game(number result)
         local number db=i*dash_fields
         arr_set(remote_dash,db,0)
         arr_set(remote_dash,db+1,0)
-        -- Чужой удар гаснет вместе с боем: иначе поза замаха оставалась на
-        -- экране результатов — после finished update_remote_punches не идёт.
+        -- A remote punch dies with the battle, otherwise the swing pose stayed
+        -- on the results screen, where update_remote_punches no longer runs.
         clear_remote_punch(i)
         arr_set(rpunch_a,i,0)
         i=i+1
@@ -131,11 +131,11 @@ public function finish_game(number result)
         ds_log("lose -%g cups",cup_lose)
     end
 end
--- Зона удара: ровный прямоугольник с острыми углами (draw_hit_strip) ровно там,
--- где попадание проверяется, — от бойца вперёд на reach и шириной width.
--- Раньше это была line(): у неё круглые заглушки на концах, то есть зона была
--- «закруглённой» и вылезала за reach на половину толщины. Цвет и прозрачность
--- те же, что у всех остальных хитбоксов (hb_zone_col).
+-- Punch zone: a straight rectangle with sharp corners (draw_hit_strip) exactly
+-- where the hit is tested, from the fighter forward by reach and width wide.
+-- line() used to draw it, and its round caps both rounded the zone and pushed it
+-- half a thickness past reach. Colour and alpha are the shared ones
+-- (hb_zone_col).
 public function draw_punch_box(number x, number y, number dx, number dy, number reach, number width, number alpha)
     draw_hit_strip(x,y,dx,dy,0,reach,width/2,alpha)
 end
@@ -160,20 +160,18 @@ public function draw_fighter_body(number x, number y, number ang, number cls, nu
     local number sx=x-hw, sy=y-hw
     tex(sx,sy,fighter_sprite(cls,punching,skin),sprite_a(ang),ps)
 end
--- Красная вспышка при получении урона: сразу поверх тела бойца рисуется его же
--- спрайт, но силуэтом (tex_tint) красного цвета с альфой вспышки. Альфа
--- взлетает до 1 в момент удара (take_damage / enemy_apply_damage) и плавно
--- тает в tick_hurt_fades (combat/battle_damage.ds), поэтому боец «краснеет»
--- и плавно возвращается к обычному виду.
+-- Red hit flash: the fighter's own sprite is drawn over his body as a red
+-- silhouette (tex_tint) with the flash alpha. The alpha jumps to 1 on a hit
+-- (take_damage or enemy_apply_damage) and fades in tick_hurt_fades, so the
+-- fighter turns red and returns to normal.
 public function draw_fighter_hurt(number x, number y, number ang, number cls, number punching, number skin, number scale, number a)
     if a<=0 then
         return
     end
     local number fa=floor(a*255*hurt_alpha)
-    -- ВАЖНО: при альфа-байте 0 движок (pack_c в native/graphics/types.inc)
-    -- считает «альфы нет» и рисует силуэт ПОЛНОСТЬЮ НЕПРОЗРАЧНЫМ - тот самый
-    -- баг «враг на секунду становится полностью красным». Поэтому силуэт с
-    -- нулевым байтом альфы не рисуем вовсе.
+    -- An alpha byte of 0 reads as "no alpha" in the engine (pack_c in
+    -- native/graphics/types.inc) and would draw a solid silhouette, the bug
+    -- where a fighter turned fully red for a moment, so it is skipped.
     if fa<1 then
         return
     end
@@ -286,8 +284,8 @@ public function draw_result(string title)
     end
     ctext_scaled(tr_tap_to_return(),y+188,0xFFFFFF,0.62)
 end
--- Счётчик FPS в бою: маленькая плашка внизу по центру экрана — по краям снизу
--- стоят джойстик и кнопка удара, центр свободен.
+-- Battle frame counter: a small plate at the bottom centre, where the joystick
+-- and the punch button leave room.
 public function draw_fps_meter()
     if show_fps==0 then
         return
@@ -299,7 +297,7 @@ public function draw_fps_meter()
     local number tt=text_ink_top(label)*sc
     local number w=tw+28, h=36
     local number x=(screen_w-w)/2, y=screen_h-h-16
-    -- Чистая белая рамка и чистая чёрная плашка: никаких цветных оттенков.
+    -- Pure white frame and pure black plate, no colour tints.
     roundrect(x-2,y-2,w+4,h+4,h/2+2,fps_frame_rgb)
     roundrect(x,y,w,h,h/2,fps_plate_rgb)
     text_scaled(label,x+(w-tw)/2,y+(h-th)/2-tt+1.5,fps_text_rgb,sc)
@@ -329,12 +327,12 @@ public function draw_game()
     draw_universe()
     draw_enemy_turrets()
     draw_player_body_layer()
-    -- Эффекты на игроке (яд/заморозка/стан) рисуются на его слое — сразу за
-    -- телом игрока и ПОД врагом, иначе они перекрывали врага.
+    -- Status effects on the player are drawn in his layer, right behind his
+    -- body and under the enemy, otherwise they covered the enemy.
     draw_status_aura(player.x,player.y,player.size,freeze_rgb,freeze_rim,pfreeze_a)
     draw_status_aura(player.x,player.y,player.size,poison_rgb,poison_rim,ppoison_a)
     draw_status_aura(player.x,player.y,player.size,stun_rgb,stun_rim,pstun_a)
-    -- Щит (станция/луч) — выше игрока, но ниже врага.
+    -- The shield (station and beam) goes above the player and below the enemy.
     draw_station()
     draw_enemy_body()
     draw_status_aura(enemy.x,enemy.y,enemy.size,freeze_rgb,freeze_rim,freeze_a)

@@ -63,20 +63,21 @@ public function draw_settings()
     button("English", menu_x(), settings_row_y(1), btn_w, settings_btn_h())
     button("Русский", menu_x(), settings_row_y(2), btn_w, settings_btn_h())
     button(tr_hitboxes_toggle(), menu_x(), settings_row_y(3), btn_w, settings_btn_h())
-    -- Музыка одной кнопкой: тап листает выкл → вкл → 50% от общей громкости.
+    -- One music button: a tap cycles off, on and 50 per cent of the sound
+    -- volume.
     button(tr_music_state(), menu_x(), settings_row_y(4), btn_w, settings_btn_h())
     button_scaled(tr_fps_meter_toggle(), menu_x(), settings_row_y(5), btn_w, settings_btn_h(), 0.8)
     button_scaled(tr_privacy(), menu_x(), settings_row_y(6), btn_w, settings_btn_h(), 0.8)
 end
--- Экран «Данные и приватность»: честный список того, что игра хранит на
--- устройстве и в облаке, чего она НЕ собирает, и дисклеймер «как есть».
--- Доступен из настроек в любой момент, текст короткий и влезает даже в
--- низкие экраны (10 строк с шагом 26 px от y=150).
+-- The data and privacy screen: what the game stores on the device and in the
+-- cloud, what it does not collect, and the as-is disclaimer. It is reachable from
+-- settings at any time, and the text fits even short screens (10 lines, 26 px
+-- apart from y = 150).
 public function draw_privacy()
     screen_fill()
     draw_back()
-    -- Блок текста центрируется по высоте, но на низких экранах не наезжает
-    -- на кнопку «Назад»: титул начинается не выше y=96.
+    -- The text block is centred vertically but never runs into the Back button
+    -- on short screens: the title starts no higher than y = 96.
     local number top = screen_h / 2 - 160
     if top < 96 then
         top = 96
@@ -116,8 +117,8 @@ public function draw_class_card(number vi)
         tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)
     end
     centered_text(class_name_of(cls), x, w, class_title_y(), text_color, class_title_scale())
-    -- Девиз у буК длинный («You thought I was a regular cube...»), поэтому
-    -- масштаб подбираем по ширине карточки: надпись всегда внутри неё.
+    -- The buK motto is long ("You thought I was a regular cube..."), so its
+    -- scale follows the card width and the label always stays inside.
     local string motto = class_desc_of(cls)
     centered_text(motto, x, w, class_desc_y(), text_color, fit_text_scale(motto, w - 16, 0.5))
     centered_text(tr_level() + " " + class_level_of(cls), x, w, class_level_y(), text_color, 0.45)

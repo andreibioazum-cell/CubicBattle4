@@ -113,8 +113,8 @@ public function warn_rgb(number rgb)
     return (1 + floor(warn_a * 254)) * 0x1000000 + rgb
 end
 public function draw_warning()
-    -- Фон использует ту же альфу, что и текст: после согласия весь экран
-    -- предупреждения плавно растворяется, показывая лобби под ним.
+    -- The background uses the same alpha as the text, so after consent the whole
+    -- warning screen fades out and shows the lobby behind it.
     rect(0, 0, screen_w, screen_h, warn_rgb(0))
     local color body = warn_rgb(text_color)
     local number y = screen_h / 2 - 196
@@ -128,17 +128,16 @@ public function draw_warning()
     ctext_scaled(tr_warn_ru2(), y + 262, body, 0.52)
     ctext_scaled(tr_warn_ru3(), y + 290, body, 0.52)
     ctext_scaled(tr_warn_ru4(), y + 318, body, 0.52)
-    -- Кнопка согласия: вход в игру только осознанный (метка пишется в
-    -- settings.dat), поэтому предупреждение нельзя проскроллить мимо.
-    -- Кнопка сразу в полной яркости (как в конце), без «разгорания»; пока
-    -- идёт отсчёт, в подписи держится «(N)» и нажатия не принимаются, а когда
-    -- отсчёт кончается, секунды пропадают и кнопка становится доступна.
+    -- Consent button: the game can only be entered on purpose, with a stamp in
+    -- settings.dat. The button is at full brightness from the start and ignores
+    -- taps while its label counts down with "(N)"; when the count ends the seconds
+    -- disappear and the button works.
     local string label = tr_legal_accept()
     if warn_ready < 1 then
         label = label + " (" + (warn_wait - floor(warn_t)) + ")"
     end
-    -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
-    -- но не крупнее 0.8, как было раньше.
+    -- The label has to fit the button: its scale follows the width and never
+    -- exceeds 0.8.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
     -- Consent button: black rounded fill with a white outline around its edge.
     -- The outline is drawn after the fill and only outside it
@@ -153,12 +152,12 @@ public function legal_accept()
     if warn_ready < 1 || warn_closing == 1 then
         return
     end
-    -- Метку пишем сразу, но само предупреждение оставляем открытым на время
-    -- fade-out: update_warning плавно уменьшит warn_a и закроет его в конце.
+    -- The stamp is written at once, while the warning stays open for the fade:
+    -- update_warning drives warn_a down and closes it at the end.
     warn_close_t = 0
     warn_closing = 1
     settings_mark_legal()
-    -- Заставки студии больше нет: после затухания открывается лобби.
+    -- There is no studio splash anymore: the lobby opens after the fade.
 end
 public function touch_warn(number x, number y, number action)
     if action != 0 then

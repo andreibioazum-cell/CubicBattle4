@@ -25,19 +25,17 @@ end
 public function hit_menu_row(number px, number py, number i)
     return hit_rect_pad(px, py, menu_x(), menu_row(i), btn_w, btn_h)
 end
--- Настройки: 7 строк (в лобби их 5) — центрируем отдельно, чтобы на низких
--- экранах последние строки не уходили за нижний край. Апскейла и лимита FPS
--- в настройках больше нет, зато есть строка «Данные и приватность».
+-- Settings: 7 rows against 5 in the lobby, centred on their own so the last
+-- row does not fall off short screens. There is no upscale or fps cap row
+-- anymore, but there is a data and privacy one.
 public number SETTINGS_ROWS=7
--- Шаг строк настроек: обычный (btn_h + btn_gap), но на низких экранах он
--- уменьшается ровно настолько, чтобы влезли все строки. Меньше высоты кнопки
--- шаг не становится — строки не должны наезжать друг на друга.
+-- Row pitch in settings: btn_h + btn_gap, shrunk on short screens just enough
+-- to fit every row.
 public function settings_stride()
     local number s = menu_stride()
-    -- Все строки обязаны влезть в любую высоту: полосы (шаг плюс одна
-    -- кнопка) занимают не больше screen_h - 16, поэтому на низких
-    -- экранах шаг сжимается ниже высоты кнопки, а сама кнопка следует за
-    -- шагом (settings_btn_h) - строки не наезжают и не уходят за край.
+    -- Every row has to fit any height: the bands (a pitch plus one button) take
+    -- at most screen_h - 16, so on short screens the pitch drops below the button
+    -- height and the button follows it (settings_btn_h).
     local number fit = (screen_h - 16) / SETTINGS_ROWS
     if fit < s then
         s = fit
@@ -309,9 +307,8 @@ end
 public function hit_quest_row(number px, number py, number i)
     return hit_rect(px, py, quest_x(), quest_row_y(i), quest_w(), ach_card_h)
 end
--- Кнопка согласия на экране предупреждения об эпилепсии: текст короткого
--- предупреждения заканчивается на screen_h/2+130, кнопка встаёт ниже с
--- отступом и даже на низких экранах (480 px) не уходит за край.
+-- Consent button of the epilepsy warning: the text ends at screen_h/2 + 130, so
+-- the button sits below it and stays on screen even at 480 px.
 public function warn_btn_w()
     return fit_w(560)
 end

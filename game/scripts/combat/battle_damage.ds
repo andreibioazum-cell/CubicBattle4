@@ -1,6 +1,6 @@
--- Нанести игроку урон: щит бука и снижение Азума считаются здесь, затем
--- красная вспышка (player_hurt_a), списание HP и разруливание смерти —
--- возрождение Азума или поражение. Возвращает 1, если бой закончился.
+-- Damages the player: the buk shield and the Azum damage reduction are applied
+-- here, then the red flash (player_hurt_a), the HP loss and the death handling,
+-- which is either Azum's revive or a defeat. Returns 1 when the battle ends.
 public function take_damage(number dmg)
     local number real=dmg
     if player_class==CLASS_EBUC then
@@ -91,9 +91,8 @@ public function tick_revive()
         end
     end
 end
--- Красная вспышка урона: в момент удара take_damage/enemy_apply_damage ставят
--- альфу в 1, здесь она каждый кадр плавно тает до нуля — боец «отцветает»
--- обратно к обычному виду.
+-- Red damage flash: a hit sets the alpha to 1 in take_damage or
+-- enemy_apply_damage, and it fades to zero here every frame.
 public function tick_hurt_fades()
     player_hurt_a=fade_down_a(player_hurt_a,hurt_fade)
     enemy_hurt_a=fade_down_a(enemy_hurt_a,hurt_fade)

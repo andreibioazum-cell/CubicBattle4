@@ -3,7 +3,8 @@ public number plate_a_lit=0, plate_b_lit=0
 public number plates_santa_t=0, plates_santa_angle=0, plates_throw_cd=0, plates_next_candy=0
 public number plates_thrown=0, plates_santa_out=0, plates_santa_gone=0
 public number plates_collect_t=0, plates_vanish_cd=0, plates_dirty=0, plates_save_cd=0
--- Уход Деда Мороза: смещение вверх, скорость, угол в начале разворота и прогресс поворота.
+-- Santa leaving: upward offset, speed, the angle the turn starts from and the
+-- turn progress.
 public number plates_santa_dy=0, plates_santa_vy=0, plates_santa_ang0=0, plates_santa_up=0
 public array plates_candies=arr_new()
 public function plates_event_reset()
@@ -77,8 +78,8 @@ public function plates_throw_candy()
         return
     end
     local number b=plates_next_candy*plates_candy_fields
-    -- Леденец летит из-под Деда Мороза в случайную точку экрана — направление
-    -- полёта у каждого броска своё (rand() сидится в main.c при запуске).
+    -- A candy flies from Santa to a random point on screen; every throw picks
+    -- its own direction (rand() is seeded in main.c).
     local number m=candy_margin+16
     local number tx=m+rand()%(int)(screen_w-2*m)
     local number ty=m+rand()%(int)(screen_h-2*m)
@@ -112,7 +113,7 @@ public function plates_collect_candies()
             local number v=arr_get(plates_candies,b+6)
             local number pt=arr_get(plates_candies,b+7)
             if pt>0 then
-                -- Старая анимация сбора больше не нужна — сразу исчезает
+                -- Picked up: gone at once.
                 arr_set(plates_candies,b,0)
             else if t<plates_candy_flight then
                 arr_set(plates_candies,b+1,t+dt)
@@ -125,7 +126,7 @@ public function plates_collect_candies()
             else if dist(arr_get(plates_candies,b+4),arr_get(plates_candies,b+5),player.x,player.y)<player.size*0.65+18 then
                 candies=candies+candy_give
                 plates_dirty=1
-                -- Пропадает сразу, без анимации
+                -- Gone at once, without an animation.
                 arr_set(plates_candies,b,0)
                 quest_on_candy()
                 ds_log("event candy picked -> %g",candies)
@@ -171,7 +172,7 @@ public function tick_event_santa()
     plates_collect_t=plates_collect_t+dt
     if plates_santa_gone==0 then
         if plates_santa_out>0 then
-            -- Уход: Дед Мороз не уменьшается — он поворачивается вверх и улетает за экран.
+            -- Leaving: Santa does not shrink, he turns upward and flies off.
             plates_santa_out=plates_santa_out+dt
             plates_santa_up=clamp(plates_santa_out/plates_santa_turn_time,0,1)
             plates_santa_angle=plates_santa_ang0*(1-plates_santa_up)
@@ -247,7 +248,7 @@ public function tick_plates_event()
             ds_log("plates event: both plates occupied, charging")
         end
     else if plates_phase==1 then
-        -- «Заряд»: плиты подсвечены, бойцы зафиксированы. Луча тут больше нет.
+-- Charge: the plates light up and the fighters are held in place.
         plates_t=plates_t+dt
         if plates_t>=plates_charge_time then
             plates_phase=2
@@ -281,8 +282,9 @@ public function draw_plate(number cx, number cy, number k, number lit)
     local number r=20*k
     local number pulse=0.5+0.5*sin(event_t*5)
     local number aa=floor(clamp(k*1.4,0,1)*235)
-    -- Нулевой альфа-байт движок считает «альфы нет» и рисует плашку сплошной
-    -- заливкой; кроме того, доли альфы (0.85/0.55) при aa=1 округляются до 0.
+    -- An alpha byte of zero reads as "no alpha" in the engine, which fills the
+    -- plate solid; the fractional alphas (0.85/0.55) also round down to zero at
+    -- aa == 1, so nothing is drawn then.
     if aa<1 then
         return
     end
@@ -334,9 +336,9 @@ public function draw_event_candies()
             yy=arr_get(plates_candies,b+3)+(arr_get(plates_candies,b+5)-arr_get(plates_candies,b+3))*e
             pt=arr_get(plates_candies,b+7)
             if pt>0 then
-                -- При сборе пропадает сразу — не рисуем
+                -- Picked up: gone, so nothing to draw.
             else if v>0.02 then
-                -- Появление: просто увеличивается к своей середине, без закрутки, летит в рандомном направлении из центра
+                -- Spawn: grows to its size where it appeared, then flies off.
                 p=clamp(t/plates_candy_pop_time,0,1)
                 pop=1-(1-p)*(1-p)
                 sc=candy_scale*pop*v
@@ -357,7 +359,8 @@ public function draw_event_santa()
     if event_mode!=3||plates_phase!=3||plates_santa_gone==1 then
         return
     end
-    -- Появление без серого кольца; уход — поворотом вверх и полётом, а не ужиманием.
+    -- Spawn has no grey ring, and leaving is a turn upwards and a flight away
+    -- instead of a shrink.
     local number cx=screen_w/2, cy=screen_h/2+plates_santa_dy
     local number pop=1
     if plates_santa_t<0.4 then

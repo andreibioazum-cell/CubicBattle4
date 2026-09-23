@@ -27,11 +27,9 @@ public function hb_env(number a)
     end
     return a
 end
--- Цвет всех боевых зон ОДИН: hitbox_rgb плюс hitbox_zone_alpha, умноженная на
--- «конверт» конкретной зоны (её плавное появление и затухание). Раньше у
--- каждой зоны была своя альфа (36 / 102 / 140 / 170) и свой контур поверх
--- заливки, поэтому хитбоксы выглядели по-разному; теперь прозрачность у всех
--- одинаковая.
+-- All hitbox zones share one colour: hitbox_rgb with hitbox_zone_alpha scaled by
+-- the envelope of that zone (its fade in and out). Per-zone alphas and outlines
+-- made the zones look like different things.
 public function hb_zone_col(number env)
     local number a=floor(hitbox_zone_alpha*hb_env(env))
     if a<0 then
@@ -42,10 +40,10 @@ public function hb_zone_col(number env)
     end
     return (((unsigned)(int)a)<<24)|((unsigned)(int)hitbox_rgb)
 end
--- Альфа зоны в байтах; 0 означает «зону в этом кадре не рисуем»: при
--- альфа-байте 0 движок (pack_c в native/graphics/types.inc) считает, что
--- альфы нет, и заливает зону ПОЛНОСТЬЮ НЕПРОЗРАЧНОЙ - на первом кадре
--- появления и последнем кадре затухания зона вспыхивала чёрным.
+-- Zone alpha in bytes, where 0 means "do not draw the zone this frame": an
+-- alpha byte of 0 reads as "no alpha" in the engine (pack_c in
+-- native/graphics/types.inc) and fills the zone solid, which flashed black on
+-- the first and the last frame of the fade.
 public function hb_zone_bytes(number env)
     if env<=0 then
         return 0
@@ -59,11 +57,11 @@ public function hb_zone_bytes(number env)
     end
     return a
 end
--- Ровная полоса от точки (sx,sy) вдоль направления (dx,dy): от отступа off0 до
--- off1, шириной 2*half_w. Ей рисуются все «линейные» зоны хитбоксов (удар,
--- путь снежка, рамка вселенной) вместо line(): у линии круглые заглушки на
--- концах, а скруглений в хитбоксах быть не должно вообще. rect_rot рисует
--- обычным конвейером со смешиванием, поэтому полоса прозрачная.
+-- A straight strip from (sx, sy) along (dx, dy), from offset off0 to off1 and
+-- 2*half_w wide. Every linear zone (a punch, the snowball path, the universe
+-- frame) uses it instead of line(), whose round caps would round the corners of
+-- a hitbox. rect_rot goes through the blending pipeline, so the strip is
+-- translucent.
 public function draw_hit_strip(number sx, number sy, number dx, number dy, number off0, number off1, number half_w, number env)
     if show_hitboxes==0||hb_zone_bytes(env)<1||half_w<=0 then
         return

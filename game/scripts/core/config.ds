@@ -44,12 +44,13 @@ public number alert_hold=0.5, finish_t=0
 public number cups_awarded=0
 public number quest_count=3, quest_msg_t=0
 public array quest_type=arr_new(), quest_prog=arr_new(), quest_need=arr_new()
--- quest_next[i]: epoch-метка, когда появится следующее задание (0 = слот жив).
+-- quest_next[i]: epoch stamp when the next quest appears, 0 while the slot is
+-- still in use.
 public array quest_next=arr_new()
--- После выполнения новое задание появляется через quest_respawn секунд; отсчёт
--- идёт по реальному времени и продолжается, даже если игра закрыта.
+-- A finished quest respawns after quest_respawn seconds of real time, counting
+-- even while the game is closed.
 public number quest_respawn=300
--- Награды за задание (срезаны): кубков и конфет.
+-- Rewards per quest (cut down): cups and candies.
 public number quest_cups=5, quest_candies=2
 public number plates_finished=0
 public number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
@@ -60,25 +61,23 @@ public number player_level=0, levels_unlocked=0
 public number max_level=3, level_base_cost=30, level_cost_step=10
 public number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2
 public number azum_tex_ok=0, azum_zombie_tex_ok=0, azum_zombie_punch_tex_ok=0
--- Загрузились ли спрайты замаха каждого класса. Незагруженная текстура просто
--- не рисуется (tex() молча выходит), поэтому без запасного варианта боец на
--- время удара исчезал с арены — см. class_punch_tex() в battle_rules.ds.
+-- Whether the swing sprite of each class loaded. tex() draws nothing for a
+-- missing texture, so without the fallback in class_punch_tex()
+-- (battle_rules.ds) a fighter vanished while punching.
 public number ordinary_punch_tex_ok=0, azum_punch_tex_ok=0
 public number santa_punch_tex_ok=0, ebuc_punch_tex_ok=0
 public number azum_skin=SKIN_NORMAL
 public number arena_tile_size=256, snow_tex_ok=0, snow_t=0, candy_tex_ok=0
--- Зимняя тема — настройка из меню: снежный фон арены и снегопад включаются и
--- выключаются одним тапом. По умолчанию она включена, а в выключенном виде
--- арена снова в траве (grass.png), как было до зимнего оформления.
+-- Winter theme, a menu setting: one tap turns the snowy arena and the snowfall
+-- on or off. It is on by default; when it is off the arena is grass.png again.
 public number winter_theme=1
 public number show_hitboxes=1
--- Хитбоксы: ОДИН цвет и ОДНА прозрачность на все зоны сразу (удар, снежок,
--- рывок, вселенная) — hitbox_rgb + hitbox_zone_alpha. Раньше у каждой зоны
--- была своя альфа (36 / 102 / 140 / 170) и свой цвет-псевдоним, из-за чего
--- зоны выглядели по-разному. Скруглений нет нигде: hitbox_corner удалён,
--- прямоугольные зоны рисуются с острыми углами (rect / rect_rot), а roundrect
--- в хитбоксах больше не используется вовсе (он ещё и рисуется конвейером без
--- смешивания, то есть непрозрачно).
+-- Hitboxes share one colour and one alpha across all zones (punch, snowball,
+-- dash, universe): hitbox_rgb plus hitbox_zone_alpha. Per-zone alphas and
+-- colours made the zones look like different things. Nothing is rounded here:
+-- hitbox_corner is gone, rectangular zones use rect or rect_rot, and roundrect
+-- is not used at all because its pipeline does not blend, so it would draw
+-- opaque.
 public number hitbox_rgb=0x00000000
 public number hitbox_zone_alpha=96
 public number hitbox_fade_in=0.16, hitbox_fade_out=0.26
@@ -115,20 +114,16 @@ public number santa_follow_delay=0.4, santa_super_damage=2.0
 public number super_freeze=3.0, super_freeze_slow=0.12
 public number super_cd_time=3.0, super_speed=420, super_range=260, super_radius=130, boom_time=0.45
 public number freeze_fade_in=0.12, freeze_fade_out=0.35, boom_fade_in=0.25, boom_fade_out=0.5
--- Цвета кругов статусов (заливка + яркий ободок): один набор и для врага,
--- и для игрока — рисует draw_status_aura (combat/battle_render.ds).
+-- Status circle colours (fill plus bright rim), one set for both fighters,
+-- drawn by draw_status_aura (combat/battle_render.ds).
 public number freeze_rgb=0x001E88E5, freeze_rim=0x004FC3F7
 public number poison_rgb=0x0000C853, poison_rim=0x0069F0AE
 public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
--- Красная вспышка при получении урона: в момент удара боец «краснеет»
--- силуэтом своего спрайта (tex_tint) и за hurt_fade секунд плавно отцветает
--- обратно (tick_hurt_fades в combat/battle_damage.ds). Параметры подобраны
--- так, чтобы куб НИКОГДА не выглядел залитым красным: пик слабый (28%), а
--- затухание (0.15 с) заметно короче кулдауна удара (0.3 с) — между ударами
--- вспышка успевает растаять целиком, и серия ударов не «держит» врага
--- красным секунду подряд, а даёт короткие моргания на каждый удар.
--- Насыщенная вспышка: при попадании красный силуэт теперь хорошо заметен,
--- а не выглядит как едва различимый полупрозрачный оттенок.
+-- Red flash on damage: a fighter turns red as a silhouette of his own sprite
+-- (tex_tint) and fades back over hurt_fade seconds (tick_hurt_fades in
+-- combat/battle_damage.ds). The peak is weak (28 per cent) and the fade
+-- (0.15 s) is well under the punch cooldown (0.3 s), so a fighter never looks
+-- solid red: a burst of hits gives short blinks instead of a second of red.
 public number hurt_rgb=0x00FF2020, hurt_alpha=0.75, hurt_fade=0.15
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
@@ -148,8 +143,8 @@ public number azum_hp=8
 public number shadow_off=10, shadow_alpha=0x30
 public number candy_count=5, candy_margin=46, candy_scale=0.8, candy_give=1
 public number candy_pop_time=0.4, candy_pick_time=0.3
--- Частицы ограничены: на слабых CPU десятки кругов каждый кадр создавали
--- лишнюю геометрию, хотя визуально плотность 28 почти не отличается от 48.
+-- Particles are capped: dozens of circles per frame cost geometry on weak CPUs,
+-- while a density of 28 looks almost the same as 48.
 public number dust_max=28, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.075, dust_r_max=8, dust_spd=38
 public number dust_back_off=34, dust_back_share=0.85, dust_side_share=0.4
 public number dust_cd=0, enemy_dust_cd=0, dust_enemy_min_speed=40
@@ -167,14 +162,14 @@ public number login_w=460, login_btn_w=380, login_field_gap=64, login_btn_gap=22
 public string login_nick="", login_pass=""
 public string LOBBY_MUSIC="lobbymusic.wav"
 public number music_ok=0, music_level=1, music_fade_in_time=0.25, music_fade_out_time=1.0
--- Кнопка «Музыка» в настройках листает три состояния громкости: выкл (0),
--- вкл (100) и 50% — от общей громкости звука. Промежуточных значений больше нет.
+-- The music button in settings cycles three volume states: off (0), on (100)
+-- and 50 per cent, relative to the sound volume.
 public number music_volume=70
--- Счётчик кадров в бою: настройка (show_fps) и усреднённое значение, которое
--- пересчитывается раз в fps_interval секунд, чтобы цифры не прыгали.
+-- Battle frame counter: the show_fps setting and the average that is recomputed
+-- every fps_interval seconds so the number does not jump.
 public number show_fps=0, fps_value=0, fps_acc=0, fps_frames=0, fps_interval=0.5
--- FPS-индикатор строго монохромный: только чистые чёрный и белый,
--- без синеватого почти-чёрного оттенка.
+-- The frame counter is monochrome: pure black and white, with no bluish
+-- near-black tint.
 public number fps_plate_rgb=0xFF000000, fps_frame_rgb=0xFFFFFFFF, fps_text_rgb=0xFFFFFFFF, fps_text_scale=0.5
 public number event_mode=0, disco_t=0, event_t=0, event_flakes=28
 public number plates_size=150, plates_shrink_time=0.9, plates_stand_r=80
@@ -188,17 +183,15 @@ public number plates_santa_out_time=2.5
 public number plates_charge_time=2.0
 public number plates_santa_turn_time=0.35, plates_santa_fly_acc=2600, plates_santa_fly_speed=1600
 public number plates_lock_me=0, plates_save_interval=4
--- Предупреждение об эпилепсии: больше не гаснет само по таймеру. Экран
--- держится, пока игрок сам не нажмёт кнопку согласия (legal_accept),
--- поэтому пропустить его «случайно зашедший» человек не может: вход в игру
--- равен осознанному принятию риска. Кнопка сразу в полной яркости, но пока
--- идёт отсчёт warn_t (3-2-1 в подписи), нажатия не принимает; когда отсчёт
--- кончается, секунды из подписи пропадают и кнопка доступна. Нажатие
--- фиксируется в settings.dat (метка времени), системная кнопка «Назад» на
--- этом экране выходит из игры.
+-- Epilepsy warning: it no longer hides on a timer. The screen stays until the
+-- player presses the consent button (legal_accept), so the warning cannot be
+-- missed: entering the game means accepting the risk. The button is at full
+-- brightness from the start but ignores taps while warn_t counts down (3-2-1 in
+-- its label); when the count ends the seconds disappear and the button works.
+-- The press is stamped in settings.dat, and the system Back button exits.
 public number warn_open=1, warn_a=1, warn_ready=0, warn_t=0, warn_wait=3
--- После согласия весь экран предупреждения плавно растворяется. warn_open
--- остаётся включённым до конца анимации, чтобы во время неё не проходили тапы.
+-- After consent the whole warning screen fades out; warn_open stays set until
+-- the animation ends so taps during it do nothing.
 public number warn_closing=0, warn_close_t=0, warn_fade=1.25
 -- Outline thickness of the consent button. The stroke sits outside the edge
 -- (roundrect_outline in core/ui.ds), so the button looks the same as it did

@@ -2,7 +2,8 @@ public function pierce_has(number mask, number bit)
     local number shifted=floor(mask/bit)
     return shifted-floor(shifted*0.5)*2
 end
--- Бит маски проколов для турели i: турели нумеруются 0,1,2 → биты 1,2,4.
+-- Pierce mask bit of turret i: turrets are numbered 0, 1, 2, so the bits are
+-- 1, 2 and 4.
 public function turret_pierce_bit(number i)
     if i==1 then
         return 2
@@ -12,7 +13,7 @@ public function turret_pierce_bit(number i)
     end
     return 1
 end
--- Ближайшая живая турель (по массивам одной стороны) к точке (x,y), -1 если их нет.
+-- The live turret of one side closest to (x, y), or -1 when there is none.
 public function nearest_turret(array xs, array ys, array hps, number x, number y)
     local number best=-1, bd=0, i=0
     while i<turret_max do
@@ -27,8 +28,9 @@ public function nearest_turret(array xs, array ys, array hps, number x, number y
     end
     return best
 end
--- Щит бука: урон сначала «съедают» свои турели по очереди (начиная с ближайшей
--- к бойцу), остаток проходит в HP. mine=1 — турели игрока, 0 — турели врага.
+-- Buk shield: the turrets of that side absorb the damage one by one, starting
+-- with the one closest to the fighter, and the rest reaches the HP. mine = 1
+-- means the player's turrets, 0 the enemy's.
 public function shield_absorb_turrets(array xs, array ys, array hps, number x, number y, number mine, number dmg)
     if dmg<=0 then
         return 0
@@ -64,9 +66,9 @@ public function enemy_shield_absorb(number dmg)
     end
     return shield_absorb_turrets(enemy_turret_x,enemy_turret_y,enemy_turret_hp,enemy.x,enemy.y,0,dmg)
 end
--- Снежинка прокалывает чужие турели на своём пути: каждой наносится урон один
--- раз (в маске pierce остаётся бит турели). mine=1 — летит gift и бьёт по
--- турелям врага, 0 — летит enemy_gift и бьёт по турелям игрока.
+-- A snowflake pierces the turrets on its way, damaging each of them once (its
+-- bit stays in the pierce mask). mine = 1 is gift hitting the enemy turrets and
+-- 0 is enemy_gift hitting the player's.
 public function snow_chip_turrets(array xs, array ys, array hps, number mine, number x, number y)
     local number zone=turret_zone_half()+20, i=0
     while i<turret_max do
