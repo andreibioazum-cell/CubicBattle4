@@ -1,5 +1,4 @@
-/* The player profile from the cloud: parsing the /users/<nick> record and merging
- * it with the device. */
+/* The player profile from the cloud: parsing the /users/<nick> record and merging it with the device.
  *
  * Split out of native/net/auth_session.inc. Three things live here:
  *   apply_user_json            - parse a profile JSON into the local progress;
