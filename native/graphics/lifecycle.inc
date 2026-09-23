@@ -43,7 +43,14 @@ static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
     Texture *t = find_tx(n);
-    if (t) return t->pixels ? t : NULL;
+    if (t) {
+        /* Если первая GPU-загрузка временно не удалась, не оставляем текстуру
+         * навсегда невидимой в CPU-кэше: следующий вызов tex() снова поставит
+         * её в очередь. Это исправляет исчезновение idle-спрайта, когда при
+         * ударе внезапно показывалась только уже загруженная punch-поза. */
+        if (t->pixels && !t->gpu.uploaded) ds_vk_pending_texture(t);
+        return t->pixels ? t : NULL;
+    }
     if (!amgr) { ds_log_err("texture not loaded: no asset manager for '%s'", n); return NULL; }
     t = (Texture *)calloc(1, sizeof(*t));
     if (!t) { ds_log_err("texture not loaded: out of memory caching '%s'", n); return NULL; }

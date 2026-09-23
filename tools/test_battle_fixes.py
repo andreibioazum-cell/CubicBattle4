@@ -649,7 +649,7 @@ static void test_splash_screens(void) {
     assert(calls[0].kind == 'q' && calls[0].color == 0x80000000);
     int saw_accept_btn = 0;
     for (int i = 0; i < call_count; i++) {
-        if (calls[i].kind == 'o' && calls[i].color == 0xFF000000) saw_accept_btn = 1;
+        if (calls[i].kind == 'o' && calls[i].color == 0x80000000) saw_accept_btn = 1;
     }
     assert(saw_accept_btn);
     /* Кнопка сразу в полной яркости, а подпись держит отсчёт «(3)(2)(1)»;

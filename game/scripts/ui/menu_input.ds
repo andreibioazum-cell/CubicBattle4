@@ -146,15 +146,12 @@ public function draw_warning()
     -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
     -- но не крупнее 0.8, как было раньше.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
-    -- До принятия это обычная скруглённая кнопка формы btn_radius, но строго
-    -- чёрно-белая. После тапа кнопку сразу не рисуем: roundrect использует
-    -- replace-конвейер, поэтому попытка плавно менять его альфу давала вспышку
-    -- в конце. Сам текст предупреждения и фон продолжают плавно затухать.
-    if warn_closing==0 then
-        roundrect(center_x(warn_btn_w())-2, warn_btn_y()-2, warn_btn_w()+4, btn_h+4, btn_radius+2, 0xFFFFFFFF)
-        roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, 0xFF000000)
-        text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, 0xFFFFFFFF, scale)
-    end
+    -- Обычная скруглённая кнопка формы btn_radius, строго чёрно-белая.
+    -- Новый blended-roundrect позволяет рамке, заливке и подписи оставаться
+    -- видимыми и плавно затухать вместе со всем предупреждением после тапа.
+    roundrect(center_x(warn_btn_w())-2, warn_btn_y()-2, warn_btn_w()+4, btn_h+4, btn_radius+2, warn_rgb(0xFFFFFF))
+    roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, warn_rgb(0))
+    text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, warn_rgb(0xFFFFFF), scale)
 end
 public function legal_accept()
     if warn_ready < 1 || warn_closing == 1 then

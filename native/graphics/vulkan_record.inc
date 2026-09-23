@@ -33,7 +33,11 @@ static int ds_vk_build_geometry(void) {
                 geo_rect(c->v.rc.x, c->v.rc.y, c->v.rc.w, c->v.rc.h, c->v.rc.c);
                 break;
             case DS_CMD_ROUND:
-                pipeline = 3; /* fill_span: замена, без смешивания */
+                /* Скруглённые кнопки теперь смешивают альфу так же, как rect.
+                 * Это позволяет кнопке согласия плавно исчезать вместе со
+                 * всем предупреждением без вспышки replace-конвейера. Для
+                 * обычных непрозрачных кнопок результат не меняется. */
+                pipeline = 0;
                 desc = NULL;
                 geo_roundrect(c->v.rr.x, c->v.rr.y, c->v.rr.w, c->v.rr.h, c->v.rr.r, c->v.rr.c);
                 break;
