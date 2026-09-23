@@ -62,7 +62,8 @@ struct JNINativeInterface {
 };
 struct JNIInvokeInterface {
     void *reserved0;
-    /* В настоящем jni.h эти параметры — void*: так один заголовок работает и в C, и в C++. */
+    /* In the real jni.h these parameters are void*, so one header works in C
+     * and in C++. */
     int (*AttachCurrentThread)(void *vm, void *env, void *args);
     int (*DetachCurrentThread)(void *vm);
     int (*GetEnv)(void *vm, void *env, int version);
@@ -72,7 +73,8 @@ typedef const struct JNIInvokeInterface *JavaVM;
 #endif
 """
 
-# Тест включает настоящий net.c, поэтому видит и статические функции модуля
+# The test includes the real net.c, so it also sees the static functions of the
+# module.
 # (settings_read/settings_write/settings_sync_with_cloud).
 HARNESS = r'''
 #include <assert.h>
@@ -86,8 +88,8 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 }
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 
-/* Профиль облака со старыми полями модов (mods_n/mods): клиент их больше не
- * читает и не пишет, но чужой старый профиль не должен ничего ломать. */
+/* A cloud profile with the old mod fields (mods_n, mods): the client neither
+ * reads nor writes them, and an old profile must not break anything. */
 static const char *CLOUD_PROFILE =
     "{\"nick\":\"tester\",\"cups\":10,\"candies\":5,\"cls\":3,\"azum\":1,\"santa\":0,"
     "\"ebuc\":1,\"level\":1,\"levels\":1,\"lang\":1,\"hitboxes\":0,\"musicvol\":40,\"mods_n\":2,"
@@ -98,14 +100,14 @@ static int run_write(const char *dir) {
     net_save_settings(1, 0);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
-    /* Громкость музыки: значение вне диапазона приводится к 0..100. */
+    /* Music volume: a value out of range is clamped to 0..100. */
     net_save_music_volume(35);
     assert(net_load_music_volume() == 35);
     net_save_music_volume(150);
     assert(net_load_music_volume() == 100);
     net_save_music_volume(35);
     assert(net_load_music_volume() == 35);
-    /* Устройство уже сохранено — облако ничего не отнимает. */
+    /* The device already saved, so the cloud takes nothing away. */
     assert(settings_sync_with_cloud(CLOUD_PROFILE) == 1);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
@@ -125,24 +127,24 @@ static int run_read(const char *dir) {
 
 static int run_cloud(const char *dir) {
     net_set_data_path(dir);
-    /* Чистое устройство: файла нет, поэтому настройки берутся из профиля.
-     * Старые поля модов в профиле просто игнорируются. */
+    /* Clean device: there is no file, so the settings come from the profile and
+     * the old mod fields are ignored. */
     assert(settings_sync_with_cloud(CLOUD_PROFILE) == 0);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
     assert(net_load_music_volume() == 40);
-    /* Файл на устройстве проверяет python-обвязка теста. */
+    /* The Python wrapper of the test checks the file on the device. */
     puts("native cloud: profile settings adopted on a device without settings.dat");
     return 0;
 }
 
-/* Старый settings.dat со списком модов: читается без ошибок, а следующая
- * запись оставляет в файле только язык и хитбоксы. */
+/* An old settings.dat with a mod list reads without errors, and the next write
+ * leaves only the language and the hitboxes in the file. */
 static int run_legacy(const char *dir) {
     net_set_data_path(dir);
     assert(net_load_language() == 1);
     assert(net_load_hitboxes() == 0);
-    /* В старом файле musicvol нет — подставляется значение по умолчанию. */
+    /* The old file has no musicvol, so the default is used. */
     assert(net_load_music_volume() == 70);
     net_save_settings(0, 1);
     assert(net_load_language() == 0);
@@ -151,8 +153,8 @@ static int run_legacy(const char *dir) {
     return 0;
 }
 
-/* Согласие с предупреждением об эпилепсии: до нажатия метки нет, после —
- * unix-время в settings.dat, и оно переживает «перезапуск» процесса. */
+/* Epilepsy warning consent: there is no stamp before the press and a unix time in
+ * settings.dat after it, surviving a restart of the process. */
 static int run_legal(const char *dir) {
     net_set_data_path(dir);
     assert(settings_legal_ts() == 0);

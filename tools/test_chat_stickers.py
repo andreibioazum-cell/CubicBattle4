@@ -42,7 +42,7 @@ double str_index_of(const char *hay, const char *needle) { const char *p = hay &
 int str_starts_with(const char *s, const char *pref) { return s && pref && strncmp(s, pref, strlen(pref)) == 0; }
 int str_ends_with(const char *s, const char *suf) { size_t ls = s ? strlen(s) : 0, lf = suf ? strlen(suf) : 0; return ls >= lf && suf && strcmp(s + ls - lf, suf) == 0; }
 const char *str_sub(const char *s, double start, double len) {
-    /* Как в нативе: каждый вызов — отдельная выделенная строка. */
+    /* As in the native code: every call is a separate allocated line. */
     size_t sl = s ? strlen(s) : 0, st = (size_t)start, ln = (size_t)len;
     if (st > sl) st = sl;
     if (st + ln > sl) ln = sl - st;
@@ -62,7 +62,7 @@ double dist(double x1, double y1, double x2, double y2) { return hypot(x1 - x2, 
 void ds_log(const char *format, ...) { (void)format; }
 void ds_runtime_error(const char *format, ...) { fputs(format, stderr); abort(); }
 
-/* ---------- array stubs (ds_main инициализирует глобальные массивы) ---------- */
+/* ---------- array stubs (ds_main initialises the global arrays) ---------- */
 struct DSArray { int len; double values[4096]; };
 DSArray *arr_new(void) { DSArray *a = calloc(1, sizeof(*a)); assert(a); return a; }
 void arr_free(DSArray *a) { free(a); }
@@ -107,8 +107,9 @@ void text_scaled(const char *s, float x, float y, uint32_t c, float sc) {
 int text_width(const char *s) { return ink_width(s); }
 int text_height(const char *s) { (void)s; return 20; }
 int text_ink_width(const char *s) { return ink_width(s); }
-/* Подпись как в runtime.h: надписи вида «Уровень 3» и «HP: 20» собираются из
- * числа (ds_concat в харнессе уже есть), а карточки классов их рисуют. */
+/* The signature follows runtime.h: labels such as «Уровень 3» are built from a
+ * number through ds_concat, which the harness already has, and the class cards
+ * draw them. */
 char *ds_num_to_string(double v) {
     static char buf[32];
     snprintf(buf, sizeof buf, "%g", v);
@@ -168,7 +169,7 @@ static void test_parsing(void) {
     assert(strcmp(ds_fn_chat_sticker_tex("/sticker like.png"), "like.png") == 0);
     assert(strcmp(ds_fn_chat_sticker_tex("/sticker dislike.png"), "dislike.png") == 0);
     assert(strcmp(ds_fn_chat_sticker_tex("/sticker 75.png"), "75.png") == 0);
-    /* Неизвестные текстуры и обход префикса — обычный текст. */
+    /* Unknown textures and prefix tricks stay ordinary text. */
     assert(strcmp(ds_fn_chat_sticker_tex("/sticker hacked.png"), "") == 0);
     assert(strcmp(ds_fn_chat_sticker_tex("/sticker like.pngx"), "") == 0);
     assert(strcmp(ds_fn_chat_sticker_tex("/sticker"), "") == 0);
@@ -180,7 +181,7 @@ static void test_parsing(void) {
 }
 
 static void test_send_and_touch(void) {
-    /* Отправка: сообщение уходит в чат, чат закрывается мгновенно. */
+    /* Sending: the message goes to the chat and the chat closes at once. */
     sent_count = 0;
     ds_fn_chat_set_open(1);
     assert(chat_open == 1 && sticker_menu_open == 0);
@@ -188,7 +189,7 @@ static void test_send_and_touch(void) {
     assert(sent_count == 1 && strcmp(sent_buf[0], "/sticker dislike.png") == 0);
     assert(chat_open == 0 && sticker_menu_open == 0 && keyboard_up == 0);
 
-    /* Кнопка: тап открывает меню, второй тап — закрывает. */
+    /* The button: one tap opens the menu and the next closes it. */
     ds_fn_chat_set_open(1);
     double bx = ds_fn_sticker_btn_x(), by = ds_fn_chat_input_y();
     near(bx, 16 + (screen_w - 32) - 112 - 8 - STICKER_BTN);
@@ -197,7 +198,7 @@ static void test_send_and_touch(void) {
     assert(ds_fn_touch_chat(bx + 26, by + 26, 0) == 1);
     assert(sticker_menu_open == 0);
 
-    /* Тап по плитке: стикер отправлен, чат закрыт, меню сброшено. */
+    /* A tap on a tile: the sticker is sent, the chat closes, the menu resets. */
     sent_count = 0;
     assert(ds_fn_touch_chat(bx + 26, by + 26, 0) == 1);  /* open menu */
     near(ds_fn_sticker_menu_x(), 16 + (screen_w - 32) - 240);
@@ -207,7 +208,8 @@ static void test_send_and_touch(void) {
     assert(sent_count == 1 && strcmp(sent_buf[0], "/sticker 75.png") == 0);
     assert(chat_open == 0 && sticker_menu_open == 0);
 
-    /* Тап в подложке меню ничего не шлёт и меню не закрывает; тап мимо — закрывает. */
+    /* A tap on the menu backdrop sends nothing and keeps the menu; a tap outside
+     * closes it. */
     ds_fn_chat_set_open(1);
     assert(ds_fn_touch_chat(bx + 26, by + 26, 0) == 1);  /* open menu */
     sent_count = 0;
@@ -216,7 +218,7 @@ static void test_send_and_touch(void) {
     assert(ds_fn_touch_chat(60, 600, 0) == 1);
     assert(sticker_menu_open == 0 && chat_open == 1);
 
-    /* Кнопка «закрыть» чат сбрасывает меню. */
+    /* The close button resets the menu. */
     assert(ds_fn_touch_chat(bx + 26, by + 26, 0) == 1);  /* open menu */
     assert(ds_fn_touch_chat(ds_fn_chat_close_x() + 140, ds_fn_chat_top_y() + 28, 0) == 1);
     assert(chat_open == 0 && sticker_menu_open == 0);
@@ -224,12 +226,12 @@ static void test_send_and_touch(void) {
 }
 
 static void test_video_settings(void) {
-    /* Апскейла и лимита FPS в настройках больше нет: строк стало 8 (последняя -
-     * «Данные и приватность», индекс 7), а функций переключения их значений не
-     * существует вовсе. */
+    /* Settings have no upscale or fps cap anymore: there are 8 rows now, the last
+     * one being data and privacy at index 7, and the functions that toggled those
+     * values are gone. */
     assert(SETTINGS_ROWS == 8);
-    /* Все 8 строк настроек помещаются на низком (landscape) экране: на
-     * экранах ниже нужного шаг строк сжимается (но не меньше высоты кнопки). */
+    /* All 8 settings rows fit a short landscape screen: below the needed height
+     * the row pitch shrinks, but never under the button height. */
     screen_h = 720;
     assert(ds_fn_settings_row_y(7) + ds_fn_settings_btn_h() <= screen_h - 4);
     screen_h = 640;
@@ -242,8 +244,8 @@ static void test_video_settings(void) {
 }
 
 static void test_class_mottos(void) {
-    /* Девизы классов: Азум и буК говорят свои фразы, а длинная фраза буК
-     * вписывается в карточку и в экран характеристик подбором масштаба. */
+    /* Class mottos: Azum and buK say their lines, and the long buK motto is
+     * scaled to fit both the card and the stats screen. */
     assert(strcmp(ds_fn_tr_class_azum_desc(), "Lived once, buried twice...") == 0);
     const char *ebuc = ds_fn_tr_class_ebuc_desc();
     assert(strcmp(ebuc, "You thought I was a regular cube, but it was me, buC!") == 0);
@@ -251,16 +253,16 @@ static void test_class_mottos(void) {
     near(ds_fn_fit_text_scale("I was the first", cw - 16, 0.5), 0.5);
     double sc = ds_fn_fit_text_scale(ebuc, cw - 16, 0.5);
     assert(sc > 0.1 && sc <= 0.5);
-    near(sc * ink_width(ebuc), cw - 16);          /* ровно в доступную ширину */
+    near(sc * ink_width(ebuc), cw - 16);          /* exactly the available width */
     int saved_w = screen_w;
     screen_w = 1600;
     near(ds_fn_fit_text_scale(ebuc, screen_w - 2 * screen_margin, 0.8), 0.8);
-    screen_w = 400;   /* узкое окно: девиз обязан ужаться под поля экрана */
+    screen_w = 400;   /* narrow window: the motto has to shrink into the margins */
     double ss = ds_fn_fit_text_scale(ebuc, screen_w - 2 * screen_margin, 0.8);
     assert(ss < 0.8 && ss * ink_width(ebuc) <= screen_w - 2 * screen_margin + 0.001);
     screen_w = saved_w;
 
-    /* Карточки классов: девиз действительно рисуется и остаётся внутри карточки. */
+    /* Class cards: the motto is really drawn and stays inside the card. */
     text_count = 0;
     ds_fn_draw_classes();
     const char *azum = ds_fn_tr_class_azum_desc();
@@ -276,11 +278,11 @@ static void test_class_mottos(void) {
         double sc2 = text_calls[i].scale;
         near(sc2, ds_fn_fit_text_scale(drawn, cw2 - 16, 0.5));
         assert(sc2 <= 0.5 + 1e-9);
-        assert(text_calls[i].x >= cx - 0.001);                      /* левый край внутри */
-        assert(text_calls[i].x + sc2 * ink_width(drawn) <= cx + cw2 + 0.001);  /* и правый */
+        assert(text_calls[i].x >= cx - 0.001);                      /* left edge inside */
+        assert(text_calls[i].x + sc2 * ink_width(drawn) <= cx + cw2 + 0.001);  /* and right */
     }
     assert(seen_azum == 1 && seen_ebuc == 1);
-    /* Девиз выбранного класса дублируется на экране характеристик — тоже вписан. */
+    /* The motto of the selected class also shows on the stats screen, fitted too. */
     player_class = CLASS_EBUC;
     text_count = 0;
     ds_fn_draw_class_stats();
@@ -297,7 +299,7 @@ static void test_class_mottos(void) {
 }
 
 static void test_render(void) {
-    /* История: стикеры рисуются картинкой в своей строке, текст — текстом. */
+    /* History: stickers are drawn as an image in their line, text as text. */
     game_state = ST_ONLINE;
     chat_msg_count = 3;
     chat_msgs[0] = "hello";
@@ -306,17 +308,17 @@ static void test_render(void) {
     ds_fn_chat_set_open(1);
     tex_count = 0; ring_calls = 0; circle_calls = 0;
     ds_fn_draw_chat();
-    assert(tex_count == 2);  /* только две строки-стикера */
+    assert(tex_count == 2);  /* only two sticker lines */
     assert(strcmp(tex_calls[0].name, "like.png") == 0);
     assert(strcmp(tex_calls[1].name, "75.png") == 0);
-    near(tex_calls[0].scale, 24.0 / 100.0);  /* стикеры 100x100, строка 24px */
+    near(tex_calls[0].scale, 24.0 / 100.0);  /* stickers are 100x100, a line is 24px */
     near(tex_calls[1].scale, 24.0 / 100.0);
     near(tex_calls[0].x, 16 + 8);
-    near(tex_calls[0].y, 84 + 28 + 2);   /* вторая строка, по центру её высоты */
-    near(tex_calls[1].y, 84 + 56 + 2);   /* третья строка */
-    assert(ring_calls == 1 && circle_calls == 3);  /* смайлик на стикер-кнопке */
+    near(tex_calls[0].y, 84 + 28 + 2);   /* second line, centred on its height */
+    near(tex_calls[1].y, 84 + 56 + 2);   /* third line */
+    assert(ring_calls == 1 && circle_calls == 3);  /* the smiley on the sticker button */
 
-    /* Пузырь над головой: стикер — картинкой, обычный текст — без tex. */
+    /* Bubble above the head: a sticker is an image, ordinary text uses no tex. */
     tex_count = 0; roundrect_calls = 0;
     ds_fn_draw_chat_bubble_at(360, 640, "/sticker dislike.png", 2.0);
     assert(tex_count == 1 && strcmp(tex_calls[0].name, "dislike.png") == 0);
@@ -344,7 +346,7 @@ int main(void) {
 
 
 def main():
-    # Заглушки стикеров должны лежать в ассетах 100x100.
+    # The sticker placeholders in the assets must be 100x100.
     for name in ("like.png", "dislike.png", "75.png"):
         data = (ROOT / "game/assets" / name).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{name} is not a PNG"
@@ -355,15 +357,16 @@ def main():
         compiler = DimScriptCompiler()
         assert compiler.compile(find_ds_files(str(ROOT / "game/scripts")), str(temp / "game.c"))
         assert not compiler.errors and not compiler.warnings
-        # Wiring: в открытом чате рисуется стикер-кнопка и меню, в истории — картинки.
+        # Wiring: an open chat draws the sticker button and the menu, the history
+        # draws the images.
         draw_body = "".join(compiler.functions["draw_chat"][2])
         assert "draw_sticker_face(" in draw_body and "draw_sticker_tile(" in draw_body
         assert "sticker_menu_open == 1" in draw_body
         touch_body = "".join(compiler.functions["touch_chat"][2])
         assert "chat_send_sticker(" in touch_body
-        # Настройки: лимита FPS и апскейла больше нет - ни строк, ни подписей,
-        # ни вызовов ds_set_*; строки 6-7 - зимняя тема и счётчик FPS, строка 8 -
-        # «Данные и приватность» (экран ST_PRIVACY), строк выше девятой нет.
+        # Settings: no fps cap or upscale row, label or ds_set_* call is left.
+        # Rows 6 and 7 are the winter theme and the frame counter, row 8 is data
+        # and privacy (ST_PRIVACY), and there is nothing above row nine.
         settings_body = "".join(compiler.functions["draw_settings"][2])
         assert "tr_fps_label()" not in settings_body
         assert "tr_scale_label()" not in settings_body

@@ -91,7 +91,8 @@ def compile_snippet(source, tmp=None, wrap=True):
 
     The snippet is wrapped in a function because blocks (`if`/`while`/`for`)
     live inside functions — a top-level `end` is a compile error in real
-    scripts too. wrap=False — кусок уже сам верхний уровень (классы и т.п.).
+    scripts too. wrap=False when the snippet is top level already (classes and
+    so on).
     """
     if wrap:
         source = 'public function lang_probe() -> void\n' + source + 'end\n'
@@ -101,8 +102,7 @@ def compile_snippet(source, tmp=None, wrap=True):
         ds = temp / "snippet.ds"
         ds.write_text(source, encoding="utf-8")
         out_c = temp / "snippet.c"
-        # compile() — тот же вход, которым пользуется gen.py: загрузка, разбор,
-        # генерация и запись файла.
+        # compile() is the entry point gen.py uses: load, parse, generate, write.
         if not c.compile([str(ds)], str(out_c)):
             raise AssertionError(f"snippet did not compile: {source}")
         out = out_c.read_text(encoding="utf-8")
@@ -115,7 +115,7 @@ def compile_snippet(source, tmp=None, wrap=True):
 def check_syntax():
     cases = [
         # (source, fragment that must appear in the generated C)
-        ('local number a = 1\n-- это комментарий, а не код\n', None),
+        ('local number a = 1\n-- this is a comment, not code\n', None),
         ('local number alive = 1\nif alive and not alive then\nds_log(1)\nend\n',
          'if (alive && !alive) {'),
         ('local number x = 0\nif x or x == 1 then\nds_log(2)\nend\n', 'if (x || x == 1) {'),
@@ -139,11 +139,11 @@ def check_syntax():
          ' + mod(7, 4) + trunc(2.7)\n',
          'ds_min(3, 4) + ds_max(1, 9) + ds_abs(-2) + ds_round(1.5) + ds_sign(-3) + '
          'ds_mod(7, 4) + ds_trunc(2.7);'),
-        # '--' и слова-операторы не должны трогать содержимое строк.
+        # '--' and the word operators must not touch the contents of strings.
         ('local string s = "and or -- not"\nds_log(s)\n', '"and or -- not"'),
-        # local без типа: тип выводится из инициализатора.
+        # local without a type: the type comes from the initialiser.
         ('local x = 5\nx += 1\nds_log(x)\n', 'double x = 5;'),
-        # Интерполяция строк в стиле C#: $"текст {выражение}".
+        # C#-style string interpolation: $"text {expression}".
         ('local number score = 7\nlocal string s = $"Баланс: {score}"\nds_log(s)\n',
          'ds_concat("Баланс: ", ds_num_to_string((double)(score)))'),
     ]
@@ -152,7 +152,7 @@ def check_syntax():
             out = compile_snippet(source, tmp=directory)
             if fragment and fragment not in out:
                 raise AssertionError(f"missing {fragment!r} in output for:\n{source}\n{out}")
-    print("syntax v2: --, and/or/not, elif/then, while do, for do, local, интерполяция")
+    print("syntax v2: --, and/or/not, elif/then, while do, for do, local, interpolation")
 
 
 CLASS_SNIPPET = (
@@ -196,7 +196,7 @@ def check_classes():
                      'self->core->v;', 'ds_mth_Counter_new(self);'):
         if fragment not in out:
             raise AssertionError(f"missing {fragment!r} in class output:\n{out}")
-    print("classes v2: self, private/public, static, new(), цепочки полей")
+    print("classes v2: self, private/public, static, new(), field chains")
 
 
 STRICT_CASES = [
@@ -223,7 +223,7 @@ def check_strictness():
             ok = c.compile([str(ds)], str(temp / "snippet.c"))
         if ok and not c.errors:
             raise AssertionError(f"v2 strictness missed {what}:\n{source}")
-    print("strictness v2: необъявленные, типы, неизвестные вызовы, then/do, private, арность")
+    print("strictness v2: undeclared, types, unknown calls, then/do, private, arity")
 
 
 def check_num_value():
@@ -263,8 +263,8 @@ def check_whole_game():
             raise AssertionError("game script did not compile")
         assert out_c.stat().st_size > 100_000, out_c.stat().st_size
         text = out_c.read_text(encoding="utf-8")
-        # 'else if' в скриптах 47 штук; однажды условие уезжало в C как
-        # '} else if (if i == 1) {' и game.c не собирался.
+        # There are 47 'else if' in the scripts; once the condition reached C as
+        # '} else if (if i == 1) {' and game.c did not build.
         assert '} else if (if ' not in text, "broken 'else if' in generated C"
         assert '} elif ' not in text and 'else if (if' not in text
     if c.errors or c.warnings:

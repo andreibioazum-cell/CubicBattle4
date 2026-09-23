@@ -1,14 +1,14 @@
-"""Компилятор DimScript v2: синтаксис Lua + строгость Java/C#.
+"""DimScript v2 compiler: Lua syntax with Java/C# strictness.
 
-Грамматика (всё, что не перечислено, — ошибка компиляции):
+Grammar, where anything not listed is a compile error:
 
-    import Dim.System.Gui            -- импорт модуля/пространства имён
-    -- комментарий                   -- только двойной дефис, как в Lua
+    import Dim.System.Gui            -- module or namespace import
+    -- comment                       -- double dash only, as in Lua
 
-    class Player                     -- класс: поля + методы + конструктор
-        private number hp = 10       -- поле с модификатором и типом
+    class Player                     -- class: fields, methods, constructor
+        private number hp = 10       -- field with a modifier and a type
         public string nick = "bot"
-        public function new()        -- конструктор (выполняется после полей)
+        public function new()        -- constructor, runs after the fields
             self.hp = 10
         end
         public function heal(number amount) -> void
@@ -19,15 +19,15 @@
         end
     end
 
-    public number score = 0          -- глобалка модуля с модификатором и типом
+    public number score = 0          -- module global with a modifier and a type
     private string title = "game"
 
-    public function tick(number dt) -> void   -- свободная функция
-        local number step = dt * 2            -- локальная переменная (local)
-        local Player p = new Player()         -- тип можно не писать: выведется
+    public function tick(number dt) -> void   -- free function
+        local number step = dt * 2            -- local variable
+        local Player p = new Player()         -- the type may be left out
         p.heal(step)
-        Gui.text(24, $"Баланс: {score}")      -- интерполяция строк как в C#
-        if p.hp > 0 and not p.dead then       -- блоки Lua: then / do / end
+        Gui.text(24, $"Balance: {score}")     -- C#-style string interpolation
+        if p.hp > 0 and not p.dead then       -- Lua blocks: then / do / end
             score += 1
         end
         for i = 1 to 3 do
@@ -35,13 +35,13 @@
         end
     end
 
-    local Player g = new Player()    -- инструкции верхнего уровня (ds_main)
+    local Player g = new Player()    -- top level statements (ds_main)
     g.heal(1)
 
-Строгость: необъявленная переменная, неизвестное имя, неизвестный вызов,
-несовпадение числа аргументов, несовпадение типов (number/string/класс),
-чужое приватное поле и отсутствие поля класса — ошибки компиляции, а не
-тихий пропуск строки, как это было в v1.
+Strictness: an undeclared variable, an unknown name or call, a wrong argument
+count, a type mismatch (number, string, class), a private field of another class
+and a missing class field are compile errors rather than the silently skipped
+line of v1.
 """
 
 import os
@@ -145,13 +145,13 @@ BUILTINS = frozenset({
     'ds_log', 'console_count', 'console_line', 'console_type',
     'console_clear', 'arr_new', 'arr_push', 'arr_get', 'arr_set', 'arr_len',
     'arr_clear', 'clamp', 'lerp', 'dist',
-    # Математика для скриптов. В C у этих имён префикс ds_ (см. FUNCTION_MAP и
-    # native/runtime/core.inc), чтобы не спорить с libc: abs(), round() и т.п.
-    # уже есть в stdlib с другими сигнатурами.
+    # Maths for scripts. In C those names carry the ds_ prefix (see FUNCTION_MAP
+    # and native/runtime/core.inc) so they do not clash with libc, where abs(),
+    # round() and the like already exist with other signatures.
     'min', 'max', 'abs', 'round', 'sign', 'mod', 'trunc',
 })
 
-# Имена скрипта -> имена в C. Пусто = имя совпадает.
+# Script names to C names. Empty means the name is the same.
 FUNCTION_MAP = {
     'min': 'ds_min',
     'max': 'ds_max',
@@ -196,8 +196,8 @@ STR_BUILTINS = frozenset({
     'str_upper',
 })
 
-# Встроенные пространства имён: import Dim.System.Graphics разрешает писать
-# Graphics.rect(...), но и прежние короткие вызовы rect(...) остаются.
+# Built-in namespaces: import Dim.System.Graphics allows Graphics.rect(...),
+# while the short rect(...) calls keep working.
 STD_NAMESPACES = {
     'Dim.System.Graphics': 'Graphics',
     'Dim.System.Math': 'Math',
@@ -209,16 +209,16 @@ _NAME = r'[A-Za-z_]\w*'
 _NUM_RE = re.compile(r'^(?:[-+]?\d+(?:\.\d+)?|0[xX][0-9a-fA-F]+)$')
 _LHS_RE = re.compile(r'^(' + _NAME + r')(?:\.(' + _NAME + r'))?$')
 _FOR_RE = re.compile(
-    r'^for\s+(' + _NAME + r')\s*=\s*(.+?)\s+(?:to|до)\s+(.+?)'
-    r'(?:\s+(?:step|шаг)\s+(.+?))?\s+do$', re.IGNORECASE)
+    r'^for\s+(' + _NAME + r')\s*=\s*(.+?)\s+(?:to)\s+(.+?)'
+    r'(?:\s+(?:step)\s+(.+?))?\s+do$', re.IGNORECASE)
 _COMPOUND_OPS = ('+=', '-=', '*=', '/=')
-# Математика из math.h, которую подключает сгенерированный game.c.
+# Maths from math.h, which the generated game.c includes.
 NATIVE_MATH = frozenset({'fabs'})
 _MODS = ('public', 'private')
 
 
 def num_value(text):
-    """Числовое значение литерала или None, если это не просто число."""
+    """Numeric value of a literal, or None when it is not a plain number."""
     text = text.strip()
     if not _NUM_RE.match(text):
         return None
@@ -229,7 +229,7 @@ def num_value(text):
 
 
 def scan(text):
-    """Глубина скобок и маска строковых литералов для каждого символа."""
+    """Bracket depth and string literal mask for every character."""
     n = len(text)
     depth = [0] * n
     quoted = [False] * n
@@ -265,7 +265,7 @@ def scan(text):
 
 
 def open_parens(text):
-    """Сколько '(' остались незакрытыми (вне строковых литералов)."""
+    """How many '(' are left unclosed, outside string literals."""
     _, quoted = scan(text)
     balance = 0
     for i, c in enumerate(text):
@@ -291,7 +291,7 @@ def split_top(text, sep):
 
 
 def strip_comment(line):
-    """Комментарий v2 — только '--' (Lua). Внутри строк дефисы остаются."""
+    """A v2 comment starts with '--' as in Lua; dashes in strings stay."""
     out = []
     i = 0
     in_str = False
@@ -322,7 +322,8 @@ def strip_comment(line):
 
 
 def find_compound(line):
-    """Позиция составного оператора (+=, -=, *=, /=) вне строк и скобок."""
+    """Position of a compound operator (+=, -=, *=, /=) outside strings and
+    brackets."""
     depth, quoted = scan(line)
     for i, c in enumerate(line):
         if quoted[i] or depth[i] or i + 1 >= len(line):
@@ -366,7 +367,7 @@ def sub_unquoted(e, pat, repl):
 
 
 def interp_holes(text):
-    """Разбирает $"...{expr}...": список ('lit', s) / ('hole', expr)."""
+    """Parses $"...{expr}...": a list of ('lit', s) and ('hole', expr)."""
     parts = []
     i = 2
     lit = []
@@ -402,12 +403,12 @@ def interp_holes(text):
 
 class DimScriptCompiler:
     def __init__(self):
-        self.objects = {}        # класс -> {поле: (видимость, тип, default)}
-        self.methods = {}        # класс -> {имя: (видимость, static, params, ret, body)}
-        self.vars = {}           # глобалки: имя -> (видимость, тип, default)
-        self.functions = {}      # свободные функции: имя -> (видимость, params, body)
-        self.func_ret = {}       # имя -> тип возврата ('num'/'str'/класс/'void')
-        self.imports = {}        # пространство имён -> путь импорта
+        self.objects = {}        # class -> {field: (visibility, type, default)}
+        self.methods = {}        # class -> {name: (visibility, static, params, ret, body)}
+        self.vars = {}           # globals: name -> (visibility, type, default)
+        self.functions = {}      # free functions: name -> (visibility, params, body)
+        self.func_ret = {}       # name -> return type ('num', 'str', class, 'void')
+        self.imports = {}        # namespace -> import path
         self.top = []
         self.lines = []
         self.errors = 0
@@ -432,7 +433,7 @@ class DimScriptCompiler:
         self.warnings += 1
         print(f"DimScript warning: {msg}", file=sys.stderr)
 
-    # ─────────────────────────── загрузка ───────────────────────────
+    # ----------------------------- loading -----------------------------
 
     def _load(self, paths):
         self.sources = [os.path.abspath(p) for p in paths]
@@ -475,7 +476,7 @@ class DimScriptCompiler:
         return True
 
     def _resolve_import(self, path, from_file):
-        """import Dim.System.Gui -> файл Dim/System/Gui.ds рядом с исходниками."""
+        """import Dim.System.Gui maps to Dim/System/Gui.ds next to the sources."""
         ns = path.split('.')[-1]
         if path in STD_NAMESPACES:
             self.imports[ns] = path
@@ -492,11 +493,11 @@ class DimScriptCompiler:
                         self.imports[ns] = path
                         return cand
                 cur = os.path.dirname(cur)
-        # Разрешится позже: класс с таким именем может объявить сам проект.
+        # Resolved later: the project itself may declare a class with that name.
         self.imports[ns] = path
         return None
 
-    # ─────────────────────────── разбор ───────────────────────────
+    # ------------------------------ parsing ------------------------------
 
     def _decl_list(self, line):
         """[public|private] [local] type a=1, b=2 -> [(vis, local, type, name, val)]."""
@@ -531,28 +532,28 @@ class DimScriptCompiler:
                 self._error("unexpected 'end' at top level")
                 i += 1
             elif line.startswith('include '):
-                self._error(f"v2: 'include' удалён, используйте import: {line}")
+                self._error(f"v2: 'include' is gone, use import: {line}")
                 i += 1
             elif line.startswith('object '):
-                self._error(f"v2: 'object' заменён на 'class': {line}")
+                self._error(f"v2: 'object' became 'class': {line}")
                 i += 1
             elif re.match(r'^(public|private)\s+(static\s+)?class\s+', line) or line.startswith('class '):
                 i = self._parse_class(i)
             elif re.match(r'^(public|private)\s+static\s+function\s+', line):
-                self._error(f"'static' допустим только внутри class: {line}")
+                self._error(f"'static' is only allowed inside a class: {line}")
                 i += 1
             elif re.match(r'^(public|private)\s+function\s+', line):
                 i = self._parse_function(i)
             elif line.startswith('function '):
                 self._error(
-                    f"v2: функции нужен модификатор доступа: 'public function ...': {line}")
+                    f"v2: a function needs an access modifier: 'public function ...': {line}")
                 i += 1
             elif self._top_decl(line):
                 self._parse_global(line)
                 i += 1
             elif re.match(r'^(number|string|color|array|num|str|col|arr)\s+', line):
                 self._error(
-                    f"v2: объявлению нужен модификатор или local: 'public ...' / 'local ...': {line}")
+                    f"v2: a declaration needs a modifier or local: 'public ...' / 'local ...': {line}")
                 i += 1
             else:
                 self.top.append(line)
@@ -567,7 +568,7 @@ class DimScriptCompiler:
         if any(t not in TYPES and t not in self.objects for _v, _l, t, _n, _d in lst):
             return None
         if any(local for _v, local, _t, _n, _d in lst):
-            return None  # local верхнего уровня — инструкция, не объявление
+            return None  # a top level local is a statement, not a declaration
         if any(vis is None for vis, _l, _t, _n, _d in lst):
             return None
         return lst
@@ -577,7 +578,7 @@ class DimScriptCompiler:
             if path in STD_NAMESPACES:
                 continue
             if ns not in self.objects:
-                self._error(f"import {path}: класс '{ns}' не найден среди исходников")
+                self._error(f"import {path}: no class '{ns}' among the sources")
 
     def _parse_class(self, i):
         m = re.match(r'^(?:(public|private)\s+)?class\s+(' + _NAME + r')\s*$', self.lines[i])
@@ -602,11 +603,11 @@ class DimScriptCompiler:
             if lst and not any(local for _v, local, _t, _n, _d in lst):
                 for vis, _loc, t, fn, v in lst:
                     if not vis:
-                        self._error(f"class '{name}': у поля нужен модификатор "
+                        self._error(f"class '{name}': a field needs a modifier "
                                     f"public/private: {line}")
                     elif t not in TYPES and t not in self.objects:
-                        self._error(f"class '{name}': поле '{fn}' — ожидается тип "
-                                    f"(встроенный или класс)")
+                        self._error(f"class '{name}': field '{fn}' needs a type, "
+                                    f"built-in or class")
                     elif fn in fields:
                         self._error(f"dup field '{name}.{fn}'")
                     else:
@@ -624,7 +625,7 @@ class DimScriptCompiler:
                     ret = 'void'
                 elif ret is not None and ret not in TYPES and ret not in self.objects \
                         and ret != name:
-                    self._error(f"class '{name}': неизвестный тип возврата '{ret}'")
+                    self._error(f"class '{name}': unknown return type '{ret}'")
                 body, j = self._collect_block(j + 1, f"method '{name}.{mname}'")
                 if mname in methods:
                     self._error(f"dup method '{name}.{mname}'")
@@ -634,22 +635,22 @@ class DimScriptCompiler:
                     self._note_ret(name + '.' + mname, ret, body, params)
                 continue
             if re.match(r'^function\s+', line):
-                self._error(f"v2: методу нужен модификатор: 'public function ...': {line}")
+                self._error(f"v2: a method needs a modifier: 'public function ...': {line}")
                 j += 1
                 continue
-            self._error(f"class '{name}': ожидалось поле или метод, получено: {line}")
+            self._error(f"class '{name}': expected a field or a method, got: {line}")
             j += 1
         self._error(f"class '{name}' no end")
         return j
 
     def _note_ret(self, key, ret, body, params):
-        """Запоминает тип возврата: явный '-> t' или вывод по return."""
+        """Records the return type, either from '-> t' or inferred from return."""
         if ret and ret != 'void':
             self.func_ret[key] = ret
         elif ret == 'void':
             self.func_ret[key] = 'void'
         elif any(line.startswith('return ') for line in body):
-            self.func_ret[key] = 'num'  # уточнится в _infer_returns
+            self.func_ret[key] = 'num'  # refined in _infer_returns
         else:
             self.func_ret[key] = 'void'
 
@@ -663,7 +664,7 @@ class DimScriptCompiler:
         if ret == 'void':
             pass
         elif ret is not None and ret not in TYPES and ret not in self.objects:
-            self._error(f"function '{name}': неизвестный тип возврата '{ret}'")
+            self._error(f"function '{name}': unknown return type '{ret}'")
         body, j = self._collect_block(i + 1, f"function '{name}'")
         if name in self.functions:
             self._error(f"dup function '{name}'")
@@ -680,7 +681,7 @@ class DimScriptCompiler:
         for part in split_top(text, ',') if text.strip() else []:
             w = part.split()
             if len(w) != 2 or (canon_type(w[0]) not in TYPES and w[0] not in self.objects):
-                self._error(f"invalid param '{part}' (нужно 'type name')")
+                self._error(f"invalid param '{part}' (expected 'type name')")
                 continue
             params.append((canon_type(w[0]), w[1]))
         return params
@@ -722,7 +723,7 @@ class DimScriptCompiler:
                     continue
             self.vars[n] = (vis, t, v)
 
-    # ─────────────────────────── типы ───────────────────────────
+    # ------------------------------- types -------------------------------
 
     def c_type(self, t):
         if t in TYPES:
@@ -818,7 +819,7 @@ class DimScriptCompiler:
         r = self.func_ret.get(f'{cls}.{method}')
         return None if r == 'void' else r
 
-    # ─────────────────────────── выражения ───────────────────────────
+    # ----------------------------- expressions -----------------------------
 
     def expr(self, e):
         e = e.strip()
@@ -841,7 +842,7 @@ class DimScriptCompiler:
         return self._fields(e)
 
     def _interp(self, e):
-        """$"текст {expr} текст" -> цепочка ds_concat(...)."""
+        """$"text {expr} text" becomes a chain of ds_concat(...)."""
         parts = interp_holes(e)
         if not parts:
             return '""'
@@ -857,7 +858,7 @@ class DimScriptCompiler:
         return out
 
     def _logic(self, e):
-        """Слова-операторы: and / or / not -> && / || / !."""
+        """Word operators: and, or, not become &&, || and !."""
         e = e.strip()
         e = sub_unquoted(e, re.compile(r'\band\b'), '&&')
         e = sub_unquoted(e, re.compile(r'\bor\b'), '||')
@@ -865,7 +866,8 @@ class DimScriptCompiler:
         return e
 
     def _chain_two(self, e, holder_re, holder_c, cls):
-        """self.a.b / obj.a.b -> holder->a->b (два поля, без вызова на конце)."""
+        """self.a.b and obj.a.b become holder->a->b: two fields, no call at the
+        end."""
         def repl(m):
             a, b = m.group(1), m.group(2)
             fld = self.objects.get(cls, {}).get(a)
@@ -877,7 +879,7 @@ class DimScriptCompiler:
         return re.sub(holder_re, repl, e)
 
     def _fields(self, e):
-        """self.f и obj.f -> указательные поля C; затем вызовы."""
+        """self.f and obj.f become C pointer fields; calls come after them."""
         if self.cur_class:
             e = self._chain_two(e, r'\bself\.(' + _NAME + r')\.(' + _NAME + r')(?![.(\w])',
                                 'self', self.cur_class)
@@ -897,8 +899,8 @@ class DimScriptCompiler:
     def _resolve_dotted(self, e):
         """'self.win.isOpen(a, b)' -> (base_c, 'Win.isOpen', [args]).
 
-        Поддерживает цепочки self.a.b(...) и obj.m(...); базой может быть имя,
-        self или результат вызова (тогда база компилируется рекурсией).
+        Handles chains like self.a.b(...) and obj.m(...), where the base may be a
+        name, self or the result of a call, which is then compiled recursively.
         """
         m = re.match(r'^(.*?)\.(' + _NAME + r')\s*\((.*)\)$', e, re.S)
         if not m:
@@ -918,11 +920,11 @@ class DimScriptCompiler:
         return base_c, (cls, method), args
 
     def _calls(self, e):
-        """Вызовы: методы классов, static-методы, пространства имён, функции.
+        """Calls: class methods, static methods, namespaces and functions.
 
-        Lookbehind вместо поглощающего префикса: иначе символ перед вызовом
-        ('(' предыдущего вызова, запятая) съедался матчем, и следующий вызов
-        оставался без подстановки ds_fn_.
+        A lookbehind replaces the swallowing prefix: the character before a call
+        (the '(' of the previous call, a comma) used to be eaten by the match and
+        the next call was left without the ds_fn_ prefix.
         """
         e = sub_unquoted(e, re.compile(r'\bnew\s+(' + _NAME + r')\s*\(\)'), r'ds_new_\1()')
         _, quoted = scan(e)
@@ -946,7 +948,7 @@ class DimScriptCompiler:
             pos = close + 1
         out.append(e[pos:])
         e = ''.join(out)
-        # Свободные функции и builtins.
+        # Free functions and builtins.
         _, quoted = scan(e)
         out = []
         start = 0
@@ -989,7 +991,7 @@ class DimScriptCompiler:
             cls = self.cur_class
             base_c = 'self'
             if not cls:
-                self._error(f"'self' вне метода класса: {whole}")
+                self._error(f"'self' outside a class method: {whole}")
                 return '0'
         elif not mid and base in self.objects:
             return self._call_static(base, method, args, whole)
@@ -999,27 +1001,27 @@ class DimScriptCompiler:
                 ns = STD_NAMESPACES[path]
                 pool = BUILTINS if ns == 'Graphics' else _MATH_NS
                 if method not in pool:
-                    self._error(f"{base}.{method}: нет такой встроенной функции")
+                    self._error(f"{base}.{method}: no such built-in function")
                     return '0'
                 return (FUNCTION_MAP.get(method, method) + '('
                         + ', '.join(self.expr(a) for a in args) + ')')
             if base in self.objects:
                 return self._call_static(base, method, args, whole)
-            self._error(f"import {path} не даёт класс '{base}': {whole}")
+            self._error(f"import {path} does not provide the class '{base}': {whole}")
             return '0'
         elif base in self.scope or base in self.vars:
             cls = self._holder_type(base)
             base_c = self._fields(base)
         else:
-            self._error(f"неизвестный вызов '{whole}'")
+            self._error(f"unknown call '{whole}'")
             return '0'
         for f in mid:
             fld = self.objects.get(cls, {}).get(f)
             if not fld:
-                self._error(f"у класса '{cls}' нет поля '{f}': {whole}")
+                self._error(f"class '{cls}' has no field '{f}': {whole}")
                 return '0'
             if fld[0] == 'private' and cls != self.cur_class:
-                self._error(f"приватное поле '{cls}.{f}' прочитано извне класса")
+                self._error(f"private field '{cls}.{f}' read from outside the class")
                 return '0'
             base_c = f'{base_c}->{f}'
             cls = fld[1]
@@ -1028,18 +1030,18 @@ class DimScriptCompiler:
     def _call_method(self, cls, method, base_c, args, whole):
         m = self.methods.get(cls, {}).get(method)
         if not m:
-            self._error(f"у класса '{cls}' нет метода '{method}': {whole}")
+            self._error(f"class '{cls}' has no method '{method}': {whole}")
             return '0'
         vis, static, params, _ret, _body = m
         if vis == 'private' and cls != self.cur_class:
-            self._error(f"приватный метод '{cls}.{method}' вызван извне класса")
+            self._error(f"private method '{cls}.{method}' called from outside the class")
             return '0'
         if static:
-            self._error(f"'{cls}.{method}' — static, вызов через экземпляр: {whole}")
+            self._error(f"'{cls}.{method}' is static, called on an instance: {whole}")
             return '0'
         if len(args) != len(params):
-            self._error(f"метод '{cls}.{method}' ждёт {len(params)} аргумент(а), "
-                        f"передано {len(args)}: {whole}")
+            self._error(f"method '{cls}.{method}' wants {len(params)} argument(s), "
+                        f"{len(args)} given: {whole}")
             return '0'
         return (f'ds_mth_{cls}_{method}({base_c}' +
                 ('' if not args else ', ' + ', '.join(self.expr(a) for a in args)) + ')')
@@ -1047,18 +1049,18 @@ class DimScriptCompiler:
     def _call_static(self, cls, method, args, whole):
         m = self.methods.get(cls, {}).get(method)
         if not m:
-            self._error(f"у класса '{cls}' нет static метода '{method}': {whole}")
+            self._error(f"class '{cls}' has no static method '{method}': {whole}")
             return '0'
         vis, static, params, _ret, _body = m
         if not static:
-            self._error(f"'{cls}.{method}' — не static, нужен экземпляр: {whole}")
+            self._error(f"'{cls}.{method}' is not static, an instance is needed: {whole}")
             return '0'
         if vis == 'private' and cls != self.cur_class:
-            self._error(f"приватный static '{cls}.{method}' вызван извне класса")
+            self._error(f"private static '{cls}.{method}' called from outside the class")
             return '0'
         if len(args) != len(params):
-            self._error(f"static '{cls}.{method}' ждёт {len(params)} аргумент(а), "
-                        f"передано {len(args)}: {whole}")
+            self._error(f"static '{cls}.{method}' wants {len(params)} argument(s), "
+                        f"{len(args)} given: {whole}")
             return '0'
         return (f'ds_stc_{cls}_{method}(' +
                 ', '.join(self.expr(a) for a in args) + ')')
@@ -1068,10 +1070,10 @@ class DimScriptCompiler:
             return self.expr(e)
         return f'ds_num_to_string((double)({self.expr(e)}))'
 
-    # ─────────────────────────── строгость ───────────────────────────
+    # ---------------------------- strictness ----------------------------
 
     def _check_idents(self, e, where):
-        """Необъявленных имён в выражении быть не должно (строгость v2)."""
+        """No undeclared name may appear in an expression, per v2 strictness."""
         for m in re.finditer(r'\$"(?:[^"\\]|\\.)*"', e):
             for kind, val in interp_holes(m.group(0)):
                 if kind == 'hole':
@@ -1083,7 +1085,7 @@ class DimScriptCompiler:
             if quoted[i] or depth[i]:
                 continue
             if i > 0 and e[i - 1] == '.':
-                continue  # поле/метод: проверятся отдельно
+                continue  # a field or method is checked separately
             nxt = e[m.end():m.end() + 1]
             name = m.group(0)
             if nxt == '(':
@@ -1091,19 +1093,19 @@ class DimScriptCompiler:
                         or name in self.objects or name in self.imports
                         or name in NATIVE_MATH):
                     continue
-                self._error(f"{where}: неизвестный вызов '{name}(...)'")
+                self._error(f"{where}: unknown call '{name}(...)'")
                 continue
             if name in ('true', 'false', 'and', 'or', 'not', 'new', 'self',
                         'to', 'step', 'do', 'then'):
                 continue
             if name in NATIVE_MATH or name in ('unsigned', 'int', 'double',
                                                 'char', 'float'):
-                continue  # честные C-касты и math.h внутри выражений
+                continue  # real C casts and math.h inside expressions
             if name in self.scope or name in self.vars or name in ENGINE_VARS:
                 continue
             if name in self.objects or name in self.imports:
-                continue  # база цепочки или имя класса
-            self._error(f"{where}: неизвестное имя '{name}'")
+                continue  # the base of a chain or a class name
+            self._error(f"{where}: unknown name '{name}'")
 
     def _check_types(self, lhs_type, rhs, where):
         rt = self.expr_type(rhs)
@@ -1113,12 +1115,12 @@ class DimScriptCompiler:
             return
         if lhs_type in TYPES and rt in TYPES:
             if {canon_type(lhs_type), canon_type(rt)} == {'num', 'str'}:
-                self._error(f"{where}: несовместимые типы {lhs_type} и {rt}")
+                self._error(f"{where}: incompatible types {lhs_type} and {rt}")
             return
         if lhs_type in self.objects or rt in self.objects:
-            self._error(f"{where}: несовместимые типы {lhs_type} и {rt}")
+            self._error(f"{where}: incompatible types {lhs_type} and {rt}")
 
-    # ─────────────────────────── вывод кода ───────────────────────────
+    # --------------------------- code output ---------------------------
 
     def _out(self, s):
         self.output.append('    ' * self.indent + s)
@@ -1140,19 +1142,19 @@ class DimScriptCompiler:
         if line.startswith('if '):
             cond = line[3:].strip()
             if not cond.endswith('then'):
-                self._error(f"v2: 'if <условие> then' (без then блок не открывается): {line}")
+                self._error(f"v2: 'if <condition> then' (without then no block opens): {line}")
                 return
             self._open_block(f'if ({self.expr(cond[:-4].strip())})')
             return
         if line.startswith('while '):
             cond = line[6:].strip()
             if not cond.endswith('do'):
-                self._error(f"v2: 'while <условие> do': {line}")
+                self._error(f"v2: 'while <condition> do': {line}")
                 return
             self._open_block(f'while ({self.expr(cond[:-2].strip())})')
             return
         if line.startswith('loop '):
-            self._error(f"v2: 'loop' заменён на 'while ... do': {line}")
+            self._error(f"v2: 'loop' became 'while ... do': {line}")
             return
         if line.startswith('for '):
             self._open_for(line)
@@ -1173,7 +1175,7 @@ class DimScriptCompiler:
                 rest = line[8:] if line.startswith('else if ') else line[5:]
                 rest = rest.strip()
                 if not rest.endswith('then'):
-                    self._error(f"v2: 'else if <условие> then': {line}")
+                    self._error(f"v2: 'else if <condition> then': {line}")
                     return
                 header = 'else if (' + self.expr(rest[:-4].strip()) + ')'
             self.indent -= 1
@@ -1205,7 +1207,7 @@ class DimScriptCompiler:
         if lst and lst[0][1]:  # local ...
             for vis, _loc, t, n, v in lst:
                 if vis:
-                    self._error(f"v2: у local не бывает модификатора: {line}")
+                    self._error(f"v2: local takes no modifier: {line}")
                     continue
                 if n in self.scope:
                     self._error(f"dup var '{n}'")
@@ -1220,10 +1222,10 @@ class DimScriptCompiler:
                 self._out(f'{self.c_type(t)} {n} {init};')
             return
         if lst and not lst[0][1] and not lst[0][0]:
-            self._error(f"v2: внутри функции локальные переменные объявляются через local: {line}")
+            self._error(f"v2: inside a function locals are declared with local: {line}")
             return
         if lst:
-            self._error(f"v2: модификатор public/private внутри функции не нужен, используйте local: {line}")
+            self._error(f"v2: no public or private modifier inside a function, use local: {line}")
             return
         self._emit_statement(line, where)
 
@@ -1236,7 +1238,7 @@ class DimScriptCompiler:
         m = _FOR_RE.match(line)
         if not m:
             self._error(
-                "v2: цикл пишется 'for <var> = <от> to <до> [step <n>] do': " + line)
+                "v2: a loop is 'for <var> = <from> to <to> [step <n>] do': " + line)
             return
         var, lo, hi, step = m.group(1), m.group(2), m.group(3), (m.group(4) or '').strip()
         nums = [num_value(lo), num_value(hi)]
@@ -1268,18 +1270,18 @@ class DimScriptCompiler:
         if i >= 0:
             self._emit_assign(line[:i].strip(), line[i + 1:].strip(), where)
             return
-        # Инструкция-вызов: скобки обязательны (v2).
+        # A call statement needs brackets in v2.
         if re.match(r'^' + _NAME + r'\s+[^=]+$', line) and not line.startswith(('local ', 'return ')):
-            self._error(f"v2: вызов пишется со скобками: '{line.split()[0]}(...)': {line}")
+            self._error(f"v2: a call needs brackets: '{line.split()[0]}(...)': {line}")
             return
         name, rest = self._split_call(line)
         if not name:
-            # Метод/self/цепочка как инструкция: self.m(x), obj.m(x), Ns.f(x).
+            # A method, self or chain as a statement: self.m(x), obj.m(x), Ns.f(x).
             if re.match(r'^(self|' + _NAME + r')\.', line):
                 self._check_idents(line, where)
                 self._out(self.expr(line) + ';')
                 return
-            self._error(f"v2: нераспознанная инструкция: {line}")
+            self._error(f"v2: unrecognised statement: {line}")
             return
         args = split_top(rest, ',') if rest else []
         for a in args:
@@ -1293,8 +1295,8 @@ class DimScriptCompiler:
         elif name in BUILTINS:
             fn = FUNCTION_MAP.get(name, name)
         else:
-            self._error(f"неизвестный вызов '{name}' (v2: объявите функцию или "
-                        f"добавьте нативную в BUILTINS): {line}")
+            self._error(f"unknown call '{name}' (v2: declare the function or add "
+                        f"the native one to BUILTINS): {line}")
             return
         self._out(f'{fn}({", ".join(self.expr(a) for a in args)});')
 
@@ -1306,14 +1308,14 @@ class DimScriptCompiler:
         self_ref, name, field = m.group(1), m.group(2), m.group(3)
         if self_ref:
             if field:
-                self._error(f"{where}: присваивание цепочке self.{name}.{field} не поддерживается")
+                self._error(f"{where}: assignment to the chain self.{name}.{field} is not supported")
                 return
             if not self._check_field_write('self', name, where):
                 return
             target = f'self->{name}'
         else:
             if name not in self.scope and name not in self.vars and name not in ENGINE_VARS:
-                self._error(f"необъявленная переменная в '{lhs} {op}= {rhs}'")
+                self._error(f"undeclared variable in '{lhs} {op}= {rhs}'")
                 return
             target = self._fields(lhs)
         self._check_idents(rhs, where)
@@ -1322,29 +1324,29 @@ class DimScriptCompiler:
     def _check_field_write(self, name, field, where):
         cls = self.cur_class
         if name != 'self' or not cls:
-            self._error(f"{where}: присваивание полю без self.: {name}.{field}")
+            self._error(f"{where}: assignment to a field without self.: {name}.{field}")
             return False
         f = self.objects.get(cls, {}).get(field)
         if not f:
-            self._error(f"{where}: у класса '{cls}' нет поля '{field}'")
+            self._error(f"{where}: class '{cls}' has no field '{field}'")
             return False
         return True
 
     def _emit_assign(self, lhs, rhs, where):
         m = re.match(r'^(self\.)?(' + _NAME + r')(?:\.(' + _NAME + r'))?$', lhs)
         if not m:
-            self._error(f"v2: нераспознанное присваивание: {lhs} = {rhs}")
+            self._error(f"v2: unrecognised assignment: {lhs} = {rhs}")
             return
         self_ref, name, field = m.group(1), m.group(2), m.group(3)
         self._check_idents(rhs, where)
         if self_ref:
             if field:
-                self._error(f"{where}: присваивание цепочке self.{name}.{field} не поддерживается")
+                self._error(f"{where}: assignment to the chain self.{name}.{field} is not supported")
                 return
             if not self._check_field_write('self', name, where):
                 return
             f = self.objects[self.cur_class][name]
-            self._check_types(f[1], rhs, f"поле '{self.cur_class}.{name}'")
+            self._check_types(f[1], rhs, f"field '{self.cur_class}.{name}'")
             self._out(f'self->{name} = {self.expr(rhs)};')
             return
         if rhs.startswith('new '):
@@ -1355,10 +1357,10 @@ class DimScriptCompiler:
             if name in self.vars and mm and self.vars[name][1] in self.objects:
                 self._out(f'{name} = ds_new_{mm.group(1)}();')
                 return
-            self._error(f"v2: 'new' допустим только в объявлении: {lhs} = {rhs}")
+            self._error(f"v2: 'new' is only allowed in a declaration: {lhs} = {rhs}")
             return
         if name not in self.scope and name not in self.vars and name not in ENGINE_VARS:
-            self._error(f"присваивание необъявленной переменной '{name}': {lhs} = {rhs}")
+            self._error(f"assignment to the undeclared variable '{name}': {lhs} = {rhs}")
             return
         holder_type = self._holder_type(name)
         if field:
@@ -1366,22 +1368,22 @@ class DimScriptCompiler:
                 if name in ENGINE_VARS:
                     self._out(f'{lhs} = {self.expr(rhs)};')
                     return
-                self._error(f"'{name}' не объект класса: {lhs} = {rhs}")
+                self._error(f"'{name}' is not a class object: {lhs} = {rhs}")
                 return
             f = self.objects[holder_type].get(field)
             if not f:
-                self._error(f"у класса '{holder_type}' нет поля '{field}'")
+                self._error(f"class '{holder_type}' has no field '{field}'")
                 return
             if f[0] == 'private' and holder_type != self.cur_class:
-                self._error(f"приватное поле '{holder_type}.{field}' изменено извне класса")
+                self._error(f"private field '{holder_type}.{field}' set from outside the class")
                 return
-            self._check_types(f[1], rhs, f"поле '{holder_type}.{field}'")
+            self._check_types(f[1], rhs, f"field '{holder_type}.{field}'")
             self._out(f'{self._fields(lhs)} = {self.expr(rhs)};')
             return
-        self._check_types(holder_type, rhs, f"переменная '{name}'")
+        self._check_types(holder_type, rhs, f"variable '{name}'")
         self._out(f'{name} = {self.expr(rhs)};')
 
-    # ─────────────────────────── генерация ───────────────────────────
+    # ---------------------------- generation ----------------------------
 
     def _infer_returns(self):
         keys = [n for n in self.functions]
