@@ -20,14 +20,14 @@
 #define READ_TICK 60
 #define CHAT_TICK 1000
 #define EVENT_TICK 500
-/* Баннер админа ("text ..."): опрос banner.json раз в секунду - команда не
- * претендует на мгновенную доставку, как позиция игрока. */
+/* Admin banner ("text ..."): banner.json is polled once a second, since the
+ * command does not claim instant delivery the way a player position does. */
 #define BANNER_TICK 1000
 #define BANNER_COLOR_MAX 16
-/* Анти-дудос со своей стороны: если состояние игрока не меняется, слот всё
- * равно «тикать» должен чаще, чем TIMEOUT других клиентов. */
+/* Anti-DDoS on our side: even while the player state does not change, the slot
+ * has to tick more often than the TIMEOUT of the other clients. */
 #define HEARTBEAT_TICK 2500
-/* Чистку старых сообщений чата не нужно гонять каждую секунду. */
+/* Cleaning up old chat messages does not need to run every second. */
 #define CHAT_PRUNE_TICK 5000
 #define TIMEOUT 4000
 #define STALE 6000
@@ -43,7 +43,7 @@
 #define BAN_WAIT 2500
 #define BAN_KICK_TICK 2000
 
-/* Firebase Auth: буферы под подписанные токеном URL (URL + ?auth=<idToken>). */
+/* Firebase Auth: buffers for URLs signed with a token (URL + ?auth=<idToken>). */
 #define FB_URL_MAX 2048
 #define FB_ID_MAX 1100
 #define FB_REFRESH_MAX 512
@@ -91,9 +91,9 @@ static struct {
     long long banner_ts;
 } net = { .lock = DS_MUTEX_INIT };
 
-/* Список банов, прочитанный из облака. Это общий для всех клиентов источник
- * правды: локальный bans.dat есть только у того, кто ставил бан, поэтому
- * выкидывать из комнаты чужого забаненного игрока можно лишь по этому списку. */
+/* The ban list read from the cloud. It is the source of truth shared by every
+ * client, because bans.dat only exists on the device that placed the ban, so a
+ * banned stranger can only be kicked out of a room by this list. */
 typedef struct {
     DSMutex lock;
     char nick[BAN_MAX][LOGIN_NICK_MAX + 1];
@@ -105,11 +105,11 @@ static void ban_lock(void) { ds_mutex_lock(banlist.lock); }
 static void ban_unlock(void) { ds_mutex_unlock(banlist.lock); }
 
 static volatile sig_atomic_t net_fast = 0;
-/* Статики наблюдения за слотами (claim_slot) и приёма игроков (read_players):
- * живут на уровне файла, чтобы net_connect мог сбросить их при каждом новом
- * подключении - иначе записи прошлой сессии «помнят» чужие uid/seq и старые
- * метки времени, что путает захват слота и определение онлайна после
- * переподключения. */
+/* The statics that watch slots (claim_slot) and read players (read_players) live
+ * at file scope so net_connect can reset them on every new connection. Otherwise
+ * the records of the last session remember foreign uids and sequence numbers plus
+ * old timestamps, which confuses the slot claim and the online detection after a
+ * reconnect. */
 static unsigned long claim_seen_seq[NET_SLOTS];
 static long long claim_seen_at[NET_SLOTS];
 static char claim_seen_uid[NET_SLOTS][24];
@@ -156,8 +156,8 @@ static Progress pg = { .lock = DS_MUTEX_INIT };
 #define SKIN_MAX 1
 static int pending_cls = 0;
 static int pending_level = 0;
-/* Скин своего бойца: как и класс с уровнем, уходит в сетевой снимок, чтобы
- * соперники видели Азума-зомби, а не только сам игрок. */
+/* Our own fighter's skin travels in the network snapshot with the class and the
+ * level, so remotes see the Azum zombie and not the player alone. */
 static int pending_skin = 0;
 static void pg_lock(void) { ds_mutex_lock(pg.lock); }
 static void pg_unlock(void) { ds_mutex_unlock(pg.lock); }
@@ -182,8 +182,8 @@ static void normalize_level_pair(int *level, int *unlocked) {
     *level = clamp_level_value(*level);
     if (*level > *unlocked) *level = 0;
 }
-/* Атомарная запись: временный файл + rename. Убийство посреди записи не
- * обнуляет прогресс/достижения обрывком файла - старый файл остаётся цел. */
+/* Atomic write: a temporary file plus rename. Being killed mid-write does not
+ * truncate progress or achievements, since the old file stays intact. */
 static void file_write_atomic(const char *path, const char *text) {
     char tmp[400]; FILE *f;
     size_t n = strlen(text);
@@ -198,11 +198,11 @@ static void file_write_atomic(const char *path, const char *text) {
     remove(tmp);
 }
 
-/* Файл прогресса (progress.dat): запись, чтение и все геттеры net_load_*
- * вынесены в native/net/progress_file.inc - вместе с разбором старых
- * форматов файла. Объявлены здесь, потому что сохранение прогресса
- * (net_save_progress_all ниже) и вход по нику (auth_session.inc) вызывают их
- * раньше, чем они определены. */
+/* The progress file (progress.dat): writing, reading and the net_load_* getters
+ * live in native/net/progress_file.inc, together with the parsing of the old file
+ * formats. They are declared here because saving progress (net_save_progress_all
+ * below) and logging in by nick (auth_session.inc) call them before they are
+ * defined. */
 static void progress_write(int cups, int candies, int cls, int azum, int santa, int ebuc,
                            int level, int levels_unlocked,
                            int ordinary_level, int ordinary_levels_unlocked,
@@ -223,8 +223,9 @@ static int http(const char *method,const char *url,const char *body,char *out,si
 static void *http_delete_job(void *arg);
 static void room_slot_delete_async(int slot);
 static void sleep_ms(int ms);
-/* progress.dirty = «облако отстало от устройства»: PATCH профиля не прошёл
- * (нет сети, сервер лёг). Следующий вход дошлёт локальный прогресс целиком. */
+/* progress.dirty means the cloud lags behind the device: the profile PATCH did
+ * not go through, no network or a server down, and the next login sends the local
+ * progress again. */
 #define PROGRESS_DIRTY_FILE "progress.dirty"
 static void cloud_dirty_set(int on) {
     char path[320];
@@ -240,13 +241,13 @@ static int cloud_dirty_get(void) {
     fclose(f);
     return 1;
 }
-/* Облачные записи (прогресс, достижения) уходят PATCH'ем из фоновой нити.
- * Надёжность важна: раньше токен перед записью не обновлялся, и через час
- * после входа idToken протухал - PATCH уходил со старым токеном, Firebase
- * отвечал 401, а ответ нигде не проверялся. Покупка так и не доходила до
- * облака, и после перезахода (особенно с другого телефона) класс «исчезал».
- * Теперь: токен обновляем до записи, при 401 - форсируем refresh и
- * повторяем один раз. */
+/* Cloud writes of progress and achievements go out as PATCHes from a background
+ * thread, where reliability matters: the token used to be refreshed nowhere before
+ * a write, so an idToken expired an hour after login, the PATCH went out with the
+ * old token, Firebase answered 401 and nothing checked that answer. A purchase
+ * never reached the cloud, and after a re-entry, especially from another phone,
+ * the class disappeared. Now the token is refreshed before the write, a 401
+ * forces a refresh and the request is retried once. */
 static int http_patch_once(HttpJob *j) {
     int code;
     if (fb_enabled()) {
@@ -262,10 +263,11 @@ static int http_patch_once(HttpJob *j) {
     }
     return code;
 }
-/* Повторы облачной записи: 0 (нет ответа), 5xx и 429 - временные, шлём снова
- * через 1, 2, 4 с; 400/403 - правила базы, повтор бессмысленен. */
+/* Cloud write retries: 0, meaning no answer, 5xx and 429 are temporary, so the
+ * request goes out again after 1, 2 and 4 s, while 400 and 403 come from the
+ * database rules and a retry is pointless. */
 #define PATCH_RETRIES 4
-/* Порядковый номер записи прогресса в облако (0 - не прогресс). */
+/* Sequence number of a progress write into the cloud (0 means it is not progress). */
 static DSMutex patch_seq_lock = DS_MUTEX_INIT;
 static int patch_seq = 0;
 static void *http_patch_job(void *arg) {
@@ -285,8 +287,8 @@ static void *http_patch_job(void *arg) {
         if (net_log_ok()) LOGERR("cloud PATCH failed: HTTP %d%s", code,
                                  j->progress ? " (progress will be resent on next login)" : "");
     } else {
-        /* Метку снимает только самая свежая запись прогресса: если старый
-         * PATCH дошёл позже нового, а новый упал, устройство всё ещё «грязное». */
+        /* Only the freshest progress write clears the flag: if an older PATCH arrived
+         * after a newer one and the newer one failed, the device is still dirty. */
         if (j->progress) {
             int latest;
             ds_mutex_lock(patch_seq_lock);
@@ -341,8 +343,8 @@ void net_save_progress(double cups, double candies, double cls, double azum, dou
                           ol,ou,al,au,sl,su,el,eu,bp,sk);
 }
 
-/* Переменные достижений (используются и здесь для сохранения в Firebase, и
- * в auth_json.inc для чтения/записи локального файла). */
+/* Achievement variables, used here for saving to Firebase and in auth_json.inc for
+ * reading and writing the local file. */
 static DSMutex ach_lock = DS_MUTEX_INIT;
 static int ach_loaded = 0;
 static unsigned int ach_flags = 0;
@@ -365,17 +367,17 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
     if (k != 1 && k != 2 && k != 3) k = 0;
-    // Владение персонажами - липкое: раз куплен, не теряется даже если
-    // в облаке старая запись без него (фикс бага «буК пропал после перезахода»).
-    // Файл читаем обязательно: первое сохранение после запуска раньше шло
-    // мимо него (pg ещё не загружен) и затирало купленное на устройстве.
+    // Character ownership is sticky: once bought it is never lost, even if
+    // the cloud holds an old record without it, which fixed the buk that
+    // vanished after a re-entry. The file is always read, because the first
+    // save after start skipped it while pg was still unloaded and wiped local buys.
     progress_read();
     pg_lock();
     if (pg.loaded) {
         if (pg.azum == 1) a = 1;
         if (pg.santa == 1) sn = 1;
         if (pg.ebuc == 1) eu = 1;
-        // Уровни тоже только растут: облако не может откатить открытый уровень.
+        // Levels only grow too: the cloud cannot roll back an unlocked level.
         if (pg.ordinary_levels_unlocked > ou) ou = pg.ordinary_levels_unlocked;
         if (pg.azum_levels_unlocked > au) au = pg.azum_levels_unlocked;
         if (pg.santa_levels_unlocked > su) su = pg.santa_levels_unlocked;
@@ -422,8 +424,8 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     lg_unlock();
     if (nick[0] && net.base[0]) {
         char url[URL], body[BODY*3];
-        /* Достижения тоже уходят в облако: каждый раз при сохранении прогресса
-         * битмаск наград и счётчик возрождений пишутся в профиль игрока. */
+        /* Achievements reach the cloud as well: every progress save writes the reward
+         * bitmask and the revive counter into the player profile. */
         unsigned int af = 0, ar = 0;
         ds_mutex_lock(ach_lock);
         af = ach_flags; ar = ach_revives;
@@ -432,17 +434,17 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
         snprintf(body, sizeof(body),
                  "{\"cups\":%d,\"candies\":%d,\"cls\":%d,\"azum\":%d,\"santa\":%d,\"ebuc\":%d,\"level\":%d,\"levels\":%d,\"ordinary_level\":%d,\"ordinary_levels\":%d,\"azum_level\":%d,\"azum_levels\":%d,\"santa_level\":%d,\"santa_levels\":%d,\"ebuc_level\":%d,\"ebuc_levels\":%d,\"bp\":%d,\"azum_skin\":%d,\"ach_flags\":%u,\"ach_revives\":%u}",
                  c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk, af, ar);
-        /* Пока запись в пути, профиль считается несинхронизированным: если
-         * приложение убьют раньше ответа, следующий вход дошлёт прогресс. */
+        /* While a write is in flight the profile counts as unsynced, so if the app is
+         * killed before the answer, the next login sends the progress again. */
         cloud_dirty_set(1);
         http_patch_async_ex(url, body, 1);
     } else {
-        /* Без сессии (играли офлайн) покупка живёт только на устройстве -
-         * помечаем, чтобы при первом же входе она ушла в облако. */
+        /* Without a session, playing offline, a purchase lives on the device only, and
+         * the flag makes it reach the cloud at the first login. */
         cloud_dirty_set(1);
     }
 }
-/* Достижения - отдельный маленький файл с единым битмаском: ACH_FLAG_* задают
- * отдельные награды. Добавление нового бита не ломает старые записи. Путь
- * хранится рядом с аккаунтом и прогрессом. Реализация функций - в
+/* Achievements live in a small file of their own with one bitmask, where the
+ * ACH_FLAG_* values mark individual rewards. A new bit does not break old
+ * records, and the path sits next to the account and progress files, and the
  * auth_json.inc. */

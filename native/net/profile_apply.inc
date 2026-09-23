@@ -1,16 +1,17 @@
-/* Профиль игрока из облака: разбор записи /users/<ник> и слияние с устройством.
+/* The player profile from the cloud: parsing the /users/<nick> record and merging
+ * it with the device. */
  *
- * Вынесено из native/net/auth_session.inc. Здесь три вещи:
- *   apply_user_json            - разобрать JSON профиля в локальный прогресс;
- *   push_pg_to_cloud           - отправить локальный прогресс в облако;
- *   apply_user_json_keep_local - то же слияние, но облако может только
- *                                добавлять: купленное на устройстве не теряется.
- * Используют pg/progress_write из state_storage.inc, num/strv из auth_json.inc,
- * settings_sync_with_cloud из settings_storage.inc и promo_sync_with_cloud из
- * promo.inc - все они подключены раньше в net.c.
+ * Split out of native/net/auth_session.inc. Three things live here:
+ *   apply_user_json            - parse a profile JSON into the local progress;
+ *   push_pg_to_cloud           - send the local progress into the cloud;
+ *   apply_user_json_keep_local - the same merge, but the cloud may only add:
+ *                                whatever the device bought is never lost.
+ * They use pg/progress_write from state_storage.inc, num/strv from auth_json.inc,
+ * settings_sync_with_cloud from settings_storage.inc and promo_sync_with_cloud
+ * from promo.inc, all of which net.c includes earlier.
  */
-/* Разбор записи /users/<ник> в локальный прогресс (без пароля: в защищённом
- * режиме пароль проверяет Firebase Auth, а не база). */
+/* Parses the /users/<nick> record into the local progress, without a password:
+ * the protected mode has Firebase Auth checking it rather than the database. */
 static void apply_user_json(const char *resp) {
     int cups = (int)num(resp, "cups", 0);
     int candies = (int)num(resp, "candies", 0);
@@ -93,14 +94,14 @@ static void apply_user_json(const char *resp) {
                    santa_level, santa_levels_unlocked,
                    ebuc_level, ebuc_levels_unlocked,
                    bp_level, azum_skin);
-    /* Достижения из облака: если в записи пользователя есть ach_flags,
-     * загружаем их в локальный файл (облако - источник правды). */
+    /* Achievements from the cloud: ach_flags in the user record is loaded into
+     * the local file, since the cloud is the source of truth. */
     int cloud_ach_flags = (int)num(resp, "ach_flags", -1);
     int cloud_ach_revives = (int)num(resp, "ach_revives", -1);
     if (cloud_ach_flags >= 0) {
         ds_mutex_lock(ach_lock);
-        /* Облачные достижения перетирают локальные только если они «новее»
-         * (больше битов установлено) или если локальных ещё нет. */
+        /* Cloud achievements overwrite the local ones only when they are newer,
+         * with more bits set, or when there are none locally yet. */
         unsigned int local_f = ach_flags;
         unsigned int local_r = ach_revives;
         int loaded_local = ach_loaded;
@@ -110,7 +111,7 @@ static void apply_user_json(const char *resp) {
         int cloud_is_newer = !loaded_local || (cf | local_f) != local_f || cr > local_r;
         if (cloud_is_newer) {
             ds_mutex_lock(ach_lock);
-            ach_flags = cf | ach_flags; /* объединяем биты: ничего не теряется */
+            ach_flags = cf | ach_flags; /* the bits are merged, so nothing is lost */
             if (cr > ach_revives) ach_revives = cr;
             unsigned int wf = ach_flags, wr = ach_revives;
             ach_loaded = 1;
@@ -119,16 +120,16 @@ static void apply_user_json(const char *resp) {
             LOG("cloud achievements merged: flags=%u revives=%u", wf, wr);
         }
     }
-    /* Настройки из той же записи: см. settings_sync_with_cloud. */
+    /* Settings from the same record: see settings_sync_with_cloud. */
     settings_sync_with_cloud(resp);
-    /* Промокод из той же записи: см. promo_sync_with_cloud в promo.inc. */
+    /* The promo code from the same record: see promo_sync_with_cloud in promo.inc. */
     promo_sync_with_cloud(resp);
-    /* Время игры */
+    /* Play time */
     playtime_sync_with_cloud(resp);
 }
 
-/* Протолкнуть текущий локальный прогресс в облако (только после того, как
- * сессия логина уже установлена - иначе PATCH уйдёт без авторизации). */
+/* Pushes the current local progress into the cloud, which is allowed once the
+ * login session is established: otherwise the PATCH goes out unauthenticated. */
 static void push_pg_to_cloud(void) {
     int cups, candies, cls, azum, santa, ebuc, lv, lu;
     int ol, ou, al, au, sl, su, el, eul, bp, sk;
@@ -146,14 +147,14 @@ static void push_pg_to_cloud(void) {
                           lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
 }
 
-/* Облачная запись может отставать от локального устройства: записи в облако
- * асинхронные (http_patch_async), и покупка могла потеряться (сбой сети,
- * старые правила, не пускавшие поля ebuc / ebuc_level / ebuc_levels и cls=3).
- * После перезахода такая облачная запись «стирала» купленный локально класс.
- * Теперь возвращаем локальное состояние для каждого купленного класса
- * (Азум/Дед Мороз/бук + уровни) и выбранный класс: облако может добавлять,
- * но никогда не отнимает то, что уже есть на устройстве. Возврат 1 - облако
- * нужно обновить после логина (push_pg_to_cloud в net_auth). */
+/* The cloud record may lag behind the device: cloud writes are asynchronous
+ * (http_patch_async) and a purchase could be lost to a network failure or to
+ * old rules that rejected the fields ebuc, ebuc_level, ebuc_levels and cls=3.
+ * After a re-entry such a record wiped the class bought locally. The local state
+ * is therefore restored for every purchased class, Azum, Santa and the buk with
+ * their levels, together with the selected class: the cloud may add, but never
+ * takes away what the device already has. A return of 1 means the cloud needs an
+ * update after the login (push_pg_to_cloud in net_auth). */
 static int apply_user_json_keep_local(const char *resp) {
     int had = 0, restored = 0, dirty = cloud_dirty_get();
     int local_azum = 0, local_santa = 0, local_ebuc = 0, local_cls = 0;
@@ -178,10 +179,10 @@ static int apply_user_json_keep_local(const char *resp) {
     int cloud_azum, cloud_santa, cloud_ebuc;
     pg_lock();
     cloud_azum = pg.azum; cloud_santa = pg.santa; cloud_ebuc = pg.ebuc;
-    /* Последняя запись с этого устройства до облака не дошла: локальный файл
-     * новее облачной записи, поэтому валюты, уровни обычного и скин тоже
-     * берём с устройства (иначе купленное офлайн «оплатится» дважды - кубки
-     * вернутся из облака, а класс останется). */
+    /* The last write from this device never reached the cloud, so the local file
+     * is newer than the record there, and the currencies, the level of the normal
+     * class and the skin come from the device too, otherwise an offline purchase
+     * is paid for twice: the cups return from the cloud while the class stays. */
     if (dirty) {
         if (pg.cups != local_cups) { pg.cups = local_cups; restored = 1; }
         if (pg.candies != local_candies) { pg.candies = local_candies; restored = 1; }
@@ -198,22 +199,22 @@ static int apply_user_json_keep_local(const char *resp) {
     if (local_su > pg.santa_levels_unlocked) { pg.santa_levels_unlocked = local_su; restored = 1; }
     if (local_el > pg.ebuc_level) { pg.ebuc_level = local_el; restored = 1; }
     if (local_eu > pg.ebuc_levels_unlocked) { pg.ebuc_levels_unlocked = local_eu; restored = 1; }
-    /* Выбранный класс возвращаем только если облако «забыло» именно его
-     * (куплен локально, в облаке нет): тогда cloud cls уже сломан
-     * (apply_user_json свёл его на обычный), и выбор игрока теряется.
-     * Если облако знает класс - его выбор (cls) свежее локального файла. */
+    /* The selected class is restored only when the cloud forgot exactly that one,
+     * which means it was bought locally and is missing there: the cloud cls is
+     * already broken by then, as apply_user_json fell back to the normal class,
+     * and the player's choice would be lost. Otherwise cloud cls is the fresher. */
     if (local_cls > 0 && local_cls < 4) {
         int local_owned = 0, was_in_cloud = 0;
         if (local_cls == 1) { local_owned = local_azum; was_in_cloud = cloud_azum; }
         else if (local_cls == 2) { local_owned = local_santa; was_in_cloud = cloud_santa; }
         else { local_owned = local_ebuc; was_in_cloud = cloud_ebuc; }
         if (local_owned && !was_in_cloud && pg.cls != local_cls) { pg.cls = local_cls; restored = 1; }
-        /* При «грязном» устройстве локальный выбор тоже свежее облачного. */
+        /* On a dirty device the local choice is the fresher one as well. */
         else if (dirty && local_owned && pg.cls != local_cls) { pg.cls = local_cls; restored = 1; }
     } else if (dirty && local_cls == 0 && pg.cls != 0) {
         pg.cls = 0; restored = 1;
     }
-    /* Зеркало «уровень выбранного класса» пересобираем под финальный cls. */
+    /* The mirror of the selected class level is rebuilt for the final cls. */
     if (pg.cls == 0) { pg.level = pg.ordinary_level; pg.levels_unlocked = pg.ordinary_levels_unlocked; }
     else if (pg.cls == 1) { pg.level = pg.azum_level; pg.levels_unlocked = pg.azum_levels_unlocked; }
     else if (pg.cls == 2) { pg.level = pg.santa_level; pg.levels_unlocked = pg.santa_levels_unlocked; }
@@ -234,9 +235,9 @@ static int apply_user_json_keep_local(const char *resp) {
             azum, santa, ebuc, cls);
         return 1;
     }
-    /* Устройство помнит, что последняя запись в облако не дошла (progress.dirty):
-     * даже если по классам расхождений нет, кубки/леденцы/уровни могли
-     * отстать - досылаем весь локальный прогресс. */
+    /* The device remembers that the last cloud write failed (progress.dirty): even
+     * with no class mismatch, the cups, candies and levels may lag behind, so the
+     * whole local progress is sent again. */
     if (cloud_dirty_get()) {
         LOG("cloud profile marked stale on device - pushing local progress");
         return 1;

@@ -1,20 +1,19 @@
-/* sound.c - звуки и музыка для DimScript.
+/* sound.c holds the sounds and the music of DimScript.
  *
- * Файлы лежат в game/sounds (в APK - assets/sounds).
- * Поддерживается несжатый PCM WAV
- * (8/16/24/32-бит, моно или стерео, любая частота - микшер сам пересчитает
- * линейной интерполяцией в 44100 Гц стерео).
+ * The files sit in game/sounds, and in assets/sounds inside the APK. Uncompressed
+ * PCM WAV is supported (8, 16, 24 or 32 bits, mono or stereo, any sample rate),
+ * since the mixer resamples to 44100 Hz stereo with linear interpolation.
  *
- * Встроенные функции скрипта:
- *   snd_load name      - загрузить WAV из папки звуков (1 = удалось, 0 = нет);
- *   snd_play name      - проиграть один раз;
- *   snd_loop name      - проиграть по кругу (музыка);
- *   snd_stop name      - остановить;
- *   snd_playing name   - 1, если звук сейчас играет;
- *   snd_volume name, v - громкость этого звука (0..1);
- *   snd_stop_all       - остановить всё.
+ * Script builtins:
+ *   snd_load name      - load a WAV from the sound folder (1 = ok, 0 = no);
+ *   snd_play name      - play once;
+ *   snd_loop name      - play in a loop, for music;
+ *   snd_stop name      - stop;
+ *   snd_playing name   - 1 while the sound plays;
+ *   snd_volume name, v - volume of that sound (0..1);
+ *   snd_stop_all       - stop everything.
  *
- * Вывод звука: Android - AudioTrack через JNI (никаких лишних библиотек).
+ * Output: on Android it is AudioTrack through JNI, with no extra libraries.
  */
 #include "runtime.h"
 #include <stdio.h>
@@ -25,11 +24,11 @@
 #define SND_RATE 44100
 #define SND_MAX_SOUNDS 16
 #define SND_VOICES 8
-#define SND_MAX_BYTES (64u << 20) /* лимит одного WAV: 64 МБ */
+#define SND_MAX_BYTES (64u << 20) /* one WAV is limited to 64 MB */
 
 typedef struct {
-    char *name;          /* ключ: имя файла без папки ("lobbymusic.wav") */
-    int16_t *samples;    /* interleaved stereo, частота src_rate */
+    char *name;          /* key: file name without the folder ("lobbymusic.wav") */
+    int16_t *samples;    /* interleaved stereo at src_rate */
     size_t frames;
     int src_rate;
     double volume;
@@ -37,7 +36,7 @@ typedef struct {
 
 typedef struct {
     SndSound *snd;
-    double pos;          /* позиция в кадрах (дробная - для ресемплинга) */
+    double pos;          /* position in frames, fractional for resampling */
     int loop;
     int active;
 } SndVoice;
@@ -47,7 +46,7 @@ static SndVoice snd_voices[SND_VOICES];
 static int snd_sounds_loaded = 0;
 
 /* ------------------------------------------------------------------ */
-/* блокировка: громкость/запуск меняет поток игры, микширует поток аудио */
+/* Lock: the game thread changes volume and playback, the audio thread mixes */
 /* ------------------------------------------------------------------ */
 #include <pthread.h>
 static pthread_mutex_t snd_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -67,7 +66,7 @@ static char *snd_strdup(const char *s) {
 }
 
 /* ------------------------------------------------------------------ */
-/* чтение файла звука: Android - ассеты из APK */
+/* Reading a sound file: on Android it comes from the assets in the APK */
 /* ------------------------------------------------------------------ */
 static int snd_open_candidate(const char *path, uint8_t **out, size_t *sz) {
     if (!snd_amgr || !path || !out || !sz) return 0;
@@ -89,8 +88,8 @@ static int snd_open_candidate(const char *path, uint8_t **out, size_t *sz) {
     return 1;
 }
 
-/* Имя звука может прийти как "lobbymusic.wav", "sounds/lobbymusic.wav" или
- * "game/sounds/lobbymusic.wav" - приводим к голому имени файла. */
+/* A sound name may arrive as "lobbymusic.wav", "sounds/lobbymusic.wav" or
+ * "game/sounds/lobbymusic.wav", and is reduced to the bare file name. */
 static const char *snd_base_name(const char *name) {
     if (!name) return "";
     const char *n = name;
@@ -107,7 +106,7 @@ static const char *snd_base_name(const char *name) {
 
 static int snd_open_by_name(const char *base, uint8_t **out, size_t *sz) {
     char path[1200];
-    /* На случай опечатки ".waw" пробуем и вариант с ".wav". */
+    /* The ".wav" variant is tried too, in case ".waw" was a typo. */
     size_t n = strlen(base);
     int has_waw = n > 4 && strcmp(base + n - 4, ".waw") == 0;
     snprintf(path, sizeof(path), "sounds/%s", base);
@@ -128,7 +127,7 @@ static int snd_open_by_name(const char *base, uint8_t **out, size_t *sz) {
 }
 
 /* ------------------------------------------------------------------ */
-/* разбор PCM WAV -> int16 stereo                                      */
+/* parsing a PCM WAV into int16 stereo                                      */
 /* ------------------------------------------------------------------ */
 static uint32_t rd_u32(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
@@ -151,7 +150,7 @@ static int wav_decode(const uint8_t *data, size_t size, int16_t **out, size_t *f
             channels = rd_u16(data + body + 2);
             hz = (int)rd_u32(data + body + 4);
             bits = rd_u16(data + body + 14);
-            /* WAVE_FORMAT_EXTENSIBLE: настоящий формат лежит в подформате GUID. */
+            /* WAVE_FORMAT_EXTENSIBLE: the real format sits in the GUID subformat. */
             if (format == 0xFFFE && take >= 40) {
                 uint16_t sub = rd_u16(data + body + 24);
                 if (sub == 1) format = 1;
@@ -166,7 +165,7 @@ static int wav_decode(const uint8_t *data, size_t size, int16_t **out, size_t *f
             audio_len = take;
         }
         size_t next = body + ((csz + 1) & ~(uint32_t)1);
-        if (next <= pos) break; /* защита от кривого размера чанка */
+        if (next <= pos) break; /* guards against a broken chunk size */
         pos = next;
     }
     if (!fmt_ok || !audio || audio_len == 0) { ds_log_err("sound not loaded: broken WAV file (no fmt/data chunk)"); return 0; }
@@ -201,7 +200,7 @@ static int wav_decode(const uint8_t *data, size_t size, int16_t **out, size_t *f
 }
 
 /* ------------------------------------------------------------------ */
-/* загрузка/поиск звуков                                               */
+/* loading and looking up sounds                                               */
 /* ------------------------------------------------------------------ */
 static SndSound *snd_find(const char *base) {
     for (int i = 0; i < SND_MAX_SOUNDS; i++)
@@ -218,9 +217,9 @@ int snd_load(const char *name) {
     int slot = -1;
     for (int i = 0; i < SND_MAX_SOUNDS; i++) if (!snd_sounds[i].name) { slot = i; break; }
     if (slot < 0) { snd_lock_drop(); ds_log_err("sound not loaded: too many sounds (max %d)", SND_MAX_SOUNDS); return 0; }
-    /* Читаем файл вне блокировки: музыка бывает большой, микшер не должен
-     * ждать загрузки. Слот сразу помечаем занятым (name), чтобы двойной
-     * вызов snd_load не загрузил файл дважды. */
+    /* The file is read outside the lock, because music can be large and the
+     * mixer must not wait for a load. The slot is marked busy by name at once, so
+     * two snd_load calls never read the same file twice. */
     char *key = snd_strdup(base);
     if (!key) { snd_lock_drop(); ds_log_err("sound not loaded: out of memory"); return 0; }
     snd_sounds[slot].name = key;
@@ -251,7 +250,7 @@ int snd_load(const char *name) {
 static SndVoice *snd_voice_for(SndSound *s) {
     for (int i = 0; i < SND_VOICES; i++) if (snd_voices[i].active && snd_voices[i].snd == s) return &snd_voices[i];
     for (int i = 0; i < SND_VOICES; i++) if (!snd_voices[i].active) return &snd_voices[i];
-    return &snd_voices[0]; /* перекрываем самый первый голос */
+    return &snd_voices[0]; /* the very first voice is stolen */
 }
 
 static int snd_start(const char *name, int loop) {
@@ -308,7 +307,7 @@ void snd_stop_all(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* микшер: сумма активных голосов, линейный ресемплинг в SND_RATE       */
+/* mixer: a sum of the active voices with linear resampling into SND_RATE       */
 /* ------------------------------------------------------------------ */
 static int snd_clamp16(int v) { if (v < -32768) return -32768; if (v > 32767) return 32767; return v; }
 

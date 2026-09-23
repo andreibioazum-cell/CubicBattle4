@@ -26,10 +26,11 @@ struct DSFont {
     int aw, ah;
     uint8_t *alpha;
     DSFontGlyph *glyphs; int gcount;
-    /* Индекс codepoint -> номер глифа (функции индекса — в public_api.inc).
-     * Глиф ищется на каждый символ каждой строки по нескольку раз за кадр
-     * (метрики текста и раскладка), и линейный перебор 168 глифов был одной из
-     * самых горячих петель интерфейса. hmap хранит номер+1, 0 — пусто. */
+    /* Index of codepoint to glyph number (the index functions live in
+     * public_api.inc). A glyph is looked up several times per frame for every
+     * character of every line, in text metrics and layout alike, and the linear
+     * scan of 168 glyphs was one of the hottest loops of the interface. hmap
+     * keeps the number plus one, and 0 means empty. */
     int *hmap; int hcap, qmark;
 };
 static int in_r(const DSFont *f, size_t o, size_t l) {
@@ -241,11 +242,10 @@ static int flatten(const DSPoint *p, int n, DSFC *flat) {
     }
     return 1;
 }
-/* Быстрая scanline-растеризация (even-odd): для каждой строки сэмплов
- * собираем пересечения рёбер, сортируем и заливаем интервалы. Это заменяет
- * старый вариант «16 проверок точка-в-многоугольнике на каждый пиксель»,
- * из-за которого запекание атласа занимало секунды и при старте игры
- * долго висел чёрный экран. */
+/* Fast scanline rasterisation with the even-odd rule: for every sample row the
+ * edge crossings are collected, sorted and filled as intervals. It replaces the
+ * old sixteen point-in-polygon tests per pixel, which made the atlas bake take
+ * seconds and left a black screen hanging at the start of the game. */
 static void raster_glyph(DSFont *f, const DSFC *flat, int fc,
                          int mnx, int mxy, int ax, int ay, int w, int h) {
     int *accum = (int *)calloc((size_t)w * h, sizeof(int));

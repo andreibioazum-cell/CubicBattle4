@@ -1,6 +1,6 @@
-/* Последнее успешно отправленное состояние: анти-флуд (см. push_state).
- * Сбрасывается в net_connect, чтобы первая отправка новой сессии не сравнивалась
- * с состоянием прошлой. */
+/* The last state sent successfully, used as anti-flood by push_state. net_connect
+ * resets it so the first send of a new session is not compared with the previous
+ * one. */
 static Actor ps_last;
 static long long ps_last_put = 0;
 static int ps_have_last = 0;
@@ -8,9 +8,9 @@ static int push_state(void) {
     Actor a; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
     lock(); a=net.me; slot=net.slot; seq=++net.seq; unlock();
     if(slot<0) return 0;
-    /* Стоим на месте и свежий heartbeat уже был - базу не дёргаем. seq обязан
-     * обновляться хотя бы раз в HEARTBEAT_TICK: иначе другие игроки через
-     * TIMEOUT сочтут слот мёртвым и заберут его. */
+    /* Standing still with a fresh heartbeat means the database is left alone, but seq
+     * has to update at least once per HEARTBEAT_TICK, otherwise other players hit
+     * TIMEOUT, take the slot for dead and claim it. */
     if (ps_have_last && actor_same(&a,&ps_last) && now_ms()-ps_last_put < HEARTBEAT_TICK) return 1;
     json_escape(a.nick,enick,sizeof(enick));
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
@@ -111,8 +111,8 @@ static void read_players(const char *resp) {
         online=t-rp_lch[slot]<TIMEOUT; if(!online)continue;
         snprintf(p,sizeof(p),"%s/nick",bp); strv(resp,p,ps[slot].nick,sizeof(ps[slot].nick));
         if(ban_cache_has(ps[slot].nick)) {
-            /* Забаненный игрок не показывается и выкидывается из комнаты:
-             * так бан действует и на тех, кто зашёл со старой версией. */
+            /* A banned player is neither shown nor kept in the room, which is how a ban also
+             * works on those who joined with an older build. */
             if(t-rp_kicked[slot]>=BAN_KICK_TICK) {
                 rp_kicked[slot]=t;
                 LOG("slot %d: '%s' is banned, kicking", slot, ps[slot].nick);
@@ -154,8 +154,8 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/uzx",bp); ps[slot].universe_x=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/uzy",bp); ps[slot].universe_y=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/universe",bp); ps[slot].universe=num(resp,p,0);
-        /* Контрудар турели: старые клиенты поле не присылают → 0, события не
-         * генерируются, смешанные версии в онлайне работают. */
+        /* Turret counter hit: old clients send no such field, so it reads as 0, no events
+         * are generated, and mixed versions keep working online. */
         snprintf(p,sizeof(p),"%s/thud",bp); ps[slot].thud=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/cls",bp); ps[slot].cls=num(resp,p,0);
         snprintf(p,sizeof(p),"%s/level",bp); ps[slot].level=num(resp,p,0);
@@ -254,14 +254,14 @@ static void prune_old_chat(void){
     }
 }
 
-/* Ждём первую загрузку списка банов, но не дольше BAN_WAIT мс. */
+/* Waits for the first ban list load, but no longer than BAN_WAIT ms. */
 static void wait_ban_list(void) {
     long long deadline = now_ms() + BAN_WAIT;
     while (net.run && !ban_synced() && now_ms() < deadline) sleep_ms(50);
 }
-/* Пауза после неудач: с каждой следующей ошибкой вдвое длиннее (300 мс …
- * 8 с, плюс джиттер). Раньше потоки бились в базу каждые 300-500 мс даже
- * когда она лежала, усиливая аварию. */
+/* Backoff after failures: every next error doubles the pause, from 300 ms up to
+ * 8 s plus jitter. The threads used to hammer the database every 300 to 500 ms even
+ * while it was down, making the outage worse. */
 static void net_fail_sleep(int fails) {
     int ms = 300;
     for (int i = 1; i < fails && ms < 8000; i++) ms *= 2;
@@ -273,7 +273,7 @@ static void mark_self_banned(const char *nick) {
     lock(); fresh = !net.self_banned; net.self_banned = 1; unlock();
     if (fresh) LOGERR("'%s' is banned: online closed", nick);
 }
-/* Выкидываем слот забаненного игрока, чтобы он не мешал бою у остальных. */
+/* Drops the slot of a banned player so he stops disturbing the fight for the rest. */
 static void room_slot_delete_async(int slot) {
     char *url = (char*)malloc(FB_URL_MAX);
     DSThread t;
@@ -295,8 +295,9 @@ static void *thread_main(void *arg) {
         if(slot<0) {
             char nick[24];
             status(NET_CONNECTING);
-            /* В комнату не пускаем, пока не проверили свой ник по списку банов.
-             * Ждём недолго: если сеть лежит, слот всё равно не достанется. */
+            /* A player stays out of the room until his own nick was checked against
+             * the ban list, and the wait is short: a dead network would not yield
+             * the slot anyway. */
             wait_ban_list();
             lock(); snprintf(nick,sizeof(nick),"%s",net.me.nick); unlock();
             if(nick[0] && ban_check_cloud_sync(nick)) {
@@ -322,8 +323,8 @@ static void *reader_thread(void *arg) {
     (void)arg;
     while(net.run) {
         long long start=now_ms(); int slot;
-        /* Список банов тянем и пока подключаемся, и во время боя: забаненный
-         * игрок не должен ни зайти, ни остаться в комнате. */
+        /* The ban list is fetched while connecting and during the battle: a banned player
+         * must neither enter nor stay in the room. */
         if(start>=next_ban) {
             if(ban_sync()) {
                 char nick[24];
@@ -343,8 +344,8 @@ static void *reader_thread(void *arg) {
         if(start>=next_chat) {
             if(pull_chat(chat_resp,sizeof(chat_resp))) {
                 parse_and_store_chat(chat_resp);
-                /* Чистку старых сообщений гоняем редко: это отдельный GET,
-                 * который базе не нужен каждую секунду. */
+                /* Old chat messages are cleaned up rarely, since it is a separate GET the database
+                 * does not need every second. */
                 if(start>=next_prune) { prune_old_chat(); next_prune=now_ms()+CHAT_PRUNE_TICK; }
             }
             next_chat=now_ms()+CHAT_TICK;
@@ -391,13 +392,13 @@ void net_connect(const char *url, const char *room) {
     net.me.level = (double)pending_level;
     net.me.skin = (double)pending_skin;
     lock(); net.self_banned = 0; unlock();
-    /* Список банов нужно перечитать: вдруг бан поставили, пока мы сидели в меню. */
+    /* The ban list has to be read again, in case a ban arrived while the menu was open. */
     ban_invalidate();
-    /* Сбрасываем всё состояние прошлой комнаты: чат, игроков, ивент/баннер и
-     * статики наблюдения за слотами. Без этого, пока новый клиент ещё не
-     * захватил слот (комната занята «призраками» убитых приложений), на
-     * экране висят сообщения и снимки игроков из прошлой сессии - выглядит
-     * как «чат прогрузился, а никто не двигается, висит подключение». */
+    /* Everything from the previous room is reset: the chat, the players, the event or
+     * banner and the slot watching statics. Without it, while the new client has not
+     * claimed the slot yet and the room is held by ghosts of killed apps, the screen
+     * shows messages and player snapshots from the last session, which looks like a
+     * chat that loaded while nobody moves and the connection hangs. */
     memset(claim_seen_seq, 0, sizeof(claim_seen_seq));
     memset(claim_seen_at, 0, sizeof(claim_seen_at));
     memset(claim_seen_uid, 0, sizeof(claim_seen_uid));

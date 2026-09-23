@@ -1,23 +1,23 @@
-/* Настройки игрока: язык и переключатель хитбоксов.
+/* Player settings: the language and the hitbox toggle.
  *
- * Хранятся так же, как прогресс: сначала на устройстве (settings.dat рядом с
- * progress.dat и auth.dat), затем в облаке - отдельным PATCH'ем в профиль
- * /users/<ник>. Отдельный запрос намеренно: правила Firebase могут быть
- * опубликованы без новых полей, и тогда-settings PATCH просто не пройдёт, а
- * прогресс (кубки, классы, уровни) продолжит сохраняться как раньше.
+ * They are stored the way progress is: on the device first (settings.dat next to
+ * progress.dat and auth.dat) and then in the cloud through a PATCH of its own into
+ * the profile /users/<nick>. The separate request is deliberate, because the
+ * Firebase rules may be published before the new fields exist, and then the
+ * settings PATCH simply fails while progress, cups, classes and levels, keeps
+ * saving as before.
  *
- * Файл настроек строковый и терпимый к будущим полям:
+ * The settings file is line based and tolerant of future fields:
  *   lang 1
  *   hitboxes 0
  *   musicvol 70
  *   winter 1
  *   showfps 0
- * Неизвестные строки при чтении игнорируются, поэтому добавление нового
- * параметра не ломает старые сохранения. По той же причине безболезненно
- * переживают перезапуск и старые файлы с убранными настройками (строки
- * "fps N", "scale N", список модов "mods N"/"mod имя"): лимита кадров и
- * апскейла в игре больше нет, эти строки просто пропускаются и при первой же
- * записи исчезают из файла.
+ * Unknown lines are ignored while reading, so a new setting does not break old
+ * saves. For the same reason files that still hold removed settings survive a
+ * restart without trouble (the lines "fps N", "scale N" and the mod list
+ * "mods N"/"mod name"): the game has neither a frame limit nor an upscale any
+ * more, so those lines are skipped and disappear at the first write.
  */
 #define SETTINGS_FILE "settings.dat"
 
@@ -25,7 +25,7 @@ typedef struct {
     DSMutex lock;
     int loaded, has_file;
     int language, hitboxes, musicvol, winter, showfps;
-    int legal; /* unix-время нажатия кнопки согласия с предупреждением */
+    int legal; /* unix time of the consent button press on the warning screen */
 } Settings;
 static Settings st = { .lock = DS_MUTEX_INIT };
 
@@ -67,7 +67,8 @@ static void settings_read(void) {
     st_unlock();
 }
 
-/* Атомарная запись (временный файл + rename) - как у прогресса и достижений. */
+/* Atomic write through a temporary file and a rename, as for progress and
+ * achievements. */
 static void settings_write(void) {
     char path[320], text[192];
     settings_read();
@@ -83,7 +84,7 @@ static void settings_write(void) {
     file_write_atomic(path, text);
 }
 
-/* Настройки в облако: lang и hitboxes одним PATCH'ем. */
+/* Settings to the cloud: lang and hitboxes in a single PATCH. */
 static void settings_push_to_cloud(void) {
     char nick[LOGIN_NICK_MAX + 1] = "";
     char body[BODY];
@@ -129,7 +130,7 @@ double net_load_music_volume(void) {
     return v;
 }
 
-/* Громкость музыки (0..100): пишем на устройство и сразу в облако. */
+/* Music volume, 0 to 100: written to the device and to the cloud at once. */
 void net_save_music_volume(double volume) {
     int v = (int)volume;
     if (v < 0) v = 0;
@@ -143,7 +144,7 @@ void net_save_music_volume(double volume) {
     settings_push_to_cloud();
 }
 
-/* Зимняя тема (снежный фон арены + снегопад): по умолчанию включена. */
+/* Winter theme, a snowy arena background and snowfall, on by default. */
 double net_load_winter_theme(void) {
     double v;
     settings_read();
@@ -161,7 +162,7 @@ void net_save_winter_theme(double on) {
     settings_push_to_cloud();
 }
 
-/* Счётчик FPS в бою (по умолчанию выключен). */
+/* The fps counter in battle, off by default. */
 double net_load_fps_meter(void) {
     double v;
     settings_read();
@@ -179,7 +180,7 @@ void net_save_fps_meter(double on) {
     settings_push_to_cloud();
 }
 
-/* Язык и хитбоксы: пишем на устройство и сразу отправляем в облако. */
+/* Language and hitboxes: written to the device and pushed to the cloud at once. */
 void net_save_settings(double language, double hitboxes) {
     settings_read();
     st_lock();
@@ -191,9 +192,9 @@ void net_save_settings(double language, double hitboxes) {
     settings_push_to_cloud();
 }
 
-/* После входа: облако может добавить настройки туда, где их ещё нет (свежая
- * установка), но не отнимает то, что уже лежит на устройстве - как и в
- * прогрессе. Возврат 1 - локальные настройки новее облачных, их нужно поднять. */
+/* After a login the cloud may add settings where there are none, on a fresh
+ * install, but never takes away what the device holds, the way progress behaves.
+ * A return of 1 means the local settings are newer and have to be pushed up. */
 int settings_sync_with_cloud(const char *resp) {
     int had_file, language, hitboxes, musicvol, winter, showfps;
     settings_read();
@@ -224,13 +225,14 @@ int settings_sync_with_cloud(const char *resp) {
                           language, hitboxes, musicvol, winter, showfps);
     return 0;
 }
-/* Согласие с предупреждением об эпилепсии: фиксирование и чтение метки.
+/* Consent to the epilepsy warning: marking and reading the timestamp.
  *
- * Хранится только на устройстве (строка "legal <unix-время>" в settings.dat)
- * и намеренно не синхронизирована с облаком: согласие принимается человеком,
- * сидящим перед этим экраном, а не аккаунтом. settings_mark_legal вызывается
- * скриптом при нажатии кнопки «Я понимаю и принимаю риск» на экране
- * предупреждения; settings_legal_ts отдаёт метку для проверок и отладки.
+ * It lives on the device only (the line "legal <unix time>" in settings.dat) and
+ * is deliberately not synced with the cloud: consent is given by the person in
+ * front of this screen, not by an account. settings_mark_legal is called by the
+ * script when the "I understand and accept the risk" button on the warning
+ * screen is pressed, and settings_legal_ts hands the timestamp to tests and
+ * debug code.
  */
 void settings_mark_legal(void) {
     settings_read();

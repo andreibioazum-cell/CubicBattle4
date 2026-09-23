@@ -1,18 +1,18 @@
 /* ------------------------------------------------------------------ */
-/* Android: система AudioTrack через JNI. Специально без OpenSL ES и   */
-/* AAudio: им нужны флаги линковки (-lOpenSLES/-laaudio), а JNI уже    */
-/* доступен через JavaVM из NativeActivity - сборка не требует ничего. */
+/* Android: the system AudioTrack through JNI, and deliberately without OpenSL ES   */
+/* and AAudio: both want linking flags (-lOpenSLES, -laaudio), while JNI is already    */
+/* reachable through the JavaVM of NativeActivity, so the build needs nothing. */
 /* ------------------------------------------------------------------ */
 #ifdef __ANDROID__
 #include <jni.h>
 #include <pthread.h>
 
-#define AT_FRAMES 1024          /* кадров в одном write() (23 мс) */
-#define AT_REFILL 4             /* сколько minbuf держим в очереди устройства */
+#define AT_FRAMES 1024          /* frames per write() call, about 23 ms */
+#define AT_REFILL 4             /* how much minbuf is kept in the device queue */
 
 static JavaVM *snd_vm = NULL;
-static jobject snd_at_track = NULL;   /* global ref на AudioTrack */
-static jshortArray snd_at_buf = NULL; /* global ref на буфер write() */
+static jobject snd_at_track = NULL;   /* global ref to AudioTrack */
+static jshortArray snd_at_buf = NULL; /* global ref to the write() buffer */
 static jmethodID snd_at_write = NULL;
 static int16_t snd_at_mixbuf[AT_FRAMES * 2];
 static pthread_t snd_at_thread;
@@ -40,13 +40,13 @@ static void *snd_at_thread_fn(void *arg) {
     JNIEnv *env = snd_jni_env(&attached);
     if (!env) { ds_log_err("audio: thread cannot attach to JVM"); return NULL; }
     while (snd_at_run) {
-        /* write() в MODE_STREAM блокируется, когда буфер устройства полон, -
-         * это и задаёт темп потоку, без sleep. */
+        /* write() in MODE_STREAM blocks once the device buffer is full, which is what
+         * sets the pace of the thread, with no sleeps. */
         jint written = (*env)->CallIntMethod(env, snd_at_track, snd_at_write, snd_at_buf, 0, (jint)(AT_FRAMES * 2));
         if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); ds_log_err("audio: AudioTrack.write failed"); break; }
         if (written < 0) break;
-        /* Буфер уезжает в систему целиком, поэтому микшируем ПОСЛЕ write,
-         * а первый блок заполнен заранее (в snd_backend_start). */
+        /* The buffer goes to the system as a whole, so mixing happens AFTER the write
+         * while the first block was filled in advance, in snd_backend_start. */
         if (!snd_at_run) break;
         snd_frame((int16_t *)snd_at_mixbuf, AT_FRAMES);
         (*env)->SetShortArrayRegion(env, snd_at_buf, 0, (jsize)(AT_FRAMES * 2), snd_at_mixbuf);
@@ -72,8 +72,8 @@ static int snd_backend_start(void) {
             (*env)->GetStaticMethodID(env, atc, "getMinBufferSize", "(III)I"),
             (jint)SND_RATE, (jint)12, (jint)2);
         if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); minbuf = 0; }
-        if (minbuf < 4096) minbuf = 4096;               /* страховка от 0/-1 */
-        if (minbuf > SND_RATE * 8) minbuf = SND_RATE * 8; /* и от гигантских */
+        if (minbuf < 4096) minbuf = 4096;               /* guards against 0 and -1 */
+        if (minbuf > SND_RATE * 8) minbuf = SND_RATE * 8; /* and against huge values */
         track = (*env)->NewObject(env, atc,
             (*env)->GetMethodID(env, atc, "<init>", "(IIIIII)V"),
             (jint)3, (jint)SND_RATE, (jint)12, (jint)2, (jint)minbuf * AT_REFILL, (jint)1);
@@ -91,7 +91,7 @@ static int snd_backend_start(void) {
             snd_at_write = NULL;
             break;
         }
-        /* Первый блок уходит сразу, дальше поток держит очередь заполненной. */
+        /* The first block leaves at once, and after that the thread keeps the queue full. */
         snd_frame((int16_t *)snd_at_mixbuf, AT_FRAMES);
         (*env)->SetShortArrayRegion(env, snd_at_buf, 0, (jsize)(AT_FRAMES * 2), snd_at_mixbuf);
         snd_at_run = 1;
@@ -115,9 +115,9 @@ static void snd_backend_stop(void) {
     if (!snd_at_track) return;
     int attached = 0;
     JNIEnv *env = snd_jni_env(&attached);
-    /* Если трек на паузе (приложение теряло фокус), write() в аудиопотоке
-     * заблокирован навсегда: сначала возвращаем play(), чтобы буфер
-     * опустел и поток смог увидеть флаг остановки. */
+    /* When the track is paused, after the app lost focus, write() on the audio thread
+     * stays blocked forever, so play() is restored first to drain the buffer and let
+     * the thread notice the stop flag. */
     if (env) {
         jclass atc0 = (*env)->GetObjectClass(env, snd_at_track);
         (*env)->CallVoidMethod(env, snd_at_track, (*env)->GetMethodID(env, atc0, "play", "()V"));
@@ -164,7 +164,7 @@ static void snd_backend_resume(void) {
 #endif
 
 /* ------------------------------------------------------------------ */
-/* жизненный цикл: вызывается из main.c (Android)                       */
+/* lifecycle: called from main.c on Android                       */
 /* ------------------------------------------------------------------ */
 void ds_sound_set_java_vm(void *vm) {
     snd_vm = (JavaVM *)vm;

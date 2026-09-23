@@ -15,7 +15,7 @@
     return 1;
 }
 
-/* --- индекс глифов: codepoint -> номер в f->glyphs --- */
+/* --- glyph index: codepoint to a number in f->glyphs --- */
 #define DS_FONT_HCAP 512
 static unsigned ds_font_hash(uint32_t cp) {
     cp ^= cp >> 16; cp *= 0x7feb352du;
@@ -71,12 +71,12 @@ DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
     for (int cp = 32; cp <= 126; cp++) add_cp(f, (uint32_t)cp);
     for (int cp = 0x0410; cp <= 0x044F; cp++) add_cp(f, (uint32_t)cp);
     add_cp(f, 0x0401); add_cp(f, 0x0451);
-    /* Символы интерфейса, которые игра выводит на экран (все они есть в этом
-     * шрифте): средняя точка, кавычки-«ёлочки», длинное и короткое тире, знак
-     * градуса, плюс-минус, маркер списка и галочка статуса. Японский язык
-     * из игры убран, поэтому хирагану, катакану и кандзи больше не запекаем -
-     * это и уменьшает атлас, и ускоряет запуск. Любой отсутствующий в наборе
-     * символ по-прежнему заменяется вопросительным знаком ниже. */
+    /* The interface characters the game puts on screen, all of them present in
+     * this font: the middle dot, the guillemets, the long and short dashes, the
+     * degree sign, plus-minus, the list marker and the status tick. Japanese was
+     * dropped from the game, so hiragana, katakana and kanji are no longer baked,
+     * which both shrinks the atlas and speeds up the start. Any character missing
+     * from the set is still replaced by a question mark below. */
     if (!add_utf8(f, "·«»--°±•✓")) {
         ds_font_destroy(f); return NULL;
     }
@@ -109,8 +109,8 @@ DSFont *ds_font_create(const uint8_t *data, size_t size, int ph) {
         ax += gl->width + 1;
         if (nh > rh) rh = nh;
     }
-    /* Индекс глифов строится последним: набор codepoint'ов к этому моменту
-     * окончательный. Без индекса поиск остаётся линейным (работает, но медленнее). */
+    /* The glyph index is built last, when the codepoint set is final. Without it
+     * the lookup stays linear, which works but is slower. */
     ds_font_index_build(f);
     return f;
 }
@@ -122,7 +122,7 @@ const DSFontGlyph *ds_font_glyph(const DSFont *f, uint32_t cp) {
     if (!f) return NULL;
     int idx = ds_font_lookup(f, cp);
     if (idx >= 0) return &f->glyphs[idx];
-    /* Отсутствующий в наборе символ по-прежнему заменяется вопросительным. */
+    /* A character missing from the set still becomes a question mark. */
     if (f->qmark >= 0) return &f->glyphs[f->qmark];
     return NULL;
 }

@@ -1,4 +1,4 @@
-/* Обновление idToken по refreshToken (живёт ~1 час). 1 = ок. */
+/* Refreshes the idToken from the refreshToken, which lives about an hour. 1 is ok. */
 static int fb_refresh_token_now(void) {
     char url[FB_URL_MAX], body[768], resp[2048], rt[FB_REFRESH_MAX];
     int code;
@@ -24,7 +24,7 @@ static int fb_refresh_token_now(void) {
     return 0;
 }
 
-/* Есть ли живой idToken (по необходимости обновляем). */
+/* Whether a live idToken is there, refreshing it when needed. */
 static int fb_ensure_token(void) {
     int ok = 0;
     long long now = now_ms();
@@ -35,7 +35,7 @@ static int fb_ensure_token(void) {
     return fb_refresh_token_now();
 }
 
-/* Копия url с приписанным ?auth=<idToken> (если токен есть). */
+/* A copy of the URL with ?auth=<idToken> appended, when a token exists. */
 static void fb_url(char *dst, size_t cap, const char *url) {
     char tok[FB_ID_MAX];
     size_t n;
@@ -51,9 +51,9 @@ static void fb_url(char *dst, size_t cap, const char *url) {
     if (n >= cap && net_log_ok()) LOGERR("firebase: auth URL truncated");
 }
 
-/* Все обращения к данным базы идут через fb_http*: без ключа это просто http,
- * с ключом - подписанный запрос плюс один повтор после обновления протухшего
- * токена. 403 - это отказ правил: ретраить такой ответ бессмысленно. */
+/* Every database access goes through fb_http*: without a key it is plain http, and
+ * with one it is a signed request plus a single retry after refreshing an expired
+ * token. A 403 means the rules refused it, and retrying that answer is pointless. */
 static int fb_http_ex(const char *method,const char *url,const char *body,char *out,size_t cap,
                       const char *header,const char *value,char *etag,size_t etag_cap) {
     char authed[FB_URL_MAX];
@@ -67,16 +67,16 @@ static int fb_http_ex(const char *method,const char *url,const char *body,char *
         code = http_ex(method, authed, body, out, cap, header, value, etag, etag_cap);
     }
     if (code == 403 && net_log_ok())
-        LOGERR("firebase: HTTP 403 (permission denied) - проверь firebase.rules.json и FB_KEY");
+        LOGERR("firebase: HTTP 403 (permission denied) - check firebase.rules.json and FB_KEY");
     return code;
 }
 static int fb_http(const char *method,const char *url,const char *body,char *out,size_t cap) {
     return fb_http_ex(method,url,body,out,cap,NULL,NULL,NULL,0);
 }
 
-/* E-mail аккаунта игры: <ник>@cb4.game, всегда в нижнем регистре - правила
- * базы сверяют токен с ником в нижнем регистре, а Firebase может
- * нормализовать регистр e-mail по-своему. Ник в /users сохраняет регистр. */
+/* The e-mail of a game account is <nick>@cb4.game in lower case, because the
+ * database rules compare the token against a lower case nick while Firebase may
+ * normalise the e-mail case its own way. The nick keeps its case in /users. */
 static void fb_email_of(const char *nick, char *dst, size_t cap) {
     static const char domain[] = FB_EMAIL_DOMAIN;
     size_t i = 0;
@@ -92,10 +92,10 @@ static int fb_err_is(const char *resp, const char *code_name) {
     return resp && strstr(resp, code_name) != NULL;
 }
 
-/* Вход/регистрация в Firebase Auth.
- * 0 = ок (*registered=1, если аккаунт создан сейчас), 1 = неверный пароль,
- * 2 = ошибка сети/сервера. Ник уже проверен nick_valid(): в защищённом
- * режиме допустимы только латиница/цифры/«_» - из них собирается e-mail. */
+/* Logs in or registers with Firebase Auth. 0 means ok, with *registered=1 when the
+ * account was created now, 1 means a wrong password and 2 a network or server error.
+ * The nick went through nick_valid(): the protected mode allows Latin letters, digits
+ * and "_" only, which is what the e-mail is built from. */
 static int fb_sign_in(const char *nick, const char *pass, int *registered) {
     char url[FB_URL_MAX], body[512], resp[2048];
     char email[96], epass[192], idt[FB_ID_MAX], rt[FB_REFRESH_MAX];
@@ -119,10 +119,10 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
         if (net_log_ok()) LOGERR("firebase auth: network error");
         return 2;
     }
-    /* EMAIL_NOT_FOUND - игрока ещё нет, регистрируем. С включённой защитой от
-     * перебора e-mail тот же ответ приходит и на неверный пароль, поэтому
-     * пробуем signUp в обоих случаях: EMAIL_EXISTS означает «аккаунт есть,
-     * значит пароль не подошёл». */
+    /* EMAIL_NOT_FOUND means the player does not exist yet, so registration follows. With
+     * the e-mail enumeration protection enabled the same answer arrives for a wrong
+     * password, so signUp is tried in both cases: EMAIL_EXISTS then means the account
+     * exists and the password did not match. */
     if (!fb_err_is(resp, "EMAIL_NOT_FOUND") &&
         !fb_err_is(resp, "INVALID_PASSWORD") &&
         !fb_err_is(resp, "INVALID_LOGIN_CREDENTIALS")) {
@@ -143,7 +143,7 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
         return 0;
     }
     if (fb_err_is(resp, "EMAIL_EXISTS") || fb_err_is(resp, "WEAK_PASSWORD")) {
-        /* Аккаунт существует, но пароль не подошёл (или гонка регистраций). */
+        /* The account exists, but the password did not match, or two registrations raced. */
         if (net_log_ok()) LOG("firebase auth: wrong password for '%s'", nick);
         return 1;
     }
@@ -151,8 +151,8 @@ static int fb_sign_in(const char *nick, const char *pass, int *registered) {
     return 2;
 }
 
-/* Создание записи нового игрока. with_pass - только для старого режима без
- * Firebase Auth: там пароль хранится в базе (и это плохо). */
+/* Creates the record of a new player. with_pass only belongs to the old mode without
+ * Firebase Auth, which keeps the password in the database, a bad idea. */
 static int put_default_user(const char *req_url, const char *nick, const char *pass) {
     char body[BODY], epass[128], enick[64];
     json_escape(pass ? pass : "", epass, sizeof(epass));
@@ -168,9 +168,9 @@ static int put_default_user(const char *req_url, const char *nick, const char *p
 }
 
 static void net_auth_session_ok(const char *nick, const char *pass) {
-    /* Если на устройстве уже есть оффлайн-прогресс (купленные классы,
-     * валюты, уровни), создание нового аккаунта не должно его стирать:
-     * переносим всё в облачную запись нового ника. */
+    /* When the device already holds offline progress, with purchased classes, currencies
+     * and levels, creating an account must not wipe it: everything moves into the cloud
+     * record of the new nick. */
     int keep = 0;
     int cups = 0, candies = 0, cls = 0, azum = 0, santa = 0, ebuc = 0;
     int lv = 0, lu = 0, ol = 0, ou = 0, al = 0, au = 0, sl = 0, su = 0, el = 0, eul = 0;
@@ -222,8 +222,8 @@ static void net_auth_session_ok(const char *nick, const char *pass) {
     session_save(nick, pass);
 }
 
-/* В защищённом режиме ник обязан быть ASCII (латиница/цифры/«_»): из него
- * собирается e-mail аккаунта Firebase Auth. */
+/* In the protected mode the nick must be ASCII: Latin letters, digits and "_", which
+ * is what the Firebase Auth e-mail is built from. */
 static int nick_ascii_ok(const char *nick) {
     for (const char *p = nick; p && *p; p++) {
         unsigned char c = (unsigned char)*p;

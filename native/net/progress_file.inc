@@ -1,12 +1,12 @@
-/* progress.dat - файл прогресса на устройстве.
+/* progress.dat is the progress file on the device.
  *
- * Вынесено из native/net/state_storage.inc: здесь только работа с файлом и
- * геттеры для скриптов (net_load_*), а облачная часть сохранения осталась там.
- * Формат позиционный, старые файлы дочитываются по числу прочитанных полей:
- *   кубки класс азум санти леденцы уровень открыто_уровней
+ * Split out of native/net/state_storage.inc: only the file work and the getters
+ * for scripts (net_load_*) live here, while the cloud part of saving stayed
+ * there. The format is positional and old files are read by field count:
+ *   cups class azum santa candies level levels_unlocked
  *   ordinary_level ordinary_levels azum_level azum_levels
  *   santa_level santa_levels ebuc_level ebuc_levels ebuc bp azum_skin
- * Запись атомарная (file_write_atomic из state_storage.inc).
+ * The write is atomic (file_write_atomic from state_storage.inc).
  */
 static void progress_write(int cups, int candies, int cls, int azum, int santa, int ebuc,
                            int level, int levels_unlocked,

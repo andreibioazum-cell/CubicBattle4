@@ -111,9 +111,9 @@ static int kb_call_void_method(const char *name) {
 
 void ds_set_activity(void *act) { kb_activity = (ANativeActivity *)act; }
 
-/* Единственный источник правды для текста - системный редактор в Java.
- * Любое изменение буфера на стороне игры немедленно зеркалим обратно в него,
- * иначе редактор помнит уже стёртые символы и дописывает их к новому вводу
+/* The system editor in Java is the only source of truth for the text.
+ * Any change the game makes to the buffer is mirrored back into it at once,
+ * otherwise the editor still remembers erased characters and appends them to new
  * ("Q" + "qwerty" -> "Qqwerty"). */
 static void kb_sync_editor(void) {
     char copy[KB_BUF];
@@ -123,7 +123,7 @@ static void kb_sync_editor(void) {
     (void)kb_call_text_method("setGameKeyboardText", copy);
 }
 
-/* 1, если текст сейчас ведёт системный EditText (он и получает клавиши). */
+/* 1 while the system EditText owns the text and receives the keys. */
 int keyboard_uses_editor(void) { return kb_call_bool_method("gameKeyboardActive"); }
 
 void keyboard_show(void) {
@@ -202,10 +202,10 @@ void keyboard_type(const char *text) {
     kb_sync_editor();
 }
 
-/* Стираем целый UTF-8 символ, а не один байт.
- * Зажатый Backspace: подряд идущие вызовы с малым интервалом - это автоповтор
- * клавиши; после шести таких подряд стираем всё разом (см. тот же приём в
- * GameActivity.java для экранной клавиатуры). */
+/* A whole UTF-8 character is erased rather than a single byte.
+ * Held Backspace: calls that follow each other closely are key auto-repeat, and
+ * after six of them in a row everything is erased at once, the same trick as in
+ * GameActivity.java for the on-screen keyboard). */
 #define KB_DEL_STREAK_GAP_MS 150
 #define KB_DEL_STREAK_CLEAR 6
 static long long kb_del_last_ms = 0;
@@ -234,7 +234,7 @@ void keyboard_backspace(void) {
     kb_sync_editor();
 }
 
-/* Физическая клавиатура: KeyEvent.getUnicodeChar с учётом раскладки. */
+/* Hardware keyboard: KeyEvent.getUnicodeChar, which honours the layout. */
 static unsigned int kb_unicode(int keycode, int meta) {
     JNIEnv *env = NULL; JavaVM *vm; jclass cls; jmethodID ctor, get_uni;
     jobject ev; jint uni = 0; int attached = 0;
@@ -263,12 +263,12 @@ done:
 
 int keyboard_handle_key(int keycode, int action, int meta) {
     (void)action;
-    /* NativeActivity забирает InputQueue окна: KeyEvent от Gboard (латиница
-     * без composing) приходят СЮДА, а не в EditText. Если проглотить их из-за
-     * wantKeyboard, поле Ник открывает клавиатуру, но буквы не появляются.
-     * JNI nativeReplaceText по-прежнему заменяет буфер целиком, если IME
-     * всё же доставила символ в редактор - тогда append ниже просто дублирует
-     * уже стоящую букву, и мы это пропускаем. */
+    /* NativeActivity takes the InputQueue of the window, so the Gboard KeyEvents
+     * of plain Latin input arrive HERE rather than in the EditText. Swallowing
+     * them because of wantKeyboard opened the keyboard on the nick field while no
+     * letters appeared. JNI nativeReplaceText still replaces the whole buffer when
+     * the IME did deliver a character to the editor, in which case the append
+     * below would duplicate the letter already there, and that is skipped. */
     if (keycode==AKEYCODE_DEL || keycode==AKEYCODE_FORWARD_DEL) { keyboard_backspace(); return 1; }
     if (keycode==AKEYCODE_ENTER || keycode==AKEYCODE_NUMPAD_ENTER || keycode==AKEYCODE_DPAD_CENTER) {
         pthread_mutex_lock(&kb_mutex); kb_enter=1; pthread_mutex_unlock(&kb_mutex); return 1;
