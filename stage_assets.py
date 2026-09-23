@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         destination = Path(args.destination)
         staged = stage_assets(Path(args.source), destination)
-        # Звуки (game/sounds) кладём в APK рядом с ассетами: assets/sounds/.
+        # Sounds live in game/sounds and go into the APK as assets/sounds/.
         sounds_dir = Path(__file__).resolve().parent / "game" / "sounds"
         staged += stage_sounds(sounds_dir, destination / "sounds")
         java_source = Path(__file__).resolve().parent / "game" / "java"

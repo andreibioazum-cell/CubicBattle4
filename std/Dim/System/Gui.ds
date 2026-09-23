@@ -1,8 +1,8 @@
--- DimScript v2, стандартный модуль Dim.System.Gui: немедленный UI-минимум
--- поверх встроенных примитивов движка. Подключение: import Dim.System.Gui.
--- Модуль даёт классы Gui, Window, ButtonStyle и Color из примера языка:
--- статические методы класса вызываются как Gui.text(...), экземпляры —
--- win.isOpen(), поля читаются через self/win.title.
+-- DimScript v2, the standard Dim.System.Gui module: a minimal immediate-mode UI
+-- over the built-in engine primitives. Import it with: import Dim.System.Gui
+-- It provides the Gui, Window, ButtonStyle and Color classes of the language
+-- example: static methods are called as Gui.text(...), instances as win.isOpen(),
+-- and fields are read through self or win.title.
 
 private number gui_cursor_y = 24
 

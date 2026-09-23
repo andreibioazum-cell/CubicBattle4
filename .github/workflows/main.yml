@@ -72,11 +72,11 @@ jobs:
           fi
 
       - name: Install Android SDK packages
-        # android-actions/setup-android@v3 больше не используется: на свежих
-        # раннерах он считает предустановленный sdkmanager (cmdline-tools 12.0)
-        # «wrong version», перекачивает cmdline-tools и падает. На раннерах
-        # GitHub уже есть рабочий SDK под $ANDROID_HOME - принимаем лицензии
-        # и ставим пакеты им напрямую (с запасной загрузкой cmdline-tools).
+        # android-actions/setup-android@v3 is gone: on recent runners it calls the
+        # preinstalled sdkmanager (cmdline-tools 12.0) a wrong version, downloads
+        # cmdline-tools again and fails. The runners already ship a working SDK in
+        # $ANDROID_HOME, so the licenses are accepted and the packages installed
+        # through it, with a cmdline-tools download as the fallback.
         run: |
           set -euo pipefail
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"

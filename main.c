@@ -24,11 +24,11 @@ static uint64_t monotonic_ns(void) {
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
     return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
 }
-/* Кадр всегда рисуется в полном размере окна: ни апскейла, ни лимита FPS в
- * настройках больше нет (по просьбе игрока) — оба параметра только портили
- * картинку и заставляли ждать кадр впустую. */
+/* A frame is always drawn at the full window size: the upscale and the fps cap
+ * settings were removed at the player's request, since both only hurt the picture
+ * and made frames wait for nothing. */
 static int phys_w = 0, phys_h = 0;
-/* screen_w/screen_h — то, что видит скрипт: всегда полный размер окна. */
+/* screen_w and screen_h are what the script sees: always the full window size. */
 static void apply_screen_size(void) {
     if (phys_w < 1 || phys_h < 1) return;
     screen_w = phys_w;
@@ -85,10 +85,11 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             apply_screen_size();
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ds_set_activity(app->activity);
-            /* Vulkan-рендер создаётся на каждое окно заново (окно после
-             * сворачивания - новая поверхность); активы перечитываются лениво. */
+            /* The Vulkan renderer is created again for every window, since a
+             * window comes back with a new surface; assets reload lazily. */
             if (!ds_graphics_init(script_assets, app->window)) { init_done = 0; return; }
-            /* Звуки лежат в тех же assets (sounds/...), играют через OpenSL ES. */
+            /* Sounds sit in the same assets folder (sounds/...) and play through
+             * OpenSL ES. */
             ds_sound_init(script_assets);
             ds_sound_resume();
             init_done = 1; script_active = 0; restart_failures = 0;
@@ -96,8 +97,9 @@ static void handle_cmd(struct android_app *app, int32_t command) {
         case APP_CMD_WINDOW_RESIZED:
         case APP_CMD_CONTENT_RECT_CHANGED:
         case APP_CMD_CONFIG_CHANGED:
-            /* adjustResize меняет поверхность при открытой клавиатуре; размер
-             * swapchain/оффскрина Vulkan подстроит в начале следующего кадра. */
+            /* adjustResize changes the surface while the keyboard is open, and the
+             * graphics layer resizes the swapchain and the offscreen target at the
+             * start of the next frame. */
             if (app->window) {
                 int w = ANativeWindow_getWidth(app->window);
                 int h = ANativeWindow_getHeight(app->window);
@@ -105,10 +107,10 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             }
             break;
         case APP_CMD_TERM_WINDOW:
-            /* Онлайн-потоки комнаты переживают сворачивание, а скрипт при
-             * возврате стартует заново: без явного отключения зомби-потоки
-             * продолжали бы писать в состояние, которого скрипт уже не
-             * помнит, - отсюда случайные вылеты при перезаходе. */
+            /* The room threads survive going to the background while the script
+             * starts over on return. Without an explicit teardown those threads
+             * would keep writing state the script no longer knows, which caused
+             * the random crashes on re-entry. */
             init_done = 0; script_active = 0; keyboard_hide(); net_disconnect();
             ds_graphics_shutdown(); ds_sound_shutdown(); break;
         case APP_CMD_GAINED_FOCUS: ds_sound_resume(); break;
@@ -132,12 +134,12 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         i = (action == AMOTION_EVENT_ACTION_MOVE) ? 0 : index;
         count = (action == AMOTION_EVENT_ACTION_MOVE) ? count : index + 1;
         for (; i < count; i++) {
-            /* Координаты окна — те же пиксели, в которых живёт скрипт:
-             * апскейл на них больше не влияет. */
+            /* Window coordinates are the pixels the script works in, since the
+             * removed upscale no longer affects them. */
             call.x = AMotionEvent_getX(event, i);
             call.y = AMotionEvent_getY(event, i);
-            /* Край окна: прижимаем к виртуальному экрану, чтобы касание у самой
-             * кромки не уходило за его пределы. */
+            /* Window edge: clamped to the virtual screen, so a touch on the very
+             * rim does not land outside it. */
             if (screen_w > 0) {
                 if (call.x < 0) call.x = 0;
                 if (call.x > (float)(screen_w - 1)) call.x = (float)(screen_w - 1);
@@ -164,9 +166,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             if (keyboard_handle_key(key, action, meta)) return 1;
         }
         if (key == AKEYCODE_BACK) {
-            /* Системный «Назад» сначала отдаём скрипту: он закрывает чат или
-             * возвращает на прошлый экран. Если скрипт его не взял (лобби),
-             * и DOWN, и UP уходят системе - Android сворачивает игру сам. */
+            /* System Back goes to the script first, which closes the chat or
+             * returns to the previous screen. If the script does not take it, in
+             * the lobby for instance, both DOWN and UP reach the system and
+             * Android backgrounds the game. */
             if (action == AKEY_EVENT_ACTION_DOWN) {
                 BackCall call = {0};
                 back_consumed = 0;
@@ -178,11 +181,11 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             if (action == AKEY_EVENT_ACTION_UP) { int c = back_consumed; back_consumed = 0; return c; }
             return back_consumed;
         }
-        /* Когда текст ведёт системный EditText, клавиши (в том числе Backspace)
-         * должны дойти до него, иначе удаление применяется только к буферу игры,
-         * редактор остаётся со старым текстом и дописывает его к новому вводу.
-         * Проверяем именно редактор, а не флаг видимости: на ландшафте эвристика
-         * «клавиатура видна» может ошибаться, и клавиши не должны теряться. */
+        /* While a system EditText owns the text, keys including Backspace have to
+         * reach it, otherwise a deletion only applies to the game buffer while the
+         * editor keeps the old text and appends it to the new input. The check asks
+         * the editor rather than a visibility flag, because the "keyboard is up"
+         * heuristic can be wrong in landscape and keys must not be lost. */
         if (keyboard_uses_editor()) return 0;
         return 1;
     }
@@ -190,9 +193,9 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
 }
 void android_main(struct android_app *app) {
     Buffer frame = {0}; if (!app) return;
-    /* rand() в скриптах использует libc-генератор, который сам себя не
-     * сидит: без srand() спавн леденцов, их направление полёта и прочие
-     * «случайные» броски шли бы по одной и той же последовательности. */
+/* rand() in scripts uses the libc generator, which does not seed itself: without
+ * srand() the candy spawns, their flight directions and other "random" throws
+ * would follow one and the same sequence every run. */
     srand((unsigned)(time(NULL) * 2654435761u) ^ ((unsigned)getpid() * 0x9E3779B9u));
     app->onAppCmd = handle_cmd; app->onInputEvent = handle_input;
     net_set_java_vm(app->activity->vm);
@@ -211,9 +214,9 @@ void android_main(struct android_app *app) {
         if (!app->window || !init_done || app->destroyRequested) continue;
         restart_script_if_due();
         uint64_t frame_start = monotonic_ns();
-        /* Фактический период кадров (включая ожидание vsync) уходит в графику:
-         * по нему автоматическое внутреннее разрешение решает, укладывается ли
-         * устройство в 60 fps полным размером окна. */
+        /* The real frame period, vsync wait included, goes to the graphics layer,
+         * where the automatic internal resolution judges whether the device holds
+         * 60 fps at the full window size. */
         if (prev_loop_ns) ds_graphics_report_frame_interval((double)(frame_start - prev_loop_ns) / 1e9);
         prev_loop_ns = frame_start;
         apply_screen_size();
@@ -225,8 +228,9 @@ void android_main(struct android_app *app) {
             if (!ds_call_protected(protected_update, NULL, "update")) mark_script_failed("update");
             else if (ds_script_restart_requested()) { script_active = 0; restart_after_ns = monotonic_ns(); }
         }
-        /* Кадр = Vulkan: захватываем изображение swapchain, скрипт складывает
-         * команды, в end_frame GPU рисует их в оффскрин и делает present. */
+        /* A frame is Vulkan: acquire a swapchain image, let the script collect its
+         * commands, and in end_frame the GPU draws them into the offscreen target
+         * and presents. */
         frame.pixels = NULL;
         frame.width = screen_w;
         frame.height = screen_h;
@@ -239,8 +243,8 @@ void android_main(struct android_app *app) {
             }
             if (!script_active) {
                 if (draw_failed || ds_script_has_error()) {
-                    /* Экран ошибки идёт теми же командами через тот же
-                     * конвейер, поэтому кадр именно завершаем, а не отменяем. */
+                    /* The error screen goes through the same commands and the same
+                     * pipeline, so the frame is finished rather than abandoned. */
                     ds_graphics_error_screen(ds_runtime_error_message());
                     ds_graphics_end_frame();
                 } else ds_graphics_cancel_frame();

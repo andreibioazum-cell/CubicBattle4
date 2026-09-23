@@ -5,52 +5,52 @@ from ds_compiler import DimScriptCompiler
 
 
 def find_ds_files(directory):
-    """Рекурсивно собирает все .ds файлы и сортирует их по модулям.
+    """Collects every .ds file recursively and sorts it by module.
 
-    Порядок важен для глобальных объявлений (объекты и их экземпляры должны
-    идти до первого использования), поэтому файлы внутри game/scripts лежат по
-    модулям, а порядок модулей зафиксирован здесь: конфигурация и состояние —
-    раньше, бой и эффекты — позже, движок (главный цикл) замыкает список.
+    The order matters for global declarations: objects and their instances must
+    come before the first use. The files inside game/scripts are grouped by
+    module, and the module order is pinned here: configuration and state first,
+    battle and effects after, with the engine, the main loop, closing the list.
     """
     order = [
-        "core/config.ds",          # константы: экраны, тема, сетка, баланс
-        "ui/locale_core.ds",       # основные переводы RU/EN
-        "ui/locale_progress.ds",   # переводы прогресса, наград и магазина
-        "ui/locale_extra.ds",      # квесты, топ
-        "core/entities.ds",        # объекты и состояние боя
-        "core/ui.ds",              # UI-кит: кнопки, карточки, хит-тесты, текст
-        "ui/progress_classes.ds",  # классы, уровни и скины
-        "ui/progress_rewards.ds",  # награды, сохранение и синхронизация
-        "ui/promo.ds",             # карточки в соло и экран промокодов
-        "ui/layout.ds",            # геометрия экранов (draw_* и touch_*)
-        "ui/chat.ds",              # онлайн-чат
-        "ui/menu_screens.ds",      # отрисовка экранов меню
-        "ui/quests.ds",            # задания
-        "ui/menu_input.ds",        # переходы и обработка нажатий меню
-        "combat/battle_rules.ds",  # данные классов: текстуры, HP, урон, яд
-        "combat/battle_turrets.ds", # турели-деспенсеры бука
-        "combat/battle_hitscan.ds", # геометрия попаданий удара и рывка
-        "combat/battle_damage.ds", # урон, лечение, оглушение, возрождение
-        "combat/battle_setup.ds",  # запуск боя, спавн и движение игрока
-        "combat/battle_movement.ds", # прицеливание и движение бота
-        "combat/battle_ai.ds",     # решения и атаки бота
-        "combat/battle_status.ds", # заморозка, оглушение и яд
-        "combat/battle_enemy_class.ds", # случайный класс врага и его ульты
-        "combat/battle_enemy_dash.ds", # рывок врага и рывок игрока в соло
-        "combat/battle_enemy_turrets.ds", # турели-щиты врага-буКа
-        "combat/battle_shield.ds", # щит турелей бука и пронзание снежинок
-        "combat/battle_abilities.ds", # способности и основной update боя
-        "combat/battle_online.ds", # сетевые снимки и завершение матча
-        "combat/battle_actions_fx.ds", # запуск атак и способности
-        "combat/battle_super_render.ds", # рисунок турелей, луча и вселенной
-        "combat/battle_hitboxes.ds", # хитбоксы способностей с уроном
-        "combat/battle_hitbox_fades.ds", # плавные альфы этих хитбоксов
-        "combat/battle_render.ds", # поле, бойцы и интерфейс боя
-        "combat/battle_event_plates.ds", # ивент «плиты и Дед Мороз»
-        "combat/battle_events_input.ds", # события, баннеры и ввод
-        "fx/weather.ds",           # фон арены и общий эффект снега
-        "fx/dust.ds",              # след пыли
-        "core/engine.ds",          # главный цикл
+        "core/config.ds",          # constants: screens, theme, layout, balance
+        "ui/locale_core.ds",       # main RU/EN strings
+        "ui/locale_progress.ds",   # progress, reward and shop strings
+        "ui/locale_extra.ds",      # quests and the top list
+        "core/entities.ds",        # objects and battle state
+        "core/ui.ds",              # UI kit: buttons, cards, hit tests, text
+        "ui/progress_classes.ds",  # classes, levels and skins
+        "ui/progress_rewards.ds",  # rewards, saving and syncing
+        "ui/promo.ds",             # solo cards and the promo screen
+        "ui/layout.ds",            # screen geometry, draw_* and touch_*
+        "ui/chat.ds",              # online chat
+        "ui/menu_screens.ds",      # menu screen drawing
+        "ui/quests.ds",            # quests
+        "ui/menu_input.ds",        # menu navigation and taps
+        "combat/battle_rules.ds",  # class data: textures, HP, damage, poison
+        "combat/battle_turrets.ds", # the buk dispenser turrets
+        "combat/battle_hitscan.ds", # hit geometry of punches and dashes
+        "combat/battle_damage.ds", # damage, healing, stun, revive
+        "combat/battle_setup.ds",  # battle start, spawning and player movement
+        "combat/battle_movement.ds", # bot aiming and movement
+        "combat/battle_ai.ds",     # bot decisions and attacks
+        "combat/battle_status.ds", # freeze, stun and poison
+        "combat/battle_enemy_class.ds", # the random enemy class and its supers
+        "combat/battle_enemy_dash.ds", # enemy dash and the solo player dash
+        "combat/battle_enemy_turrets.ds", # enemy buk shield turrets
+        "combat/battle_shield.ds", # buk turret shield and snowflake piercing
+        "combat/battle_abilities.ds", # abilities and the main battle update
+        "combat/battle_online.ds", # network snapshots and match finish
+        "combat/battle_actions_fx.ds", # attack start and abilities
+        "combat/battle_super_render.ds", # drawing turrets, the beam and the universe
+        "combat/battle_hitboxes.ds", # damage hitboxes of abilities
+        "combat/battle_hitbox_fades.ds", # smooth alphas of those hitboxes
+        "combat/battle_render.ds", # arena, fighters and battle HUD
+        "combat/battle_event_plates.ds", # the plates and Santa event
+        "combat/battle_events_input.ds", # events, banners and input
+        "fx/weather.ds",           # arena background and the snow effect
+        "fx/dust.ds",              # dust trail
+        "core/engine.ds",          # main loop
     ]
     files = []
     for root, _dirs, names in os.walk(directory):
@@ -63,27 +63,27 @@ def find_ds_files(directory):
         try:
             return (0, order.index(rel))
         except ValueError:
-            # Незнакомые файлы (например, экспериментальные) идут после всех
-            # модулей, по алфавиту.
+            # Unknown files, experimental ones for instance, come after every
+            # module, in alphabetical order.
             return (1, rel)
 
     return sorted(files, key=key)
 
 
 def run_lint(scripts_dir):
-    """Прогоняет tools/ds_lint.py по только что скомпилированным скриптам.
+    """Runs tools/ds_lint.py over the scripts that were just compiled.
 
-    Компилятор DimScript молча выбрасывает присваивания необъявленным
-    именам, поэтому без линта опечатка, скажем, в menu_input.ds исчезала бы из
-    game.c без следа и проявлялась уже в собранной игре. По умолчанию линт
-    только печатает найденное; строгим его делает DS_LINT_STRICT=1 — тогда
-    gen.py завершается ошибкой (удобно включить в CI).
+    The DimScript compiler silently drops assignments to undeclared names, so
+    without the lint a typo in menu_input.ds would vanish from game.c without a
+    trace and only show up in the built game. By default the lint only prints
+    what it finds; DS_LINT_STRICT=1 makes gen.py fail instead, which is worth
+    turning on in CI.
     """
     if not scripts_dir:
         return []
     try:
         from tools import ds_lint
-    except Exception as e:  # линт не должен ломать генерацию
+    except Exception as e:  # the lint must not break generation
         print(f"ds_lint skipped: {e}")
         return []
     errors = ds_lint.lint_dir(scripts_dir)
@@ -131,10 +131,10 @@ def main():
 
     if os.path.isdir(input_path):
         src_dir = input_path
-        # В проекте скрипты лежат в <game_dir>/scripts, а список модулей в
-        # find_ds_files отсчитывается именно от этой папки. Если передан корень
-        # проекта (например, game), ищем скрипты в его подкаталоге scripts,
-        # иначе порядок модулей не совпадёт с order в find_ds_files.
+        # In this project the scripts live in <game_dir>/scripts, and the module
+        # list in find_ds_files is relative to that folder. A project root such as
+        # game is therefore redirected to its scripts subdirectory, otherwise the
+        # module order would not match order in find_ds_files.
         scripts = os.path.join(input_path, 'scripts')
         if os.path.isdir(scripts):
             src_dir = scripts
