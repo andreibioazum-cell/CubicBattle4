@@ -43,7 +43,14 @@ static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
     Texture *t = find_tx(n);
-    if (t) return t->pixels ? t : NULL;
+    if (t) {
+        /* Если первая GPU-загрузка временно не удалась, не оставляем текстуру
+         * навсегда невидимой в CPU-кэше: следующий вызов tex() снова поставит
+         * её в очередь. Это исправляет исчезновение idle-спрайта, когда при
+         * ударе внезапно показывалась только уже загруженная punch-поза. */
+        if (t->pixels && !t->gpu.uploaded) ds_vk_pending_texture(t);
+        return t->pixels ? t : NULL;
+    }
     if (!amgr) { ds_log_err("texture not loaded: no asset manager for '%s'", n); return NULL; }
     t = (Texture *)calloc(1, sizeof(*t));
     if (!t) { ds_log_err("texture not loaded: out of memory caching '%s'", n); return NULL; }
@@ -281,8 +288,9 @@ int ds_graphics_init(AAssetManager *a, ANativeWindow *window) {
  * держит 60 fps; мягче она становится только вместо провала в 30.
  *
  * Гистерезис здесь принципиально несимметричный, чтобы масштаб не «дышал»:
- * грубее уходим быстро (10 промахов подряд или 9 из 45 кадров), а пробу
- * «резче» допускаем только после 300 кадров (~5 с) вообще без промахов и не
+ * грубее уходим быстро (4 промаха подряд или 4 из 24 кадров), чтобы слабый
+ * телефон не оставался на 20-35 fps несколько секунд, а пробу «резче»
+ * допускаем только после 300 кадров (~5 с) вообще без промахов и не
  * чаще раза в 15 с; две провалившиеся пробы за сеанс навсегда фиксируют
  * текущий масштаб (gfx_finer_off) — лучше стабильная мягкость, чем видимая
  * пульсация резкости и пересоздание оффскрина каждые несколько секунд.
@@ -303,7 +311,9 @@ int ds_graphics_pixel_scale(void) { return gfx_auto_scale; }
 
 /* Старт/возврат в приложение/смена размера окна: история скорости устарела. */
 static void gfx_autoscale_new_window(void) {
-    gfx_cooldown = 60;
+    /* Первую оценку производительности делаем быстро: на слабом GPU секунда
+     * кадров в полном разрешении визуально ощущается как зависание интерфейса. */
+    gfx_cooldown = 15;
     gfx_probe_finer = 0;
     gfx_probe_left = 0;
     gfx_miss_streak = 0; gfx_win_frames = 0; gfx_win_misses = 0; gfx_clean = 0;
@@ -311,7 +321,10 @@ static void gfx_autoscale_new_window(void) {
 
 static void gfx_set_scale(int s, int cooldown) {
     if (s < 1) s = 1;
-    if (s > 4) s = 4;
+    /* На слабых 1080p-устройствах (включая Unisoc T615) 1/4 всё ещё может
+     * упираться в 30 fps. Разрешаем аварийные 1/5 и 1/6: интерфейс станет
+     * мягче, зато управление и анимации останутся отзывчивыми. */
+    if (s > 6) s = 6;
     if (s == gfx_auto_scale) return;
     gfx_auto_scale = s;
     gfx_cooldown = cooldown;
@@ -350,10 +363,13 @@ void ds_graphics_report_frame_interval(double sec) {
     }
     gfx_win_frames++;
     if (missed) gfx_win_misses++;
-    if (gfx_miss_streak >= 10 || gfx_win_frames >= 45) {
-        int bad = gfx_miss_streak >= 10 || gfx_win_misses >= 9;
+    if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
+        int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
         if (bad) {
-            if (gfx_auto_scale < 4) gfx_set_scale(gfx_auto_scale + 1, 90);
+            /* Пересоздание оффскрина ждёт GPU и само даёт заметный рывок.
+             * Перепрыгиваем сразу две ступени (1→3→5→6), чтобы вместо пяти
+             * подвисаний при подборе масштаба было максимум три. */
+            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 2, 12);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
                    gfx_finer_cooldown == 0 && !gfx_finer_off) {
             gfx_probe_finer = 1;

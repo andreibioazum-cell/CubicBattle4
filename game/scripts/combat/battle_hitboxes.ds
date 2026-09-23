@@ -191,6 +191,9 @@ public function draw_hit_dash_path(number sx, number sy, number dx, number dy, n
     end
 end
 public function draw_hit_dash()
+    -- Сетку из квадратов вдоль рывка больше не показываем: она засоряла
+    -- арену и выглядела как графический баг. Сам хитбокс и урон не меняются.
+    return
     if dash_box_a>0 then
         local number dpr=dash_hit_radius_remote()
         if game_state==ST_SOLO then

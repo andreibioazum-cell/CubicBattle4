@@ -113,7 +113,9 @@ public function warn_rgb(number rgb)
     return (1 + floor(warn_a * 254)) * 0x1000000 + rgb
 end
 public function draw_warning()
-    rect(0, 0, screen_w, screen_h, 0xFF000000)
+    -- Фон использует ту же альфу, что и текст: после согласия весь экран
+    -- предупреждения плавно растворяется, показывая лобби под ним.
+    rect(0, 0, screen_w, screen_h, warn_rgb(0))
     local color body = warn_rgb(text_color)
     local number y = screen_h / 2 - 196
     ctext_scaled(tr_warn_title_en(), y, body, 1.15)
@@ -138,17 +140,22 @@ public function draw_warning()
     -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
     -- но не крупнее 0.8, как было раньше.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
-    roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, 0xFF000000 + 56 * 0x010101)
-    text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, 0xFFFFFFFF, scale)
+    -- Один чёрный слой без белой подложки: раньше при затухании полупрозрачный
+    -- чёрный внутренний слой открывал белую рамку под всей площадью кнопки,
+    -- из-за чего кнопка перед исчезновением становилась ослепительно белой.
+    roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, warn_rgb(0))
+    text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, warn_rgb(0xFFFFFF), scale)
 end
 public function legal_accept()
-    if warn_ready < 1 then
+    if warn_ready < 1 || warn_closing == 1 then
         return
     end
-    warn_open = 0
-    warn_a = 0
+    -- Метку пишем сразу, но само предупреждение оставляем открытым на время
+    -- fade-out: update_warning плавно уменьшит warn_a и закроет его в конце.
+    warn_close_t = 0
+    warn_closing = 1
     settings_mark_legal()
-    -- Заставки студии больше нет: сразу в лобби после согласия.
+    -- Заставки студии больше нет: после затухания открывается лобби.
 end
 public function touch_warn(number x, number y, number action)
     if action != 0 then
@@ -271,12 +278,12 @@ public function touch_settings(number x, number y)
         music_volume_cycle()
         return
     end
-    if hit_settings_row(x, y, 6) == 1 then
+    if hit_settings_row(x, y, 5) == 1 then
         show_fps = 1 - show_fps
         save_settings()
         return
     end
-    if hit_settings_row(x, y, 7) == 1 then
+    if hit_settings_row(x, y, 6) == 1 then
         start_transition(ST_PRIVACY)
         return
     end

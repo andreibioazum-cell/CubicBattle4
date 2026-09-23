@@ -48,14 +48,15 @@ def main():
 
     # --- гейт согласия: без авто-скрытия, вход только кнопкой -------------
     warn_update = function_body(engine, "update_warning")
-    assert "warn_open = 0" not in warn_update, \
-        "предупреждение снова скрывается само: %s" % warn_update
-    assert "warn_hold" not in warn_update and "warn_fade" not in warn_update, \
-        "остался таймер скрытия предупреждения"
+    assert "warn_open = 0" in warn_update and "warn_closing == 1" in warn_update, \
+        "предупреждение должно закрываться только после плавного затухания"
+    assert "warn_close_t = clamp(warn_close_t + dt / warn_fade, 0, 1)" in warn_update and \
+        "warn_a = 1 - p*p*(3-2*p)" in warn_update, \
+        "после согласия нет плавного smoothstep fade-out предупреждения"
     accept = function_body(menu_input, "legal_accept")
-    assert "warn_open = 0" in accept and "settings_mark_legal()" in accept, \
-        "согласие не закрывает гейт или не пишет метку: %s" % accept
-    assert "if warn_ready < 1 then" in accept
+    assert "warn_closing = 1" in accept and "settings_mark_legal()" in accept, \
+        "согласие не запускает затухание или не пишет метку: %s" % accept
+    assert "if warn_ready < 1 || warn_closing == 1 then" in accept
     assert "warn_t = warn_t + dt" in warn_update and \
         "warn_ready = clamp(warn_t / warn_wait, 0, 1)" in warn_update, \
         "отсчёт секунд должен вестись по warn_t"
@@ -98,14 +99,14 @@ def main():
 
     # --- экран приватности: рисунок, вход из настроек, выход назад -------
     assert "ST_PRIVACY=16" in config
-    assert "SETTINGS_ROWS=8" in layout
+    assert "SETTINGS_ROWS=7" in layout
     draw_settings = function_body(menu_screens, "draw_settings")
-    assert "settings_row_y(7)" in draw_settings and "tr_privacy()" in draw_settings
+    assert "settings_row_y(6)" in draw_settings and "tr_privacy()" in draw_settings
     draw_privacy = function_body(menu_screens, "draw_privacy")
     for i in range(1, 11):
         assert "tr_pv%d()" % i in draw_privacy, "строка tr_pv%d не рисуется" % i
     touch_settings = function_body(menu_input, "touch_settings")
-    assert re.search(r"hit_settings_row\(x, y, 7\) == 1 then\s*\n\s*start_transition\(ST_PRIVACY\)",
+    assert re.search(r"hit_settings_row\(x, y, 6\) == 1 then\s*\n\s*start_transition\(ST_PRIVACY\)",
                      touch_settings), "строка приватности не открывает экран"
     touch_menu = function_body(menu_input, "touch_menu")
     assert "ST_PRIVACY" in touch_menu and "back_hit" in touch_menu

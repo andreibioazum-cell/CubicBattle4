@@ -109,6 +109,9 @@ public final class GameActivity extends NativeActivity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        /* Частоту экрана намеренно не фиксируем: на TECNO она не заперта на
+         * 30 Гц (игра реально колеблется между 30 и 40 fps), а запрос ровно
+         * 60 Гц лишь мешает Android выбрать подходящий режим панели. */
         enterImmersiveMode();
 
         chatEditor = new EditText(this);

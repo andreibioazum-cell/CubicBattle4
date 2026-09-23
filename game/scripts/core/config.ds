@@ -128,7 +128,9 @@ public number stun_rgb=0x00F9A825, stun_rim=0x00FFD54F
 -- затухание (0.15 с) заметно короче кулдауна удара (0.3 с) — между ударами
 -- вспышка успевает растаять целиком, и серия ударов не «держит» врага
 -- красным секунду подряд, а даёт короткие моргания на каждый удар.
-public number hurt_rgb=0x00E53935, hurt_alpha=0.28, hurt_fade=0.15
+-- Насыщенная вспышка: при попадании красный силуэт теперь хорошо заметен,
+-- а не выглядит как едва различимый полупрозрачный оттенок.
+public number hurt_rgb=0x00FF2020, hurt_alpha=0.75, hurt_fade=0.15
 public number ebuc_hp=12, ebuc_station_hp=6, ebuc_station_hp_bonus=1, ebuc_damage=1.0
 public number ebuc_super_cd_time=4.0, ebuc_universe_collapse_time=2.0
 public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
@@ -147,7 +149,9 @@ public number azum_hp=8
 public number shadow_off=10, shadow_alpha=0x30
 public number candy_count=5, candy_margin=46, candy_scale=0.8, candy_give=1
 public number candy_pop_time=0.4, candy_pick_time=0.3
-public number dust_max=48, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.06, dust_r_max=8, dust_spd=38
+-- Частицы ограничены: на слабых CPU десятки кругов каждый кадр создавали
+-- лишнюю геометрию, хотя визуально плотность 28 почти не отличается от 48.
+public number dust_max=28, dust_fields=5, dust_life_max=0.6, dust_spawn_cd=0.075, dust_r_max=8, dust_spd=38
 public number dust_back_off=34, dust_back_share=0.85, dust_side_share=0.4
 public number dust_cd=0, enemy_dust_cd=0, dust_enemy_min_speed=40
 public number remote_fields=11, punch_fields=6, snow_fields=8, remote_smooth=14, remote_snap=220
@@ -170,8 +174,10 @@ public number music_volume=70
 -- Счётчик кадров в бою: настройка (show_fps) и усреднённое значение, которое
 -- пересчитывается раз в fps_interval секунд, чтобы цифры не прыгали.
 public number show_fps=0, fps_value=0, fps_acc=0, fps_frames=0, fps_interval=0.5
-public number fps_plate_rgb=0xDD171923, fps_text_scale=0.5
-public number event_mode=0, disco_t=0, event_t=0, event_flakes=43
+-- FPS-индикатор строго монохромный: только чистые чёрный и белый,
+-- без синеватого почти-чёрного оттенка.
+public number fps_plate_rgb=0xFF000000, fps_frame_rgb=0xFFFFFFFF, fps_text_rgb=0xFFFFFFFF, fps_text_scale=0.5
+public number event_mode=0, disco_t=0, event_t=0, event_flakes=28
 public number plates_size=150, plates_shrink_time=0.9, plates_stand_r=80
 public number plates_xa=0.22, plates_xb=0.78, plates_yy=0.5
 public number plates_santa_size=112, plates_santa_spin=2.2, plates_throw_interval=0.35
@@ -192,6 +198,9 @@ public number plates_lock_me=0, plates_save_interval=4
 -- фиксируется в settings.dat (метка времени), системная кнопка «Назад» на
 -- этом экране выходит из игры.
 public number warn_open=1, warn_a=1, warn_ready=0, warn_t=0, warn_wait=3
+-- После согласия весь экран предупреждения плавно растворяется. warn_open
+-- остаётся включённым до конца анимации, чтобы во время неё не проходили тапы.
+public number warn_closing=0, warn_close_t=0, warn_fade=1.25
 public number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 public number studio_in=0.5, studio_hold=1.6, studio_fade=0.7
 public string STUDIO_NAME="CUBIC CORPORATION"

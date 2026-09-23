@@ -35,6 +35,22 @@ static int ds_vk_recreate_swapchain(void) {
     if (want < 3) want = 3;
     if (caps.maxImageCount && want > caps.maxImageCount) want = caps.maxImageCount;
 
+    /* FIFO на Android жёстко роняет 60 сразу до 30 fps при малейшем промахе
+     * vsync. MAILBOX не рвёт кадр, но разрешает композитору взять самый свежий
+     * готовый кадр: поэтому игра может держать реальные 40-55 fps вместо
+     * искусственной ступеньки 30. Если драйвер его не даёт, остаётся FIFO. */
+    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    uint32_t npm = 0;
+    if (vkGetPhysicalDeviceSurfacePresentModesKHR(vk_phys, vk_surface, &npm, NULL) == VK_SUCCESS && npm > 0) {
+        VkPresentModeKHR *pm = (VkPresentModeKHR *)malloc(npm * sizeof(*pm));
+        if (pm && vkGetPhysicalDeviceSurfacePresentModesKHR(vk_phys, vk_surface, &npm, pm) == VK_SUCCESS) {
+            for (uint32_t i = 0; i < npm; i++) {
+                if (pm[i] == VK_PRESENT_MODE_MAILBOX_KHR) { present_mode = pm[i]; break; }
+            }
+        }
+        free(pm);
+    }
+
     /* Формат: обязательно с поддержкой blit (нужен автоматическому
      * внутреннему масштабу); для R8G8B8A8/B8G8R8A8_UNORM это гарантия
      * спецификации. */
@@ -85,7 +101,7 @@ static int ds_vk_recreate_swapchain(void) {
         ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
         : caps.currentTransform;
     si.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    si.presentMode = VK_PRESENT_MODE_FIFO_KHR; /* поддерживается всегда, бережёт батарею */
+    si.presentMode = present_mode; /* MAILBOX без ступеньки 60→30, иначе FIFO */
     si.clipped = VK_TRUE;
     si.oldSwapchain = VK_NULL_HANDLE;
     if (!ds_vk_check_result(vkCreateSwapchainKHR(vk_device, &si, NULL, &vk_swap), "vkCreateSwapchainKHR")) return 0;

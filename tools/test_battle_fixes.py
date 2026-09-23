@@ -621,7 +621,7 @@ static void test_splash_screens(void) {
      * до явного согласия (legal_accept в скриптах), иначе предупреждение
      * можно «проспать» и войти в игру без него. */
     ds_fn_reset_battle();
-    warn_open = 1; warn_a = 1; warn_ready = 0; warn_t = 0;
+    warn_open = 1; warn_a = 1; warn_ready = 0; warn_t = 0; warn_closing = 0;
     studio_open = 0;
     dt = 0.1;
     ds_fn_legal_accept();
@@ -636,27 +636,31 @@ static void test_splash_screens(void) {
     ds_fn_touch_warn(screen_w / 2, ds_fn_warn_btn_y() + 20, 1);
     assert(legal_marks == 0);
     ds_fn_touch_warn(screen_w / 2, ds_fn_warn_btn_y() + 20, 0);
-    /* Согласие закрывает гейт и больше НЕ стартует заставку студии. */
-    assert(legal_marks == 1 && warn_open == 0 && studio_open == 0);
-    /* Отрисовка: фон предупреждения непрозрачно-чёрный, поверх — короткий
-     * текст и кнопка согласия. */
-    warn_open = 1; warn_a = 0.5;
+    /* Согласие запускает плавное затухание и не стартует заставку студии. */
+    assert(legal_marks == 1 && warn_open == 1 && warn_closing == 1 && studio_open == 0);
+    ds_fn_update_warning();
+    assert(warn_a > 0 && warn_a < 1 && warn_open == 1);
+    for (int i = 0; i < 10; i++) ds_fn_update_warning();
+    assert(warn_a == 0 && warn_open == 0 && warn_closing == 0);
+    /* При затухании фон, текст и кнопка используют общую альфу. */
+    warn_open = 1; warn_a = 0.5; warn_closing = 0;
     call_count = 0;
     ds_fn_draw_warning();
-    assert(calls[0].kind == 'q' && calls[0].color == 0xFF000000);
+    assert(calls[0].kind == 'q' && calls[0].color == 0x80000000);
     int saw_accept_btn = 0;
     for (int i = 0; i < call_count; i++) {
-        if (calls[i].kind == 'o' && calls[i].color == 0xFF383838) saw_accept_btn = 1;
+        if (calls[i].kind == 'o' && calls[i].color == 0x80000000) saw_accept_btn = 1;
     }
     assert(saw_accept_btn);
     /* Кнопка сразу в полной яркости, а подпись держит отсчёт «(3)(2)(1)»;
      * на 4-й секунде секунды пропадают и кнопка принимает нажатие. */
-    warn_ready = 0; warn_t = 0.0;
+    warn_a = 1; warn_ready = 0; warn_t = 0.0;
     call_count = 0;
     ds_fn_draw_warning();
     assert(strstr(last_text, "(3)") != NULL);          /* 1-я секунда */
     for (int i = 0; i < call_count; i++)
-        if (calls[i].kind == 'o') assert(calls[i].color == 0xFF383838); /* не тусклая */
+        if (calls[i].kind == 'o')
+            assert(calls[i].color == 0xFFFFFFFF || calls[i].color == 0xFF000000); /* строго монохромная */
     warn_t = 1.5; warn_ready = 0.5;
     ds_fn_draw_warning();
     assert(strstr(last_text, "(2)") != NULL);          /* 2-я секунда */
@@ -668,8 +672,8 @@ static void test_splash_screens(void) {
     assert(strstr(last_text, "(") == NULL);            /* секунды исчезли */
     int marks_before = legal_marks;
     ds_fn_touch_warn(screen_w / 2, ds_fn_warn_btn_y() + 20, 0);
-    assert(legal_marks == marks_before + 1 && warn_open == 0 && studio_open == 0);
-    puts("splash: warning keeps black screen, no studio splash after consent");
+    assert(legal_marks == marks_before + 1 && warn_open == 1 && warn_closing == 1 && studio_open == 0);
+    puts("splash: warning smoothly fades after consent, no studio splash");
 }
 
 static void test_quest_cooldown(void) {
