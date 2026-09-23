@@ -180,9 +180,9 @@ public function draw_hit_dash()
         if s!=net_slot()&&arr_get(rdash_box_a,s)>0 then
             local number rx=arr_get(remote_dash,b+2), ry=arr_get(remote_dash,b+3)
             local number rdx=arr_get(remote_dash,b+4), rdy=arr_get(remote_dash,b+5)
-            local number gone=azum_dash_speed*(azum_dash_time-arr_get(remote_dash,b+6))
+            local number leg=arr_get(remote_dash,b+8)
             local number pr=dash_hit_radius_remote()
-            draw_hit_dash_path(rx,ry,rdx,rdy,rx+rdx*gone,ry+rdy*gone,pr,arr_get(rdash_box_a,s))
+            draw_hit_dash_path(rx,ry,rdx,rdy,rx+rdx*leg,ry+rdy*leg,pr,arr_get(rdash_box_a,s))
         end
         s=s+1
     end

@@ -3,13 +3,16 @@
 
 The dash zone used to be a grid of world cells that looked like a rendering bug,
 so it was switched off entirely - and the dash lost its hitbox. Now the zone is
-one strip along the part of the dash already traveled, as wide as the damage
-zone is, drawn with the same colour and alpha as every other hitbox.
+one strip over the leg the fighter is on, as wide as the damage zone is, drawn
+with the same colour and alpha as every other hitbox. The strip turns with the
+fighter: the dash follows the stick, and a turn moves the start of the leg to
+the turning point, for the local fighter, for the bot and for a remote dash that
+`update_remote_dashes` reads from the room snapshot.
 
 The test compiles the real game scripts (game/game.c) with the host geometry and
-stub runtime, draws ability hitboxes for a player dash, a bot dash and a dash of
-a remote player, and counts the recorded draw commands. Run from the repository
-root after python3 gen.py:
+stub runtime, draws ability hitboxes for a player dash, a turned dash, a bot dash
+and a dash of a remote player, and counts the recorded draw commands. Run from
+the repository root after python3 gen.py:
 
     python3 tools/test_dash_hitbox.py
 """
@@ -94,6 +97,30 @@ int main(void) {
     }
     check(found, "player dash: strip not found");
 
+    /* Turned dash: the zone starts where the turn happened and runs along the new
+     * direction, so the strip turns with the fighter instead of staying on the
+     * direction the dash was started with. */
+    dash_active = 1; dash_box_a = 1;
+    dash_x0 = 300; dash_y0 = 400; dash_dx = 0; dash_dy = 1;
+    player->x = 300; player->y = 650;
+    double ttravel = player->y - dash_y0;
+    if (ttravel > path) ttravel = path;
+    cmd_n = 0;
+    ds_fn_draw();
+    count_hitboxes();
+    check(n_rot == 1, "turned dash: no zone strip");
+    found = 0;
+    for (size_t k = 0; k < cmd_n; k++) {
+        if (cmds[k].t != DS_CMD_RECT_ROT || cmds[k].v.rot.c != 0x60000000u) continue;
+        found = 1;
+        check(fabs(cmds[k].v.rot.ang - atan2(1.0, 0.0)) < 1e-3, "turned dash: strip did not turn");
+        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - 300) < 1e-3,
+              "turned dash: strip is not on the leg");
+        check(fabs((cmds[k].v.rot.y + cmds[k].v.rot.h / 2) - (dash_y0 + ttravel / 2)) < 1e-3,
+              "turned dash: strip does not cover the leg from the turning point");
+    }
+    check(found, "turned dash: strip not found");
+
     /* Bot dash in solo: same strip, drawn backwards. */
     dash_active = 0; dash_box_a = 0;
     enemy_dash_active = 1; edash_box_a = 1;
@@ -115,10 +142,21 @@ int main(void) {
     arr_set(remote_dash, slot * dash_fields + 4, 1);
     arr_set(remote_dash, slot * dash_fields + 5, 0);
     arr_set(remote_dash, slot * dash_fields + 6, 0);
+    /* The leg the remote fighter is on, as update_remote_dashes reads it from the
+     * room snapshot. */
+    arr_set(remote_dash, slot * dash_fields + 8, travel);
     cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
     check(n_rot == 1 && n_rect == 0, "remote dash: the zone is not one strip");
+    found = 0;
+    for (size_t k = 0; k < cmd_n; k++) {
+        if (cmds[k].t != DS_CMD_RECT_ROT || cmds[k].v.rot.c != 0x60000000u) continue;
+        found = 1;
+        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (300 + travel / 2)) < 1e-3,
+              "remote dash: strip does not cover the leg from the room snapshot");
+    }
+    check(found, "remote dash: strip not found");
 
     /* Hitboxes off: no zone at all. */
     show_hitboxes = 0;
@@ -128,7 +166,7 @@ int main(void) {
     check(n_rot == 0 && n_rect == 0 && n_circle == 0 && n_line == 0 && n_round == 0,
           "the zone is drawn even with hitboxes off");
 
-    puts("dash: the damage zone is one strip over the travelled segment (player, bot, remote)");
+    puts("dash: one strip over the leg the fighter is on (player, turned, bot, remote)");
     return 0;
 }
 """

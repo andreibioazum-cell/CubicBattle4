@@ -145,10 +145,6 @@ public function update_remote_dashes()
                 arr_set(remote_dash,b,gen)
                 if gen>0 then
                     arr_set(remote_dash,b+1,1)
-                    arr_set(remote_dash,b+2,net_player_dash_x(s)*screen_w)
-                    arr_set(remote_dash,b+3,net_player_dash_y(s)*screen_h)
-                    arr_set(remote_dash,b+4,net_player_dash_dx(s))
-                    arr_set(remote_dash,b+5,net_player_dash_dy(s))
                     arr_set(remote_dash,b+6,azum_dash_time)
                     arr_set(remote_dash,b+7,0)
                 else
@@ -156,6 +152,24 @@ public function update_remote_dashes()
                 end
             end
             if arr_get(remote_dash,b+1)==1 then
+                -- The fighter steers while he dashes, so the zone is not the straight
+                -- line from where the dash started any more: it follows him. The leg
+                -- begins where his client put the start (a turn moves it) and ends at
+                -- his current position, both of which come from the room snapshot.
+                local number ox=net_player_dash_x(s)*screen_w, oy=net_player_dash_y(s)*screen_h
+                local number vx=net_player_x(s)*screen_w-ox, vy=net_player_y(s)*screen_h-oy
+                local number leg=sqrt(vx*vx+vy*vy)
+                if leg<1 then
+                    leg=0
+                    arr_set(remote_dash,b+4,0)
+                    arr_set(remote_dash,b+5,0)
+                else
+                    arr_set(remote_dash,b+4,vx/leg)
+                    arr_set(remote_dash,b+5,vy/leg)
+                end
+                arr_set(remote_dash,b+2,ox)
+                arr_set(remote_dash,b+3,oy)
+                arr_set(remote_dash,b+8,leg)
                 local number t=arr_get(remote_dash,b+6)-dt
                 if t<0 then
                     t=0
@@ -164,16 +178,8 @@ public function update_remote_dashes()
                 if t<=0 then
                     arr_set(remote_dash,b+1,0)
                     arr_set(remote_dash,b+7,0)
-                else if arr_get(remote_dash,b+7)==0&&finished==0 then
-                    local number total_len=azum_dash_speed*azum_dash_time
-                    local number gone=total_len-azum_dash_speed*t
-                    if gone<0 then
-                        gone=0
-                    end
-                    if gone>total_len then
-                        gone=total_len
-                    end
-                    local number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5),gone)
+                else if arr_get(remote_dash,b+7)==0&&finished==0&&leg>0 then
+                    local number target=dash_resolve_target(arr_get(remote_dash,b+2),arr_get(remote_dash,b+3),arr_get(remote_dash,b+4),arr_get(remote_dash,b+5),leg)
                     if target==0 then
                         arr_set(remote_dash,b+7,1)
                         if revive_prot<=0 then
