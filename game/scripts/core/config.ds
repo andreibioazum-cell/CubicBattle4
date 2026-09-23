@@ -201,6 +201,10 @@ public number warn_open=1, warn_a=1, warn_ready=0, warn_t=0, warn_wait=3
 -- После согласия весь экран предупреждения плавно растворяется. warn_open
 -- остаётся включённым до конца анимации, чтобы во время неё не проходили тапы.
 public number warn_closing=0, warn_close_t=0, warn_fade=1.25
+-- Толщина обводки кнопки согласия: штрих идёт снаружи её кромки (см.
+-- roundrect_outline в core/ui.ds), поэтому кнопка с рамкой выглядит ровно как
+-- раньше, когда рамка была белым прямоугольником чуть больше заливки.
+public number warn_frame_th=2
 public number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 public number studio_in=0.5, studio_hold=1.6, studio_fade=0.7
 public string STUDIO_NAME="CUBIC CORPORATION"

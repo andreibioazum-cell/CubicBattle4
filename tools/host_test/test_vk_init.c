@@ -31,6 +31,7 @@
  */
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
+#include <android/native_window.h> /* заглушка из tools/host_test/stub: нужна для ANativeWindow */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,7 +46,32 @@ static char g_violation_msg[256];
 static int g_pipeline_creates = 0;
 static int g_swapchain_creates = 0;
 static int g_present_suboptimal_once = 1;
+/* Драйвер, который отвечает SUBOPTIMAL на КАЖДЫЙ present, не меняя при этом
+ * параметров поверхности: так ведут себя реальные Android-драйверы при
+ * preTransform=IDENTITY (currentTransform=ROTATE_90). */
+static int g_present_suboptimal_always = 0;
 static uint64_t g_next_handle = 0x1000;
+
+/* Список режимов презентации: как у Mali/Adreno на Android. Тесты меняют его,
+ * чтобы проверить всю цепочку предпочтений (MAILBOX -> FIFO_RELAXED -> FIFO). */
+static VkPresentModeKHR g_present_modes[4] = {
+    VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_MAILBOX_KHR,
+    VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR };
+static uint32_t g_present_mode_count = 4;
+static VkPresentModeKHR g_created_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
+static uint32_t g_surface_min_images = 2;
+/* Лог собирается целиком: по строкам проверяются решения, которые иначе видны
+ * только на устройстве (режим презентации, игнор SUBOPTIMAL, просьба о 60 fps). */
+static char g_log[16384];
+static size_t g_log_len;
+static void g_log_append(const char *s) {
+    size_t n = strlen(s);
+    if (n > sizeof g_log - 2 - g_log_len) n = sizeof g_log - 2 - g_log_len;
+    memcpy(g_log + g_log_len, s, n);
+    g_log_len += n;
+    g_log[g_log_len++] = '\n';
+    g_log[g_log_len] = '\0';
+}
 
 static void g_violation(const char *fmt, ...) {
     if (g_violations) return; /* первое сообщение важнее всего */
@@ -150,7 +176,16 @@ VkResult vkQueueWaitIdle(VkQueue q) { (void)q; return VK_SUCCESS; }
 VkResult vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo *si, VkFence f) { (void)q; (void)n; (void)si; (void)f; return VK_SUCCESS; }
 VkResult vkQueuePresentKHR(VkQueue q, const VkPresentInfoKHR *pi) {
     (void)q; (void)pi;
+    if (g_present_suboptimal_always) return VK_SUBOPTIMAL_KHR;
     if (g_present_suboptimal_once) { g_present_suboptimal_once = 0; return VK_SUBOPTIMAL_KHR; }
+    return VK_SUCCESS;
+}
+VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice d, VkSurfaceKHR s, uint32_t *count, VkPresentModeKHR *modes) {
+    (void)d; (void)s;
+    if (!modes) { *count = g_present_mode_count; return VK_SUCCESS; }
+    uint32_t n = *count < g_present_mode_count ? *count : g_present_mode_count;
+    for (uint32_t i = 0; i < n; i++) modes[i] = g_present_modes[i];
+    *count = g_present_mode_count;
     return VK_SUCCESS;
 }
 VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, const VkAllocationCallbacks *ac, VkSwapchainKHR *out) {
@@ -164,6 +199,16 @@ VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, co
         g_violation("swapchain: preTransform != IDENTITY (картинка будет повёрнута на 90° в ландшафте)");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    /* Режим обязан быть из списка драйвера: vkCreateSwapchainKHR с чужим
+     * режимом настоящий драйвер отвергает (VK_ERROR_INITIALIZATION_FAILED). */
+    int listed = 0;
+    for (uint32_t i = 0; i < g_present_mode_count; i++)
+        if (g_present_modes[i] == ci->presentMode) listed = 1;
+    if (!listed) {
+        g_violation("swapchain: presentMode %d нет в списке драйвера", (int)ci->presentMode);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    g_created_present_mode = ci->presentMode;
     g_swapchain_creates++;
     *out = (VkSwapchainKHR)g_next();
     return VK_SUCCESS;
@@ -185,7 +230,7 @@ VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice d, VkSurface
     (void)d; (void)s;
     memset(c, 0, sizeof *c);
     c->currentExtent.width = 720; c->currentExtent.height = 1280;
-    c->minImageCount = 2; c->maxImageCount = 0; c->maxImageArrayLayers = 1;
+    c->minImageCount = g_surface_min_images; c->maxImageCount = 0; c->maxImageArrayLayers = 1;
     /* Реалистичный Android: портретный дисплей, окно в ландшафте —
      * система поворачивает окно на 90° (currentTransform = ROTATE_90). */
     c->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
@@ -358,6 +403,27 @@ VkResult vkCreateSemaphore(VkDevice d, const VkSemaphoreCreateInfo *ci, const Vk
 }
 void vkDestroySemaphore(VkDevice d, VkSemaphore s, const VkAllocationCallbacks *ac) { (void)d; (void)s; (void)ac; }
 
+/* --- платформенный API кадрового ритма (ANativeWindow_setFrameRate) ---
+ * На хосте его нет: игра берёт функции dlsym'ом, поэтому стенд подставляет свои
+ * и проверяет саму ПОЛИТИКУ - какие ровно значения игра просит у системы и
+ * сколько раз. */
+static int g_frame_rate_calls, g_frame_rate_strategy_calls, g_clear_frame_rate_calls;
+static ANativeWindow *g_frame_rate_window;
+static ANativeWindow *g_test_window; /* окно, с которым работает тест */
+static float g_frame_rate_value;
+static int8_t g_frame_rate_compat, g_frame_rate_strategy;
+static int32_t fake_set_frame_rate(ANativeWindow *w, float fps, int8_t compat) {
+    g_frame_rate_calls++; g_frame_rate_window = w;
+    g_frame_rate_value = fps; g_frame_rate_compat = compat;
+    return 0;
+}
+static int32_t fake_set_frame_rate_strategy(ANativeWindow *w, float fps, int8_t compat, int8_t strategy) {
+    g_frame_rate_strategy_calls++; g_frame_rate_window = w;
+    g_frame_rate_value = fps; g_frame_rate_compat = compat; g_frame_rate_strategy = strategy;
+    return 0;
+}
+static void fake_clear_frame_rate(ANativeWindow *w) { (void)w; g_clear_frame_rate_calls++; }
+
 /* Команды буфера: на хосте некуда записывать. */
 void vkCmdBindPipeline(VkCommandBuffer cb, VkPipelineBindPoint pb, VkPipeline p) { (void)cb; (void)pb; (void)p; }
 /* Push-константы и области blit запоминаются: по ним проверяется апскейл —
@@ -401,8 +467,17 @@ void vkCmdCopyImage(VkCommandBuffer cb, VkImage src, VkImageLayout sl, VkImage d
 
 /* --- заглушки рантайма и Android (как в test_geometry.c) --- */
 
-void ds_log(const char *format, ...) { (void)format; }
-void ds_log_err(const char *format, ...) { (void)format; }
+static void g_log_vprintf(const char *format, va_list ap) {
+    char line[256];
+    vsnprintf(line, sizeof line, format, ap);
+    g_log_append(line);
+}
+void ds_log(const char *format, ...) {
+    va_list ap; va_start(ap, format); g_log_vprintf(format, ap); va_end(ap);
+}
+void ds_log_err(const char *format, ...) {
+    va_list ap; va_start(ap, format); g_log_vprintf(format, ap); va_end(ap);
+}
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 void ds_runtime_error(const char *format, ...) { (void)format; }
 const char *ds_runtime_error_message(void) { return ""; }
@@ -429,7 +504,14 @@ static struct { int init_ok; int frame1_ok; int frame2_ok; int frame3_ok; int fr
                 unsigned off_w, off_h, log_w, log_h, off2_w, off2_h;
                 unsigned blit_src_w, blit_src_h, blit_dst_w, blit_dst_h;
                 unsigned blit2_src_w, blit2_src_h, blit2_dst_w, blit2_dst_h;
-                int scale0, scale_miss, scale_probe, scale_rollback, scale_still; } g_res;
+                int scale0, scale_miss, scale_probe, scale_rollback, scale_still;
+                unsigned probe_off_w, probe_off_h;
+                unsigned probe_blit_src_w, probe_blit_src_h, probe_blit_dst_w, probe_blit_dst_h;
+                /* режимы презентации и поведение при SUBOPTIMAL */
+                int mode_init, mode_fifo_only, mode_relaxed;
+                int creates_before_storm, creates_after_storm, creates_after_change;
+                int creates_before_storm2, creates_after_storm2;
+                int storm_ok, frame5_ok, frame6_ok; } g_res;
 
 static void *test_thread(void *arg) {
     (void)arg;
@@ -437,8 +519,15 @@ static void *test_thread(void *arg) {
      * структур в коде будут содержать мусор, а не ноль. */
     static int dummy_window;
     ANativeWindow *win = (ANativeWindow *)&dummy_window;
+    g_test_window = win;
+    /* Подменяем платформенные функции до init: игра обязана попросить у системы
+     * кадровый ритм (60 fps) ровно один раз на окно. */
+    vk_set_frame_rate = fake_set_frame_rate;
+    vk_set_frame_rate_strategy = fake_set_frame_rate_strategy;
+    vk_clear_frame_rate = fake_clear_frame_rate;
     g_res.init_ok = ds_graphics_init(NULL, win);
     if (!g_res.init_ok) return 0;
+    g_res.mode_init = (int)g_created_present_mode;
     Buffer b;
     memset(&b, 0, sizeof b);
     b.width = 720; b.height = 1280; b.stride = 720;
@@ -460,9 +549,11 @@ static void *test_thread(void *arg) {
     g_res.log_w = vk_log_w; g_res.log_h = vk_log_h;
     g_res.blit_src_w = g_blit_src_w; g_res.blit_src_h = g_blit_src_h;
     g_res.blit_dst_w = g_blit_dst_w; g_res.blit_dst_h = g_blit_dst_h;
-    /* Автоматическое внутреннее разрешение: промахи по vsync уводят оффскрин
-     * в 1/2, окно без промахов возвращает 1:1, промах на пробе «резче» откатывает
-     * масштаб обратно. Кнопки и настройки для этого больше нет. */
+    /* Автоматическое внутреннее разрешение (правила из lifecycle.inc):
+     * промах по vsync (кадр дольше 20 мс) уводит масштаб сразу на две ступени
+     * (1 -> 3 -> 5 -> 6), проба «резче» - шаг на одну ступень назад - возможна
+     * только после 300 кадров подряд без промахов, а промах на пробе откатывает
+     * масштаб и запрещает новые пробы. Кнопки и настройки для этого нет. */
     g_res.scale0 = ds_graphics_pixel_scale();
     /* Каждое пересоздание swapchain сбрасывает историю контроллера и даёт
      * секунду кулдауна: первые кадры нового окна всегда медленные. */
@@ -475,11 +566,19 @@ static void *test_thread(void *arg) {
     g_res.off2_w = vk_off_w; g_res.off2_h = vk_off_h;
     g_res.blit2_src_w = g_blit_src_w; g_res.blit2_src_h = g_blit_src_h;
     g_res.blit2_dst_w = g_blit_dst_w; g_res.blit2_dst_h = g_blit_dst_h;
-    for (int i = 0; i < 90; i++) ds_graphics_report_frame_interval(0.0167); /* кулдаун смены */
-    /* Проба «резче» допускается только после 300 кадров без промахов:
-     * 90 кулдауна плюс 225 оконных кадров = 315 чистых. */
-    for (int i = 0; i < 225; i++) ds_graphics_report_frame_interval(0.0167);
+    /* Проба «резче» допускается только после 300 кадров подряд без промахов.
+     * Ждём именно её (флаг gfx_probe_finer поднят, пока идёт проба) - так тест
+     * не зависит от границ окон автопроска. Масштаб после пробы - на ступень
+     * назад (3 -> 2), оффскрин вырастает с 240x426 до 360x640. */
+    for (int i = 0; i < 3000 && !gfx_probe_finer; i++)
+        ds_graphics_report_frame_interval(0.0167);
     g_res.scale_probe = ds_graphics_pixel_scale();
+    if (!ds_graphics_begin_frame(&b)) return 0;
+    rect(0, 0, 10, 10, 0xff123456);
+    ds_graphics_end_frame();
+    g_res.probe_off_w = vk_off_w; g_res.probe_off_h = vk_off_h;
+    g_res.probe_blit_src_w = g_blit_src_w; g_res.probe_blit_src_h = g_blit_src_h;
+    g_res.probe_blit_dst_w = g_blit_dst_w; g_res.probe_blit_dst_h = g_blit_dst_h;
     for (int i = 0; i < 45; i++) ds_graphics_report_frame_interval(0.0167); /* кулдаун пробы */
     for (int i = 0; i < 10; i++) ds_graphics_report_frame_interval(0.0333); /* промах на пробе */
     g_res.scale_rollback = ds_graphics_pixel_scale();
@@ -487,6 +586,54 @@ static void *test_thread(void *arg) {
      * кадров (90 кулдаун + 315) не допускают новую пробу (кулдаун 1800). */
     for (int i = 0; i < 405; i++) ds_graphics_report_frame_interval(0.0167);
     g_res.scale_still = ds_graphics_pixel_scale();
+
+    /* --- SUBOPTIMAL на КАЖДОМ кадре при неизменной поверхности ---
+     * Так отвечает реальный Android-драйвер при preTransform=IDENTITY
+     * (currentTransform=ROTATE_90). Пересобирать swapchain из-за этого нельзя:
+     * пересборка = vkQueueWaitIdle + новые изображения/семафоры + сброс истории
+     * автомасштаба, то есть та самая ступенька 30-45 fps, которую невозможно
+     * вылечить оптимизацией отрисовки. --- */
+    g_res.creates_before_storm = g_swapchain_creates;
+    g_present_suboptimal_always = 1;
+    g_res.storm_ok = 1;
+    for (int i = 0; i < 150; i++) {
+        if (!ds_graphics_begin_frame(&b)) { g_res.storm_ok = 0; break; }
+        rect(0, 0, 10, 10, 0xff123456);
+        ds_graphics_end_frame();
+    }
+    g_res.creates_after_storm = g_swapchain_creates;
+
+    /* --- Поверхность реально изменилась: пересборка обязана случиться, и
+     * режим презентации выбирается заново по списку драйвера. Панель, где
+     * MAILBOX и FIFO_RELAXED не поддержаны: остаётся FIFO. --- */
+    g_present_modes[0] = VK_PRESENT_MODE_FIFO_KHR;
+    g_present_mode_count = 1;
+    g_surface_min_images = 3;
+    for (int i = 0; i < 40; i++) {
+        g_res.frame5_ok = ds_graphics_begin_frame(&b);
+        ds_graphics_end_frame();
+    }
+    g_res.mode_fifo_only = (int)g_created_present_mode;
+    g_res.creates_after_change = g_swapchain_creates;
+
+    /* --- FIFO + FIFO_RELAXED без MAILBOX: выбирается FIFO_RELAXED, потому что
+     * только он снимает «штрафной» вертикальный интервал при промахе. --- */
+    g_present_modes[0] = VK_PRESENT_MODE_FIFO_KHR;
+    g_present_modes[1] = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    g_present_mode_count = 2;
+    g_surface_min_images = 4;
+    for (int i = 0; i < 40; i++) {
+        g_res.frame6_ok = ds_graphics_begin_frame(&b);
+        ds_graphics_end_frame();
+    }
+    g_res.mode_relaxed = (int)g_created_present_mode;
+
+    /* --- И снова шторм SUBOPTIMAL: пересборок быть не должно. --- */
+    g_res.creates_before_storm2 = g_swapchain_creates;
+    for (int i = 0; i < 60; i++) { ds_graphics_begin_frame(&b); ds_graphics_end_frame(); }
+    g_res.creates_after_storm2 = g_swapchain_creates;
+    g_present_suboptimal_always = 0;
+
     ds_graphics_shutdown();
     return 0;
 }
@@ -524,24 +671,91 @@ int main(void) {
     }
     if (!g_res.frame4_ok) { fail = 1; printf("FAIL: begin_frame кадра с автомасштабом вернул 0\n"); }
     if (g_res.scale0 != 1) { fail = 1; printf("FAIL: стартовый автомасштаб %d, ожидался 1\n", g_res.scale0); }
-    if (g_res.scale_miss != 2) { fail = 1; printf("FAIL: после промахов по vsync автомасштаб %d, ожидался 2\n", g_res.scale_miss); }
-    if (g_res.off2_w != 360 || g_res.off2_h != 640) {
-        fail = 1; printf("FAIL: оффскрин автомасштаба %ux%u, ожидалось 360x640\n", g_res.off2_w, g_res.off2_h);
+    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: после промахов по vsync автомасштаб %d, ожидался 3 (шаг сразу на две ступени)\n", g_res.scale_miss); }
+    if (g_res.off2_w != 240 || g_res.off2_h != 426) {
+        fail = 1; printf("FAIL: оффскрин автомасштаба %ux%u, ожидалось 240x426 (1/3 окна 720x1280)\n", g_res.off2_w, g_res.off2_h);
     }
-    if (g_res.blit2_src_w != 360 || g_res.blit2_src_h != 640 ||
+    if (g_res.blit2_src_w != 240 || g_res.blit2_src_h != 426 ||
         g_res.blit2_dst_w != 720 || g_res.blit2_dst_h != 1280) {
-        fail = 1; printf("FAIL: blit автомасштаба %dx%d -> %dx%d, ожидалось 360x640 -> 720x1280\n",
+        fail = 1; printf("FAIL: blit автомасштаба %dx%d -> %dx%d, ожидалось 240x426 -> 720x1280\n",
                          g_res.blit2_src_w, g_res.blit2_src_h, g_res.blit2_dst_w, g_res.blit2_dst_h);
     }
-    if (g_res.scale_probe != 1) { fail = 1; printf("FAIL: после окна без промахов автомасштаб %d, ожидался 1\n", g_res.scale_probe); }
-    if (g_res.scale_rollback != 2) { fail = 1; printf("FAIL: после промаха на пробе «резче» автомасштаб %d, ожидался 2\n", g_res.scale_rollback); }
-    if (g_res.scale_still != 2) { fail = 1; printf("FAIL: после отката пробы масштаб снова поехал (%d), ожидалась фиксация 2\n", g_res.scale_still); }
+    if (g_res.scale_probe != 2) { fail = 1; printf("FAIL: после окна без промахов автомасштаб %d, ожидался 2 (шаг на одну ступень назад)\n", g_res.scale_probe); }
+    if (g_res.probe_off_w != 360 || g_res.probe_off_h != 640) {
+        fail = 1; printf("FAIL: оффскрин на пробе %ux%u, ожидалось 360x640 (1/2 окна)\n", g_res.probe_off_w, g_res.probe_off_h);
+    }
+    if (g_res.probe_blit_src_w != 360 || g_res.probe_blit_src_h != 640 ||
+        g_res.probe_blit_dst_w != 720 || g_res.probe_blit_dst_h != 1280) {
+        fail = 1; printf("FAIL: blit на пробе %dx%d -> %dx%d, ожидалось 360x640 -> 720x1280\n",
+                         g_res.probe_blit_src_w, g_res.probe_blit_src_h, g_res.probe_blit_dst_w, g_res.probe_blit_dst_h);
+    }
+    if (g_res.scale_rollback != 3) { fail = 1; printf("FAIL: после промаха на пробе «резче» автомасштаб %d, ожидался 3 (откат пробы)\n", g_res.scale_rollback); }
+    if (g_res.scale_still != 3) { fail = 1; printf("FAIL: после отката пробы масштаб снова поехал (%d), ожидалась фиксация 3\n", g_res.scale_still); }
     if (g_blits < 3) { fail = 1; printf("FAIL: blit не вызывался на каждом кадре (было %d)\n", g_blits); }
+
+    /* Кадровый ритм: игра обязана один раз на окно попросить у системы 60 fps
+     * (FIXED_SOURCE + CHANGE_FRAME_RATE_ALWAYS) и снять просьбу при закрытии
+     * окна, иначе система держит режим панели по просьбе игры, которой нет. */
+    if (g_frame_rate_strategy_calls != 1 || g_frame_rate_calls != 0) {
+        fail = 1; printf("FAIL: просьба о кадровом ритме вызвана %d раз (стратегия) + %d раз (простая), ожидалось 1 + 0\n",
+                         g_frame_rate_strategy_calls, g_frame_rate_calls);
+    }
+    if (g_frame_rate_value != 60.0f || g_frame_rate_compat != 1 || g_frame_rate_strategy != 1) {
+        fail = 1; printf("FAIL: у системы просят fps=%g, compatibility=%d, strategy=%d; ожидалось 60 / FIXED_SOURCE(1) / ALWAYS(1)\n",
+                         g_frame_rate_value, (int)g_frame_rate_compat, (int)g_frame_rate_strategy);
+    }
+    if (g_frame_rate_window != g_test_window) {
+        fail = 1; printf("FAIL: просьба о кадровом ритме отправлена не тому окну\n");
+    }
+    if (g_clear_frame_rate_calls != 1) {
+        fail = 1; printf("FAIL: просьба о кадровом ритме не снята при закрытии окна (%d)\n", g_clear_frame_rate_calls);
+    }
+    /* Режим презентации: MAILBOX при полном списке, FIFO_RELAXED вместо FIFO там,
+     * где MAILBOX нет, и FIFO, если нет ничего кроме него. */
+    if (g_res.mode_init != (int)VK_PRESENT_MODE_MAILBOX_KHR) {
+        fail = 1; printf("FAIL: первый swapchain создан с presentMode %d, ожидался MAILBOX(%d)\n",
+                         g_res.mode_init, (int)VK_PRESENT_MODE_MAILBOX_KHR);
+    }
+    if (g_res.mode_fifo_only != (int)VK_PRESENT_MODE_FIFO_KHR) {
+        fail = 1; printf("FAIL: на панели только с FIFO выбран режим %d\n", g_res.mode_fifo_only);
+    }
+    if (g_res.mode_relaxed != (int)VK_PRESENT_MODE_FIFO_RELAXED_KHR) {
+        fail = 1; printf("FAIL: при списке FIFO+FIFO_RELAXED выбран режим %d, ожидался FIFO_RELAXED(%d)\n",
+                         g_res.mode_relaxed, (int)VK_PRESENT_MODE_FIFO_RELAXED_KHR);
+    }
+    /* SUBOPTIMAL без изменений поверхности не пересобирает swapchain. */
+    if (!g_res.storm_ok) { fail = 1; printf("FAIL: begin_frame упал в шторме SUBOPTIMAL\n"); }
+    if (g_res.creates_after_storm != g_res.creates_before_storm) {
+        fail = 1; printf("FAIL: SUBOPTIMAL без изменений поверхности пересобрал swapchain %d раз\n",
+                         g_res.creates_after_storm - g_res.creates_before_storm);
+    }
+    if (g_res.creates_after_storm2 != g_res.creates_before_storm2) {
+        fail = 1; printf("FAIL: повторный шторм SUBOPTIMAL пересобрал swapchain %d раз\n",
+                         g_res.creates_after_storm2 - g_res.creates_before_storm2);
+    }
+    /* Реальное изменение поверхности пересобирает ровно один swapchain. */
+    if (g_res.creates_after_change != g_res.creates_before_storm + 1) {
+        fail = 1; printf("FAIL: после изменения поверхности пересборок %d, ожидалась одна\n",
+                         g_res.creates_after_change - g_res.creates_before_storm);
+    }
+    if (!g_res.frame5_ok || !g_res.frame6_ok) { fail = 1; printf("FAIL: кадры после смены поверхности не начались\n"); }
+    if (!strstr(g_log, "SUBOPTIMAL ignored")) {
+        fail = 1; printf("FAIL: игнор SUBOPTIMAL не попал в лог (на устройстве это единственный след)\n");
+    }
+    if (!strstr(g_log, "asked the platform for 60 fps")) {
+        fail = 1; printf("FAIL: в логе нет строки о просьбе 60 fps\n");
+    }
+    if (!strstr(g_log, "swapchain stale")) {
+        fail = 1; printf("FAIL: в логе нет причины пересборки swapchain\n");
+    }
     if (g_violations) { fail = 1; printf("FAIL: строгий драйвер поймал невалидный create-info: %s\n", g_violation_msg); }
     if (!fail) {
-        printf("PASS: init + 4 кадра + автомасштаб (промахи vsync -> 1/2, долгий запас -> 1:1, "
-               "промах на пробе -> откат и фиксация) + смена формата swapchain; pNext/flags чистые, конвейеров создано %d\n",
-               g_pipeline_creates);
+        printf("PASS: init + кадры + автомасштаб (промахи vsync -> грубее на 1/3, проба «резче» "
+               "-> 1/2, промах на пробе -> откат и фиксация) + смена формата swapchain; ступеньки "
+               "кадров: "
+               "SUBOPTIMAL без изменений поверхности не пересобирает swapchain, режим презентации "
+               "MAILBOX -> FIFO_RELAXED -> FIFO, у системы просят 60 fps один раз на окно; "
+               "pNext/flags чистые, конвейеров создано %d\n", g_pipeline_creates);
     }
     return fail;
 }

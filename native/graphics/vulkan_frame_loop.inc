@@ -4,6 +4,57 @@
 
 /* --- инициализация и выключение --- */
 
+/* --- просьба к системе о кадровом ритме ---
+ * Панель телефона часто умеет 90/120 Гц, и по умолчанию система отдаёт игре
+ * самый быстрый режим: на кадр остаётся 8.3 мс (120 Гц). Полноразмерный кадр на
+ * слабом GPU в этот интервал не укладывается, композитор сдвигает его на
+ * следующий вертикальный интервал, и счётчик показывает ровно ступеньки
+ * 60/40/30 fps - те самые «30-45 fps в бою». Нагрузка тут ни при чём: дело в
+ * расписании вертикальной синхронизации, поэтому уменьшение разрешения и не
+ * помогало. Игра посчитана на 60 fps, поэтому сообщаем это системе: она
+ * подбирает режим панели с интервалом 16.7 мс, и тот же кадр укладывается
+ * целиком. ANativeWindow_setFrameRate появился в API 30 и не обязан быть в
+ * libandroid, поэтому берём его динамически и живём дальше, если его нет. */
+static void ds_vk_lookup_frame_rate_api(void) {
+#ifdef __ANDROID__
+    if (!vk_set_frame_rate)
+        vk_set_frame_rate = (DsVkSetFrameRateFn)dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate");
+    if (!vk_set_frame_rate_strategy)
+        vk_set_frame_rate_strategy = (DsVkSetFrameRateStrategyFn)dlsym(RTLD_DEFAULT,
+                                        "ANativeWindow_setFrameRateWithChangeStrategy");
+    if (!vk_clear_frame_rate)
+        vk_clear_frame_rate = (DsVkClearFrameRateFn)dlsym(RTLD_DEFAULT, "ANativeWindow_clearFrameRate");
+#endif
+}
+
+static int ds_vk_request_frame_rate(ANativeWindow *window) {
+    if (!window) return 0;
+    ds_vk_lookup_frame_rate_api();
+    /* CHANGE_FRAME_RATE_ALWAYS, а не ONLY_IF_SEAMLESS: переход 120→60 на панели
+     * обычно без чёрного экрана, но если система сочтёт его «небезшовным»,
+     * вариант ONLY_IF_SEAMLESS молча ничего не сделает - и ступеньки останутся. */
+    int32_t rc = -1;
+    if (vk_set_frame_rate_strategy)
+        rc = vk_set_frame_rate_strategy(window, (float)DS_VK_TARGET_FPS,
+                                        (int8_t)DS_VK_FRAME_RATE_FIXED_SOURCE,
+                                        (int8_t)DS_VK_FRAME_RATE_ALWAYS);
+    if (rc != 0 && vk_set_frame_rate)
+        rc = vk_set_frame_rate(window, (float)DS_VK_TARGET_FPS, (int8_t)DS_VK_FRAME_RATE_FIXED_SOURCE);
+    if (rc == 0)
+        ds_log("vulkan: asked the platform for %d fps (panel mode vsync interval 16.7 ms)", DS_VK_TARGET_FPS);
+    else if (vk_set_frame_rate || vk_set_frame_rate_strategy)
+        ds_log_err("vulkan: ANativeWindow_setFrameRate(%d) failed (%d)", DS_VK_TARGET_FPS, (int)rc);
+    else
+        ds_log("vulkan: ANativeWindow_setFrameRate unavailable (API < 30), panel mode left to the system");
+    return rc == 0;
+}
+
+/* Отпускаем свою просьбу о кадровом ритме при закрытии окна: иначе система
+ * держала бы выбранный режим панели по просьбе игры, которой уже нет. */
+static void ds_vk_release_frame_rate(void) {
+    if (vk_window && vk_clear_frame_rate) vk_clear_frame_rate(vk_window);
+}
+
 static void ds_vk_shutdown_backend(void);
 
 static int ds_vk_init_backend(ANativeWindow *window) {
@@ -33,6 +84,11 @@ static int ds_vk_init_backend(ANativeWindow *window) {
     sci.window = window;
     if (!ds_vk_check_result(vkCreateAndroidSurfaceKHR(vk_instance, &sci, NULL, &vk_surface),
                             "vkCreateAndroidSurfaceKHR")) { ds_vk_shutdown_backend(); return 0; }
+
+    /* Просим у системы кадровый ритм игры до создания swapchain: от этого
+     * зависит, с каким интервалом вертикальной синхронизации она будет
+     * показывать наши кадры (см. ds_vk_request_frame_rate). */
+    ds_vk_request_frame_rate(window);
 
     uint32_t ndev = 0;
     if (!ds_vk_check_result(vkEnumeratePhysicalDevices(vk_instance, &ndev, NULL),
@@ -162,6 +218,7 @@ static int ds_vk_init_backend(ANativeWindow *window) {
 
 static void ds_vk_shutdown_backend(void) {
     ds_vk_pending_reset();
+    ds_vk_release_frame_rate();
     if (vk_device) {
         vkDeviceWaitIdle(vk_device);
         /* Сначала swapchain: он попутно утилизирует семафоры захвата кадров. */
@@ -221,8 +278,9 @@ static int ds_vk_acquire_image(void) {
     VkResult r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
                                        VK_NULL_HANDLE, &vk_sw_index);
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_NOT_READY || r == VK_TIMEOUT) {
-        /* OUT_OF_DATE - пересоздаём; остальное может дать "протухший" swapchain
-         * после recreate окна: тоже пробуем один раз пересоздать. */
+        /* OUT_OF_DATE - поверхность действительно устарела, пересобираем сразу;
+         * остальное может дать "протухший" swapchain после recreate окна: тоже
+         * пробуем один раз пересоздать. */
         if (!ds_vk_recreate_swapchain()) return 0;
         r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
                                   VK_NULL_HANDLE, &vk_sw_index);
@@ -232,7 +290,9 @@ static int ds_vk_acquire_image(void) {
             ds_log_err("vulkan: vkAcquireNextImageKHR failed (%d)", (int)r);
         return 0;
     }
-    if (r == VK_SUBOPTIMAL_KHR) vk_need_recreate = 1;
+    /* SUBOPTIMAL - только заявка "проверь поверхность": решение о пересборке
+     * принимает ds_vk_swapchain_stale(), сверяя реальные параметры поверхности. */
+    if (r == VK_SUBOPTIMAL_KHR) vk_sw_stale = 1;
     vk_image_held = 1;
     return 1;
 }
@@ -246,7 +306,7 @@ static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32
      * и даже мощный телефон держал лишь около 30 fps. Устаревший swapchain
      * штатно сообщит OUT_OF_DATE/SUBOPTIMAL при acquire/present, после чего
      * vk_need_recreate пересоздаст его в следующем кадре. */
-    if (vk_swap == VK_NULL_HANDLE || vk_need_recreate) {
+    if (vk_need_recreate || ds_vk_swapchain_stale()) {
         if (!ds_vk_recreate_swapchain()) return 0;
     }
     /* Если новый swapchain оказался другого формата, чем тот, под который
@@ -338,7 +398,8 @@ static void ds_vk_end_frame_backend(void) {
     pi.pSwapchains = &vk_swap;
     pi.pImageIndices = &vk_sw_index;
     VkResult pr = vkQueuePresentKHR(vk_queue, &pi);
-    if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) vk_need_recreate = 1;
+    if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk_need_recreate = 1;
+    else if (pr == VK_SUBOPTIMAL_KHR) vk_sw_stale = 1;
     else if (pr != VK_SUCCESS) ds_log_err("vulkan: vkQueuePresentKHR failed (%d)", (int)pr);
     vk_image_held = 0;
     vk_begun = 0;

@@ -140,11 +140,14 @@ public function draw_warning()
     -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
     -- но не крупнее 0.8, как было раньше.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
-    -- Один чёрный слой без белой подложки: раньше при затухании полупрозрачный
-    -- чёрный внутренний слой открывал белую рамку под всей площадью кнопки,
-    -- из-за чего кнопка перед исчезновением становилась ослепительно белой.
-    roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, warn_rgb(0))
-    text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, warn_rgb(0xFFFFFF), scale)
+    -- Кнопка согласия: чёрная скруглённая заливка и белая обводка по её кромке.
+    -- Обводка рисуется ПОСЛЕ заливки и только снаружи (roundrect_outline): белая
+    -- подложка под полупрозрачной чёрной заливкой просвечивала при затухании, и
+    -- кнопка перед исчезновением становилась ослепительно белой.
+    local number bw = warn_btn_w(), bx = center_x(bw), by = warn_btn_y()
+    roundrect(bx, by, bw, btn_h, btn_radius, warn_rgb(0))
+    roundrect_outline(bx, by, bw, btn_h, btn_radius, warn_frame_th, warn_rgb(0xFFFFFF))
+    text_in_box(label, bx, by, bw, btn_h, warn_rgb(0xFFFFFF), scale)
 end
 public function legal_accept()
     if warn_ready < 1 || warn_closing == 1 then

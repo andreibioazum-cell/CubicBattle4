@@ -5,6 +5,9 @@
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
 #include <time.h>
+#ifdef __ANDROID__
+#include <dlfcn.h> /* ANativeWindow_setFrameRate появился после API 30: берём его динамически */
+#endif
 #include "native/graphics/shaders_spirv.inc"
 
 #define DS_VK_MAX_SW_IMAGES 8
@@ -43,6 +46,46 @@ static VkFormat vk_sw_format = VK_FORMAT_R8G8B8A8_UNORM;
 static VkExtent2D vk_sw_extent;
 static uint32_t vk_sw_index;
 static int vk_image_held; /* кадр захвачен, но ещё не показан (cancel_frame) */
+
+/* --- параметры поверхности, от которых зависит swapchain ---
+ * Пересобирать swapchain можно ТОЛЬКО когда реально меняется что-то из этого
+ * списка. VK_SUBOPTIMAL_KHR драйвер умеет отдавать «просто так» (типовой случай
+ * на Android: preTransform=IDENTITY при currentTransform=ROTATE_90 у поверхности),
+ * и если верить каждому такому ответу, swapchain пересобирается КАЖДЫЙ кадр:
+ * vkQueueWaitIdle, заново все image view и семафоры, сброс истории автомасштаба.
+ * Частота кадров от этого садится в ступеньки 30-45 fps, которых не видно ни в
+ * одной оптимизации отрисовки - дело не в нагрузке, а в пересборке. */
+static VkPresentModeKHR vk_sw_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+static VkSurfaceTransformFlagBitsKHR vk_sw_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+static VkColorSpaceKHR vk_sw_colorspace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+static uint32_t vk_sw_want_images;
+static int vk_sw_stale;         /* драйвер сказал SUBOPTIMAL: надо проверить поверхность */
+static int vk_sw_check_timer;   /* кадров до следующей проверки поверхности */
+static unsigned vk_sw_recreates;/* сколько раз пересобирали swapchain (диагностика) */
+static unsigned vk_sw_ignored;  /* SUBOPTIMAL без изменений поверхности (диагностика) */
+
+/* --- кадровый ритм, который игра просит у системы ---
+ * Панель телефона часто умеет 90/120 Гц, и система по умолчанию отдаёт игре
+ * самый быстрый режим: на кадр остаётся 8.3 мс, полноразмерный кадр слабого GPU
+ * в него не укладывается, композитор сдвигает его на следующий вертикальный
+ * интервал - и счётчик показывает ровно ступеньки 60/40/30 fps (те самые
+ * «30-45 fps в бою»). Игра посчитана на 60 fps, поэтому сообщаем это системе
+ * через ANativeWindow_setFrameRate (API 30+): она подбирает режим панели с
+ * интервалом 16.7 мс, и тот же кадр укладывается целиком.
+ * Функции может не быть (Android < 11, урезанный libandroid) - тогда берём её
+ * dlsym'ом и молча работаем как раньше. Значения enum'ов из android/native_window.h:
+ * ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_FIXED_SOURCE = 1,
+ * ANATIVEWINDOW_CHANGE_FRAME_RATE_ALWAYS = 1. */
+#define DS_VK_TARGET_FPS 60
+#define DS_VK_FRAME_RATE_FIXED_SOURCE 1
+#define DS_VK_FRAME_RATE_ALWAYS 1
+typedef int32_t (*DsVkSetFrameRateFn)(ANativeWindow *window, float frameRate, int8_t compatibility);
+typedef int32_t (*DsVkSetFrameRateStrategyFn)(ANativeWindow *window, float frameRate, int8_t compatibility,
+                                              int8_t changeFrameRateStrategy);
+typedef void (*DsVkClearFrameRateFn)(ANativeWindow *window);
+static DsVkSetFrameRateFn vk_set_frame_rate;
+static DsVkSetFrameRateStrategyFn vk_set_frame_rate_strategy;
+static DsVkClearFrameRateFn vk_clear_frame_rate;
 
 static VkRenderPass vk_renderpass;
 static VkFormat vk_rp_format; /* формат swapchain, под который собраны render pass и конвейеры */
@@ -123,5 +166,10 @@ static int ds_vk_create_frame_resources(void);
 static void ds_vk_destroy_frame_resources(void);
 static int ds_vk_recreate_swapchain(void);
 static void ds_vk_destroy_swapchain(void);
+static int ds_vk_swapchain_stale(void);
+static const char *ds_vk_present_mode_name(VkPresentModeKHR mode);
+static void ds_vk_lookup_frame_rate_api(void);
+static int ds_vk_request_frame_rate(ANativeWindow *window);
+static void ds_vk_release_frame_rate(void);
 static int ds_vk_ensure_offscreen(uint32_t w, uint32_t h, VkFormat format);
 static void ds_vk_destroy_offscreen(void);

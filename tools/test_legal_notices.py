@@ -81,6 +81,24 @@ def main():
     assert "warn_wait - floor(warn_t)" in draw_warn and "warn_ready < 1" in draw_warn, \
         "на кнопке нет отсчёта секунд до разблокировки"
     assert "warn_btn_w" in layout and "hit_warn_btn" in layout
+    # У кнопки согласия есть обводка, и она рисуется ПОСЛЕ заливки: белая
+    # геометрия под затухающей полупрозрачной чёрной заливкой просвечивает, и
+    # кнопка перед исчезновением вспыхивает белым (так и потерялась рамка).
+    ui = read("game", "scripts", "core", "ui.ds")
+    outline = function_body(ui, "roundrect_outline")
+    order = [m.group(0) for m in re.finditer(r"(roundrect|roundrect_outline|text_in_box)\(", draw_warn)]
+    assert order == ["roundrect(", "roundrect_outline(", "text_in_box("], order
+    assert "line(" in outline and "outline_arc(" in outline, \
+        "обводка должна состоять из штриха (line) по сторонам и дуг"
+    # Штрих идёт снаружи кромки: половина толщины отложена наружу от x/y/w/h.
+    assert "local number o = t / 2" in outline and "line(x - o, y + rad, x - o, y + h - rad, t, c)" in outline
+    assert "warn_frame_th" in config and "warn_frame_th" in draw_warn, \
+        "на кнопке согласия нет обводки (warn_frame_th)"
+    arcs = re.findall(r"outline_arc\(x[^\n]*\)", outline)
+    assert len(arcs) == 4, "по углам кнопки должны быть четыре дуги обводки"
+    for mx, my in (("-1", "-1"), ("1", "-1"), ("1", "1"), ("-1", "1")):
+        assert any(mx in arc for arc in arcs) and any(my in arc for arc in arcs), \
+            "дуги должны быть во всех четырёх четвертях"
 
     # --- метка согласия: локальная, переживает перезапуск ----------------
     assert 'sscanf(line, "legal %d", &value)' in storage

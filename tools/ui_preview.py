@@ -33,7 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CC = shlex.split(__import__("os").environ.get("CC", "cc"))
-SCREENS = ("classes", "settings")
+SCREENS = ("classes", "settings", "warn", "warn_fade")
 
 STUBS = r"""
 #include <assert.h>
@@ -399,7 +399,15 @@ int main(int argc, char **argv) {
     if (strcmp(screen, "classes") == 0) { game_state = ST_CLASSES; ds_fn_draw_classes(); }
     else if (strcmp(screen, "settings") == 0) { game_state = ST_SETTINGS; ds_fn_draw_settings(); }
     else if (strcmp(screen, "lobby") == 0) { game_state = ST_LOBBY; ds_fn_draw_lobby(); }
-    else { fprintf(stderr, "неизвестный экран: %s (классы: classes/settings/lobby)\n", screen); return 2; }
+    else if (strcmp(screen, "warn") == 0 || strcmp(screen, "warn_fade") == 0) {
+        /* Экран предупреждения целиком: кнопка согласия с обводкой. warn_fade -
+        * середина затухания (warn_a = 0.5): проверяется, что белая обводка не
+        * вспыхивает на затухающей полупрозрачной заливке. */
+        warn_open = 1; warn_ready = 1; warn_t = warn_wait; warn_closing = 0;
+        warn_a = strcmp(screen, "warn_fade") == 0 ? 0.5 : 1;
+        ds_fn_draw_warning();
+    }
+    else { fprintf(stderr, "неизвестный экран: %s (классы: classes/settings/lobby/warn/warn_fade)\n", screen); return 2; }
     if (!write_png(out, &g_buf)) { fprintf(stderr, "не удалось записать %s\n", out); return 1; }
     printf("%s -> %s (%dx%d)\n", screen, out, W, H);
     return 0;
