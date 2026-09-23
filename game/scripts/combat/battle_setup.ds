@@ -47,6 +47,7 @@ public function reset_battle()
     cups_awarded=0
     match_seen_foe=0
     foes_seen_t=0
+    foes_gone_t=0
     gift.active=0
     gift.t=0
     gift.shot=0

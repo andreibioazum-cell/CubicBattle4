@@ -233,6 +233,22 @@ public function count_living_remotes()
     end
     return count
 end
+-- Remotes the room still lists as present, dead or alive. A room with somebody
+-- in it and nobody alive is a real win, an empty room is not: that is what the
+-- connection looks like from here while it is dropping out.
+public function count_online_remotes()
+    if net_slot()<0 then
+        return 0
+    end
+    local number count=0, s=0
+    while s<max_players do
+        if s!=net_slot()&&net_player_online(s)==1 then
+            count=count+1
+        end
+        s=s+1
+    end
+    return count
+end
 public function check_online_finish()
     if online_ready==0||finished!=0 then
         return
@@ -243,10 +259,31 @@ public function check_online_finish()
         if foes_seen_t>foes_seen_min then
             match_seen_foe=1
         end
+        foes_gone_t=0
+        return
     end
-    if match_seen_foe==1&&enemies_alive==0 then
-        finish_game(1)
+    if match_seen_foe==0 then
+        return
     end
+    -- The win is not declared while the connection is down. A network hitch makes
+    -- every remote read as gone at once, and the fight was declared won in the
+    -- middle of a battle because of it: the room has to answer normally meanwhile.
+    -- A room that still lists somebody needs only a short confirmation, because a
+    -- reconnecting client is listed dead for a tick or two; an empty room has to
+    -- stay empty for foes_gone_min, so a short dropout does not end the game.
+    if net_status()!=net_st_playing then
+        foes_gone_t=0
+        return
+    end
+    local number wait=foes_gone_min
+    if count_online_remotes()>0 then
+        wait=foes_dead_min
+    end
+    foes_gone_t=foes_gone_t+dt
+    if foes_gone_t<wait then
+        return
+    end
+    finish_game(1)
 end
 public function push_self()
     if net_slot()<0 then

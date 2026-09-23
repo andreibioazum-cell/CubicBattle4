@@ -80,6 +80,10 @@ static struct {
     DSThread thread, rthread; DSMutex lock;
     JavaVM *vm;
     int run, started, slot, status;
+    /* Bumped by every net_connect and net_disconnect. The network threads carry
+     * the generation they were started with and drop their answers, and stop
+     * themselves, as soon as it changes. */
+    unsigned gen;
     int self_banned;
     char base[256], room[48], uid[24];
     Actor me; unsigned long seq, count;

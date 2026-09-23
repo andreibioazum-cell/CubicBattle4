@@ -54,6 +54,14 @@ public number quest_respawn=300
 public number quest_cups=5, quest_candies=2
 public number plates_finished=0
 public number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
+-- A fight is not declared won from a broken connection: when the room stops
+-- answering, every remote reads as gone at once. The remotes have to stay gone
+-- for a while - foes_dead_min with the room still listing someone (a reconnecting
+-- client shows up as dead for a tick or two), foes_gone_min with nobody in the
+-- room at all - and the room has to read normally meanwhile. net_st_playing is
+-- NET_PLAYING from net.h, the status the network thread reports once its
+-- publishes land.
+public number foes_gone_t=0, foes_dead_min=0.5, foes_gone_min=3.0, net_st_playing=3
 public number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
 public number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
 public number azum_cost=65, santa_candy_cost=100, ebuc_candy_cost=150

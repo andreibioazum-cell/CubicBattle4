@@ -4,6 +4,12 @@
 static Actor ps_last;
 static long long ps_last_put = 0;
 static int ps_have_last = 0;
+
+/* Whether the work of a network thread still belongs to the live connection. A
+ * thread checks this before applying an answer: the answer of a request that was
+ * already in flight when the player left the room must not land in the state of
+ * the next room, which is how a stale chat and stale players appeared there. */
+static int net_gen_ok(unsigned gen) { return net.run && net.gen == gen; }
 static int push_state(void) {
     Actor a; int slot; unsigned long seq; char url[URL], body[BODY], enick[64];
     lock(); a=net.me; slot=net.slot; seq=++net.seq; unlock();
@@ -43,7 +49,7 @@ static int pull_event(char *resp,size_t cap) {
     if (c != 200 && net_log_ok()) LOGERR("pull event: HTTP %d", c);
     return c == 200;
 }
-static void parse_and_store_banner(const char *json) {
+static void parse_and_store_banner(const char *json, unsigned gen) {
     char text[CHAT_TEXT_MAX], color[BANNER_COLOR_MAX];
     long long ts;
     if (!json || !*json || !strncmp(json,"null",4)) return;
@@ -53,6 +59,7 @@ static void parse_and_store_banner(const char *json) {
     strv(json,"color",color,sizeof(color));
     if (!text[0]) return;
     lock();
+    if (!net_gen_ok(gen)) { unlock(); return; }
     snprintf(net.banner_text,sizeof(net.banner_text),"%s",text);
     snprintf(net.banner_color,sizeof(net.banner_color),"%s",color[0] ? color : "white");
     net.banner_ts = ts;
@@ -64,15 +71,19 @@ static int pull_banner(char *resp,size_t cap) {
     return fb_http("GET",url,NULL,resp,cap)==200;
 }
 
-static void release_slot(void) {
-    int slot; char url[URL]; lock(); slot=net.slot; net.slot=-1; unlock(); if(slot<0)return;
+/* Removes our row from the room. The slot is passed in rather than read from the
+ * net state, because net_disconnect clears it at once while the network thread
+ * still has to give up the row it claimed. */
+static void release_slot(int slot) {
+    char url[URL];
+    if(slot<0)return;
     snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot); fb_http("DELETE",url,NULL,NULL,0);
 }
-static int claim_slot(void) {
+static int claim_slot(unsigned gen) {
     char resp[RESP],url[URL],body[BODY],uid[24],etag[96]; long long t=now_ms(); int slot;
     for(slot=0;slot<NET_SLOTS;slot++) {
         unsigned long seq; int claim=0,code;
-        if (!net.run) return -1;
+        if (!net_gen_ok(gen)) return -1;
         snprintf(url,sizeof(url),"%s/rooms/%s/players/%d.json",net.base,net.room,slot);
         code=fb_http_ex("GET",url,NULL,resp,sizeof(resp),"X-Firebase-ETag","true",etag,sizeof(etag));
         if(code!=200) { if(net_log_ok()) LOGERR("claim slot %d: HTTP %d", slot, code); continue; }
@@ -97,7 +108,7 @@ static int claim_slot(void) {
     }
     return -1;
 }
-static void read_players(const char *resp) {
+static void read_players(const char *resp, unsigned gen) {
     Actor ps[NET_SLOTS]; long long t=now_ms(); int local,count=0,slot;
     memset(ps,0,sizeof(ps));
     lock(); local=net.slot; unlock();
@@ -162,7 +173,9 @@ static void read_players(const char *resp) {
         snprintf(p,sizeof(p),"%s/skin",bp); ps[slot].skin=num(resp,p,0);
         ps[slot].online=1; count++;
     }
-    lock(); memcpy(net.players,ps,sizeof(ps)); net.count=count; unlock();
+    lock();
+    if (net_gen_ok(gen)) { memcpy(net.players,ps,sizeof(ps)); net.count=count; }
+    unlock();
 }
 static int parse_chat_list(const char *json, ChatMsg *tmp, int cap){
     int tmp_cnt=0;
@@ -195,7 +208,7 @@ static int parse_chat_list(const char *json, ChatMsg *tmp, int cap){
     }
     return tmp_cnt;
 }
-static void parse_and_store_chat(const char *json){
+static void parse_and_store_chat(const char *json, unsigned gen){
     ChatMsg tmp[CHAT_MAX+16];
     int tmp_cnt, keep, start, i;
     char extra[CHAT_MAX+16][28];
@@ -219,6 +232,7 @@ static void parse_and_store_chat(const char *json){
         start=drop;
     }
     lock();
+    if (!net_gen_ok(gen)) { unlock(); return; }
     net.chat_count=0;
     for(i=start;i<tmp_cnt && net.chat_count<CHAT_MAX;i++)
         net.chats[net.chat_count++]=tmp[i];
@@ -230,7 +244,7 @@ static int pull_chat(char *resp, size_t cap){
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToLast=%d",net.base,net.room,CHAT_MAX);
     return fb_http("GET",url,NULL,resp,cap)==200;
 }
-static void prune_old_chat(void){
+static void prune_old_chat(unsigned gen){
     char url[URL], resp[CHAT_RESP];
     ChatMsg oldm[16];
     char keepkeys[CHAT_MAX][28];
@@ -245,6 +259,7 @@ static void prune_old_chat(void){
     if(count<keep || keep<1) return;
     snprintf(url,sizeof(url),"%s/rooms/%s/chat.json?orderBy=%%22$key%%22&limitToFirst=16",net.base,net.room);
     if(fb_http("GET",url,NULL,resp,sizeof(resp))!=200) return;
+    if(!net_gen_ok(gen)) return;
     n=parse_chat_list(resp, oldm, 16);
     for(i=0;i<n;i++){
         int kept=0;
@@ -288,8 +303,9 @@ static void room_slot_delete_async(int slot) {
     free(url);
 }
 static void *thread_main(void *arg) {
-    int fails=0; (void)arg;
-    while(net.run) {
+    unsigned gen=(unsigned)(uintptr_t)arg;
+    int fails=0, mine=-1;
+    while(net_gen_ok(gen)) {
         long long start=now_ms(); int slot;
         lock(); slot=net.slot; unlock();
         if(slot<0) {
@@ -305,23 +321,27 @@ static void *thread_main(void *arg) {
                 sleep_ms(500);
                 continue;
             }
-            slot=claim_slot();
+            slot=claim_slot(gen);
             if(slot<0){ if(++fails>6){status(NET_ERROR); LOGERR("network error: cannot claim player slot");} net_fail_sleep(fails); continue; }
-            lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.players[slot].online=1; unlock(); fails=0;
+            lock(); net.slot=slot; net.seq=0; net.players[slot]=net.me; net.players[slot].online=1; unlock(); fails=0; mine=slot;
             LOG("slot %d claimed", (int)net.slot);
         }
         if(!push_state()){ if(++fails>6){status(NET_ERROR); LOGERR("network error: failed to push state");} net_fail_sleep(fails); continue; }
         fails=0; status(NET_PLAYING);
         long long spent=now_ms()-start; if(spent<WRITE_TICK)sleep_ms((int)(WRITE_TICK-spent));
     }
-    release_slot(); status(NET_OFFLINE); return NULL;
+    /* The row goes away so nobody sees a ghost, but only while this connection is
+     * still the current one: after a reconnect the slot number belongs to the new
+     * session, which is already publishing into it. */
+    if (net.gen == gen) { release_slot(mine); status(NET_OFFLINE); }
+    return NULL;
 }
 static void *reader_thread(void *arg) {
     char resp[RESP], chat_resp[CHAT_RESP], event_resp[RESP], banner_resp[512];
     long long next_chat=0, next_event=0, next_ban=0, next_prune=0, next_banner=0;
+    unsigned gen=(unsigned)(uintptr_t)arg;
     int fails=0;
-    (void)arg;
-    while(net.run) {
+    while(net_gen_ok(gen)) {
         long long start=now_ms(); int slot;
         /* The ban list is fetched while connecting and during the battle: a banned player
          * must neither enter nor stay in the room. */
@@ -339,19 +359,19 @@ static void *reader_thread(void *arg) {
         }
         lock(); slot=net.slot; unlock();
         if(slot<0){ sleep_ms(50); continue; }
-        if(pull_state(resp,sizeof(resp))) { read_players(resp); fails=0; }
+        if(pull_state(resp,sizeof(resp)) && net_gen_ok(gen)) { read_players(resp,gen); fails=0; }
         else { if(fails<20) fails++; net_fail_sleep(fails); }
         if(start>=next_chat) {
-            if(pull_chat(chat_resp,sizeof(chat_resp))) {
-                parse_and_store_chat(chat_resp);
+            if(pull_chat(chat_resp,sizeof(chat_resp)) && net_gen_ok(gen)) {
+                parse_and_store_chat(chat_resp,gen);
                 /* Old chat messages are cleaned up rarely, since it is a separate GET the database
                  * does not need every second. */
-                if(start>=next_prune) { prune_old_chat(); next_prune=now_ms()+CHAT_PRUNE_TICK; }
+                if(start>=next_prune) { prune_old_chat(gen); next_prune=now_ms()+CHAT_PRUNE_TICK; }
             }
             next_chat=now_ms()+CHAT_TICK;
         }
         if(start>=next_event) {
-            if(pull_event(event_resp,sizeof(event_resp))) {
+            if(pull_event(event_resp,sizeof(event_resp)) && net_gen_ok(gen)) {
                 int ev=(int)num(event_resp,"",0);
                 if(ev<0) ev=0;
                 lock(); net.event=ev; unlock();
@@ -359,8 +379,8 @@ static void *reader_thread(void *arg) {
             next_event=now_ms()+EVENT_TICK;
         }
         if(start>=next_banner) {
-            if(pull_banner(banner_resp,sizeof(banner_resp)))
-                parse_and_store_banner(banner_resp);
+            if(pull_banner(banner_resp,sizeof(banner_resp)) && net_gen_ok(gen))
+                parse_and_store_banner(banner_resp,gen);
             next_banner=now_ms()+BANNER_TICK;
         }
         long long spent=now_ms()-start; if(spent<READ_TICK)sleep_ms((int)(READ_TICK-spent));
@@ -376,9 +396,12 @@ static void make_uid(void) {
     snprintf(net.uid,sizeof(net.uid),"%08lx%08lx",a&0xfffffffful,b&0xfffffffful);
 }
 void net_connect(const char *url, const char *room) {
-    size_t n; if(!url||!*url)return;
+    size_t n; unsigned gen; if(!url||!*url)return;
     net_fast = 0;
     if(net.started)net_disconnect();
+    /* A new generation: threads of the previous connection stop and their late
+     * answers are dropped instead of landing in the state of this room. */
+    lock(); gen=++net.gen; unlock();
     memset(&net.me,0,sizeof(net.me));
     snprintf(net.base,sizeof(net.base),"%s",url); n=strlen(net.base); while(n&&net.base[n-1]=='/')net.base[--n]=0;
     snprintf(net.room,sizeof(net.room),"%s",(room&&*room)?room:"main");
@@ -422,16 +445,28 @@ void net_connect(const char *url, const char *room) {
     net.started=1;
     net.status=NET_CONNECTING; net.run=1;
     LOG("connect %s/%s", net.base, net.room);
-    net.thread = ds_thread_start(thread_main, NULL);
-    net.rthread = ds_thread_start(reader_thread, NULL);
+    net.thread = ds_thread_start(thread_main, (void *)(uintptr_t)gen);
+    net.rthread = ds_thread_start(reader_thread, (void *)(uintptr_t)gen);
 }
 void net_disconnect(void) {
+    DSThread th, rth;
     if(!net.started)return;
     net_fast = 1;
+    lock();
     net.run=0;
-    ds_thread_join(net.thread); net.thread=(DSThread)0;
-    ds_thread_join(net.rthread); net.rthread=(DSThread)0;
-    net.started=0; net.slot=-1; status(NET_OFFLINE);
+    net.slot=-1;
+    th=net.thread; rth=net.rthread;
+    net.thread=(DSThread)0; net.rthread=(DSThread)0;
+    unlock();
+    /* The threads are detached and left to exit on their own. Joining them here
+     * held the game thread until both finished the HTTP request they were inside,
+     * so leaving the battle froze the frames and the input, and the system ended
+     * up showing an application-not-responding dialog. A thread now stops at its
+     * next generation check and drops the answer it was waiting for, and the fast
+     * mode shortens the request that is still in flight. */
+    ds_thread_detach(th); ds_thread_detach(rth);
+    net.started=0;
+    status(NET_OFFLINE);
     net_fast = 0;
 }
 void net_publish(double x, double y, double angle, double hp, double alive) {
