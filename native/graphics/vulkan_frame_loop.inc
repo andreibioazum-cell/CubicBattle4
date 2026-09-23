@@ -7,7 +7,12 @@
 static void ds_vk_shutdown_backend(void);
 
 static int ds_vk_init_backend(ANativeWindow *window) {
-    if (vk_ready) return 1;
+    /* NativeActivity иногда присылает INIT_WINDOW для новой Surface раньше,
+     * чем старое окно полностью забыто. Нельзя продолжать рисовать swapchain,
+     * созданным для другого ANativeWindow — на повторном входе это приводило
+     * к падению внутри vkAcquireNextImageKHR. */
+    if (vk_ready && vk_window == window) return 1;
+    if (vk_ready) ds_vk_shutdown_backend();
     vk_window = window;
     if (!window) { ds_log_err("vulkan: no window"); return 0; }
 
@@ -236,17 +241,13 @@ static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32
     if (!vk_ready) return 0;
     if (w == 0 || h == 0 || ow == 0 || oh == 0) return 0;
     vk_log_w = w; vk_log_h = h;
-    /* Размер окна мог смениться (поворот, IME): сверяемся с поверхностью. */
+    /* Не запрашиваем capabilities у драйвера каждый кадр: на некоторых
+     * Android/Vulkan-драйверах синхронный вызов съедал несколько миллисекунд
+     * и даже мощный телефон держал лишь около 30 fps. Устаревший swapchain
+     * штатно сообщит OUT_OF_DATE/SUBOPTIMAL при acquire/present, после чего
+     * vk_need_recreate пересоздаст его в следующем кадре. */
     if (vk_swap == VK_NULL_HANDLE || vk_need_recreate) {
         if (!ds_vk_recreate_swapchain()) return 0;
-    } else {
-        VkSurfaceCapabilitiesKHR caps;
-        if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_phys, vk_surface, &caps) == VK_SUCCESS) {
-            if (caps.currentExtent.width != vk_sw_extent.width ||
-                caps.currentExtent.height != vk_sw_extent.height) {
-                if (!ds_vk_recreate_swapchain()) return 0;
-            }
-        }
     }
     /* Если новый swapchain оказался другого формата, чем тот, под который
      * собраны render pass и конвейеры, пересобираем их: framebuffer оффскрина

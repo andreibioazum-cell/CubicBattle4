@@ -158,10 +158,6 @@ end
 public function draw_fighter_body(number x, number y, number ang, number cls, number punching, number skin)
     local number hw=25*cube_scale*player_scale, ps=cube_scale*player_scale
     local number sx=x-hw, sy=y-hw
-    -- Нейтральная подложка гарантирует, что куб не станет полностью невидимым,
-    -- пока Android-драйвер повторно загружает текстуру. Это не idle-спрайт и
-    -- поэтому не маскирует punch-анимацию; готовая текстура закрывает её.
-    circle(x,y,hw*0.7,0xFF404040)
     tex(sx,sy,fighter_sprite(cls,punching,skin),sprite_a(ang),ps)
 end
 -- Красная вспышка при получении урона: сразу поверх тела бойца рисуется его же
@@ -240,7 +236,6 @@ end
 public function draw_enemy_body()
     local number ehw=25*cube_scale*enemy_scale, es=cube_scale*enemy_scale
     local number punching=enemy_punching_now()
-    circle(enemy.x,enemy.y,ehw*0.7,0xFF404040)
     tex(enemy.x-ehw,enemy.y-ehw,enemy_battle_tex(),sprite_a(enemy.angle),es)
     draw_fighter_hurt(enemy.x,enemy.y,enemy.angle,enemy_class,punching,SKIN_NORMAL,enemy_scale,enemy_hurt_a)
 end

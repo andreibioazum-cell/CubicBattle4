@@ -140,10 +140,9 @@ public function draw_warning()
     -- Подпись не должна вылезать за кнопку: ужимаем масштаб по ширине,
     -- но не крупнее 0.8, как было раньше.
     local number scale = fit_text_scale(label, warn_btn_w() - 24, 0.8)
-    -- Обычная скруглённая кнопка формы btn_radius, строго чёрно-белая.
-    -- Новый blended-roundrect позволяет рамке, заливке и подписи оставаться
-    -- видимыми и плавно затухать вместе со всем предупреждением после тапа.
-    roundrect(center_x(warn_btn_w())-2, warn_btn_y()-2, warn_btn_w()+4, btn_h+4, btn_radius+2, warn_rgb(0xFFFFFF))
+    -- Один чёрный слой без белой подложки: раньше при затухании полупрозрачный
+    -- чёрный внутренний слой открывал белую рамку под всей площадью кнопки,
+    -- из-за чего кнопка перед исчезновением становилась ослепительно белой.
     roundrect(center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, btn_radius, warn_rgb(0))
     text_in_box(label, center_x(warn_btn_w()), warn_btn_y(), warn_btn_w(), btn_h, warn_rgb(0xFFFFFF), scale)
 end
