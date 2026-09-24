@@ -425,7 +425,7 @@ public function tr_class_ebuc()
     return "ebuC"
 end
 public function tr_class_ebuc_desc()
-    return "You thought I was a regular cube, but it was me, buC!"
+    return "Tr4pp3d"
 end
 -- Music button label: it cycles off, on and 50 per cent. A value outside those
 -- three, such as 70 from an old save, is shown as an honest percentage and the

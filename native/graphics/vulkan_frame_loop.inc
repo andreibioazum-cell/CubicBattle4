@@ -77,8 +77,17 @@ static int ds_vk_init_backend(ANativeWindow *window) {
      * old window is fully gone. Drawing through a swapchain made for another
      * ANativeWindow used to crash inside vkAcquireNextImageKHR when the app was
      * reopened. */
-    if (vk_ready && vk_window == window) return 1;
-    if (vk_ready) ds_vk_shutdown_backend();
+    if (vk_ready && vk_window == window && vk_surface != VK_NULL_HANDLE) return 1;
+    /* Coming back from the background: the device survived the lost window,
+     * so only a surface for the new window is made. Recreating the instance,
+     * the device and every texture on each return was what the re-entry did
+     * before, and it is the path budget Mali drivers crash in. */
+    if (vk_ready && vk_device != VK_NULL_HANDLE && window) {
+        if (vk_surface != VK_NULL_HANDLE) ds_vk_surface_lost();
+        if (ds_vk_attach_window(window)) return 1;
+        ds_log_err("vulkan: the kept device cannot present to the new window, rebuilding");
+    }
+    if (vk_ready || vk_device != VK_NULL_HANDLE || vk_instance != VK_NULL_HANDLE) ds_vk_shutdown_backend();
     vk_window = window;
     if (!window) { ds_log_err("vulkan: no window"); return 0; }
 
@@ -282,6 +291,8 @@ static void ds_vk_shutdown_backend(void) {
     vk_need_recreate = 0;
     vk_image_held = 0;
     vk_begun = 0;
+    vk_surface_lost = 0;
+    vk_device_lost = 0;
     free(vk_batches);
     vk_batches = NULL; vk_batch_n = vk_batch_cap = 0;
 }
@@ -290,19 +301,28 @@ static void ds_vk_shutdown_backend(void) {
 
 static int ds_vk_acquire_image(void) {
     DsVkFrame *f = &vk_frames[vk_frame_cur];
-    VkResult r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
+    if (vk_swap == VK_NULL_HANDLE) return 0;
+    VkResult r = vkAcquireNextImageKHR(vk_device, vk_swap, DS_VK_ACQUIRE_TIMEOUT_NS, f->image_available,
                                        VK_NULL_HANDLE, &vk_sw_index);
-    if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_NOT_READY || r == VK_TIMEOUT) {
-        /* OUT_OF_DATE means the surface really is out of date, rebuild at once;
-         * anything else can be a stale swapchain after the window was recreated,
-         * so try one rebuild as well. */
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) {
+        /* The surface really is out of date: rebuild at once and try again. */
         if (!ds_vk_recreate_swapchain()) return 0;
-        r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
+        f = &vk_frames[vk_frame_cur];
+        r = vkAcquireNextImageKHR(vk_device, vk_swap, DS_VK_ACQUIRE_TIMEOUT_NS, f->image_available,
                                   VK_NULL_HANDLE, &vk_sw_index);
     }
+    if (r == VK_TIMEOUT || r == VK_NOT_READY) {
+        /* No image this time (the window is on its way out, or the compositor
+         * holds every buffer). Nothing was signalled, so the frame is simply
+         * skipped: the main loop gets to handle its lifecycle events and the
+         * next frame asks again. */
+        return 0;
+    }
+    if (r == VK_ERROR_SURFACE_LOST_KHR) { vk_surface_lost = 1; ds_log_err("vulkan: surface lost on acquire"); return 0; }
+    if (r == VK_ERROR_DEVICE_LOST) { vk_device_lost = 1; ds_log_err("vulkan: device lost on acquire"); return 0; }
     if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
-        if (r != VK_ERROR_OUT_OF_DATE_KHR)
-            ds_log_err("vulkan: vkAcquireNextImageKHR failed (%d)", (int)r);
+        if (r == VK_ERROR_OUT_OF_DATE_KHR) vk_need_recreate = 1;
+        else ds_log_err("vulkan: vkAcquireNextImageKHR failed (%d)", (int)r);
         return 0;
     }
     /* SUBOPTIMAL only asks to check the surface: ds_vk_swapchain_stale()
@@ -313,7 +333,10 @@ static int ds_vk_acquire_image(void) {
 }
 
 static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh) {
-    if (!vk_ready) return 0;
+    /* A lost surface or device (or a rebuild that failed before) is repaired
+     * here, on the game thread, before anything touches the swapchain. */
+    if ((vk_surface_lost || vk_device_lost || (!vk_ready && vk_rebuild_window)) && !ds_vk_recover()) return 0;
+    if (!vk_ready || vk_surface == VK_NULL_HANDLE) return 0;
     if (w == 0 || h == 0 || ow == 0 || oh == 0) return 0;
     vk_log_w = w; vk_log_h = h;
     /* Capabilities are not queried every frame: on some Android Vulkan drivers
@@ -342,8 +365,9 @@ static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32
     }
     DsVkFrame *f = &vk_frames[vk_frame_cur];
     if (f->submitted) {
-        if (!ds_vk_check_result(vkWaitForFences(vk_device, 1, &f->fence, VK_TRUE, UINT64_MAX),
-                                "vkWaitForFences(frame)")) return 0;
+        VkResult wr = vkWaitForFences(vk_device, 1, &f->fence, VK_TRUE, UINT64_MAX);
+        if (wr == VK_ERROR_DEVICE_LOST) vk_device_lost = 1;
+        if (!ds_vk_check_result(wr, "vkWaitForFences(frame)")) return 0;
         f->submitted = 0;
     }
     if (!ds_vk_check_result(vkResetCommandBuffer(f->cmd, 0), "vkResetCommandBuffer(frame)")) return 0;
@@ -403,7 +427,9 @@ static void ds_vk_end_frame_backend(void) {
      * already waited for in begin_frame (see the submitted flag). */
     if (!ds_vk_check_result(vkResetFences(vk_device, 1, &f->fence), "vkResetFences(frame)"))
         return;
-    if (!ds_vk_check_result(vkQueueSubmit(vk_queue, 1, &si, f->fence), "vkQueueSubmit(frame)"))
+    VkResult sr = vkQueueSubmit(vk_queue, 1, &si, f->fence);
+    if (sr == VK_ERROR_DEVICE_LOST) vk_device_lost = 1;
+    if (!ds_vk_check_result(sr, "vkQueueSubmit(frame)"))
         return; /* the fence stays reset and submitted=0, so nothing waits for it */
     f->submitted = 1;
     VkPresentInfoKHR pi = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
@@ -415,6 +441,8 @@ static void ds_vk_end_frame_backend(void) {
     VkResult pr = vkQueuePresentKHR(vk_queue, &pi);
     if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk_need_recreate = 1;
     else if (pr == VK_SUBOPTIMAL_KHR) vk_sw_stale = 1;
+    else if (pr == VK_ERROR_SURFACE_LOST_KHR) { vk_surface_lost = 1; ds_log_err("vulkan: surface lost on present"); }
+    else if (pr == VK_ERROR_DEVICE_LOST) { vk_device_lost = 1; ds_log_err("vulkan: device lost on present"); }
     else if (pr != VK_SUCCESS) ds_log_err("vulkan: vkQueuePresentKHR failed (%d)", (int)pr);
     vk_image_held = 0;
     vk_begun = 0;

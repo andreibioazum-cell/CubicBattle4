@@ -264,9 +264,14 @@ static void ds_vk_process_pending_uploads(void) {
         }
     }
     vk_pending_n = out;
+    /* A font that is loaded but has no atlas on the GPU (the device was
+     * rebuilt after a loss) is queued again, otherwise text stays invisible. */
+    if (font && vk_font_desc == VK_NULL_HANDLE) vk_pending_font = 1;
     if (vk_pending_font) {
+        static unsigned font_failures;
         vk_pending_font = 0;
-        if (!ds_vk_upload_font_atlas())
-            ds_log_err("vulkan: font atlas upload failed");
+        if (ds_vk_upload_font_atlas()) font_failures = 0;
+        else if ((font_failures++ % 300) == 0)
+            ds_log_err("vulkan: font atlas upload failed, retrying");
     }
 }

@@ -13,6 +13,9 @@
 #include <unistd.h>
 static int init_done = 0;
 static int script_active = 0;
+/* init() already ran once in this process: a later start has to reset() the
+ * globals first (new activity after a destroy, or a script that had failed). */
+static int script_started_once = 0;
 static AAssetManager *script_assets = NULL;
 static uint64_t restart_after_ns = 0;
 static unsigned int restart_failures = 0;
@@ -67,7 +70,7 @@ static int start_script(int reset_state) {
     ds_clear_runtime_error();
     ok = ds_call_protected(protected_init, script_assets, "init");
     if (!ok) { mark_script_failed("init"); return 0; }
-    ds_clear_runtime_error(); restart_failures = 0; script_active = 1; return 1;
+    ds_clear_runtime_error(); restart_failures = 0; script_active = 1; script_started_once = 1; return 1;
 }
 static void restart_script_if_due(void) {
     uint64_t now; if (script_active || !ds_script_restart_requested()) return;
@@ -85,15 +88,31 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             apply_screen_size();
             script_assets = app->activity ? app->activity->assetManager : NULL;
             ds_set_activity(app->activity);
-            /* The Vulkan renderer is created again for every window, since a
-             * window comes back with a new surface; assets reload lazily. */
+            /* Returning from the background keeps the Vulkan device and the
+             * textures: only a surface for the new window is made. The very
+             * first window builds the whole renderer. */
             if (!ds_graphics_init(script_assets, app->window)) { init_done = 0; return; }
             /* Sounds sit in the same assets folder (sounds/...) and play through
-             * OpenSL ES. */
+             * an AudioTrack; on a return the loaded sounds are still there and
+             * only the output starts again. */
             ds_sound_init(script_assets);
             ds_sound_resume();
-            init_done = 1; script_active = 0; restart_failures = 0;
-            ds_clear_script_restart(); (void)start_script(0); break;
+            init_done = 1;
+            /* The long pause in the background is not a frame: without this the
+             * first frame after the return would count as a huge vsync miss. */
+            prev_frame_ns = 0; prev_loop_ns = 0;
+            if (script_active) {
+                /* Back from the background: the script simply goes on where the
+                 * player left it. It used to start over here - init() again,
+                 * every texture and the 4 MB of music decoded again and a
+                 * blocking autologin request on the game thread, right while
+                 * the renderer was being rebuilt from zero - and the game
+                 * crashed on re-entry on budget phones (TECNO Spark Go 1). */
+                ds_log("window is back (%dx%d): the game continues", phys_w, phys_h);
+                break;
+            }
+            restart_failures = 0; ds_clear_script_restart();
+            (void)start_script(script_started_once); break;
         case APP_CMD_WINDOW_RESIZED:
         case APP_CMD_CONTENT_RECT_CHANGED:
         case APP_CMD_CONFIG_CHANGED:
@@ -107,12 +126,15 @@ static void handle_cmd(struct android_app *app, int32_t command) {
             }
             break;
         case APP_CMD_TERM_WINDOW:
-            /* The room threads survive going to the background while the script
-             * starts over on return. Without an explicit teardown those threads
-             * would keep writing state the script no longer knows, which caused
-             * the random crashes on re-entry. */
-            init_done = 0; script_active = 0; keyboard_hide(); net_disconnect();
-            ds_graphics_shutdown(); ds_sound_shutdown(); break;
+            /* The game goes to the background. The script is paused, not
+             * dropped: no frames run until the next window (init_done = 0),
+             * and the room threads keep matching the state the script still
+             * has, so on return an online match reconnects instead of the
+             * whole game restarting. Only the window half of the renderer and
+             * the audio output go; this has to be quick, since the UI thread
+             * waits in onSurfaceDestroyed until it returns. */
+            init_done = 0; keyboard_hide();
+            ds_graphics_window_lost(); ds_sound_suspend(); break;
         case APP_CMD_GAINED_FOCUS: ds_sound_resume(); break;
         case APP_CMD_LOST_FOCUS: ds_sound_pause(); break;
         default: break;
@@ -205,11 +227,21 @@ void android_main(struct android_app *app) {
     ds_log("DimScript Android + Vulkan renderer + system keyboard (JNI)");
     for (;;) {
         struct android_poll_source *source = NULL; int ident;
-        while ((ident = ALooper_pollOnce(script_active ? 0 : 10, NULL, NULL, (void **)&source)) >= 0) {
+        /* Without a window nothing is drawn, so the loop sleeps in the looper
+         * until the next event instead of spinning: a busy loop in the
+         * background burns the CPU, and Android kills such a cached app. */
+        int drawing = app->window && init_done;
+        int timeout = drawing ? (script_active ? 0 : 10) : 250;
+        while ((ident = ALooper_pollOnce(timeout, NULL, NULL, (void **)&source)) >= 0) {
             if (source && source->process) source->process(app, source);
             if (app->destroyRequested) {
-                init_done = 0; script_active = 0; keyboard_hide(); ds_graphics_shutdown(); ds_sound_shutdown(); return;
+                /* The activity itself ends. A new one in the same process gets
+                 * a fresh script start (with reset()), so the room threads of
+                 * this one are stopped here as well. */
+                init_done = 0; script_active = 0; keyboard_hide(); net_disconnect();
+                ds_graphics_shutdown(); ds_sound_shutdown(); return;
             }
+            timeout = 0; /* drain the rest of the queued events at once */
         }
         if (!app->window || !init_done || app->destroyRequested) continue;
         restart_script_if_due();

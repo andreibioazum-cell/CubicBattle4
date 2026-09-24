@@ -18,3 +18,4 @@
 #include "native/graphics/vulkan_swapchain.inc"
 #include "native/graphics/vulkan_record.inc"
 #include "native/graphics/vulkan_frame_loop.inc"
+#include "native/graphics/vulkan_window.inc"

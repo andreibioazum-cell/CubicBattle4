@@ -163,6 +163,27 @@ typedef struct { int pipeline; const void *desc; uint32_t first; uint32_t count;
 static GeoBatch *vk_batches;
 static size_t vk_batch_n, vk_batch_cap;
 
+/* Going to the background (vulkan_window.inc). Only the window half of the
+ * renderer - surface and swapchain - dies with the window; instance, device,
+ * pipelines and textures stay, and the next window gets a new surface on the
+ * same device. vk_surface_lost / vk_device_lost are set by acquire or present
+ * and handled at the start of the next frame; vk_rebuild_window remembers the
+ * window when a rebuild failed, so it is retried instead of a black screen. */
+static int vk_surface_lost;
+static int vk_device_lost;
+static ANativeWindow *vk_rebuild_window;
+static unsigned vk_rebuild_tries;
+static unsigned vk_reattaches; /* windows served by a kept device, for diagnostics */
+/* Image acquire never waits forever: with UINT64_MAX a compositor that stops
+ * handing out buffers while the app goes to the background parks the game
+ * thread inside vkAcquireNextImageKHR, APP_CMD_TERM_WINDOW is never handled,
+ * the UI thread hangs in onSurfaceDestroyed and the system kills the app. */
+#define DS_VK_ACQUIRE_TIMEOUT_NS 250000000ull
+static int ds_vk_attach_window(ANativeWindow *window);
+static void ds_vk_surface_lost(void);
+static int ds_vk_recover(void);
+static int ds_vk_reset_acquire_semaphores(void);
+
 static int ds_vk_create_frame_resources(void);
 static void ds_vk_destroy_frame_resources(void);
 static int ds_vk_recreate_swapchain(void);

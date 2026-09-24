@@ -383,6 +383,10 @@ public final class GameActivity extends NativeActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        /* Back from the launcher or the recents screen the system bars are shown
+         * again; without hiding them the window shrinks and resizes once more
+         * right after the return. */
+        if (hasFocus) enterImmersiveMode();
         if (hasFocus && wantKeyboard && chatEditor != null) {
             claimEditorFocus();
             if (!imeLooksVisible) {
@@ -390,6 +394,12 @@ public final class GameActivity extends NativeActivity {
                 requestShowWhenReady();
             }
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        enterImmersiveMode();
     }
 
     @Override

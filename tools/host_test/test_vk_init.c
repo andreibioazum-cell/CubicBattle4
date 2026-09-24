@@ -51,6 +51,33 @@ static int g_present_suboptimal_once = 1;
 static int g_present_suboptimal_always = 0;
 static uint64_t g_next_handle = 0x1000;
 
+/* Lifecycle tracking for the background/return test: which surfaces and
+ * windows are alive, which swapchain sits on which surface, and which
+ * semaphores carry a signal from vkAcquireNextImageKHR nobody waited on yet. */
+static int g_instance_creates, g_device_creates, g_surface_creates;
+static uint64_t g_live_surfaces[8];
+static uint64_t g_swap_surface;           /* surface of the live swapchain */
+static uint64_t g_swap_handle;            /* the live swapchain */
+static const void *g_surface_window[8];   /* window of each live surface */
+static const void *g_dead_window;         /* the window Android already took away */
+static uint64_t g_signalled_sems[16];
+static int g_acquires, g_acquire_infinite;
+static VkResult g_acquire_next = VK_SUCCESS; /* one-shot result of the next acquire */
+static VkResult g_present_next = VK_SUCCESS; /* one-shot result of the next present */
+static int g_surface_live(uint64_t s) {
+    for (int i = 0; i < 8; i++) if (g_live_surfaces[i] == s && s) return i;
+    return -1;
+}
+static int g_sem_signalled(uint64_t s) {
+    for (int i = 0; i < 16; i++) if (g_signalled_sems[i] == s && s) return i;
+    return -1;
+}
+static void g_sem_set(uint64_t s, int on) {
+    int i = g_sem_signalled(s);
+    if (on && i < 0) { for (i = 0; i < 16; i++) if (!g_signalled_sems[i]) { g_signalled_sems[i] = s; return; } }
+    if (!on && i >= 0) g_signalled_sems[i] = 0;
+}
+
 /* Present mode list as Mali and Adreno report it on Android. Tests change it to
  * cover the whole preference chain (MAILBOX, FIFO_RELAXED, FIFO). */
 static VkPresentModeKHR g_present_modes[4] = {
@@ -135,6 +162,7 @@ VkResult vkCreateInstance(const VkInstanceCreateInfo *ci, const VkAllocationCall
     (void)ac;
     if (ci->pNext) { g_violation("vkCreateInstance: pNext != NULL"); return VK_ERROR_INITIALIZATION_FAILED; }
     *out = (VkInstance)g_next();
+    g_instance_creates++;
     return VK_SUCCESS;
 }
 void vkDestroyInstance(VkInstance i, const VkAllocationCallbacks *ac) { (void)i; (void)ac; }
@@ -166,15 +194,28 @@ VkResult vkCreateDevice(VkPhysicalDevice d, const VkDeviceCreateInfo *ci, const 
     (void)d; (void)ac;
     if (ci->pNext) { g_violation("vkCreateDevice: pNext != NULL"); return VK_ERROR_INITIALIZATION_FAILED; }
     *out = (VkDevice)g_next();
+    g_device_creates++;
     return VK_SUCCESS;
 }
 void vkGetDeviceQueue(VkDevice d, uint32_t fam, uint32_t idx, VkQueue *q) { (void)d; (void)idx; *q = (VkQueue)(uintptr_t)(0x6000 + fam); }
 void vkDestroyDevice(VkDevice d, const VkAllocationCallbacks *ac) { (void)d; (void)ac; }
 VkResult vkDeviceWaitIdle(VkDevice d) { (void)d; return VK_SUCCESS; }
 VkResult vkQueueWaitIdle(VkQueue q) { (void)q; return VK_SUCCESS; }
-VkResult vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo *si, VkFence f) { (void)q; (void)n; (void)si; (void)f; return VK_SUCCESS; }
+VkResult vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo *si, VkFence f) {
+    (void)q; (void)f;
+    for (uint32_t i = 0; i < n; i++)
+        for (uint32_t w = 0; w < si[i].waitSemaphoreCount; w++)
+            g_sem_set((uint64_t)(uintptr_t)si[i].pWaitSemaphores[w], 0);
+    return VK_SUCCESS;
+}
 VkResult vkQueuePresentKHR(VkQueue q, const VkPresentInfoKHR *pi) {
-    (void)q; (void)pi;
+    (void)q;
+    if (pi && pi->swapchainCount && (uint64_t)(uintptr_t)pi->pSwapchains[0] != g_swap_handle)
+        g_violation("present: swapchain is not the live one");
+    int si = g_surface_live(g_swap_surface);
+    if (si >= 0 && g_dead_window && g_surface_window[si] == g_dead_window)
+        g_violation("present: the swapchain belongs to a window Android already took away");
+    if (g_present_next != VK_SUCCESS) { VkResult r = g_present_next; g_present_next = VK_SUCCESS; return r; }
     if (g_present_suboptimal_always) return VK_SUBOPTIMAL_KHR;
     if (g_present_suboptimal_once) { g_present_suboptimal_once = 0; return VK_SUBOPTIMAL_KHR; }
     return VK_SUCCESS;
@@ -207,12 +248,22 @@ VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, co
         g_violation("swapchain: presentMode %d is not in the driver list", (int)ci->presentMode);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    if (g_surface_live((uint64_t)(uintptr_t)ci->surface) < 0) {
+        g_violation("swapchain: created on a surface that does not exist");
+        return VK_ERROR_SURFACE_LOST_KHR;
+    }
+    if (g_swap_handle) g_violation("swapchain: a second swapchain while the old one is alive");
     g_created_present_mode = ci->presentMode;
     g_swapchain_creates++;
     *out = (VkSwapchainKHR)g_next();
+    g_swap_handle = (uint64_t)(uintptr_t)*out;
+    g_swap_surface = (uint64_t)(uintptr_t)ci->surface;
     return VK_SUCCESS;
 }
-void vkDestroySwapchainKHR(VkDevice d, VkSwapchainKHR s, const VkAllocationCallbacks *ac) { (void)d; (void)s; (void)ac; }
+void vkDestroySwapchainKHR(VkDevice d, VkSwapchainKHR s, const VkAllocationCallbacks *ac) {
+    (void)d; (void)ac;
+    if ((uint64_t)(uintptr_t)s == g_swap_handle) { g_swap_handle = 0; g_swap_surface = 0; }
+}
 VkResult vkGetSwapchainImagesKHR(VkDevice d, VkSwapchainKHR s, uint32_t *count, VkImage *imgs) {
     (void)d; (void)s;
     if (!imgs) { *count = 3; return VK_SUCCESS; }
@@ -221,7 +272,19 @@ VkResult vkGetSwapchainImagesKHR(VkDevice d, VkSwapchainKHR s, uint32_t *count, 
     return VK_SUCCESS;
 }
 VkResult vkAcquireNextImageKHR(VkDevice d, VkSwapchainKHR s, uint64_t t, VkSemaphore sem, VkFence f, uint32_t *idx) {
-    (void)d; (void)s; (void)t; (void)sem; (void)f;
+    (void)d; (void)f;
+    g_acquires++;
+    if (t == UINT64_MAX) g_acquire_infinite++;
+    if ((uint64_t)(uintptr_t)s != g_swap_handle) g_violation("acquire: swapchain is not the live one");
+    int si = g_surface_live(g_swap_surface);
+    if (si >= 0 && g_dead_window && g_surface_window[si] == g_dead_window)
+        g_violation("acquire: the swapchain belongs to a window Android already took away");
+    if (g_acquire_next != VK_SUCCESS) { VkResult r = g_acquire_next; g_acquire_next = VK_SUCCESS; return r; }
+    /* The spec forbids acquiring into a semaphore whose earlier signal was
+     * never waited on; Mali loses the device on it. */
+    if (g_sem_signalled((uint64_t)(uintptr_t)sem) >= 0)
+        g_violation("acquire: the semaphore still has a pending signal from an earlier acquire");
+    g_sem_set((uint64_t)(uintptr_t)sem, 1);
     *idx = 0;
     return VK_SUCCESS;
 }
@@ -258,10 +321,22 @@ void vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice d, VkFormat f, VkForma
 VkResult vkCreateAndroidSurfaceKHR(VkInstance i, const VkAndroidSurfaceCreateInfoKHR *ci, const VkAllocationCallbacks *ac, VkSurfaceKHR *out) {
     (void)i; (void)ac;
     if (!ci->window) { g_violation("android surface: window == NULL"); return VK_ERROR_INITIALIZATION_FAILED; }
+    if (ci->window == g_dead_window) { g_violation("android surface: created on a window that is gone"); return VK_ERROR_NATIVE_WINDOW_IN_USE_KHR; }
     *out = (VkSurfaceKHR)g_next();
+    g_surface_creates++;
+    for (int k = 0; k < 8; k++) if (!g_live_surfaces[k]) {
+        g_live_surfaces[k] = (uint64_t)(uintptr_t)*out; g_surface_window[k] = ci->window; break;
+    }
     return VK_SUCCESS;
 }
-void vkDestroySurfaceKHR(VkInstance i, VkSurfaceKHR s, const VkAllocationCallbacks *ac) { (void)i; (void)s; (void)ac; }
+void vkDestroySurfaceKHR(VkInstance i, VkSurfaceKHR s, const VkAllocationCallbacks *ac) {
+    (void)i; (void)ac;
+    int k = g_surface_live((uint64_t)(uintptr_t)s);
+    if (k < 0) { g_violation("vkDestroySurfaceKHR: unknown or already destroyed surface"); return; }
+    if (g_swap_handle && g_swap_surface == (uint64_t)(uintptr_t)s)
+        g_violation("vkDestroySurfaceKHR: the surface still has a live swapchain");
+    g_live_surfaces[k] = 0; g_surface_window[k] = NULL;
+}
 void vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice d, VkPhysicalDeviceMemoryProperties *mp) {
     (void)d;
     memset(mp, 0, sizeof *mp);
@@ -401,7 +476,7 @@ VkResult vkCreateSemaphore(VkDevice d, const VkSemaphoreCreateInfo *ci, const Vk
     *out = (VkSemaphore)g_next();
     return VK_SUCCESS;
 }
-void vkDestroySemaphore(VkDevice d, VkSemaphore s, const VkAllocationCallbacks *ac) { (void)d; (void)s; (void)ac; }
+void vkDestroySemaphore(VkDevice d, VkSemaphore s, const VkAllocationCallbacks *ac) { (void)d; (void)ac; g_sem_set((uint64_t)(uintptr_t)s, 0); }
 
 /* --- platform frame rate API (ANativeWindow_setFrameRate) ---
  * A host has none of it. The game resolves the functions with dlsym, so the
@@ -520,6 +595,119 @@ static struct { int init_ok; int frame1_ok; int frame2_ok; int frame3_ok; int fr
                 int storm_ok, frame5_ok, frame6_ok;
                 /* frame pacing */
                 unsigned paced_ms; } g_res;
+
+/* --- background and return (APP_CMD_TERM_WINDOW / APP_CMD_INIT_WINDOW) ---
+ * The crash on TECNO Spark Go 1 (Android 14 Go, Mali): minimise the game,
+ * open it again from recents, and it dies. The cycle below is what Android
+ * does in that case, checked by the strict driver above. */
+static struct {
+    int fr_strategy_first, fr_plain_first, fr_clear_first;
+    ANativeWindow *fr_window_first;
+    int lost_ok, no_window_frames_ok, acquires_without_window;
+    int attach_ok, frames_after_return_ok;
+    int instance_creates_delta, device_creates_delta, pipeline_creates_delta, surface_creates_delta;
+    int held_recreate_ok;
+    int timeout_skip_ok, timeout_next_ok;
+    int surface_lost_ok, surface_lost_device_delta, surface_lost_surface_delta;
+    int device_lost_ok, device_lost_device_delta;
+    int textures_kept, font_requeued;
+    int infinite_acquires;
+} g_bg;
+
+static int bg_frame(Buffer *b) {
+    int ok = ds_graphics_begin_frame(b);
+    if (ok) { rect(0, 0, 10, 10, 0xff123456); ds_graphics_end_frame(); }
+    return ok;
+}
+
+static void test_background_cycle(Buffer *b) {
+    static int second_window, third_window;
+    ANativeWindow *win2 = (ANativeWindow *)&second_window;
+    g_present_suboptimal_always = 0;
+    g_present_suboptimal_once = 0;
+    g_bg.fr_strategy_first = g_frame_rate_strategy_calls;
+    g_bg.fr_plain_first = g_frame_rate_calls;
+    g_bg.fr_window_first = g_frame_rate_window;
+    /* A texture on the GPU: it has to survive the trip to the background. */
+    static uint32_t px[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+    static Texture tex_kept;
+    memset(&tex_kept, 0, sizeof tex_kept);
+    tex_kept.name = "kept.png"; tex_kept.w = 2; tex_kept.h = 2; tex_kept.pixels = px;
+    ds_vk_pending_texture(&tex_kept);
+    bg_frame(b);
+    int inst0 = g_instance_creates, dev0 = g_device_creates, pipe0 = g_pipeline_creates, surf0 = g_surface_creates;
+
+    /* A frame that acquired an image and was then cancelled (the script was
+     * not active): the acquire semaphore carries a signal nobody waits for. */
+    ds_graphics_begin_frame(b);
+    ds_graphics_cancel_frame();
+
+    /* TERM_WINDOW: the window goes, the device stays. */
+    ds_graphics_window_lost();
+    g_bg.fr_clear_first = g_clear_frame_rate_calls;
+    g_dead_window = g_test_window;
+    g_bg.lost_ok = (vk_surface == VK_NULL_HANDLE && vk_swap == VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE);
+    /* The main loop never draws without a window, but the renderer must refuse
+     * on its own too and must not touch the dead swapchain. */
+    int acq = g_acquires;
+    g_bg.no_window_frames_ok = !ds_graphics_begin_frame(b) && !ds_graphics_begin_frame(b);
+    g_bg.acquires_without_window = g_acquires - acq;
+
+    /* INIT_WINDOW with the new window of the return. */
+    g_bg.attach_ok = ds_graphics_init(NULL, win2);
+    int ok = 1;
+    for (int i = 0; i < 5; i++) ok &= bg_frame(b);
+    g_bg.frames_after_return_ok = ok;
+    g_bg.instance_creates_delta = g_instance_creates - inst0;
+    g_bg.device_creates_delta = g_device_creates - dev0;
+    g_bg.pipeline_creates_delta = g_pipeline_creates - pipe0;
+    g_bg.surface_creates_delta = g_surface_creates - surf0;
+    g_bg.textures_kept = tex_kept.gpu.uploaded;
+
+    /* A cancelled frame followed by a swapchain rebuild (a rotation right
+     * after the return): the rebuilt swapchain must not acquire into the
+     * semaphore that still holds the old signal. */
+    ds_graphics_begin_frame(b);
+    ds_graphics_cancel_frame();
+    vk_need_recreate = 1;
+    g_bg.held_recreate_ok = bg_frame(b) && bg_frame(b);
+
+    /* The compositor hands out no image in time: the frame is skipped, the
+     * loop goes on, the next frame works. */
+    g_acquire_next = VK_TIMEOUT;
+    g_bg.timeout_skip_ok = !ds_graphics_begin_frame(b);
+    g_bg.timeout_next_ok = bg_frame(b);
+
+    /* SURFACE_LOST on present: a new surface on the same device. */
+    int dev1 = g_device_creates, surf1 = g_surface_creates;
+    g_present_next = VK_ERROR_SURFACE_LOST_KHR;
+    bg_frame(b);
+    ok = 1;
+    for (int i = 0; i < 3; i++) ok &= bg_frame(b);
+    g_bg.surface_lost_ok = ok;
+    g_bg.surface_lost_device_delta = g_device_creates - dev1;
+    g_bg.surface_lost_surface_delta = g_surface_creates - surf1;
+
+    /* DEVICE_LOST on acquire: the renderer is rebuilt on the same window and
+     * the texture and the font go up again. */
+    int dev2 = g_device_creates;
+    g_acquire_next = VK_ERROR_DEVICE_LOST;
+    ds_graphics_begin_frame(b);
+    ok = 1;
+    for (int i = 0; i < 3; i++) ok &= bg_frame(b);
+    g_bg.device_lost_ok = ok && vk_ready;
+    g_bg.device_lost_device_delta = g_device_creates - dev2;
+    ds_vk_pending_texture(&tex_kept); /* what the next tex() call does */
+    bg_frame(b);
+    g_bg.textures_kept &= tex_kept.gpu.uploaded;
+    g_bg.infinite_acquires = g_acquire_infinite;
+
+    /* The activity ends with the game in the background: full teardown. */
+    ds_graphics_window_lost();
+    g_dead_window = win2;
+    (void)third_window;
+    ds_vk_texture_gpu_release(&tex_kept);
+}
 
 static void *test_thread(void *arg) {
     (void)arg;
@@ -654,6 +842,7 @@ static void *test_thread(void *arg) {
     g_res.creates_after_storm2 = g_swapchain_creates;
     g_present_suboptimal_always = 0;
 
+    test_background_cycle(&b);
     ds_graphics_shutdown();
     return 0;
 }
@@ -719,20 +908,43 @@ int main(void) {
     /* Frame rate: the game has to ask for 60 fps once per window (FIXED_SOURCE
      * plus CHANGE_FRAME_RATE_ALWAYS) and drop the request when the window closes,
      * otherwise the panel mode stays reserved for a game that is gone. */
-    if (g_frame_rate_strategy_calls != 1 || g_frame_rate_calls != 0) {
+    if (g_bg.fr_strategy_first != 1 || g_bg.fr_plain_first != 0) {
         fail = 1; printf("FAIL: the frame rate request ran %d times with a strategy and %d times without, expected 1 + 0\n",
-                         g_frame_rate_strategy_calls, g_frame_rate_calls);
+                         g_bg.fr_strategy_first, g_bg.fr_plain_first);
     }
     if (g_frame_rate_value != 60.0f || g_frame_rate_compat != 1 || g_frame_rate_strategy != 1) {
         fail = 1; printf("FAIL: the platform is asked for fps=%g, compatibility=%d, strategy=%d; expected 60 / FIXED_SOURCE(1) / ALWAYS(1)\n",
                          g_frame_rate_value, (int)g_frame_rate_compat, (int)g_frame_rate_strategy);
     }
-    if (g_frame_rate_window != g_test_window) {
+    if (g_bg.fr_window_first != g_test_window) {
         fail = 1; printf("FAIL: the frame rate request went to the wrong window\n");
     }
-    if (g_clear_frame_rate_calls != 1) {
-        fail = 1; printf("FAIL: the frame rate request was not cleared on window close (%d)\n", g_clear_frame_rate_calls);
+    if (g_bg.fr_clear_first != 1) {
+        fail = 1; printf("FAIL: the frame rate request was not cleared on window close (%d)\n", g_bg.fr_clear_first);
     }
+    /* Background and return. */
+    if (!g_bg.lost_ok) { fail = 1; printf("FAIL: after TERM_WINDOW the surface/swapchain are still alive or the device is gone\n"); }
+    if (!g_bg.no_window_frames_ok || g_bg.acquires_without_window) {
+        fail = 1; printf("FAIL: frames ran without a window (%d acquires)\n", g_bg.acquires_without_window);
+    }
+    if (!g_bg.attach_ok || !g_bg.frames_after_return_ok) { fail = 1; printf("FAIL: no frames after the return from the background\n"); }
+    if (g_bg.instance_creates_delta || g_bg.device_creates_delta || g_bg.pipeline_creates_delta) {
+        fail = 1; printf("FAIL: the return rebuilt the renderer (%d instances, %d devices, %d pipelines), only a surface is expected\n",
+                         g_bg.instance_creates_delta, g_bg.device_creates_delta, g_bg.pipeline_creates_delta);
+    }
+    if (g_bg.surface_creates_delta != 1) { fail = 1; printf("FAIL: the return made %d surfaces, expected 1\n", g_bg.surface_creates_delta); }
+    if (!g_bg.held_recreate_ok) { fail = 1; printf("FAIL: frames failed after a cancelled frame and a swapchain rebuild\n"); }
+    if (!g_bg.timeout_skip_ok || !g_bg.timeout_next_ok) { fail = 1; printf("FAIL: an acquire timeout was not skipped cleanly\n"); }
+    if (g_bg.infinite_acquires) { fail = 1; printf("FAIL: %d acquires waited forever (UINT64_MAX)\n", g_bg.infinite_acquires); }
+    if (!g_bg.surface_lost_ok || g_bg.surface_lost_device_delta || g_bg.surface_lost_surface_delta != 1) {
+        fail = 1; printf("FAIL: SURFACE_LOST recovery (frames %d, devices +%d, surfaces +%d; expected frames, +0, +1)\n",
+                         g_bg.surface_lost_ok, g_bg.surface_lost_device_delta, g_bg.surface_lost_surface_delta);
+    }
+    if (!g_bg.device_lost_ok || g_bg.device_lost_device_delta != 1) {
+        fail = 1; printf("FAIL: DEVICE_LOST recovery (frames %d, devices +%d; expected frames and +1)\n",
+                         g_bg.device_lost_ok, g_bg.device_lost_device_delta);
+    }
+    if (!g_bg.textures_kept) { fail = 1; printf("FAIL: a texture did not survive the background / device rebuild\n"); }
     /* Present mode: MAILBOX when the driver offers it, FIFO_RELAXED instead of
      * FIFO where MAILBOX is missing, and FIFO when nothing else is there. */
     if (g_res.mode_init != (int)VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -779,6 +991,10 @@ int main(void) {
                "swapchain, the present mode goes MAILBOX -> FIFO_RELAXED -> FIFO, and the platform "
                "is asked for 60 fps once per window; pNext and flags are clean, %d pipelines "
                "created\n", g_pipeline_creates);
+        printf("PASS: background and return keep the device (one new surface, no new instance/device/"
+               "pipelines), no frames without a window, a cancelled frame plus a rebuild never "
+               "re-acquires into a signalled semaphore, acquire has a finite timeout and a timeout "
+               "skips the frame, SURFACE_LOST gets a new surface and DEVICE_LOST a new device\n");
     }
     return fail;
 }

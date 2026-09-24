@@ -177,6 +177,11 @@ static int ds_vk_recreate_swapchain(void) {
     if (!ds_vk_query_surface(&s)) return 0;
     if (vk_device) vkQueueWaitIdle(vk_queue);
     ds_vk_destroy_swapchain();
+    /* An image acquired for a cancelled frame left its "image acquired"
+     * semaphore signalled with nobody to wait on it; acquiring into such a
+     * semaphore again is undefined and loses the device on Mali. Fresh
+     * semaphores go with every new swapchain. */
+    if (!ds_vk_reset_acquire_semaphores()) return 0;
 
     vk_sw_format = s.format;
     vk_sw_colorspace = s.colorspace;
@@ -253,6 +258,7 @@ static void ds_vk_destroy_frame_resources(void) {
         ds_vk_destroy_buffer(&f->ibuf, &f->imem);
         f->cmd = VK_NULL_HANDLE; f->fence = VK_NULL_HANDLE; f->image_available = VK_NULL_HANDLE;
         f->vmap = NULL; f->imap = NULL; f->vcap = 0; f->icap = 0;
+        f->submitted = 0; /* the fence it referred to is gone */
     }
     vk_frame_cur = 0;
 }
