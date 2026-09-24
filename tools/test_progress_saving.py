@@ -3,12 +3,12 @@
 
 The regression this guards: `save_progress()` in ui/progress_rewards.ds used to
 be a multi-line `net_save_progress_all(...)` call, the DimScript compiler had no
-line continuation and silently dropped it — so nothing (cups, candies, the buk,
+line continuation and silently dropped it — so nothing (cups, candies, the ebuC,
 levels, skins) was ever written to progress.dat or to Firebase.
 
 The test compiles the real DimScript sources, links them against a fake network
 layer that plays the role of net.c (progress.dat / settings.dat / cloud), and
-then drives the real script functions: buy the buk, restart, check it is still
+then drives the real script functions: buy the ebuC, restart, check it is still
 there. Requires a host C compiler (CC). No Android, no Firebase.
 """
 from pathlib import Path
@@ -175,10 +175,10 @@ static void fresh_device(void) {
     reset();
 }
 
-/* Buying the buk has to reach the save: currency, class owner, selection. */
-static void test_buy_buk_saves(void) {
+/* Buying the ebuC has to reach the save: currency, class owner, selection. */
+static void test_buy_ebuc_saves(void) {
     fresh_device();
-    /* The buk is bought with cups (120), not candies: the candies stay. */
+    /* The ebuC is bought with cups (120), not candies: the candies stay. */
     cups = 500;
     candies = 7;
     ds_fn_pick_class(CLASS_EBUC);
@@ -202,11 +202,11 @@ static void test_buy_buk_saves(void) {
     near("store.azum, 1", store.azum, 1);
     ds_fn_pick_skin(SKIN_ZOMBIE);
     near("store.skin, SKIN_ZOMBIE", store.skin, SKIN_ZOMBIE);
-    puts("save: buk, its level and skin reach net_save_progress_all");
+    puts("save: ebuC, its level and skin reach net_save_progress_all");
 }
 
 /* A game restart: whatever was saved has to load back. */
-static void test_restart_keeps_buk(void) {
+static void test_restart_keeps_ebuc(void) {
     fresh_device();
     candies = 400;
     cups = 60 + ebuc_cost;
@@ -224,7 +224,7 @@ static void test_restart_keeps_buk(void) {
     near("cups, 60 - ds_fn_level_cost(1)", cups, 60 - ds_fn_level_cost(1));
     near("ds_fn_class_level_of(CLASS_EBUC), 1", ds_fn_class_level_of(CLASS_EBUC), 1);
     near("player_level, 1", player_level, 1);
-    puts("restart: buk, currencies and its level survive a full script reset");
+    puts("restart: ebuC, currencies and its level survive a full script reset");
 }
 
 /* Settings: a file of their own on the device and their own save calls. */
@@ -327,9 +327,9 @@ static void test_leaving_battle_saves(void) {
     puts("battle exit: progress is saved when leaving solo/online");
 }
 
-/* The buk costs 120 cups (not candies), and its card stands right after Azum,
- * with Santa after the buk. */
-static void test_buk_price_and_order(void) {
+/* The ebuC costs 120 cups (not candies), and its card stands right after Azum,
+ * with Santa after the ebuC. */
+static void test_ebuc_price_and_order(void) {
     fresh_device();
     near("ds_fn_class_cost_of(CLASS_EBUC), 120", ds_fn_class_cost_of(CLASS_EBUC), 120);
     near("ds_fn_class_pays_candies(CLASS_EBUC), 0", ds_fn_class_pays_candies(CLASS_EBUC), 0);
@@ -346,29 +346,29 @@ static void test_buk_price_and_order(void) {
     near("cups spent, 0", cups, 0);
     near("candies kept, 999", candies, 999);
     near("store.cups, 0", store.cups, 0);
-    /* Card order: Ordinary, Azum, buK, Santa. */
+    /* Card order: Ordinary, Azum, ebuC, Santa. */
     candy_enabled = 1;
     near("visible count, 4", ds_fn_classes_visible_count(), 4);
     near("card 0, ordinary", ds_fn_visible_class_at(0), CLASS_ORDINARY);
     near("card 1, azum", ds_fn_visible_class_at(1), CLASS_AZUM);
-    near("card 2, buk", ds_fn_visible_class_at(2), CLASS_EBUC);
+    near("card 2, ebuC", ds_fn_visible_class_at(2), CLASS_EBUC);
     near("card 3, santa", ds_fn_visible_class_at(3), CLASS_SANTA);
-    near("index of buk, 2", ds_fn_class_visible_index(CLASS_EBUC), 2);
+    near("index of ebuC, 2", ds_fn_class_visible_index(CLASS_EBUC), 2);
     near("index of santa, 3", ds_fn_class_visible_index(CLASS_SANTA), 3);
     /* Without the candy season an unbought Santa is hidden: three cards. */
     candy_enabled = 0;
     ds_fn_set_class_owned(CLASS_SANTA, 0);
     near("visible count, 3", ds_fn_classes_visible_count(), 3);
-    near("card 2, buk", ds_fn_visible_class_at(2), CLASS_EBUC);
+    near("card 2, ebuC", ds_fn_visible_class_at(2), CLASS_EBUC);
     near("index of santa, -1", ds_fn_class_visible_index(CLASS_SANTA), -1);
     candy_enabled = 1;
-    puts("shop: buk for 120 cups, cards ordinary/azum/buk/santa");
+    puts("shop: ebuC for 120 cups, cards ordinary/azum/ebuC/santa");
 }
 
 int main(void) {
-    test_buy_buk_saves();
-    test_restart_keeps_buk();
-    test_buk_price_and_order();
+    test_buy_ebuc_saves();
+    test_restart_keeps_ebuc();
+    test_ebuc_price_and_order();
     test_settings_save();
     test_init_loads_everything();
     test_leaving_battle_saves();

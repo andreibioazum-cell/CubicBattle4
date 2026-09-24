@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Native progress checks: a bought class must survive a relogin.
 
-The bug this guards: after a rules update the buk (and only it) vanished after
+The bug this guards: after a rules update the ebuC (and only it) vanished after
 relogging even though the other classes stayed. Two causes in native/net:
 
   * the very first net_save_progress_all() of a launch ran before progress.dat
@@ -46,8 +46,8 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 }
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 
-/* The cloud forgot the buk and still holds old candies. */
-static const char *CLOUD_NO_BUK =
+/* The cloud forgot the ebuC and still holds old candies. */
+static const char *CLOUD_NO_EBUC =
     "{\"nick\":\"tester\",\"cups\":100,\"candies\":200,\"cls\":0,\"azum\":1,\"santa\":0,"
     "\"level\":0,\"levels\":0}";
 /* The cloud is newer than the device: another phone picked Azum and earned cups. */
@@ -55,7 +55,7 @@ static const char *CLOUD_FRESH =
     "{\"nick\":\"tester\",\"cups\":120,\"candies\":50,\"cls\":1,\"azum\":1,\"santa\":0,"
     "\"ebuc\":1,\"level\":0,\"levels\":0}";
 
-/* First run: the buk was bought earlier, the file is there, and the script saves
+/* First run: the ebuC was bought earlier, the file is there, and the script saves
  * before anyone calls net_load_*. Ownership must survive. */
 static int run_first_save(const char *dir) {
     net_set_data_path(dir);
@@ -74,13 +74,13 @@ static int run_offline_buy(const char *dir) {
     assert(net_load_ebuc() == 0);
     net_save_progress_all(100, 50, 3, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     assert(cloud_dirty_get() == 1);
-    int push = apply_user_json_keep_local(CLOUD_NO_BUK);
+    int push = apply_user_json_keep_local(CLOUD_NO_EBUC);
     assert(push == 1);
     assert(net_load_ebuc() == 1);
     assert(net_load_class() == 3);
     assert(net_load_candies() == 50);   /* the candies did not come back from the cloud */
     assert(net_load_cups() == 100);
-    puts("offline buy: the buk, its selection and the spent candies come back from the device");
+    puts("offline buy: the ebuC, its selection and the spent candies come back from the device");
     return 0;
 }
 

@@ -36,7 +36,7 @@ const char *net_login_pass(void);
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
 void net_publish_snow(double x, double y, double dx, double dy, double snow);
-/* Buk turrets: up to three live turrets, each with its own position and HP.
+/* ebuC turrets: up to three live turrets, each with its own position and HP.
  * count is how many are alive right now (0..3), and station1_ to station3_ hold
  * turrets 1, 2 and 3 in the order they were placed. */
 void net_publish_turrets(double x1, double y1, double hp1,
@@ -47,7 +47,7 @@ void net_publish_turrets(double x1, double y1, double hp1,
  * every dash, which is how receivers spot that one started. */
 void net_publish_dash(double x, double y, double dx, double dy, double dash);
 void net_publish_universe(double x, double y, double counter);
-/* Buk turret counter hit: an event counter for "my turret was hit". A client that
+/* ebuC turret counter hit: an event counter for "my turret was hit". A client that
  * sees a new counter on the remote side takes a little damage on its own fighter,
  * since each client is authoritative over its own fighter (net_player_thud). */
 void net_publish_thud(double counter);

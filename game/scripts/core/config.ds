@@ -64,7 +64,7 @@ public number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 public number foes_gone_t=0, foes_dead_min=0.5, foes_gone_min=3.0, net_st_playing=3
 public number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
 public number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
--- Azum and buK are bought with cups, Santa with candies.
+-- Azum and ebuC are bought with cups, Santa with candies.
 public number azum_cost=65, santa_candy_cost=100, ebuc_cost=120
 public number player_level=0, levels_unlocked=0
 public number max_level=3, level_base_cost=30, level_cost_step=10

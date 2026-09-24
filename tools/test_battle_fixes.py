@@ -2,7 +2,7 @@
 """Regression checks for the battle fixes batch, without Android or Firebase.
 
 Covers: real dash hitbox (traveled length, rounded dark cells), turret shield of
-the buk absorbing all damage, snowflakes piercing turrets, smooth hitbox fades,
+the ebuC absorbing all damage, snowflakes piercing turrets, smooth hitbox fades,
 filled snowflake hitbox, poison drawn green next to blue freeze, and the
 warning/studio splash timing (black screen never jumps). Compiles the real
 DimScript sources with a host C harness and asserts on the actual logic/draw
@@ -342,7 +342,7 @@ static void test_shield_player(void) {
     near(player->hp, 20);           /* the turret took all the damage */
     ds_fn_take_damage(8);
     near(arr_get(turret_hp, 0), 0); /* the turret is destroyed */
-    near(player->hp, 18);           /* the rest of the damage reached the buk */
+    near(player->hp, 18);           /* the rest of the damage reached the ebuC */
     ds_fn_take_damage(3);
     near(player->hp, 15);           /* without turrets the damage lands directly */
     assert(arr_len(station_boom_ts) == 1);
@@ -351,7 +351,7 @@ static void test_shield_player(void) {
     ds_fn_universe_collapse_remote(5);
     near(arr_get(turret_hp, 0), 4);
     near(player->hp, 15);
-    puts("shield: buk turret absorbs player damage (solo+remote), overflow hits buk");
+    puts("shield: ebuC turret absorbs player damage (solo+remote), overflow hits ebuC");
 }
 
 static void test_shield_enemy(void) {
@@ -372,7 +372,7 @@ static void test_shield_enemy(void) {
     near(enemy->hp, 49);
     ds_fn_enemy_apply_damage(10);
     near(enemy->hp, 39);
-    /* The buk super in solo damages the enemy turrets and its own. */
+    /* The ebuC super in solo damages the enemy turrets and its own. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     enemy_class = CLASS_EBUC;
@@ -390,14 +390,14 @@ static void test_shield_enemy(void) {
     near(enemy->hp, 30);
     ds_fn_universe_collapse(10);
     near(arr_get(turret_hp, 0), 0);
-    near(player->hp, 22);                /* the rest, 10 minus 2, reached the buk */
+    near(player->hp, 22);                /* the rest, 10 minus 2, reached the ebuC */
     near(arr_get(enemy_turret_hp, 0), 0);
     near(enemy->hp, 22);
-    puts("shield: enemy buk turret absorbs damage, own universe absorbed by own shield");
+    puts("shield: enemy ebuC turret absorbs damage, own universe absorbed by own shield");
 }
 
 static void test_snow_pierce_enemy_turrets(void) {
-    /* The player's snowflake flies at the enemy buk and pierces its turret. */
+    /* The player's snowflake flies at the enemy ebuC and pierces its turret. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     player_class = CLASS_SANTA;
@@ -421,7 +421,7 @@ static void test_snow_pierce_enemy_turrets(void) {
     assert(exploded == 1);                 /* it arrived and exploded in the end */
     /* The turret is repaired once per flight through the pierce bit, not every frame. */
     near(before - arr_get(enemy_turret_hp, 0), santa_super_damage);
-    puts("snow: pierces enemy turret (single chip) and keeps flying to the buk");
+    puts("snow: pierces enemy turret (single chip) and keeps flying to the ebuC");
 }
 
 static void test_snow_pierce_player_turrets(void) {
@@ -813,7 +813,7 @@ static void test_dash_zone_narrow(void) {
 }
 
 static void test_own_punch_spares_own_turret(void) {
-    /* Our own dispenser does not intercept our punch: it stands on the buk and
+    /* Our own dispenser does not intercept our punch: it stands on the ebuC and
      * lets the punch pass into empty air with the turret intact and the distant
      * enemy unharmed, while an enemy on the strip takes the damage. */
     ds_fn_reset_battle();
@@ -838,11 +838,11 @@ static void test_own_punch_spares_own_turret(void) {
     near(enemy->hp, 999 - ebuc_damage);         /* the damage reached the enemy */
     near(arr_get(turret_hp, 0), 9);             /* the dispenser is intact */
     assert(punch->hit == 1);
-    puts("punch: buk's own despenser never eats his punch, damage reaches the foe");
+    puts("punch: ebuC's own despenser never eats his punch, damage reaches the foe");
 }
 
 static void test_enemy_shield_front_only(void) {
-    /* An enemy buk's dispenser only guards the front: a turret behind his back
+    /* An enemy ebuC's dispenser only guards the front: a turret behind his back
      * does not take a punch to the face, so the enemy takes the damage. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
@@ -877,7 +877,7 @@ static void test_enemy_shield_front_only(void) {
 }
 
 static void test_online_turret_punch_death(void) {
-    /* Online buk: a remote punch hits a turret directly through damage_turret,
+    /* Online ebuC: a remote punch hits a turret directly through damage_turret,
      * while a punch at the player is absorbed by the shield of turrets. Either way
      * the turret loses HP and dies in the end, with the explosion queued. */
     ds_fn_reset_battle();
@@ -912,7 +912,7 @@ static void test_online_turret_punch_death(void) {
     }
     near(arr_get(turret_hp, 0), 0);
     assert(arr_len(station_boom_ts) == 1);
-    puts("online: friend punch chips and kills buk turret (shield absorb + direct hit)");
+    puts("online: friend punch chips and kills ebuC turret (shield absorb + direct hit)");
 }
 
 static void test_punch_sprite_never_empty(void) {
@@ -1030,7 +1030,7 @@ static void test_turret_shadow_square(void) {
 }
 
 static void test_station_beam_stable(void) {
-    /* The buk beam is solid and never blinks: it is drawn even right next to the
+    /* The ebuC beam is solid and never blinks: it is drawn even right next to the
      * turret, where it used to be cut off below d<40, its alpha is always opaque,
      * and at the end of the battle it fades once and never returns. */
     ds_fn_reset_battle();
@@ -1043,7 +1043,7 @@ static void test_station_beam_stable(void) {
     uint32_t outer = (255u << 24) | 0x0000E676;   /* station_beam_alpha + rgb */
     uint32_t core = (255u << 24) | 0x00C8FAD6;    /* the solid beam core */
     finished = 0;
-    own_turret(0, 512, 416, 6);                   /* d=20, right next to the buk */
+    own_turret(0, 512, 416, 6);                   /* d=20, right next to the ebuC */
     last_turret_slot = 0;
     call_count = 0;
     ds_fn_draw_station();
@@ -1054,7 +1054,7 @@ static void test_station_beam_stable(void) {
     ds_fn_draw_station();
     assert(count_kind_color('l', outer) == 1);
     assert(count_kind_color('l', core) == 1);
-    player->hp = 0;                               /* a dead buk has no beam */
+    player->hp = 0;                               /* a dead ebuC has no beam */
     call_count = 0;
     ds_fn_draw_station();
     assert(count_kind_color('l', outer) == 0 && count_kind_color('l', core) == 0);
@@ -1073,7 +1073,7 @@ static void test_station_beam_stable(void) {
     call_count = 0;
     ds_fn_draw_enemy_turrets();
     assert(count_kind_color('l', outer) == 0 && count_kind_color('l', core) == 0);
-    puts("beam: buk beam is solid at any range and gone for good at battle end");
+    puts("beam: ebuC beam is solid at any range and gone for good at battle end");
 }
 
 static void test_universe_fade(void) {
@@ -1099,7 +1099,7 @@ static void test_universe_fade(void) {
 }
 
 static void test_enemy_class_chances(void) {
-    /* The buk rarely drops as an enemy, 8 per cent against 20 for Azum and 30 for Santa. */
+    /* The ebuC rarely drops as an enemy, 8 per cent against 20 for Azum and 30 for Santa. */
     ds_fn_reset_battle();
     game_state = ST_SOLO;
     near(enemy_class_ebuc_chance, 8);
@@ -1115,7 +1115,7 @@ static void test_enemy_class_chances(void) {
     assert(ebuc > 0.065 && ebuc < 0.095);
     assert(azum > 0.18 && azum < 0.22);
     assert(santa > 0.28 && santa < 0.32);
-    puts("enemy: buk shows up in 8% of solo battles");
+    puts("enemy: ebuC shows up in 8% of solo battles");
 }
 
 int main(void) {
@@ -1171,12 +1171,15 @@ def check_firebase_rules_cover_request_bodies():
         text = (ROOT / "native/net" / name).read_text(encoding="utf-8")
         return set(re.findall(r'\\"([a-z0-9_]+)\\":', text))
 
-    missing = body_keys("room_sync.inc") - slot
+    room = (body_keys("room_sync.inc") | body_keys("room_chat.inc")
+            | body_keys("room_threads.inc"))
+    missing = room - slot
     assert not missing, f"rooms/$room/players/$slot rules miss: {sorted(missing)}"
     # auth_session.inc also sends login bodies to identitytoolkit, whose keys
     # are not part of the database and are skipped here.
     auth_only = {"email", "password", "grant_type", "refresh_token"}
-    profile = (body_keys("state_storage.inc") | body_keys("settings_storage.inc")
+    profile = (body_keys("state_storage.inc") | body_keys("cloud_patch.inc")
+               | body_keys("settings_storage.inc")
                | body_keys("promo.inc")
                | (body_keys("auth_session.inc") - auth_only))
     missing = profile - user
@@ -1279,10 +1282,10 @@ def main():
         # Turret shadow is the despenser sprite itself (square, tinted).
         shadow_body = "".join(fns["draw_turret_shadow_at"][2])
         assert "tex_tint(" in shadow_body and "DESPENSER_TEX" in shadow_body
-        # The visibility of the buk beam comes from one predicate in all three places.
+        # The visibility of the ebuC beam comes from one predicate in all three places.
         for name in ("draw_station", "draw_remote_station", "draw_enemy_turrets"):
             assert "station_beam_visible(" in "".join(fns[name][2]), \
-                f"{name} must gate the buk beam through station_beam_visible"
+                f"{name} must gate the ebuC beam through station_beam_visible"
         for name in ("draw_game", "draw_online"):
             assert "".join(fns[name][2]).count("draw_turret_shadows()") == 1, \
                 f"{name} must draw turret shadows in the shadow layer"

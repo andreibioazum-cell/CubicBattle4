@@ -28,7 +28,7 @@ public function nearest_turret(array xs, array ys, array hps, number x, number y
     end
     return best
 end
--- Buk shield: the turrets of that side absorb the damage one by one, starting
+-- ebuC shield: the turrets of that side absorb the damage one by one, starting
 -- with the one closest to the fighter, and the rest reaches the HP. mine = 1
 -- means the player's turrets, 0 the enemy's.
 public function shield_absorb_turrets(array xs, array ys, array hps, number x, number y, number mine, number dmg)

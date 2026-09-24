@@ -32,7 +32,7 @@ public function class_cost_of(number cls)
     end
     return 0
 end
--- Only Santa costs candies; buK is bought with cups like Azum.
+-- Only Santa costs candies; ebuC is bought with cups like Azum.
 public function class_pays_candies(number cls)
     if cls == CLASS_SANTA then
         return 1
@@ -136,7 +136,7 @@ public function class_visible(number cls)
     end
     return 1
 end
--- Order of the class cards: Ordinary, Azum, buK, then Santa. The class ids stay
+-- Order of the class cards: Ordinary, Azum, ebuC, then Santa. The class ids stay
 -- as they are (they are saved and sent over the network), only the cards move.
 public function class_at_order(number i)
     if i == 2 then

@@ -244,7 +244,7 @@ static void test_video_settings(void) {
 }
 
 static void test_class_mottos(void) {
-    /* Class mottos: Azum and buK say their lines (buK's is "Tr4pp3d"), and a
+    /* Class mottos: Azum and ebuC say their lines (ebuC's is "Tr4pp3d"), and a
      * long motto is scaled to fit both the card and the stats screen. */
     assert(strcmp(ds_fn_tr_class_azum_desc(), "Lived once, buried twice...") == 0);
     const char *ebuc = ds_fn_tr_class_ebuc_desc();

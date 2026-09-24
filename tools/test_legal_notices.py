@@ -116,7 +116,7 @@ def main():
     net_h = read("net.h")
     assert "void settings_mark_legal(void);" in net_h
     assert "double settings_legal_ts(void);" in net_h
-    compiler = read("ds_compiler.py")
+    compiler = read("dimscript", "tables.py")
     assert "'settings_mark_legal'" in compiler, \
         "the native function is not registered in the compiler BUILTINS"
 

@@ -500,7 +500,7 @@ def main():
             "Santa must not shrink away on exit"
         santa_tick = "".join(compiler.functions["tick_event_santa"][2])
         assert "plates_santa_fly_acc" in santa_tick and "plates_santa_up" in santa_tick
-        # The buk beam: no hard cut by distance and no flickering alpha.
+        # The ebuC beam: no hard cut by distance and no flickering alpha.
         station_beam = "".join(compiler.functions["draw_station_beam"][2])
         assert "d<40" not in station_beam and "station_beam_min" in station_beam
         assert "station_beam_alpha" in station_beam and "floor(250)" not in station_beam

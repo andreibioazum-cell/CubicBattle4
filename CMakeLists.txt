@@ -5,13 +5,17 @@ set(CMAKE_C_STANDARD 99)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(GAME_C "${CMAKE_CURRENT_SOURCE_DIR}/game/game.c")
 # The scripts live in modules under game/scripts (core, ui, combat, fx). Their
-# compile order comes from gen.py, so finding every .ds is enough here.
+# compile order comes from game/scripts/modules.txt, so finding every .ds is
+# enough here. The compiler is the dimscript/ package, one stage per module.
 file(GLOB_RECURSE DS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/game/*.ds")
+file(GLOB DS_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/dimscript/*.py")
 
 add_custom_command(
     OUTPUT "${GAME_C}"
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/gen.py"
-    DEPENDS ${DS_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/ds_compiler.py" "${CMAKE_CURRENT_SOURCE_DIR}/gen.py"
+    DEPENDS ${DS_SOURCES} ${DS_COMPILER}
+            "${CMAKE_CURRENT_SOURCE_DIR}/game/scripts/modules.txt"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ds_compiler.py" "${CMAKE_CURRENT_SOURCE_DIR}/gen.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Generating game/game.c from DimScript"
 )
