@@ -441,8 +441,16 @@ VkResult vkCreateDescriptorPool(VkDevice d, const VkDescriptorPoolCreateInfo *ci
     return VK_SUCCESS;
 }
 void vkDestroyDescriptorPool(VkDevice d, VkDescriptorPool p, const VkAllocationCallbacks *ac) { (void)d; (void)p; (void)ac; }
+/* A pool that refuses every set, as some drivers do with OUT_OF_POOL_MEMORY
+ * well before maxSets. */
+static VkDescriptorPool g_desc_refuse_pool = VK_NULL_HANDLE;
+static int g_desc_refusals;
 VkResult vkAllocateDescriptorSets(VkDevice d, const VkDescriptorSetAllocateInfo *ai, VkDescriptorSet *sets) {
-    (void)d; (void)ai;
+    (void)d;
+    if (g_desc_refuse_pool != VK_NULL_HANDLE && ai->descriptorPool == g_desc_refuse_pool) {
+        g_desc_refusals++;
+        return VK_ERROR_OUT_OF_POOL_MEMORY;
+    }
     *sets = (VkDescriptorSet)g_next();
     return VK_SUCCESS;
 }
@@ -612,6 +620,7 @@ static struct {
     int device_lost_ok, device_lost_device_delta;
     int textures_kept, font_requeued;
     int infinite_acquires;
+    int pool_refused_first, pool_retry_ok;
 } g_bg;
 
 static int bg_frame(Buffer *b) {
@@ -701,6 +710,32 @@ static void test_background_cycle(Buffer *b) {
     bg_frame(b);
     g_bg.textures_kept &= tex_kept.gpu.uploaded;
     g_bg.infinite_acquires = g_acquire_infinite;
+
+    /* A descriptor pool that refuses sets: the new texture (a fighter's idle
+     * cube) must go up from a fresh pool on the next try instead of asking the
+     * same pool every frame and staying invisible for the whole session. */
+    static uint32_t px2[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+    static Texture tex_new;
+    memset(&tex_new, 0, sizeof tex_new);
+    tex_new.name = "idle.png"; tex_new.w = 2; tex_new.h = 2; tex_new.pixels = px2;
+    static Texture tex_warm; /* makes sure a pool exists to refuse */
+    memset(&tex_warm, 0, sizeof tex_warm);
+    tex_warm.name = "warm.png"; tex_warm.w = 2; tex_warm.h = 2; tex_warm.pixels = px2;
+    ds_vk_pending_texture(&tex_warm);
+    bg_frame(b);
+    size_t pools0 = vk_desc_pool_n;
+    g_desc_refuse_pool = pools0 ? vk_desc_pools[pools0 - 1] : VK_NULL_HANDLE;
+    ds_vk_pending_texture(&tex_new);
+    bg_frame(b);
+    /* One refusal, then the very next try (same frame) takes a fresh pool. */
+    g_bg.pool_refused_first = g_desc_refusals == 1;
+    for (int i = 0; i < 3; i++) { ds_vk_pending_texture(&tex_new); bg_frame(b); }
+    g_bg.pool_refused_first &= g_desc_refusals == 1;
+    g_bg.pool_retry_ok = tex_warm.gpu.uploaded && pools0 >= 1 &&
+                         tex_new.gpu.uploaded && tex_new.gpu.desc && vk_desc_pool_n == pools0 + 1;
+    ds_vk_texture_gpu_release(&tex_warm);
+    g_desc_refuse_pool = VK_NULL_HANDLE;
+    ds_vk_texture_gpu_release(&tex_new);
 
     /* The activity ends with the game in the background: full teardown. */
     ds_graphics_window_lost();
@@ -935,6 +970,10 @@ int main(void) {
     if (g_bg.surface_creates_delta != 1) { fail = 1; printf("FAIL: the return made %d surfaces, expected 1\n", g_bg.surface_creates_delta); }
     if (!g_bg.held_recreate_ok) { fail = 1; printf("FAIL: frames failed after a cancelled frame and a swapchain rebuild\n"); }
     if (!g_bg.timeout_skip_ok || !g_bg.timeout_next_ok) { fail = 1; printf("FAIL: an acquire timeout was not skipped cleanly\n"); }
+    if (!g_bg.pool_refused_first || !g_bg.pool_retry_ok) {
+        fail = 1; printf("FAIL: a texture whose descriptor pool refused did not go up from a fresh pool (refused %d, retried %d)\n",
+                         g_bg.pool_refused_first, g_bg.pool_retry_ok);
+    }
     if (g_bg.infinite_acquires) { fail = 1; printf("FAIL: %d acquires waited forever (UINT64_MAX)\n", g_bg.infinite_acquires); }
     if (!g_bg.surface_lost_ok || g_bg.surface_lost_device_delta || g_bg.surface_lost_surface_delta != 1) {
         fail = 1; printf("FAIL: SURFACE_LOST recovery (frames %d, devices +%d, surfaces +%d; expected frames, +0, +1)\n",

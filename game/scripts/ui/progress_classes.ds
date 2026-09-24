@@ -28,12 +28,13 @@ public function class_cost_of(number cls)
         return santa_candy_cost
     end
     if cls == CLASS_EBUC then
-        return ebuc_candy_cost
+        return ebuc_cost
     end
     return 0
 end
+-- Only Santa costs candies; buK is bought with cups like Azum.
 public function class_pays_candies(number cls)
-    if cls == CLASS_SANTA || cls == CLASS_EBUC then
+    if cls == CLASS_SANTA then
         return 1
     end
     return 0
@@ -135,39 +136,52 @@ public function class_visible(number cls)
     end
     return 1
 end
+-- Order of the class cards: Ordinary, Azum, buK, then Santa. The class ids stay
+-- as they are (they are saved and sent over the network), only the cards move.
+public function class_at_order(number i)
+    if i == 2 then
+        return CLASS_EBUC
+    end
+    if i == 3 then
+        return CLASS_SANTA
+    end
+    return i
+end
 public function classes_visible_count()
-    local number n = 0, cls = 0
-    while cls < class_count do
-        if class_visible(cls) == 1 then
+    local number n = 0, i = 0
+    while i < class_count do
+        if class_visible(class_at_order(i)) == 1 then
             n = n + 1
         end
-        cls = cls + 1
+        i = i + 1
     end
     return n
 end
 public function visible_class_at(number vi)
-    local number n = 0, cls = 0
-    while cls < class_count do
+    local number n = 0, i = 0
+    while i < class_count do
+        local number cls = class_at_order(i)
         if class_visible(cls) == 1 then
             if n == vi then
                 return cls
             end
             n = n + 1
         end
-        cls = cls + 1
+        i = i + 1
     end
     return CLASS_ORDINARY
 end
 public function class_visible_index(number cls)
-    local number n = 0, c = 0
-    while c < class_count do
+    local number n = 0, i = 0
+    while i < class_count do
+        local number c = class_at_order(i)
         if class_visible(c) == 1 then
             if c == cls then
                 return n
             end
             n = n + 1
         end
-        c = c + 1
+        i = i + 1
     end
     return -1
 end

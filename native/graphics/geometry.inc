@@ -269,7 +269,12 @@ static int geo_rect_rot(float x, float y, float w, float h, float ang, uint32_t 
  * x and y are the top left corner of the unaligned texture, sc the scale and a the
  * angle. */
 static int geo_tex(float x, float y, float ang, float sc, float tw, float th_, uint32_t c) {
-    if (!isfinite(x + y + ang + sc) || sc <= 0 || tw <= 0 || th_ <= 0) return 1;
+    /* A broken angle (NaN or inf from a script value or the network) used to
+     * drop the whole sprite: the fighter's idle cube vanished while his punch
+     * pose, turned by another angle, still showed. The sprite is drawn
+     * unturned instead; only a broken position or scale skips it. */
+    if (!isfinite(ang)) ang = 0.0f;
+    if (!isfinite(x + y + sc) || sc <= 0 || tw <= 0 || th_ <= 0) return 1;
     float hw = tw * 0.5f * sc, hh = th_ * 0.5f * sc;
     /* The arena background tile is dozens of unrotated textures per frame, and at
      * zero the cosine and sine are known, so no trigonometry call is needed. */

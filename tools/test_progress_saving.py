@@ -178,12 +178,16 @@ static void fresh_device(void) {
 /* Buying the buk has to reach the save: currency, class owner, selection. */
 static void test_buy_buk_saves(void) {
     fresh_device();
-    candies = 500;
+    /* The buk is bought with cups (120), not candies: the candies stay. */
+    cups = 500;
+    candies = 7;
     ds_fn_pick_class(CLASS_EBUC);
     assert(store.progress_saves >= 1);
     near("store.ebuc, 1", store.ebuc, 1);
     near("store.cls, CLASS_EBUC", store.cls, CLASS_EBUC);
-    near("store.candies, 500 - ebuc_candy_cost", store.candies, 500 - ebuc_candy_cost);
+    near("ebuc_cost, 120", ebuc_cost, 120);
+    near("store.cups, 500 - ebuc_cost", store.cups, 500 - ebuc_cost);
+    near("store.candies, 7", store.candies, 7);
     near("ds_fn_class_owned_of(CLASS_EBUC), 1", ds_fn_class_owned_of(CLASS_EBUC), 1);
     /* The branch level and the skin go through the same save. */
     cups = 100;
@@ -205,7 +209,7 @@ static void test_buy_buk_saves(void) {
 static void test_restart_keeps_buk(void) {
     fresh_device();
     candies = 400;
-    cups = 60;
+    cups = 60 + ebuc_cost;
     ds_fn_pick_class(CLASS_EBUC);
     ds_fn_buy_level(CLASS_EBUC, 1);
     int before = store.progress_saves;
@@ -216,7 +220,7 @@ static void test_restart_keeps_buk(void) {
     assert(store.progress_saves == before);  /* reading must not rewrite the file */
     near("ds_fn_class_owned_of(CLASS_EBUC), 1", ds_fn_class_owned_of(CLASS_EBUC), 1);
     near("player_class, CLASS_EBUC", player_class, CLASS_EBUC);
-    near("candies, 400 - ebuc_candy_cost", candies, 400 - ebuc_candy_cost);
+    near("candies, 400", candies, 400);
     near("cups, 60 - ds_fn_level_cost(1)", cups, 60 - ds_fn_level_cost(1));
     near("ds_fn_class_level_of(CLASS_EBUC), 1", ds_fn_class_level_of(CLASS_EBUC), 1);
     near("player_level, 1", player_level, 1);
@@ -241,19 +245,20 @@ static void test_settings_save(void) {
     near("language, 1", language, 1);
     near("show_hitboxes, 0", show_hitboxes, 0);
 
-    /* Music volume: read from the file, stepped inside 0..100 and saved at once. */
+    /* Music volume: read from the file, cycled off -> 100 -> 50 -> off by the
+     * music button (music_volume_cycle) and saved at once. */
     store.musicvol = 45;
     reset();
     ds_fn_settings_from_storage();
     near("music_volume, 45", music_volume, 45);
-    ds_fn_music_volume_step(-10);
-    near("music_volume, 35", music_volume, 35);
-    near("store.musicvol, 35", store.musicvol, 35);
-    ds_fn_music_volume_step(-100);
+    ds_fn_music_volume_cycle();
     near("music_volume, 0", music_volume, 0);
-    ds_fn_music_volume_step(150);
+    near("store.musicvol, 0", store.musicvol, 0);
+    ds_fn_music_volume_cycle();
     near("music_volume, 100", music_volume, 100);
-    near("store.musicvol, 100", store.musicvol, 100);
+    ds_fn_music_volume_cycle();
+    near("music_volume, 50", music_volume, 50);
+    near("store.musicvol, 50", store.musicvol, 50);
 
     /* The winter theme and the frame counter: their own file keys, the same path. */
     reset();
@@ -322,9 +327,48 @@ static void test_leaving_battle_saves(void) {
     puts("battle exit: progress is saved when leaving solo/online");
 }
 
+/* The buk costs 120 cups (not candies), and its card stands right after Azum,
+ * with Santa after the buk. */
+static void test_buk_price_and_order(void) {
+    fresh_device();
+    near("ds_fn_class_cost_of(CLASS_EBUC), 120", ds_fn_class_cost_of(CLASS_EBUC), 120);
+    near("ds_fn_class_pays_candies(CLASS_EBUC), 0", ds_fn_class_pays_candies(CLASS_EBUC), 0);
+    near("ds_fn_class_pays_candies(CLASS_SANTA), 1", ds_fn_class_pays_candies(CLASS_SANTA), 1);
+    cups = 119; candies = 999;
+    ds_fn_pick_class(CLASS_EBUC);          /* one cup short: candies do not help */
+    near("owned after 119 cups, 0", ds_fn_class_owned_of(CLASS_EBUC), 0);
+    near("class_msg_kind (cups), 0", class_msg_kind, 0);
+    near("cups untouched, 119", cups, 119);
+    near("candies untouched, 999", candies, 999);
+    cups = 120;
+    ds_fn_pick_class(CLASS_EBUC);
+    near("owned after 120 cups, 1", ds_fn_class_owned_of(CLASS_EBUC), 1);
+    near("cups spent, 0", cups, 0);
+    near("candies kept, 999", candies, 999);
+    near("store.cups, 0", store.cups, 0);
+    /* Card order: Ordinary, Azum, buK, Santa. */
+    candy_enabled = 1;
+    near("visible count, 4", ds_fn_classes_visible_count(), 4);
+    near("card 0, ordinary", ds_fn_visible_class_at(0), CLASS_ORDINARY);
+    near("card 1, azum", ds_fn_visible_class_at(1), CLASS_AZUM);
+    near("card 2, buk", ds_fn_visible_class_at(2), CLASS_EBUC);
+    near("card 3, santa", ds_fn_visible_class_at(3), CLASS_SANTA);
+    near("index of buk, 2", ds_fn_class_visible_index(CLASS_EBUC), 2);
+    near("index of santa, 3", ds_fn_class_visible_index(CLASS_SANTA), 3);
+    /* Without the candy season an unbought Santa is hidden: three cards. */
+    candy_enabled = 0;
+    ds_fn_set_class_owned(CLASS_SANTA, 0);
+    near("visible count, 3", ds_fn_classes_visible_count(), 3);
+    near("card 2, buk", ds_fn_visible_class_at(2), CLASS_EBUC);
+    near("index of santa, -1", ds_fn_class_visible_index(CLASS_SANTA), -1);
+    candy_enabled = 1;
+    puts("shop: buk for 120 cups, cards ordinary/azum/buk/santa");
+}
+
 int main(void) {
     test_buy_buk_saves();
     test_restart_keeps_buk();
+    test_buk_price_and_order();
     test_settings_save();
     test_init_loads_everything();
     test_leaving_battle_saves();

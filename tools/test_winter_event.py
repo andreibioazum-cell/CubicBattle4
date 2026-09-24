@@ -55,6 +55,9 @@ void ds_log(const char *format, ...) { (void)format; }
 void ds_runtime_error(const char *format, ...) { fputs(format, stderr); abort(); }
 double net_slot(void) { return 0; }
 double net_event(void) { event_reads++; return cloud_event; }
+/* In the room and playing (net_st_playing); a reconnect reads other values. */
+static double cloud_status = 3;
+double net_status(void) { return cloud_status; }
 void net_set_class(double v) { (void)v; progress_updates++; }
 void net_set_level(double v) { (void)v; }
 void net_set_skin(double v) { (void)v; }
@@ -392,6 +395,36 @@ static void test_plates(void) {
     call_count = 0;
     ds_fn_draw_event_santa(); ds_fn_draw_event_candies();
     assert(call_count == 0);
+    /* The finished round is over for good: the event coming back (a reconnect
+     * reads 0 for a moment, a new battle resets the event) brings no plates,
+     * no Santa and no candies. */
+    assert(plates_finished == 1);
+    cloud_event = 3;
+    for (int k = 0; k < 20; k++) ds_fn_update_event();
+    assert(plates_phase == 4 && plates_lock_me == 0 && plates_finished == 1);
+    call_count = 0; plate_rects = 0;
+    ds_fn_draw_event_plates(); ds_fn_draw_event_santa(); ds_fn_draw_event_candies();
+    assert(call_count == 0 && plate_rects == 0);
+    ds_fn_plates_event_reset();            /* what reset_battle() does */
+    ds_fn_update_event();
+    assert(plates_phase == 4 && plates_finished == 1);
+    cloud_status = 1; cloud_event = 0;     /* reconnecting: the event reads 0 */
+    for (int k = 0; k < 400; k++) ds_fn_update_event();
+    cloud_status = 3;
+    for (int k = 0; k < 5; k++) ds_fn_update_event();   /* half a second of 0 in the room */
+    cloud_event = 3;
+    ds_fn_update_event();
+    assert(plates_phase == 4 && plates_finished == 1);
+    /* Only the admin really switching the event off re-arms the next one. */
+    cloud_event = 0;
+    for (int k = 0; k * dt < plates_rearm_time + 1; k++) ds_fn_update_event();
+    assert(plates_finished == 0);
+    cloud_event = 3;
+    ds_fn_update_event();
+    assert(plates_phase == 0);
+    call_count = 0; plate_rects = 0;
+    ds_fn_draw_event_plates();
+    assert(plate_rects == 4);
     cloud_event = 3; candy_enabled = 0;
     ds_fn_update_event();
     assert(event_mode == 0);
@@ -400,7 +433,7 @@ static void test_plates(void) {
     ds_fn_reset_battle();
     assert(snow_t == 0 && event_mode == 0 && event_t == 0 && disco_t == 0);
     assert(plates_prev_mode == 0 && plates_phase == 0);
-    puts("plates: two-player trigger, Santa sprite/size/shadow, candies and resets OK");
+    puts("plates: two-player trigger, Santa sprite/size/shadow, candies, resets and a finished round staying over OK");
 }
 
 int main(void) {

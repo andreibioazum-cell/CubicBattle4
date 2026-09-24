@@ -12,7 +12,9 @@ public function plates_event_reset()
         plates_dirty=0
         save_progress()
     end
-    plates_finished=0
+    -- plates_finished is not cleared here: a new battle, a reconnect (the
+    -- event reads 0 for a moment after it) or leaving and re-entering online
+    -- used to start the round over, and Santa came back to throw candies again.
     plates_save_cd=0
     plates_phase=0
     plates_t=0
@@ -223,7 +225,20 @@ public function tick_event_santa()
         end
     end
 end
+-- The admin really ended the event (the cloud value is not 3 for a while, much
+-- longer than the moment after a reconnect): the next plates event is new.
+public function plates_watch_cloud()
+    if net_event()==3||net_status()!=net_st_playing then
+        plates_off_t=0
+        return
+    end
+    plates_off_t=plates_off_t+dt
+    if plates_off_t>=plates_rearm_time then
+        plates_finished=0
+    end
+end
 public function tick_plates_event()
+    plates_watch_cloud()
     if event_mode!=3 then
         if plates_prev_mode==3 then
             plates_event_reset()
@@ -235,6 +250,12 @@ public function tick_plates_event()
         plates_event_reset()
     end
     plates_prev_mode=3
+    -- The round is over for good: no plates, no Santa, no candies.
+    if plates_finished==1 then
+        plates_phase=4
+        plates_lock_me=0
+        return
+    end
     if plates_phase==0 then
         plate_a_lit=fighter_on_plate(plate_ax(),plate_ay())
         plate_b_lit=fighter_on_plate(plate_bx(),plate_by())
@@ -304,7 +325,7 @@ public function draw_plate(number cx, number cy, number k, number lit)
     end
 end
 public function draw_event_plates()
-    if event_mode!=3||plates_phase>=3 then
+    if event_mode!=3||plates_phase>=3||plates_finished==1 then
         return
     end
     local number k=1

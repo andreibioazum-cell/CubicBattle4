@@ -12,6 +12,16 @@ public function start_remote_punch(number s)
     arr_set(remote_punches,rb+4,net_player_punch_dy(s))
     arr_set(remote_punches,rb+5,0)
 end
+-- A number from the room that is NaN or infinite is replaced: a broken angle
+-- stuck forever in the smoothing below (NaN plus anything stays NaN), and the
+-- fighter's idle cube stopped showing while his punch pose, turned by the punch
+-- direction instead, still did.
+public function finite_or(number v, number fb)
+    if v!=v||v>1000000000||v<0-1000000000 then
+        return fb
+    end
+    return v
+end
 public function read_remotes()
     if net_slot()<0 then
         return
@@ -20,7 +30,8 @@ public function read_remotes()
     while s<max_players do
         local number b=s*remote_fields
         if net_player_online(s)==1&&s!=net_slot() then
-            local number x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h, a=net_player_angle(s)
+            local number x=finite_or(net_player_x(s),0.5)*screen_w, y=finite_or(net_player_y(s),0.5)*screen_h
+            local number a=finite_or(net_player_angle(s),arr_get(remotes,b+9))
             if arr_get(remotes,b)==0 then
                 arr_set(remotes,b,1)
                 arr_set(remotes,b+1,x)
@@ -198,7 +209,8 @@ public function smooth_remotes()
         local number b=s*remote_fields
         if arr_get(remotes,b+5)==1 then
             local number rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3)
-            local number nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=arr_get(remotes,b+9)
+            local number nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=finite_or(arr_get(remotes,b+9),0)
+            ra=finite_or(ra,na)
             if dist(rx,ry,nx,ny)>remote_snap then
                 rx=nx
                 ry=ny
