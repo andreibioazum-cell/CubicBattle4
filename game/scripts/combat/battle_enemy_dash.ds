@@ -16,74 +16,80 @@ public function tick_enemy_dash()
     if enemy_dash_active==0 then
         return
     end
-    enemy_dash_t=enemy_dash_t-dt
-    if enemy_dash_t<=0 then
-        enemy_dash_t=0
-        enemy_dash_active=0
-        enemy_dash_hit=0
-        return
-    end
     if finished!=0 then
         enemy_dash_active=0
         return
     end
     if enemy.stun>0 then
+        -- Stunned mid-flight: the timer still runs out.
+        enemy_dash_t=enemy_dash_t-dt
+        if enemy_dash_t<=0 then
+            enemy_dash_t=0
+            enemy_dash_active=0
+            enemy_dash_hit=0
+        end
         return
     end
     enemy.x=enemy.x+enemy_dash_dx*azum_dash_speed*dt
     enemy.y=enemy.y+enemy_dash_dy*azum_dash_speed*dt
     if enemy.x<enemy.size then
         enemy.x=enemy.size
-        enemy_dash_active=0
         enemy_dash_t=0
-        return
     end
     if enemy.x>screen_w-enemy.size then
         enemy.x=screen_w-enemy.size
-        enemy_dash_active=0
         enemy_dash_t=0
-        return
     end
     if enemy.y<enemy.size then
         enemy.y=enemy.size
-        enemy_dash_active=0
         enemy_dash_t=0
-        return
     end
     if enemy.y>screen_h-enemy.size then
         enemy.y=screen_h-enemy.size
-        enemy_dash_active=0
         enemy_dash_t=0
-        return
+    end
+    -- The travelled length freezes with the dash, so the zone fades out where
+    -- the flight ended instead of stretching after the fighter.
+    local number tvx=enemy.x-enemy_dash_x0, tvy=enemy.y-enemy_dash_y0
+    enemy_dash_travel=tvx*enemy_dash_dx+tvy*enemy_dash_dy
+    if enemy_dash_travel<0 then
+        enemy_dash_travel=0
+    end
+    if enemy_dash_travel>azum_dash_speed*azum_dash_time then
+        enemy_dash_travel=azum_dash_speed*azum_dash_time
     end
     tick_enemy_dust(enemy_dash_dx*azum_dash_speed,enemy_dash_dy*azum_dash_speed)
-    if enemy_dash_hit==1 then
-        return
-    end
-    local number dti=0
-    while dti<turret_max do
-        if enemy_dash_hit==0&&turret_alive(dti)==1 then
-            local number pad=enemy.size*0.65+turret_zone_half()+14
-            if fabs(enemy.x-arr_get(turret_x,dti))<=pad&&fabs(enemy.y-arr_get(turret_y,dti))<=pad then
-                enemy_dash_hit=1
-                damage_turret(dti,enemy_dash_damage)
-                enemy_apply_damage(turret_counter_damage)
+    -- The hit tests run on every frame of the flight including the closing
+    -- one: the dash closes only at the end of the frame, after the tests, so
+    -- the last step cannot fly through a target.
+    if enemy_dash_hit==0 then
+        local number dti=0
+        while dti<turret_max do
+            if enemy_dash_hit==0&&turret_alive(dti)==1 then
+                local number pad=enemy.size*0.65+turret_zone_half()+14
+                if fabs(enemy.x-arr_get(turret_x,dti))<=pad&&fabs(enemy.y-arr_get(turret_y,dti))<=pad then
+                    enemy_dash_hit=1
+                    damage_turret(dti,enemy_dash_damage)
+                    enemy_apply_damage(turret_counter_damage)
+                end
             end
+            dti=dti+1
         end
-        dti=dti+1
     end
-    if enemy_dash_hit==1||finished!=0 then
-        return
+    if enemy_dash_hit==0&&finished==0&&revive_prot<=0 then
+        local number dpr=dash_hit_radius_solo()
+        if dist(enemy.x,enemy.y,player.x,player.y)<=dpr then
+            enemy_dash_hit=1
+            take_damage(enemy_dash_damage)
+            stun_player(azum_dash_stun)
+            ds_log("enemy dash hit player")
+        end
     end
-    if revive_prot>0 then
-        return
-    end
-    local number dpr=dash_hit_radius_solo()
-    if dist(enemy.x,enemy.y,player.x,player.y)<=dpr then
-        enemy_dash_hit=1
-        take_damage(enemy_dash_damage)
-        stun_player(azum_dash_stun)
-        ds_log("enemy dash hit player")
+    enemy_dash_t=enemy_dash_t-dt
+    if enemy_dash_t<=0 then
+        enemy_dash_t=0
+        enemy_dash_active=0
+        enemy_dash_hit=0
     end
 end
 public function tick_dash_solo_hit()

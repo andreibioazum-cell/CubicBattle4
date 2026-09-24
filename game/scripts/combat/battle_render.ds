@@ -196,7 +196,10 @@ public function draw_player_hitbox_layer()
         return
     end
     if aim_a>0 then
-        draw_punch_box(player.x,player.y,cos(player.angle),sin(player.angle),punch_reach,punch_width,aim_a)
+        -- The zone is drawn from the frozen swing pose (exactly where the hit
+        -- is tested), so it fades out in place instead of swinging around with
+        -- the fighter on its last frames.
+        draw_punch_box(punch.x,punch.y,punch.dx,punch.dy,punch_reach,punch_width,aim_a)
     end
 end
 public function draw_player_body_layer()
@@ -228,7 +231,9 @@ public function draw_enemy_hitbox()
         return
     end
     if enemy_punch_a>0 then
-        draw_punch_box(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),enemy_punch_reach,enemy_punch_width,enemy_punch_a)
+        -- The pose is latched while he winds up and strikes, and freezes at the
+        -- last strike frame: the fade-out happens in place.
+        draw_punch_box(enemy_punch_x,enemy_punch_y,enemy_punch_dx,enemy_punch_dy,enemy_punch_reach,enemy_punch_width,enemy_punch_a)
     end
 end
 public function draw_enemy_body()
@@ -302,11 +307,47 @@ public function draw_fps_meter()
     roundrect(x,y,w,h,h/2,fps_plate_rgb)
     text_scaled(label,x+(w-tw)/2,y+(h-th)/2-tt+1.5,fps_text_rgb,sc)
 end
+-- The streak of one's own dash: a yellow strip from the start of the flight to
+-- the fighter, brightening as the flight gains speed (restored: the flight had
+-- no look of its own and only the hitbox zone showed that anything moved).
 public function draw_dash_streak()
-    return
+    if dash_active==0 then
+        return
+    end
+    local number left=dash_t/azum_dash_time
+    local number a=floor(clamp(1.6*(1-left),0,1)*110)
+    if a<=0 then
+        return
+    end
+    line(dash_x0,dash_y0,player.x,player.y,12,(((unsigned)(int)a)<<24)|0x00FFE082)
 end
+-- A remote dash streak (online): from his published start along his published
+-- direction to his current position, the same yellow as one's own dash.
 public function draw_remote_dash()
-    return
+    if net_slot()<0 then
+        return
+    end
+    local number s=0
+    while s<max_players do
+        local number b=s*dash_fields
+        if s!=net_slot()&&arr_get(remote_dash,b+1)==1 then
+            local number x0=arr_get(remote_dash,b+2), y0=arr_get(remote_dash,b+3)
+            local number dx=arr_get(remote_dash,b+4), dy=arr_get(remote_dash,b+5)
+            local number leg=arr_get(remote_dash,b+8)
+            local number done=azum_dash_time-arr_get(remote_dash,b+6)
+            if done<0 then
+                done=0
+            end
+            if done>azum_dash_time then
+                done=azum_dash_time
+            end
+            local number a=floor(clamp(0.5+done/azum_dash_time,0,1)*120)
+            if a>0&&leg>0 then
+                line(x0,y0,x0+dx*leg,y0+dy*leg,12,(((unsigned)(int)a)<<24)|0x00FFE082)
+            end
+        end
+        s=s+1
+    end
 end
 public function draw_game()
     draw_arena_background()

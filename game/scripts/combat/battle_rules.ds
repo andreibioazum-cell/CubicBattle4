@@ -25,14 +25,17 @@ public function zombie_tex_ok()
     end
     return 0
 end
+-- The zombie pair loads as a pair or not at all: one missing half must not mix
+-- the brain sprites with the class cubes (the idle from one creature and the
+-- swing from another, which looked like a zombie-azum popping up on a hit).
 public function zombie_idle_tex()
-    if azum_zombie_tex_ok==1 then
+    if zombie_tex_ok()==1 then
         return AZUM_ZOMBIE_TEX
     end
     return azum_idle_tex()
 end
 public function zombie_punch_tex()
-    if azum_zombie_punch_tex_ok==1 then
+    if zombie_tex_ok()==1 then
         return AZUM_ZOMBIE_PUNCH_TEX
     end
     return azum_punch_tex()

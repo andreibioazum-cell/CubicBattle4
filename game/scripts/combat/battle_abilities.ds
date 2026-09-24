@@ -152,10 +152,9 @@ public function update_remote_dashes()
                 end
             end
             if arr_get(remote_dash,b+1)==1 then
-                -- The fighter steers while he dashes, so the zone is not the straight
-                -- line from where the dash started any more: it follows him. The leg
-                -- begins where his client put the start (a turn moves it) and ends at
-                -- his current position, both of which come from the room snapshot.
+                -- The dash is a straight locked-direction flight: the zone runs
+                -- from the published start along the published direction and
+                -- ends at his current position from the room snapshot.
                 local number ox=net_player_dash_x(s)*screen_w, oy=net_player_dash_y(s)*screen_h
                 local number vx=net_player_x(s)*screen_w-ox, vy=net_player_y(s)*screen_h-oy
                 local number leg=sqrt(vx*vx+vy*vy)
@@ -296,16 +295,22 @@ public function update_game()
         end
     end
     move_player()
-    tick_dash()
+    -- The dash hit test runs before the timer closes the dash, so the last
+    -- frame of the flight is resolved at the position it reached and cannot be
+    -- skipped ("the dash sprite flies through and does not hit").
     tick_dash_solo_hit()
+    tick_dash()
     tick_candies()
-    punch_left=tick_down(punch_left)
     follow_punch()
     super_cd=tick_down(super_cd)
     boom_t=tick_down(boom_t)
     tick_super_windup()
     tick_santa_follow()
-    if punch_left>0&&punch.active==1&&punch.hit==0 then
+    -- The swing resolves on every frame it is alive, the closing frame too.
+    -- tick_down zeroes punch_left inside the last frame, and the old order ran
+    -- the hit test only while punch_left>0, so on laggy frames (a cold start
+    -- with 0.1 s spikes) the punch could flash its pose and never register.
+    if punch.active==1&&punch.hit==0 then
         local number enemy_turret_target=enemy_punch_turret_target(punch.x,punch.y,punch.dx,punch.dy)
         if enemy_turret_target>=1 then
             punch.hit=1
@@ -342,6 +347,13 @@ public function update_game()
             end
         end
     end
+    -- The swing is closed on the frame its window ends, only after its last
+    -- resolve above, so the closing frame can hit but a dead swing can never
+    -- resolve again.
+    if punch.active==1&&punch_left<=0 then
+        punch.active=0
+    end
+    punch_left=tick_down(punch_left)
     update_dust()
     update_gift()
     flush_queued_action()

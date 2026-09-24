@@ -3,47 +3,44 @@ public function move_player()
         return
     end
     if dash_active>0 then
+        -- The dash is a burst in the direction that was locked at the start:
+        -- the stick only turns the fighter's face, never the flight, so this is
+        -- a dash again and not ordinary steering at dash speed.
         local number jm2=sqrt(joy.dx*joy.dx+joy.dy*joy.dy)
         if jm2>0.15 then
-            local number ndx=joy.dx/jm2, ndy=joy.dy/jm2
             player.angle=atan2(joy.dy,joy.dx)
-            -- The dash follows the turn, so the fighter does not slide sideways while
-            -- facing the stick. A turn wider than dash_turn_cos starts a new leg: the
-            -- zone is measured from the turning point, and the room is told about the
-            -- new geometry at the next push (dash_pub=0).
-            if ndx*dash_dx+ndy*dash_dy<dash_turn_cos then
-                dash_x0=player.x
-                dash_y0=player.y
-                dash_dx=ndx
-                dash_dy=ndy
-                dash_pub=0
-            end
         end
         player.x=player.x+dash_dx*azum_dash_speed*dt
         player.y=player.y+dash_dy*azum_dash_speed*dt
         if player.x<player.size then
             player.x=player.size
-            dash_active=0
             dash_t=0
         end
         if player.x>screen_w-player.size then
             player.x=screen_w-player.size
-            dash_active=0
             dash_t=0
         end
         if player.y<player.size then
             player.y=player.size
-            dash_active=0
             dash_t=0
         end
         if player.y>screen_h-player.size then
             player.y=screen_h-player.size
-            dash_active=0
             dash_t=0
         end
-        if dash_active==1 then
-            tick_dust(dash_dx,dash_dy,1)
+        -- The travelled length is latched every frame and freezes here: a dash
+        -- that ends on a wall or on the timer fades its zone out in place. The
+        -- dash itself is closed by tick_dash after the last hit test of the
+        -- frame, so the final step of the flight is never skipped.
+        local number tvx=player.x-dash_x0, tvy=player.y-dash_y0
+        dash_travel=tvx*dash_dx+tvy*dash_dy
+        if dash_travel<0 then
+            dash_travel=0
         end
+        if dash_travel>azum_dash_speed*azum_dash_time then
+            dash_travel=azum_dash_speed*azum_dash_time
+        end
+        tick_dust(dash_dx,dash_dy,1)
         return
     end
     local number spd=joy_speed

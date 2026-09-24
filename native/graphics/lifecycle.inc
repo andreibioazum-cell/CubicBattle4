@@ -42,20 +42,29 @@ static Texture *load_png(const char *req) {
     const char *n = norm_name(req);
     if (!n) { ds_log_err("texture not loaded: invalid PNG asset path '%s'", req ? req : "(null)"); return NULL; }
     Texture *t = find_tx(n);
-    if (t) {
+    if (t && t->pixels) {
         /* A temporarily failed upload must not leave the texture invisible in
          * the CPU cache forever: the next tex() call queues it again. This fixes
          * the idle sprite disappearing and only the already uploaded punch pose
          * showing up during a hit. */
-        if (t->pixels && !t->gpu.uploaded) ds_vk_pending_texture(t);
-        return t->pixels ? t : NULL;
+        if (!t->gpu.uploaded) ds_vk_pending_texture(t);
+        return t;
     }
     if (!amgr) { ds_log_err("texture not loaded: no asset manager for '%s'", n); return NULL; }
-    t = (Texture *)calloc(1, sizeof(*t));
-    if (!t) { ds_log_err("texture not loaded: out of memory caching '%s'", n); return NULL; }
-    t->name = strdup_safe(n);
-    if (!t->name) { free(t); ds_log_err("texture not loaded: out of memory caching name '%s'", n); return NULL; }
-    t->next = textures; textures = t;
+    if (!t) {
+        /* The entry is created before the decode and kept even on failure, so
+         * the retry below finds it instead of failing for good. */
+        t = (Texture *)calloc(1, sizeof(*t));
+        if (!t) { ds_log_err("texture not loaded: out of memory caching '%s'", n); return NULL; }
+        t->name = strdup_safe(n);
+        if (!t->name) { free(t); ds_log_err("texture not loaded: out of memory caching name '%s'", n); return NULL; }
+        t->next = textures; textures = t;
+    }
+    /* A failed first decode (a hiccup of the asset store or of the allocator on
+     * a cold start) must not kill the sprite for the rest of the run: every
+     * later tex() call retries the decode into the same entry. That was the
+     * bug where on the first launch the fighter stayed invisible and only the
+     * punch pose of a texture that happened to decode appeared on a hit. */
     uint8_t *enc = NULL; size_t enc_sz = 0;
     if (!open_asset(n, &enc, &enc_sz) || enc_sz > (size_t)INT_MAX) {
         free(enc); ds_log_err("texture not loaded: asset not found or unreadable: '%s'", n); return NULL;

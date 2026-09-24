@@ -203,20 +203,29 @@ static int ds_vk_upload_font_atlas(void) {
     return ok;
 }
 
+/* The stored handles are always dropped, even when the device is already gone:
+ * they belong to that dead device. Keeping them (the old early return) left
+ * vk_font_desc and t->gpu.uploaded set after ds_release_assets ran with the
+ * device down - the relaunch after a backgrounded session then either skipped
+ * the re-upload for good or drew text through a descriptor of the destroyed
+ * pool, which crashed the game at the next launch. */
 static void ds_vk_font_gpu_release(void) {
-    if (!vk_device) return;
-    if (vk_font_view != VK_NULL_HANDLE) vkDestroyImageView(vk_device, vk_font_view, NULL);
-    if (vk_font_image != VK_NULL_HANDLE) vkDestroyImage(vk_device, vk_font_image, NULL);
-    if (vk_font_memory != VK_NULL_HANDLE) vkFreeMemory(vk_device, vk_font_memory, NULL);
+    if (vk_device) {
+        if (vk_font_view != VK_NULL_HANDLE) vkDestroyImageView(vk_device, vk_font_view, NULL);
+        if (vk_font_image != VK_NULL_HANDLE) vkDestroyImage(vk_device, vk_font_image, NULL);
+        if (vk_font_memory != VK_NULL_HANDLE) vkFreeMemory(vk_device, vk_font_memory, NULL);
+    }
     vk_font_image = VK_NULL_HANDLE; vk_font_memory = VK_NULL_HANDLE;
     vk_font_view = VK_NULL_HANDLE; vk_font_desc = VK_NULL_HANDLE;
 }
 
 static void ds_vk_texture_gpu_release(Texture *t) {
-    if (!t || !vk_device) return;
-    if (t->gpu.view) vkDestroyImageView(vk_device, (VkImageView)(uintptr_t)t->gpu.view, NULL);
-    if (t->gpu.image) vkDestroyImage(vk_device, (VkImage)(uintptr_t)t->gpu.image, NULL);
-    if (t->gpu.memory) vkFreeMemory(vk_device, (VkDeviceMemory)(uintptr_t)t->gpu.memory, NULL);
+    if (!t) return;
+    if (vk_device) {
+        if (t->gpu.view) vkDestroyImageView(vk_device, (VkImageView)(uintptr_t)t->gpu.view, NULL);
+        if (t->gpu.image) vkDestroyImage(vk_device, (VkImage)(uintptr_t)t->gpu.image, NULL);
+        if (t->gpu.memory) vkFreeMemory(vk_device, (VkDeviceMemory)(uintptr_t)t->gpu.memory, NULL);
+    }
     memset(&t->gpu, 0, sizeof(t->gpu));
 }
 
@@ -228,9 +237,13 @@ static void ds_vk_pending_texture(Texture *t) {
     if (vk_pending_n < DS_VK_PENDING_CAP) vk_pending_tex[vk_pending_n++] = t;
 }
 
-/* Deferred uploads are handled at the start of end_frame. */
+/* Deferred uploads are handled at the start of end_frame and again before the
+ * frame geometry is built, so a texture that a frame draws for the first time
+ * is already on the GPU when its triangles are recorded: sprites never appear a
+ * frame late (the fighter popping in a moment after the battle starts). */
 static void ds_vk_process_pending_uploads(void) {
     if (!vk_ready) { vk_pending_n = 0; vk_pending_font = 0; return; }
+    int out = 0;
     for (int i = 0; i < vk_pending_n; i++) {
         Texture *t = vk_pending_tex[i];
         if (!t || !t->pixels || t->gpu.uploaded) continue;
@@ -242,10 +255,15 @@ static void ds_vk_process_pending_uploads(void) {
             t->gpu.desc = (long long)(intptr_t)desc;
             t->gpu.uploaded = 1;
         } else {
-            ds_log_err("vulkan: texture upload failed for '%s'", t->name ? t->name : "?");
+            /* The failure is logged once and the texture stays pending: memory
+             * pressure on a cold start clears, and the next frame boundary
+             * retries the upload without any further calls. */
+            if (t->upload_tries++ == 0)
+                ds_log_err("vulkan: texture upload failed for '%s', retrying", t->name ? t->name : "?");
+            vk_pending_tex[out++] = t;
         }
     }
-    vk_pending_n = 0;
+    vk_pending_n = out;
     if (vk_pending_font) {
         vk_pending_font = 0;
         if (!ds_vk_upload_font_atlas())

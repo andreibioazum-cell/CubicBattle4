@@ -88,6 +88,57 @@ public function load_textures()
     png_load(DESPENSER_TEX)
     candy_tex_ok = png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
+    tex_reload_t = 0
+    tex_reload_left = 60
+end
+-- The first load of a sprite can hiccup on a cold start (the asset store is
+-- still warming up, memory is tight right after boot). The ok-flags latch that
+-- first answer and pick the fallback cubes, and the sprites the fallback never
+-- names are not asked for again: the fighters stayed ordinary cubes for the
+-- whole session. The failed loads are asked again a couple of times per second
+-- (and for half a minute at most) until they land, and the right art appears as
+-- soon as it does. tex() already retries the plain textures every draw; this
+-- retries the ones only the flags ask for.
+public function reload_textures()
+    if tex_reload_left<=0 then
+        return
+    end
+    if tex_reload_t>0 then
+        tex_reload_t=tex_reload_t-dt
+        return
+    end
+    tex_reload_t=0.5
+    tex_reload_left=tex_reload_left-1
+    if ordinary_punch_tex_ok==0 then
+        ordinary_punch_tex_ok=png_load(PUNCH_TEX)
+    end
+    if azum_tex_ok==0 then
+        azum_tex_ok=png_load(AZUM_TEX)
+    end
+    if azum_punch_tex_ok==0 then
+        azum_punch_tex_ok=png_load(AZUM_PUNCH_TEX)
+    end
+    if azum_zombie_tex_ok==0 then
+        azum_zombie_tex_ok=png_load(AZUM_ZOMBIE_TEX)
+    end
+    if azum_zombie_punch_tex_ok==0 then
+        azum_zombie_punch_tex_ok=png_load(AZUM_ZOMBIE_PUNCH_TEX)
+    end
+    if santa_punch_tex_ok==0 then
+        santa_punch_tex_ok=png_load(SANTA_PUNCH_TEX)
+    end
+    if ebuc_punch_tex_ok==0 then
+        ebuc_punch_tex_ok=png_load(EBUC_PUNCH_TEX)
+    end
+    if candy_tex_ok==0 then
+        candy_tex_ok=png_load(CANDY_TEX)
+    end
+    if winter_theme==1&&snow_tex_ok==0 then
+        snow_tex_ok=png_load(SNOW_TEX)
+    end
+    if ordinary_punch_tex_ok==1&&azum_tex_ok==1&&azum_punch_tex_ok==1&&azum_zombie_tex_ok==1&&azum_zombie_punch_tex_ok==1&&santa_punch_tex_ok==1&&ebuc_punch_tex_ok==1&&candy_tex_ok==1 then
+        tex_reload_left=0
+    end
 end
 public function start_music()
     music_ok = snd_load(LOBBY_MUSIC)
@@ -253,6 +304,7 @@ public function update()
     update_studio()
     update_transition()
     update_music()
+    reload_textures()
     quest_tick()
     tick_achievement_toast()
     tick_fps_meter()

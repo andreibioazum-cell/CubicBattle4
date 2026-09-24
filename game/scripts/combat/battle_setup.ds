@@ -86,6 +86,12 @@ public function reset_battle()
     dash_x0=0
     dash_y0=0
     dash_cd=0
+    dash_travel=0
+    enemy_dash_travel=0
+    enemy_punch_x=0
+    enemy_punch_y=0
+    enemy_punch_dx=1
+    enemy_punch_dy=0
     dash_box_a=0
     snow_ball_a=0
     snow_boom_a=0

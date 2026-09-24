@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Checks that the dash hitbox is drawn again when the hitbox overlay is on.
+"""Checks the dash as it is again: a straight locked-direction flight whose
+hitbox zone is one strip over the travelled part, fading out in place.
 
-The dash zone used to be a grid of world cells that looked like a rendering bug,
-so it was switched off entirely - and the dash lost its hitbox. Now the zone is
-one strip over the leg the fighter is on, as wide as the damage zone is, drawn
-with the same colour and alpha as every other hitbox. The strip turns with the
-fighter: the dash follows the stick, and a turn moves the start of the leg to
-the turning point, for the local fighter, for the bot and for a remote dash that
-`update_remote_dashes` reads from the room snapshot.
+The dash used to follow the stick mid-flight (steering at dash speed) and the
+zone was drawn from the start to wherever the fighter now was, so it turned
+into hitbox remnants that stretched after him. The dash is again a burst in the
+direction locked at the start (the stick only turns his face), the strip ends
+where the flight ended - dash_travel freezes at the dash end - and the zone for
+the bot and for a remote player works the same way.
 
 The test compiles the real game scripts (game/game.c) with the host geometry and
-stub runtime, draws ability hitboxes for a player dash, a turned dash, a bot dash
-and a dash of a remote player, and counts the recorded draw commands. Run from
-the repository root after python3 gen.py:
+stub runtime. It checks the steering lock through move_player itself and counts
+the recorded draw commands of the zone strips. Run from the repository root
+after python3 gen.py:
 
     python3 tools/test_dash_hitbox.py
 """
@@ -71,18 +71,45 @@ int main(void) {
     game_state = ST_SOLO;
     ds_fn_init_game();
     dt = 1.0 / 60.0;
+    frame_open = 1;
 
-    /* Player dash to the right: 400 px traveled, the whole 382.5 px path. */
+    /* The flight is a burst in the direction locked at the start: with the
+     * stick pulled down while dashing right the direction never turns, the
+     * fighter never slides sideways and dash_travel matches the flight. */
+    ds_fn_reset_battle();
+    player->x = 500; player->y = 400; player->angle = 0;
+    joy.dx = 0; joy.dy = 1;
+    ds_fn_start_dash_now();
+    for (int i = 0; i < 20; i++) { ds_fn_move_player(); ds_fn_tick_dash(); }
+    printf("dash with the stick down: dir=(%.2f,%.2f) pos=(%.0f,%.0f) travel=%.1f\n",
+           dash_dx, dash_dy, player->x, player->y, dash_travel);
+    check(fabs(dash_dx - 1) < 1e-6 && fabs(dash_dy) < 1e-6,
+          "the dash direction turned mid-flight (steering)");
+    check(fabs(player->y - 400) < 1e-6,
+          "the dash slid sideways with the stick (steering)");
+    check(fabs((player->x - dash_x0) - dash_travel) < 1e-6,
+          "dash_travel does not match the flight");
+    check(fabs(dash_travel - 20 * azum_dash_speed * dt) < 1e-3,
+          "the dash does not fly at the locked dash speed");
+    /* The flight closes with its window and dash_travel freezes at its end. */
+    int frames = 20;
+    while (dash_active > 0 && frames < 60) { ds_fn_move_player(); ds_fn_tick_dash(); frames++; }
+    check(dash_active == 0, "the dash did not close with its window");
+    check(fabs(dash_travel - azum_dash_speed * azum_dash_time) < 0.5,
+          "dash_travel did not freeze at the end of the flight");
+    joy.dx = 0; joy.dy = 0;
+
+    /* The zone is one strip over the travelled part of the flight. The fighter
+     * has walked on past the dash end: the strip still ends where the flight
+     * ended and does not stretch after him. */
     dash_active = 1; dash_box_a = 1;
     dash_x0 = 300; dash_y0 = 400; dash_dx = 1; dash_dy = 0;
-    player->x = 700; player->y = 400;
-    frame_open = 1; cmd_n = 0;
+    dash_travel = 382.5;
+    player->x = 900; player->y = 400;
+    cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
     double pr = ds_fn_dash_hit_radius_solo();
-    double path = azum_dash_speed * azum_dash_time;
-    double travel = player->x - dash_x0;
-    if (travel > path) travel = path;
     check(n_rot == 1, "player dash: no zone strip");
     check(n_rect == 0 && n_round == 0, "player dash: cells or rounded plates");
     check(n_line == 0 && n_circle == 0, "player dash: capsule or circle instead of a strip");
@@ -92,50 +119,59 @@ int main(void) {
         found = 1;
         check(fabs(cmds[k].v.rot.h - 2 * pr) < 1e-3, "strip width is not the damage diameter");
         check(fabs(cmds[k].v.rot.y - (400 - pr)) < 1e-3, "strip is off the dash axis");
-        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (dash_x0 + travel / 2)) < 1e-3,
+        check(fabs(cmds[k].v.rot.w - dash_travel) < 1e-3, "strip length is not the travelled length");
+        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (dash_x0 + dash_travel / 2)) < 1e-3,
               "strip does not cover the travelled segment");
+        check(cmds[k].v.rot.x + cmds[k].v.rot.w < player->x - 1,
+              "strip stretches after the fighter (remnant)");
     }
     check(found, "player dash: strip not found");
 
-    /* Turned dash: the zone starts where the turn happened and runs along the new
-     * direction, so the strip turns with the fighter instead of staying on the
-     * direction the dash was started with. */
-    dash_active = 1; dash_box_a = 1;
-    dash_x0 = 300; dash_y0 = 400; dash_dx = 0; dash_dy = 1;
-    player->x = 300; player->y = 650;
-    double ttravel = player->y - dash_y0;
-    if (ttravel > path) ttravel = path;
+    /* Fade-out in place: the flight is over and the fighter has walked far
+     * away, the fading zone must stay frozen where the flight ended. */
+    dash_active = 0; dash_box_a = 1;
+    player->x = 1100; player->y = 430;
     cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
-    check(n_rot == 1, "turned dash: no zone strip");
+    check(n_rot == 1, "dash fade: no zone strip");
     found = 0;
     for (size_t k = 0; k < cmd_n; k++) {
         if (cmds[k].t != DS_CMD_RECT_ROT || cmds[k].v.rot.c != 0x60000000u) continue;
         found = 1;
-        check(fabs(cmds[k].v.rot.ang - atan2(1.0, 0.0)) < 1e-3, "turned dash: strip did not turn");
-        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - 300) < 1e-3,
-              "turned dash: strip is not on the leg");
-        check(fabs((cmds[k].v.rot.y + cmds[k].v.rot.h / 2) - (dash_y0 + ttravel / 2)) < 1e-3,
-              "turned dash: strip does not cover the leg from the turning point");
+        check(fabs(cmds[k].v.rot.w - dash_travel) < 1e-3, "dash fade: the strip changed length");
+        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (dash_x0 + dash_travel / 2)) < 1e-3,
+              "dash fade: the strip end moved with the fighter");
     }
-    check(found, "turned dash: strip not found");
+    check(found, "dash fade: strip not found");
 
-    /* Bot dash in solo: same strip, drawn backwards. */
+    /* Bot dash in solo: the same strip backwards from his frozen end. */
     dash_active = 0; dash_box_a = 0;
     enemy_dash_active = 1; edash_box_a = 1;
     enemy_dash_x0 = 1100; enemy_dash_y0 = 400; enemy_dash_dx = -1; enemy_dash_dy = 0;
-    enemy->x = 800; enemy->y = 400;
+    enemy_dash_travel = 292.5;
+    enemy->x = 807.5; enemy->y = 400;
     cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
     check(n_rot == 1 && n_rect == 0, "bot dash: the zone is not one strip");
+    found = 0;
+    for (size_t k = 0; k < cmd_n; k++) {
+        if (cmds[k].t != DS_CMD_RECT_ROT || cmds[k].v.rot.c != 0x60000000u) continue;
+        found = 1;
+        check(fabs(cmds[k].v.rot.w - enemy_dash_travel) < 1e-3,
+              "bot dash: strip length is not his travelled length");
+        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (1100 - enemy_dash_travel / 2)) < 1e-3,
+              "bot dash: strip does not cover the travelled part backwards");
+    }
+    check(found, "bot dash: strip not found");
     enemy_dash_active = 0; edash_box_a = 0;
 
-    /* Remote dash in online: the traveled part of the snapshot is drawn. */
+    /* Remote dash in online: the travelled part of the snapshot is drawn. */
     game_state = ST_ONLINE;
     /* The net_slot() stub returns 0, so slot 1 is a remote player. */
     int slot = 1;
+    double rtravel = 250;
     arr_set(rdash_box_a, slot, 1);
     arr_set(remote_dash, slot * dash_fields + 2, 300);
     arr_set(remote_dash, slot * dash_fields + 3, 200);
@@ -144,7 +180,7 @@ int main(void) {
     arr_set(remote_dash, slot * dash_fields + 6, 0);
     /* The leg the remote fighter is on, as update_remote_dashes reads it from the
      * room snapshot. */
-    arr_set(remote_dash, slot * dash_fields + 8, travel);
+    arr_set(remote_dash, slot * dash_fields + 8, rtravel);
     cmd_n = 0;
     ds_fn_draw();
     count_hitboxes();
@@ -153,7 +189,8 @@ int main(void) {
     for (size_t k = 0; k < cmd_n; k++) {
         if (cmds[k].t != DS_CMD_RECT_ROT || cmds[k].v.rot.c != 0x60000000u) continue;
         found = 1;
-        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (300 + travel / 2)) < 1e-3,
+        check(fabs(cmds[k].v.rot.w - rtravel) < 1e-3, "remote dash: strip length is not the leg");
+        check(fabs((cmds[k].v.rot.x + cmds[k].v.rot.w / 2) - (300 + rtravel / 2)) < 1e-3,
               "remote dash: strip does not cover the leg from the room snapshot");
     }
     check(found, "remote dash: strip not found");
@@ -166,7 +203,7 @@ int main(void) {
     check(n_rot == 0 && n_rect == 0 && n_circle == 0 && n_line == 0 && n_round == 0,
           "the zone is drawn even with hitboxes off");
 
-    puts("dash: one strip over the leg the fighter is on (player, turned, bot, remote)");
+    puts("dash: straight locked flight, one strip that fades out in place (player, bot, remote)");
     return 0;
 }
 """
