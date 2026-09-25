@@ -82,39 +82,22 @@ public function draw_hit_circle(number x, number y, number r, number env)
     end
     circle(x,y,r,hb_zone_col(env))
 end
-public function draw_hit_line(number x1, number y1, number x2, number y2, number w, number env)
-    local number dx=x2-x1, dy=y2-y1
-    local number len=sqrt(dx*dx+dy*dy)
-    if w<=0||env<=0||len<=0 then
-        return
-    end
-    draw_hit_strip(x1,y1,dx/len,dy/len,0,len,w/2,env)
-end
-public function draw_hit_snowball(number x, number y, number dx, number dy, number t, number r, number env)
-    draw_hit_circle(x,y,r,env)
-    local number left=super_range-t*super_speed
-    if left>0 then
-        draw_hit_strip(x,y,dx,dy,0,left,r,env)
-    end
-end
-public function snow_hit_radius(number target_size)
-    return target_size*0.65+24
+-- The flying snowball: the circle that hits (snow_ball_r against the body in
+-- combat/hit_geometry.ds). Its future path is not a damage zone, so it is not
+-- drawn: the hitbox mode shows only what deals damage right now.
+public function draw_hit_snowball(number x, number y, number env)
+    draw_hit_circle(x,y,snow_ball_r,env)
 end
 public function draw_hit_snow()
     if snow_ball_a>0 then
-        local number r=snow_hit_radius(enemy.size)
-        if game_state==ST_ONLINE then
-            r=snow_hit_radius(player.size)
-        end
-        draw_hit_snowball(gift.x,gift.y,gift.dx,gift.dy,gift.t,r,snow_ball_a)
+        draw_hit_snowball(gift.x,gift.y,snow_ball_a)
     end
     if snow_boom_a>0 then
         draw_hit_circle(boom_x,boom_y,super_radius,snow_boom_a)
     end
     if game_state==ST_SOLO then
         if esnow_ball_a>0 then
-            local number er=snow_hit_radius(player.size)
-            draw_hit_snowball(enemy_gift.x,enemy_gift.y,enemy_gift.dx,enemy_gift.dy,enemy_gift.t,er,esnow_ball_a)
+            draw_hit_snowball(enemy_gift.x,enemy_gift.y,esnow_ball_a)
         end
         if esnow_boom_a>0 then
             draw_hit_circle(enemy_boom_x,enemy_boom_y,super_radius,esnow_boom_a)
@@ -130,8 +113,7 @@ public function draw_hit_snow()
     while s<max_players do
         local number b=s*snow_fields
         if arr_get(rsnow_ball_a,s)>0 then
-            local number rr=snow_hit_radius(player.size)
-            draw_hit_snowball(arr_get(remote_snow,b+3),arr_get(remote_snow,b+4),net_player_snow_dx(s),net_player_snow_dy(s),arr_get(remote_snow,b+2),rr,arr_get(rsnow_ball_a,s))
+            draw_hit_snowball(arr_get(remote_snow,b+3),arr_get(remote_snow,b+4),arr_get(rsnow_ball_a,s))
         end
         if arr_get(rsnow_boom_a,s)>0 then
             draw_hit_circle(arr_get(remote_snow,b+6),arr_get(remote_snow,b+7),super_radius,arr_get(rsnow_boom_a,s))
@@ -190,17 +172,18 @@ public function draw_hit_dash()
         s=s+1
     end
 end
-public function draw_hit_universe_frame(number env)
-    local number w=7
-    draw_hit_line(0,0,screen_w,0,w,env)
-    draw_hit_line(0,screen_h,screen_w,screen_h,w,env)
-    draw_hit_line(0,0,0,screen_h,w,env)
-    draw_hit_line(screen_w,0,screen_w,screen_h,w,env)
+-- The universe collapse damages everyone on the arena wherever he stands
+-- (universe_collapse), so its zone is the whole arena. The old thin frame and
+-- the circle at the cast point looked like a small zone that could be dodged.
+public function draw_hit_universe_zone(number env)
+    if show_hitboxes==0||hb_zone_bytes(env)<1 then
+        return
+    end
+    rect(0,0,screen_w,screen_h,hb_zone_col(env))
 end
 public function draw_hit_universe()
     if universe_box_a>0 then
-        draw_hit_universe_frame(universe_box_a)
-        draw_hit_circle(universe_x,universe_y,60,universe_box_a)
+        draw_hit_universe_zone(universe_box_a)
     end
     if game_state!=ST_ONLINE then
         return
@@ -210,10 +193,8 @@ public function draw_hit_universe()
     end
     local number s=0
     while s<max_players do
-        local number b=s*universe_fields
         if s!=net_slot()&&arr_get(runiverse_box_a,s)>0 then
-            draw_hit_universe_frame(arr_get(runiverse_box_a,s))
-            draw_hit_circle(arr_get(remote_universe,b+2),arr_get(remote_universe,b+3),60,arr_get(runiverse_box_a,s))
+            draw_hit_universe_zone(arr_get(runiverse_box_a,s))
         end
         s=s+1
     end

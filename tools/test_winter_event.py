@@ -40,7 +40,6 @@ void arr_set(DSArray *a, double i, double v) {
 }
 double arr_len(DSArray *a) { return a ? a->len : 0; }
 /* Quests: this test needs no native state, only safe stubs. */
-double net_quest_now(void) { return 0; }
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
                           double t2, double p2, double n2, double x2) {

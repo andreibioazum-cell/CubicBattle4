@@ -73,6 +73,9 @@ public function start_dash_now()
     dash_hit=0
     dash_x0=player.x
     dash_y0=player.y
+    -- The strip and its damage start from zero length, not from the end of
+    -- the previous dash.
+    dash_travel=0
     dash_cd=azum_dash_cd
     dash_seq=dash_seq+1
     dash_pub=0
@@ -171,8 +174,7 @@ public function update_gift()
         end
     else
         snow_chip_enemy_turrets()
-        local number hx=gift.x-enemy.x, hy=gift.y-enemy.y, hd=sqrt(hx*hx+hy*hy)
-        if hd<enemy.size*0.65+24 then
+        if circle_hits_enemy(gift.x,gift.y,snow_ball_r)==1 then
             touched=1
         end
         if gift.t>super_range/super_speed then
@@ -187,7 +189,7 @@ public function update_gift()
     boom_y=gift.y
     boom_t=boom_time
     if game_state!=ST_ONLINE then
-        if dist(boom_x,boom_y,enemy.x,enemy.y)<=super_radius&&enemy_revive_prot<=0 then
+        if circle_hits_enemy(boom_x,boom_y,super_radius)==1&&enemy_revive_prot<=0 then
             freeze_enemy(santa_freeze_time_for(player_level),super_freeze_slow)
             enemy_apply_damage(santa_super_damage)
         end

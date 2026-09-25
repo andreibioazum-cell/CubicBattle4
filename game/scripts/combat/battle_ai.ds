@@ -136,7 +136,7 @@ public function update_enemy()
     if d<1 then
         d=1
     end
-    local number pr=player.size*0.65, reach=enemy_punch_reach+pr
+    local number pr=player_half(), reach=enemy_punch_reach+pr
     if enemy.state==1 then
         enemy_punch_x=enemy.x
         enemy_punch_y=enemy.y
@@ -168,35 +168,33 @@ public function update_enemy()
         enemy_punch_dy=sin(enemy.angle)
         enemy.state_time=enemy.state_time-dt
         if enemy.hit==0 then
-            local number target=punch_resolve_target(enemy.x,enemy.y,cos(enemy.angle),sin(enemy.angle),player.size*0.65)
-            if target==0||(target>=1&&target<=turret_max) then
-                if rand()%100 >= enemy_human_miss*100 || rand()%100 < 30 then
-                    enemy.hit=1
-                    if target==0 then
-                        if revive_prot<=0 then
-                            take_damage(class_punch_damage_for(enemy_class,enemy_level))
-                            if enemy_class==CLASS_SANTA then
-                                if player_poison<=0 then
-                                    player_poison_tick=santa_poison_tick_interval
-                                end
-                                player_poison=santa_poison_time_for(enemy_level)
-                                player_poison_damage=santa_poison_damage_for(enemy_level)
-                            end
-                            ds_log("enemy punch! hp %g",player.hp)
-                            if finished!=0 then
-                                return
-                            end
+            -- The zone drawn for his swing (draw_enemy_hitbox) is the one that
+            -- hits: the same latched pose, reach and width. The old random
+            -- "human miss" roll let a zone that touched the player do nothing.
+            local number target=punch_resolve_target(enemy_punch_x,enemy_punch_y,enemy_punch_dx,enemy_punch_dy,enemy_punch_reach,enemy_punch_width)
+            if target==0 then
+                enemy.hit=1
+                if revive_prot<=0 then
+                    take_damage(class_punch_damage_for(enemy_class,enemy_level))
+                    if enemy_class==CLASS_SANTA then
+                        if player_poison<=0 then
+                            player_poison_tick=santa_poison_tick_interval
                         end
-                    else
-                        damage_turret(target-1,class_punch_damage_for(enemy_class,enemy_level))
-                        if enemy_apply_damage(turret_counter_damage)==1 then
-                            return
-                        end
-                        ds_log("enemy punch! turret hp %g",arr_get(turret_hp,target-1))
+                        player_poison=santa_poison_time_for(enemy_level)
+                        player_poison_damage=santa_poison_damage_for(enemy_level)
                     end
-                else
-                    ds_log("enemy miss (human)")
+                    ds_log("enemy punch! hp %g",player.hp)
+                    if finished!=0 then
+                        return
+                    end
                 end
+            else if target>=1&&target<=turret_max then
+                enemy.hit=1
+                damage_turret(target-1,class_punch_damage_for(enemy_class,enemy_level))
+                if enemy_apply_damage(turret_counter_damage)==1 then
+                    return
+                end
+                ds_log("enemy punch! turret hp %g",arr_get(turret_hp,target-1))
             end
         end
         if enemy.state_time<=0 then

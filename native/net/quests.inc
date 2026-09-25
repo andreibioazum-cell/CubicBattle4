@@ -1,6 +1,7 @@
 /* Quest state survives leaving the game: 3 slots of {type, progress, target,
- * timestamp of the next one}. The timestamp is real time in epoch seconds, so a
- * five minute countdown keeps running while the game is closed. */
+ * spare stamp}. The stamp was the end of a five minute cooldown between
+ * quests; the cooldown is gone and the scripts keep it at 0, but the file
+ * format stays so old saves still load. */
 #define QUESTS_FILE "quests.dat"
 #define QUEST_SLOTS 3
 #define QUEST_FIELDS 4
@@ -8,8 +9,6 @@
 static double quest_state[QUEST_SLOTS * QUEST_FIELDS] = {0};
 static int quest_state_loaded = 0;
 static int quest_state_valid = 0;
-
-double net_quest_now(void) { return (double)time(NULL); }
 
 static void quest_state_read(void) {
     char path[320]; FILE *f;

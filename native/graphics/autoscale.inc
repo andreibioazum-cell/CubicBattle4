@@ -15,10 +15,19 @@
  * gets coarser fast (4 misses in a row or 4 of 24 frames) so a weak phone does
  * not stay at 20-35 fps for seconds, while a sharper probe is allowed only
  * after 300 clean frames and not more often than every 15 s. Two failed probes
- * pin the current scale for the session: steady softness beats visible
- * sharpness swings and a recreated offscreen every few seconds. History is
- * dropped for every new window, since the first frames after returning to the
- * app are always slow. */
+ * pin the current scale until the next window: steady softness beats visible
+ * sharpness swings and a recreated offscreen every few seconds.
+ *
+ * Every new window (the start, a return to the app, a second entry into the
+ * game in the same process) starts sharp again, at 1:1 with no pin: all of
+ * this state is static and used to outlive the window, so a scale that had
+ * coarsened once - and was pinned there by two failed probes - came back on
+ * the next entry, and the slow first frames of that entry pushed it further,
+ * which made the game super pixelated after a re-entry. Loading hitches (one
+ * long frame while textures decode and upload) are not a GPU limit and are not
+ * counted: only frames of the vsync-miss rhythm (20-100 ms) are misses. The
+ * scale gets coarser one step at a time, so it stops at the sharpest scale that
+ * holds the rate instead of jumping 1-3-5. */
 static int gfx_auto_scale = 1;
 static int gfx_cooldown = 0;        /* frames before any decision after a change */
 static int gfx_finer_cooldown = 0;  /* frames before the next sharper probe */
@@ -31,14 +40,30 @@ static int gfx_miss_streak = 0, gfx_win_frames = 0, gfx_win_misses = 0;
 
 int ds_graphics_pixel_scale(void) { return gfx_auto_scale; }
 
-/* New window (start, return to the app, resize): the old timings are stale. */
+/* Frames after a new window that are not judged: the first second and a half
+ * of an entry loads textures, uploads them and warms the pipelines. */
+#define GFX_WARMUP_FRAMES 90
+/* A frame longer than this is a hitch (loading, a GC pause of the system), not
+ * the rhythm of a GPU that misses vsync. */
+#define GFX_HITCH_SEC 0.100
+
+/* New window (start, return to the app, re-entry, resize): the old timings and
+ * the old verdicts are stale, so the scale starts sharp again. */
 static void gfx_autoscale_new_window(void) {
-    /* Judge performance early: on a weak GPU a second of full size frames feels
-     * like a frozen interface. */
-    gfx_cooldown = 15;
+    if (gfx_auto_scale != 1) ds_log("graphics: internal resolution 1/1 (new window)");
+    gfx_auto_scale = 1;
+    gfx_cooldown = GFX_WARMUP_FRAMES;
+    gfx_finer_cooldown = 0;
     gfx_probe_finer = 0;
     gfx_probe_left = 0;
+    gfx_probe_fails = 0;
+    gfx_finer_off = 0;
     gfx_miss_streak = 0; gfx_win_frames = 0; gfx_win_misses = 0; gfx_clean = 0;
+}
+/* The whole game is shut down (main.c leaves android_main): the next entry in
+ * the same process must not inherit anything. */
+static void gfx_autoscale_reset(void) {
+    gfx_autoscale_new_window();
 }
 
 static void gfx_set_scale(int s, int cooldown) {
@@ -63,6 +88,7 @@ static int gfx_report_frames;
 /* Frame interval of the main loop in seconds, reported after every frame. */
 void ds_graphics_report_frame_interval(double sec) {
     if (!(sec > 0.0) || sec > 0.25) return;   /* pause, background, debugger */
+    if (sec > GFX_HITCH_SEC) { gfx_clean = 0; return; }   /* loading hitch */
     gfx_report_acc += sec;
     gfx_report_frames++;
     if (gfx_report_acc >= GFX_REPORT_SEC) {
@@ -105,10 +131,10 @@ void ds_graphics_report_frame_interval(double sec) {
     if (gfx_miss_streak >= 4 || gfx_win_frames >= 24) {
         int bad = gfx_miss_streak >= 4 || gfx_win_misses >= 4;
         if (bad) {
-            /* A recreated offscreen waits for the GPU and hitches by itself, so
-             * two steps are skipped at once (1-3-5-6): at most three hitches
-             * instead of five while the scale settles. */
-            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 2, 12);
+            /* One step at a time: the scale stops at the sharpest one that
+             * holds the rate. The old double step (1-3-5) overshot into a far
+             * blurrier image than the device needed. */
+            if (gfx_auto_scale < 6) gfx_set_scale(gfx_auto_scale + 1, 12);
         } else if (gfx_win_misses == 0 && gfx_clean >= 300 && gfx_auto_scale > 1 &&
                    gfx_finer_cooldown == 0 && !gfx_finer_off) {
             gfx_probe_finer = 1;

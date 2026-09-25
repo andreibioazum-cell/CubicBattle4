@@ -173,10 +173,7 @@ double net_load_playtime(void);
 void net_save_playtime(double seconds);
 void net_add_playtime(double delta);
 
-/* Quests: the state survives a restart (native/net/quests.inc), and
- * net_quest_now gives the current epoch so the countdown keeps running while the
- * game is closed. */
-double net_quest_now(void);
+/* Quests: the state survives a restart (native/net/quests.inc). */
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
                           double t2, double p2, double n2, double x2);

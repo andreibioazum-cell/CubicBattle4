@@ -594,6 +594,7 @@ static struct { int init_ok; int frame1_ok; int frame2_ok; int frame3_ok; int fr
                 unsigned blit_src_w, blit_src_h, blit_dst_w, blit_dst_h;
                 unsigned blit2_src_w, blit2_src_h, blit2_dst_w, blit2_dst_h;
                 int scale0, scale_miss, scale_probe, scale_rollback, scale_still;
+                int scale_hitch, scale_new_window, pin_new_window, scale_reset, pin_reset;
                 unsigned probe_off_w, probe_off_h;
                 unsigned probe_blit_src_w, probe_blit_src_h, probe_blit_dst_w, probe_blit_dst_h;
                 /* present modes and behaviour on SUBOPTIMAL */
@@ -792,16 +793,21 @@ static void *test_thread(void *arg) {
     g_res.paced_ms = (unsigned)(test_ms() - pace_t0);
     vk_pace_on = 0;
     vk_pace_next_ns = 0;
-    /* Internal render scale (rules from autoscale.inc): a vsync miss (a frame
-     * longer than 20 ms) moves the scale two steps at once (1, 3, 5, 6), a
+    /* Internal render scale (rules from autoscale.inc): a run of vsync misses
+     * (frames of 20-100 ms) moves the scale one step (1, 2, 3 ... 6), a
      * sharper probe is a single step back and is allowed only after 300 clean
-     * frames, and a miss during a probe rolls back and blocks new probes. There
-     * is no button or setting for any of this. */
+     * frames, and a miss during a probe rolls back and blocks new probes until
+     * the next window. There is no button or setting for any of this. */
     g_res.scale0 = ds_graphics_pixel_scale();
-    /* Every swapchain rebuild drops the controller history and adds a one
-     * second cooldown: the first frames of a new window are always slow. */
-    for (int i = 0; i < 60; i++) ds_graphics_report_frame_interval(0.0167);
-    for (int i = 0; i < 10; i++) ds_graphics_report_frame_interval(0.0333);
+    /* Every new window starts with a warm-up of GFX_WARMUP_FRAMES that are not
+     * judged: the first frames of an entry load and upload textures. */
+    for (int i = 0; i < GFX_WARMUP_FRAMES + 10; i++) ds_graphics_report_frame_interval(0.0167);
+    /* Loading hitches (one long frame each) are not a GPU limit. */
+    for (int i = 0; i < 40; i++) ds_graphics_report_frame_interval(0.150);
+    g_res.scale_hitch = ds_graphics_pixel_scale();
+    /* Two runs of misses: 1 -> 2 -> 3, one step each (4 misses, then the 12
+     * frame cooldown of the change swallows the rest of the run). */
+    for (int i = 0; i < 30; i++) ds_graphics_report_frame_interval(0.0333);
     g_res.scale_miss = ds_graphics_pixel_scale();
     g_res.frame4_ok = ds_graphics_begin_frame(&b);
     rect(0, 0, 10, 10, 0xff123456);
@@ -829,6 +835,18 @@ static void *test_thread(void *arg) {
      * frames (90 cooldown plus 315) still do not allow a new probe. */
     for (int i = 0; i < 405; i++) ds_graphics_report_frame_interval(0.0167);
     g_res.scale_still = ds_graphics_pixel_scale();
+    /* A new window (a return to the app or a second entry) starts sharp again:
+     * the coarse scale and the pin of the failed probe used to outlive it,
+     * which made the game super pixelated after a re-entry. */
+    gfx_autoscale_new_window();
+    g_res.scale_new_window = ds_graphics_pixel_scale();
+    g_res.pin_new_window = gfx_finer_off || gfx_probe_fails;
+    gfx_auto_scale = 5; gfx_finer_off = 1; gfx_probe_fails = 2;
+    gfx_autoscale_reset();
+    g_res.scale_reset = ds_graphics_pixel_scale();
+    g_res.pin_reset = gfx_finer_off || gfx_probe_fails;
+    /* The rest of the test runs at 1/3 as before. */
+    gfx_auto_scale = 3; gfx_finer_off = 1;
 
     /* --- SUBOPTIMAL on every frame with an unchanged surface ---
      * That is what a real Android driver answers with preTransform IDENTITY and
@@ -918,7 +936,10 @@ int main(void) {
     }
     if (!g_res.frame4_ok) { fail = 1; printf("FAIL: begin_frame of the autoscaled frame returned 0\n"); }
     if (g_res.scale0 != 1) { fail = 1; printf("FAIL: initial autoscale is %d, expected 1\n", g_res.scale0); }
-    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: after the vsync misses the autoscale is %d, expected 3 (two steps at once)\n", g_res.scale_miss); }
+    if (g_res.scale_hitch != 1) { fail = 1; printf("FAIL: loading hitches coarsened the autoscale to %d, expected 1\n", g_res.scale_hitch); }
+    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: after two runs of vsync misses the autoscale is %d, expected 3 (one step per run)\n", g_res.scale_miss); }
+    if (g_res.scale_new_window != 1 || g_res.pin_new_window) { fail = 1; printf("FAIL: a new window kept the autoscale at %d (pin %d), expected 1:1 and no pin\n", g_res.scale_new_window, g_res.pin_new_window); }
+    if (g_res.scale_reset != 1 || g_res.pin_reset) { fail = 1; printf("FAIL: the shutdown reset kept the autoscale at %d (pin %d), expected 1:1 and no pin\n", g_res.scale_reset, g_res.pin_reset); }
     if (g_res.off2_w != 240 || g_res.off2_h != 426) {
         fail = 1; printf("FAIL: autoscale offscreen %ux%u, expected 240x426 (a third of the 720x1280 window)\n", g_res.off2_w, g_res.off2_h);
     }
@@ -1024,8 +1045,9 @@ int main(void) {
     }
     if (g_violations) { fail = 1; printf("FAIL: the strict driver caught an invalid create-info: %s\n", g_violation_msg); }
     if (!fail) {
-        printf("PASS: init, frames and autoscale (vsync misses coarsen to 1/3, the finer probe "
-               "goes to 1/2, a miss on the probe rolls back and holds) plus a swapchain format "
+        printf("PASS: init, frames and autoscale (hitches do not count, vsync misses coarsen one "
+               "step at a time to 1/3, the finer probe goes to 1/2, a miss on the probe rolls back "
+               "and holds, a new window and a shutdown start sharp again) plus a swapchain format "
                "change; frame steps: SUBOPTIMAL with an unchanged surface does not rebuild the "
                "swapchain, the present mode goes MAILBOX -> FIFO_RELAXED -> FIFO, and the platform "
                "is asked for 60 fps once per window; pNext and flags are clean, %d pipelines "

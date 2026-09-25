@@ -93,7 +93,7 @@ public function update_remote_punches()
             if arr_get(remotes,s*remote_fields+5)==0 then
                 clear_remote_punch(s)
             else
-                local number target=punch_resolve_target(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),0)
+                local number target=punch_resolve_target(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width)
                 if target==0||(target>=1&&target<=turret_max) then
                     local number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
                     if target==0 then
@@ -173,7 +173,7 @@ public function update_remote_snow()
                 arr_set(remote_snow,b+3,x)
                 arr_set(remote_snow,b+4,y)
                 local number hit=0
-                if dist(x,y,player.x,player.y)<player.size*0.65+24 then
+                if circle_hits_player(x,y,snow_ball_r)==1 then
                     hit=1
                 end
                 if t>super_range/super_speed then
@@ -184,7 +184,7 @@ public function update_remote_snow()
                     arr_set(remote_snow,b+5,boom_time)
                     arr_set(remote_snow,b+6,x)
                     arr_set(remote_snow,b+7,y)
-                    if dist(x,y,player.x,player.y)<=super_radius then
+                    if circle_hits_player(x,y,super_radius)==1 then
                         local number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
                         if rcls==CLASS_SANTA then
                             freeze_time=santa_freeze_time_for(rlevel)

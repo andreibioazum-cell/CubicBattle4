@@ -22,7 +22,9 @@ public function tick_hitbox_fades()
         i=i+1
     end
     if game_state==ST_SOLO then
-        local number epunch=enemy.state==1||enemy.state==2
+        -- Only the strike (state 2) hits, so only the strike shows a zone: the
+        -- wind-up used to draw a zone that could not deal damage yet.
+        local number epunch=enemy.state==2
         enemy_punch_a=hb_fade(enemy_punch_a,hb_live(epunch),aim_fade_in,aim_fade_out)
         edash_box_a=hb_fade(edash_box_a,hb_live(enemy_dash_active),hitbox_fade_in,hitbox_fade_out)
         esnow_ball_a=hb_fade(esnow_ball_a,hb_live(enemy_gift.active),hitbox_fade_in,hitbox_fade_out)

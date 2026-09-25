@@ -15,7 +15,8 @@ Run from the repository root (needs cc and a generated game/game.c):
 
 Arguments: a directory for the PNGs (created on demand) and screen names:
 classes (class cards with their mottos), settings (8 rows), lobby (main menu),
-promo (the promo code screen) and card (a picked up promo card in battle).
+promo (the promo code screen), card (a picked up promo card in battle) and
+hitboxes (the hitbox mode: drawn zones are exactly the damage zones).
 Without screen names classes and settings are drawn. Network and sound calls are
 stubbed, so progress values are set by hand in main().
 
@@ -416,7 +417,20 @@ int main(int argc, char **argv) {
         card_open = 1; card_code = "KXM7";
         ds_fn_draw_card_open();
     }
-    else { fprintf(stderr, "unknown screen: %s (valid: classes/settings/lobby/warn/warn_fade/promo/card)\n", screen); return 2; }
+    else if (strcmp(screen, "hitboxes") == 0) {
+        /* The hitbox mode in a solo battle: our punch strip just reaches the
+         * bot's cube (turned by 30 degrees) and his snowball just touches ours.
+         * What is drawn is exactly what hits (combat/hit_geometry.ds). */
+        game_state = ST_SOLO; ds_fn_init_game(); show_hitboxes = 1;
+        enemy_class = CLASS_ORDINARY;
+        player->x = 500; player->y = 360; player->angle = 0;
+        enemy->x = 653; enemy->y = 380; enemy->angle = 0.5236;
+        punch->x = player->x; punch->y = player->y; punch->dx = 1; punch->dy = 0;
+        punch->active = 1; punch_left = punch_time; aim_a = 1;
+        enemy_gift->active = 1; enemy_gift->x = 445; enemy_gift->y = 360; enemy_gift->t = 0; esnow_ball_a = 1;
+        ds_fn_draw_game();
+    }
+    else { fprintf(stderr, "unknown screen: %s (valid: classes/settings/lobby/warn/warn_fade/promo/card/hitboxes)\n", screen); return 2; }
     if (!write_png(out, &g_buf)) { fprintf(stderr, "cannot write %s\n", out); return 1; }
     printf("%s -> %s (%dx%d)\n", screen, out, W, H);
     return 0;
@@ -500,7 +514,7 @@ def compile_preview(temp: Path) -> Path:
 
 def main(argv: list[str]) -> int:
     args = argv[1:]
-    known = SCREENS + ("lobby", "promo", "card")
+    known = SCREENS + ("lobby", "promo", "card", "hitboxes")
     # the first argument is the PNG directory unless it names a screen
     if args and args[0] not in known:
         out_dir = Path(args[0])

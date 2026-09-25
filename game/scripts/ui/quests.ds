@@ -29,9 +29,10 @@ public function quest_init()
     end
     quest_save()
 end
--- Quest state (type, progress, target, stamp of the next spawn) is stored
--- natively and survives a restart; net_quest_now() is real time, so the five
--- minute count runs while the game is closed.
+-- Quest state (type, progress, target and a spare stamp) is stored natively
+-- and survives a restart. There is no cooldown any more: a finished quest is
+-- replaced by a new one at once. The stamp slot stays in the save format and
+-- is always 0.
 public function quest_save()
     net_save_quest_state(
         arr_get(quest_type, 0), arr_get(quest_prog, 0), arr_get(quest_need, 0), arr_get(quest_next, 0),
@@ -52,51 +53,40 @@ public function quest_restore()
         i = i + 1
     end
 end
-public function quest_cooldown_left(number i)
-    if arr_get(quest_type, i) != -1 then
-        return 0
-    end
-    local number left = arr_get(quest_next, i) - net_quest_now()
-    if left < 0 then
-        return 0
-    end
-    return left
-end
 public function quest_load()
-    -- With a save the quests are restored whole (type, progress, target,
-    -- cooldown), otherwise new ones are made, so they survive a restart.
+    -- With a save the quests are restored whole (type, progress, target),
+    -- otherwise new ones are made, so they survive a restart.
     if net_quest_has_state() == 1 then
         quest_restore()
     else if arr_len(quest_type) < quest_count then
         quest_init()
     end
-    -- Expired cooldowns roll over: a finished stamp gives a new quest.
-    local number now = net_quest_now()
-    local number i = 0
-    while i < quest_count do
-        if arr_get(quest_type, i) == -1 && arr_get(quest_next, i) > 0 && now >= arr_get(quest_next, i) then
-            quest_roll_new(i)
-            arr_set(quest_next, i, 0)
-        end
-        i = i + 1
+    if quest_fill_empty() == 1 then
+        quest_save()
     end
-    quest_save()
 end
--- Rolls expired cooldowns over (called from update): a new quest appears by
--- itself once quest_respawn real seconds have passed.
-public function quest_tick()
-    local number now = net_quest_now()
-    local number i = 0
+-- A slot left empty (type -1) gets a new quest at once. Saves of the older
+-- versions kept a finished quest's slot empty for a five minute cooldown; that
+-- cooldown is gone, so such a slot is filled on the next load.
+public function quest_fill_empty()
     local number changed = 0
+    local number i = 0
     while i < quest_count do
-        if arr_get(quest_type, i) == -1 && arr_get(quest_next, i) > 0 && now >= arr_get(quest_next, i) then
+        if arr_get(quest_type, i) == -1 then
             quest_roll_new(i)
+            changed = 1
+        end
+        if arr_get(quest_next, i) != 0 then
             arr_set(quest_next, i, 0)
             changed = 1
         end
         i = i + 1
     end
-    if changed == 1 then
+    return changed
+end
+-- Called from update: fills an empty slot if one ever appears.
+public function quest_tick()
+    if quest_fill_empty() == 1 then
         quest_save()
     end
 end
@@ -160,12 +150,9 @@ public function quest_complete(number idx)
     save_progress()
     quest_msg_t = msg_time
     ds_log("quest %g completed", idx)
-    -- The next quest appears after quest_respawn real seconds; the slot goes
-    -- into cooldown and the count runs even while the game is closed.
-    arr_set(quest_type, idx, -1)
-    arr_set(quest_prog, idx, 0)
-    arr_set(quest_need, idx, 1)
-    arr_set(quest_next, idx, net_quest_now() + quest_respawn)
+    -- No cooldown: the next quest takes the slot right away.
+    quest_roll_new(idx)
+    arr_set(quest_next, idx, 0)
     quest_save()
 end
 public function quest_on_win(number result)
@@ -215,21 +202,6 @@ public function draw_quest_card(number i)
     panel(x, y, w, ach_card_h, locked)
     local color c = panel_text(locked)
     local number t = arr_get(quest_type, i)
-    if t == -1 then
-        -- The slot is in cooldown: show how soon the next quest appears.
-        local number left = quest_cooldown_left(i)
-        local number mins = floor(left / 60)
-        if left - mins * 60 > 0 then
-            mins = mins + 1
-        end
-        if mins < 1 then
-            mins = 1
-        end
-        text_scaled(tr_quest_next_in(mins), x + card_text_pad, y + 14, c, 0.62)
-        text_scaled("", x + card_text_pad, y + 46, c, 0.46)
-        text_scaled("", x + card_text_pad, y + 70, c, 0.42)
-        return
-    end
     local string title = quest_title(t)
     local string prog = quest_progress_text(i)
     local string rew = tr_quest_reward(quest_cups, quest_candies)

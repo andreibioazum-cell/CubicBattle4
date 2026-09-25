@@ -352,6 +352,7 @@ void ds_graphics_shutdown(void) {
     vk_rebuild_tries = 0;
     ds_graphics_cancel_frame();
     ds_vk_shutdown_backend(); /* the GPU goes first, CPU pixels stay */
+    gfx_autoscale_reset();    /* the next entry starts sharp (autoscale.inc) */
     ds_release_assets();
     free(cmds); cmds = NULL; cmd_cap = 0; cmd_n = 0;
     free(geo_verts); geo_verts = NULL; geo_vcap = geo_vn = 0;

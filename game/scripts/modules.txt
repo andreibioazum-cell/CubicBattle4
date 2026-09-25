@@ -27,6 +27,7 @@ ui/menu_input.ds                  # menu navigation and taps
 
 # combat: rules, bots, abilities, network and drawing
 combat/battle_rules.ds            # class data: textures, HP, damage, poison
+combat/hit_geometry.ds            # exact hitboxes: bodies, zones, overlap tests
 combat/battle_turrets.ds          # the ebuC dispenser turrets
 combat/battle_hitscan.ds          # hit geometry of punches and dashes
 combat/battle_damage.ds           # damage, healing, stun, revive

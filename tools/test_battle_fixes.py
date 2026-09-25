@@ -150,10 +150,8 @@ double net_load_playtime(void) { return 0; }
 void net_save_playtime(double s) { (void)s; }
 void net_add_playtime(double d) { (void)d; }
 /* Quests: a controllable clock and a store for the quest state. */
-double fake_now = 0;
 static double quest_state[12] = {0};
 static int quest_state_valid = 0;
-double net_quest_now(void) { return fake_now; }
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
                           double t2, double p2, double n2, double x2) {
@@ -673,8 +671,7 @@ static void test_splash_screens(void) {
 static void test_quest_cooldown(void) {
     ds_main();
     ds_fn_quest_init();
-    /* A finished quest (type 0, target reached) and a pinned now. */
-    fake_now = 1000;
+    /* A finished quest (type 0, target reached). */
     arr_set(quest_type, 0, 0);
     arr_set(quest_prog, 0, 1);
     arr_set(quest_need, 0, 1);
@@ -684,21 +681,12 @@ static void test_quest_cooldown(void) {
     /* The reward is cut down to quest_cups and quest_candies. */
     assert(cups == cups0 + (int)quest_cups);
     assert(candies == cand0 + (int)quest_candies);
-    /* The slot went into cooldown and the stamp is stored natively, surviving a restart. */
-    assert(arr_get(quest_type, 0) == -1);
-    near(arr_get(quest_next, 0), 1000 + quest_respawn);
-    near(quest_state[3], 1000 + quest_respawn);
-    /* No new quest appears before the five minutes are up. */
-    fake_now = 1000 + quest_respawn - 1;
-    ds_fn_quest_tick();
-    assert(arr_get(quest_type, 0) == -1);
-    /* After quest_respawn real seconds a new quest appears. */
-    fake_now = 1000 + quest_respawn;
-    ds_fn_quest_tick();
+    /* No cooldown: a new quest takes the slot at once. */
     assert(arr_get(quest_type, 0) != -1);
+    near(arr_get(quest_prog, 0), 0);
     near(arr_get(quest_next, 0), 0);
     near(quest_state[3], 0);
-    puts("quests: next appears after respawn, timer survives via native store");
+    puts("quests: a finished quest is replaced at once, no cooldown");
 }
 
 static void test_punch_hitbox_fades(void) {
