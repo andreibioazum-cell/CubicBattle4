@@ -11,7 +11,10 @@ before tick_dash_solo_hit ran. Both now resolve first and close after.
 
 A texture that failed to decode used to leave the zombie skin half there: the
 idle fell back to the class cube while the swing pose of the brain popped up on
-a hit. The zombie pair now loads as a pair or not at all.
+a hit. The zombie pair now loads as a pair or not at all, and so does the Azum
+pair: a missed azum.png made the fighter an ordinary cube that turned Azum on
+every punch. A load still missing after the fast retries is asked again every
+few seconds for the rest of the session.
 
 Run from the repository root after python3 gen.py:
 
@@ -33,10 +36,15 @@ MAIN = r"""
 /* The sprite loads of this test: the brain idle misses its first three asks,
  * like a decode hiccup on a cold start, and everything else lands at once. */
 static int zombie_asks = 0;
+static int fail_azum = 0, azum_asks = 0;
 int png_load(const char *name) {
     if (name && !strcmp(name, "zombie_azum.png") && zombie_asks < 3) {
         zombie_asks++;
         return 0;
+    }
+    if (name && !strcmp(name, "azum.png")) {
+        azum_asks++;
+        return fail_azum ? 0 : 1;
     }
     return 1;
 }
@@ -154,6 +162,56 @@ int main(void) {
     s0 = ds_fn_fighter_sprite(CLASS_AZUM, 0, SKIN_ZOMBIE);
     check(!strcmp(s0, "zombie_azum.png"), "the healed sprite is still not used");
     check(tex_reload_left == 0, "the retries keep asking after every load landed");
+
+    /* The Azum pair loads as a pair too. On a second start of the game on a
+     * budget phone only azum.png missed its load: the idle fell back to the
+     * black ordinary cube while azum_punch.png had landed, so the fighter
+     * looked ordinary and turned blue Azum on every punch. */
+    azum_zombie_tex_ok = 1; azum_zombie_punch_tex_ok = 1; ordinary_punch_tex_ok = 1;
+    azum_tex_ok = 0; azum_punch_tex_ok = 1;
+    s0 = ds_fn_fighter_sprite(CLASS_AZUM, 0, SKIN_NORMAL);
+    s1 = ds_fn_fighter_sprite(CLASS_AZUM, 1, SKIN_NORMAL);
+    printf("azum idle missing: idle = %s ; punch = %s\n", s0, s1);
+    check(!strcmp(s0, "ordinary.png") && !strcmp(s1, "ordinary_punch.png"),
+          "a missing Azum idle turns the fighter into Azum only while he punches");
+    azum_tex_ok = 1; azum_punch_tex_ok = 0;
+    s0 = ds_fn_fighter_sprite(CLASS_AZUM, 0, SKIN_NORMAL);
+    s1 = ds_fn_fighter_sprite(CLASS_AZUM, 1, SKIN_NORMAL);
+    printf("azum swing missing: idle = %s ; punch = %s\n", s0, s1);
+    check(!strcmp(s0, "ordinary.png") && !strcmp(s1, "ordinary_punch.png"),
+          "a missing Azum swing mixes the ordinary pose into an Azum fighter");
+    azum_tex_ok = 1; azum_punch_tex_ok = 1;
+    s0 = ds_fn_fighter_sprite(CLASS_AZUM, 0, SKIN_NORMAL);
+    s1 = ds_fn_fighter_sprite(CLASS_AZUM, 1, SKIN_NORMAL);
+    check(!strcmp(s0, "azum.png") && !strcmp(s1, "azum_punch.png"), "the whole Azum pair is not used");
+    /* An ordinary fighter never shows an Azum pose, whatever loaded. */
+    for (int mask = 0; mask < 4; mask++) {
+        azum_tex_ok = mask & 1; azum_punch_tex_ok = (mask >> 1) & 1;
+        check(strstr(ds_fn_fighter_sprite(CLASS_ORDINARY, 1, SKIN_NORMAL), "azum") == NULL &&
+              strstr(ds_fn_fighter_sprite(CLASS_ORDINARY, 0, SKIN_NORMAL), "azum") == NULL,
+              "an ordinary fighter shows an Azum sprite");
+    }
+
+    /* The fast retries last half a minute; a load that is still missing after
+     * them used to stay missing for the whole session. Now it is asked again
+     * every few seconds until it lands. */
+    azum_tex_ok = 1; azum_punch_tex_ok = 1; ordinary_punch_tex_ok = 1;
+    santa_punch_tex_ok = 1; ebuc_punch_tex_ok = 1; candy_tex_ok = 1;
+    azum_zombie_tex_ok = 1; azum_zombie_punch_tex_ok = 1;
+    azum_tex_ok = 0; fail_azum = 1;
+    tex_reload_left = 60; tex_reload_t = 0;
+    dt = 0.5;
+    for (int i = 0; i < 200; i++) ds_fn_reload_textures(); /* 100 s of misses */
+    check(azum_tex_ok == 0 && tex_reload_left == 0, "the fast retry window did not end");
+    int asks_before = azum_asks;
+    fail_azum = 0;                                          /* the store recovers */
+    for (int i = 0; i < 20 && azum_tex_ok == 0; i++) ds_fn_reload_textures();
+    printf("late recovery: azum idle ok = %g after %d more asks\n", azum_tex_ok, azum_asks - asks_before);
+    check(azum_tex_ok == 1, "a sprite that recovers after the fast window is never asked again");
+    int asks_done = azum_asks;
+    for (int i = 0; i < 40; i++) ds_fn_reload_textures();
+    check(azum_asks == asks_done, "the slow retry keeps asking after every load landed");
+    dt = 1.0 / 60.0;
 
     puts("punch and dash close with their windows, closing frames hit, sprites never mix");
     return 0;

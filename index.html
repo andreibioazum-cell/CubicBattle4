@@ -184,8 +184,8 @@ const USER_OPT  = ["ordinary_level","ordinary_levels","azum_level","azum_levels"
                    "bp","azum_skin","ach_flags","ach_revives",
                    /* Настройки игрока (settings_storage.inc): язык, хитбоксы,
                       громкость музыки и список модов. mods — строка
-                      "a.zip|b.zip", остальные числа. promo/promo_used — личный
-                      промокод из promo.inc (строка CB4-XXXX-XXXX-XXXX + флаг). */
+                      "a.zip|b.zip", остальные числа. promo/promo_used —
+                      код последней карточки из promo.inc (3 буквы + 1 цифра) + флаг награды. */
                    "lang","hitboxes","musicvol","mods_n","mods",
                    "promo","promo_used"];
 const ROOM_OK   = ["players","chat"];
@@ -515,9 +515,9 @@ function analyze(){
         if(typeof v !== "string" || v.length > 400)
           add("unknown_field", `users/${nick}/mods`, "список модов не строка или длиннее 400", JSON.stringify(v).slice(0,60));
       } else if(f === "promo"){
-        /* Промокод (promo.inc) — вторая строка в профиле: CB4-XXXX-XXXX-XXXX. */
-        if(typeof v !== "string" || !/^CB4-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/.test(v))
-          add("unknown_field", `users/${nick}/promo`, "промокод не похож на CB4-XXXX-XXXX-XXXX", JSON.stringify(v).slice(0,60));
+        /* Код последней карточки (promo.inc): случайные 3 буквы и 1 цифра, например KXM7. */
+        if(typeof v !== "string" || !/^[A-Z0-9]{4}$/.test(v) || (v.match(/[0-9]/g) || []).length !== 1)
+          add("unknown_field", `users/${nick}/promo`, "промокод не похож на код карточки (3 буквы + 1 цифра)", JSON.stringify(v).slice(0,60));
       } else if(f !== "nick" && !num(v, 0, 10000000)){
         add("unknown_field", `users/${nick}/${f}`, "значение не число / вне диапазона (накрутка)", JSON.stringify(v).slice(0,60));
       }

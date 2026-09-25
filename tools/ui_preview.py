@@ -14,7 +14,8 @@ Run from the repository root (needs cc and a generated game/game.c):
     python3 tools/ui_preview.py preview classes settings lobby
 
 Arguments: a directory for the PNGs (created on demand) and screen names:
-classes (class cards with their mottos), settings (8 rows), lobby (main menu).
+classes (class cards with their mottos), settings (8 rows), lobby (main menu),
+promo (the promo code screen) and card (a picked up promo card in battle).
 Without screen names classes and settings are drawn. Network and sound calls are
 stubbed, so progress values are set by hand in main().
 
@@ -407,7 +408,15 @@ int main(int argc, char **argv) {
         warn_a = strcmp(screen, "warn_fade") == 0 ? 0.5 : 1;
         ds_fn_draw_warning();
     }
-    else { fprintf(stderr, "unknown screen: %s (valid: classes/settings/lobby/warn/warn_fade)\n", screen); return 2; }
+    else if (strcmp(screen, "promo") == 0) { game_state = ST_PROMO; ds_fn_draw_promo(); }
+    else if (strcmp(screen, "card") == 0) {
+        /* A picked up promo card over the arena, with a sample code. */
+        game_state = ST_SOLO; ds_fn_init_game();
+        ds_fn_draw_game();
+        card_open = 1; card_code = "KXM7";
+        ds_fn_draw_card_open();
+    }
+    else { fprintf(stderr, "unknown screen: %s (valid: classes/settings/lobby/warn/warn_fade/promo/card)\n", screen); return 2; }
     if (!write_png(out, &g_buf)) { fprintf(stderr, "cannot write %s\n", out); return 1; }
     printf("%s -> %s (%dx%d)\n", screen, out, W, H);
     return 0;
@@ -491,7 +500,7 @@ def compile_preview(temp: Path) -> Path:
 
 def main(argv: list[str]) -> int:
     args = argv[1:]
-    known = SCREENS + ("lobby",)
+    known = SCREENS + ("lobby", "promo", "card")
     # the first argument is the PNG directory unless it names a screen
     if args and args[0] not in known:
         out_dir = Path(args[0])

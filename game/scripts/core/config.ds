@@ -36,8 +36,8 @@ public number ACH_TOAST_DURATION=1.96
 public number cups=0, candies=0, cup_win=5, candy_win=3
 public number cup_lose=1
 public number candy_enabled=1
-public number card_chance_base=6, card_chance_step=1, card_chance_cap=20
-public number card_drop_min=6, card_drop_max=24
+-- A solo battle starts with a promo card on the arena card_chance times in 100.
+public number card_chance=5
 public number promo_reward_cups=50, promo_reward_candies=20
 public number money_scale=0.5, money_gap=24, money_line_h=16
 public number alert_hold=0.5, finish_t=0
@@ -80,6 +80,8 @@ public number santa_punch_tex_ok=0, ebuc_punch_tex_ok=0
 -- retries ask the failed ones again a couple of times per second until they
 -- land and the right art appears instead of the fallback cubes.
 public number tex_reload_t=0, tex_reload_left=0
+-- After the fast retries a still missing sprite is asked again this often (s).
+public number tex_reload_slow=3
 public number azum_skin=SKIN_NORMAL
 public number arena_tile_size=256, snow_tex_ok=0, snow_t=0, candy_tex_ok=0
 -- Winter theme, a menu setting: one tap turns the snowy arena and the snowfall

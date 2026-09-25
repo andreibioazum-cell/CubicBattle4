@@ -256,12 +256,6 @@ public function tr_promo_title()
     end
     return "Promo code"
 end
-public function tr_promo_your_code()
-    if language == 1 then
-        return "Твой личный код (с карточки)"
-    end
-    return "Your personal code (from the card)"
-end
 public function tr_promo_need_login()
     if language == 1 then
         return "Войди, чтобы получить свой код"
@@ -282,21 +276,21 @@ public function tr_promo_submit()
 end
 public function tr_promo_how1()
     if language == 1 then
-        return "Карточка выпадает в соло с шансом 6/100"
+        return "Карточка выпадает в начале соло-боя, шанс 5%"
     end
-    return "Cards drop in solo with a 6/100 chance"
+    return "A card drops at the start of a solo battle, 5% chance"
 end
 public function tr_promo_need_card()
     if language == 1 then
-        return "Найди карточку в соло, чтобы узнать свой код"
+        return "Код есть только на карточке из соло-боя"
     end
-    return "Find a card in solo to get your code"
+    return "The code is only on a card from a solo battle"
 end
 public function tr_promo_how2()
     if language == 1 then
-        return "+1% за матч без карточки (до 20%), награда одна"
+        return "Код на ней случайный, награда одна на аккаунт"
     end
-    return "+1% per match without a card (up to 20%), one-time"
+    return "Its code is random, one reward per account"
 end
 public function tr_promo_need_code()
     if language == 1 then
@@ -322,18 +316,6 @@ public function tr_promo_success()
     end
     return "+" + promo_reward_cups + " cups and +" + promo_reward_candies + " candies!"
 end
-public function promo_used_state()
-    if net_promo_used() == 1 then
-        if language == 1 then
-            return "Активирован"
-        end
-        return "Redeemed"
-    end
-    if language == 1 then
-        return "Не активирован"
-    end
-    return "Not redeemed yet"
-end
 public function tr_card_title()
     if language == 1 then
         return "КАРТОЧКА"
@@ -342,15 +324,21 @@ public function tr_card_title()
 end
 public function tr_card_sub()
     if language == 1 then
-        return "Твой личный промокод"
+        return "Запомни код: больше он нигде не покажется"
     end
-    return "Your personal promo code"
+    return "Remember the code: it is not shown anywhere else"
 end
-public function tr_card_need_login()
+public function tr_card_used1()
     if language == 1 then
-        return "Войди в аккаунт, чтобы получить свой код"
+        return "Награда за промокод уже получена"
     end
-    return "Log in to get your personal code"
+    return "The promo reward was already claimed"
+end
+public function tr_card_used2()
+    if language == 1 then
+        return "на этом аккаунте"
+    end
+    return "on this account"
 end
 public function tr_card_hint1()
     if language == 1 then

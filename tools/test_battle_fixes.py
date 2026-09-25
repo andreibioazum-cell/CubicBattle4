@@ -142,14 +142,10 @@ double net_load_azum_revives(void) { return 0; }
 /* Promo codes (promo.inc): the tests pin the code and leave the activation flag
  * and the match streak alone. */
 const char *net_promo_code(void) { return "ABC1"; }
-void net_promo_register(void) {}
+const char *net_promo_new_code(void) { return "ABC1"; }
+double net_promo_check(const char *code) { return code && !strcmp(code, "ABC1"); }
 double net_promo_used(void) { return 0; }
 void net_promo_mark_used(void) {}
-double net_promo_streak(void) { return 0; }
-void net_promo_bump_streak(void) {}
-void net_promo_reset_streak(void) {}
-double net_promo_card_found(void) { return 0; }
-void net_promo_mark_card_found(void) {}
 double net_load_playtime(void) { return 0; }
 void net_save_playtime(double s) { (void)s; }
 void net_add_playtime(double d) { (void)d; }
@@ -1327,7 +1323,7 @@ def main():
         assert "net_load_music_volume()" in "".join(fns["settings_from_storage"][2])
         assert "net_save_music_volume(" in "".join(fns["music_volume_step"][2])
 
-        # -- Cards and promo codes: solo drops only, a personal code --
+        # -- Cards and promo codes: solo drops only, a random code per card --
         solo_upd = "".join(fns["update_game"][2])
         assert solo_upd.count("card_update()") == 1, \
             "update_game must tick cards once"

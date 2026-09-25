@@ -158,22 +158,17 @@ void net_mark_achievement_flag(double flag);
 double net_load_azum_revives(void);
 void net_save_azum_revives(double revives);
 
-/* Personal promo code, derived from the nick in a deterministic way, so the same
- * nick gives the same code and different players get different ones, known even
- * offline. net_promo_register writes the code into the cloud profile and
- * net_promo_mark_used flags it as activated locally and in the cloud, which keeps
- * the reward to one per account. net_promo_streak, bump and reset maintain the
- * count of cardless matches that raises the drop chance (promo.ds). The
- * implementation is native/net/promo.inc. */
+/* Promo codes of the solo match cards. net_promo_new_code makes a fresh random
+ * code when a card is picked up (3 letters and 1 digit) and keeps it as the code
+ * of the last card, locally and in the cloud profile; net_promo_code returns it.
+ * net_promo_check says whether an entered code is that code, and
+ * net_promo_mark_used takes the reward, one per account, locally and in the
+ * cloud. The implementation is native/net/promo.inc. */
 const char *net_promo_code(void);
-void net_promo_register(void);
+const char *net_promo_new_code(void);
+double net_promo_check(const char *code);
 double net_promo_used(void);
 void net_promo_mark_used(void);
-double net_promo_streak(void);
-void net_promo_bump_streak(void);
-void net_promo_reset_streak(void);
-double net_promo_card_found(void);
-void net_promo_mark_card_found(void);
 double net_load_playtime(void);
 void net_save_playtime(double seconds);
 void net_add_playtime(double delta);

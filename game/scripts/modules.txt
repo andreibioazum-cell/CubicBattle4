@@ -51,6 +51,7 @@ combat/battle_events_input.ds     # events, banners and input
 # fx and the engine
 fx/weather.ds                     # arena background and the snow effect
 fx/dust.ds                        # dust trail
+core/textures.ds                  # sprite loading, ok-flags and load retries
 core/engine.ds                    # main loop
 
 # always compiled last, after the engine; the position is kept as it was
