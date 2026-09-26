@@ -31,17 +31,33 @@ public function save_progress()
         class_level_of(CLASS_AZUM), class_unlocked_of(CLASS_AZUM),
         class_level_of(CLASS_SANTA), class_unlocked_of(CLASS_SANTA),
         class_level_of(CLASS_EBUC), class_unlocked_of(CLASS_EBUC),
-        bp_lv, azum_skin)
+        bp_lv, skin_flags())
     progress_push_to_net()
+end
+-- The two skins share one saved field: bit 0 is the Azum zombie, bit 1 is the
+-- ebuC elf. Old saves hold a plain 0 or 1 and still read as the zombie flag.
+public function skin_flags()
+    local number f = 0
+    if azum_skin == SKIN_SPECIAL then
+        f = f + 1
+    end
+    if ebuc_skin == SKIN_SPECIAL then
+        f = f + 2
+    end
+    return f
 end
 public function progress_push_to_net()
     net_set_class(player_class)
     net_set_level(player_level)
-    net_set_skin(azum_skin)
+    -- Only the skin of the class being played goes online.
+    net_set_skin(current_skin())
 end
 public function progress_normalize()
     if azum_skin < SKIN_NORMAL || azum_skin >= SKIN_COUNT then
         azum_skin = SKIN_NORMAL
+    end
+    if ebuc_skin < SKIN_NORMAL || ebuc_skin >= SKIN_COUNT then
+        ebuc_skin = SKIN_NORMAL
     end
     if azum_skin == SKIN_ZOMBIE && has_achievement(ACH_LEGENDS) == 0 then
         azum_skin = SKIN_NORMAL
@@ -79,7 +95,13 @@ public function progress_from_storage()
     set_class_progress(CLASS_AZUM, net_load_azum_level(), net_load_azum_levels_unlocked())
     set_class_progress(CLASS_SANTA, net_load_santa_level(), net_load_santa_levels_unlocked())
     set_class_progress(CLASS_EBUC, net_load_ebuc_level(), net_load_ebuc_levels_unlocked())
-    azum_skin = net_load_azum_skin()
+    local number skins = net_load_azum_skin()
+    ebuc_skin = SKIN_NORMAL
+    if skins >= 2 then
+        ebuc_skin = SKIN_SPECIAL
+        skins = skins - 2
+    end
+    azum_skin = skins
     if azum_skin == SKIN_ZOMBIE && has_achievement(ACH_LEGENDS) == 0 then
         grant_achievement(ACH_LEGENDS)
     end

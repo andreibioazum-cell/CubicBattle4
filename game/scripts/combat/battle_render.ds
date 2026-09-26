@@ -139,8 +139,16 @@ end
 public function draw_punch_box(number x, number y, number dx, number dy, number reach, number width, number alpha)
     draw_hit_strip(x,y,dx,dy,0,reach,width/2,alpha)
 end
+-- The special skin of a class replaces both of its sprites: zombie for Azum,
+-- elf for ebuC. Every other class ignores the skin value.
 public function fighter_sprite(number cls, number punching, number skin)
     if skin_is_active(cls,skin)==1 then
+        if cls==CLASS_EBUC then
+            if punching==1 then
+                return elf_punch_tex()
+            end
+            return elf_idle_tex()
+        end
         if punching==1 then
             return zombie_punch_tex()
         end
@@ -182,14 +190,14 @@ public function draw_player_shadow(number x, number y, number ang, number punchi
     draw_fighter_shadow(x,y,ang,player_class,punching,skin)
 end
 public function draw_player_body(number x, number y, number ang, number punching)
-    draw_fighter_body(x,y,ang,player_class,punching,azum_skin)
+    draw_fighter_body(x,y,ang,player_class,punching,current_skin())
 end
 public function draw_field()
     rect(0,0,screen_w,screen_h,0x33000000)
 end
 public function draw_player_shadow_layer()
     local number punching=punch_left>0
-    draw_player_shadow(player.x,player.y,player.angle,punching,azum_skin)
+    draw_player_shadow(player.x,player.y,player.angle,punching,current_skin())
 end
 public function draw_player_hitbox_layer()
     if show_hitboxes==0 then
@@ -205,7 +213,7 @@ end
 public function draw_player_body_layer()
     local number punching=punch_left>0
     draw_player_body(player.x,player.y,player.angle,punching)
-    draw_fighter_hurt(player.x,player.y,player.angle,player_class,punching,azum_skin,player_scale,player_hurt_a)
+    draw_fighter_hurt(player.x,player.y,player.angle,player_class,punching,current_skin(),player_scale,player_hurt_a)
 end
 public function enemy_punching_now()
     if enemy.state==1||enemy.state==2 then

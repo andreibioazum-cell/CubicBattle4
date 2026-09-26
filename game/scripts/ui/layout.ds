@@ -146,7 +146,7 @@ public function class_action_w()
     return clamp(half, 0, btn_w)
 end
 public function levels_btn_x()
-    if player_class != CLASS_AZUM then
+    if class_has_skins(player_class) == 0 then
         return screen_w / 2 - class_action_w() / 2
     end
     return screen_w / 2 - class_action_gap / 2 - class_action_w()
@@ -155,7 +155,7 @@ public function skins_btn_x()
     return screen_w / 2 + class_action_gap / 2
 end
 public function class_has_skins(number cls)
-    if cls == CLASS_AZUM then
+    if cls == CLASS_AZUM || cls == CLASS_EBUC then
         return 1
     end
     return 0

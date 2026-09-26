@@ -52,6 +52,36 @@ public function zombie_punch_tex()
     end
     return azum_punch_tex()
 end
+-- The elf skin of ebuC loads as a pair too, for the same reason as the zombie
+-- pair: a half-loaded skin would mix the elf idle with the plain ebuC swing.
+public function elf_tex_ok()
+    if ebuc_elf_tex_ok==1&&ebuc_elf_punch_tex_ok==1 then
+        return 1
+    end
+    return 0
+end
+public function elf_idle_tex()
+    if elf_tex_ok()==1 then
+        return EBUC_ELF_TEX
+    end
+    return EBUC_TEX
+end
+public function elf_punch_tex()
+    if elf_tex_ok()==1 then
+        return EBUC_ELF_PUNCH_TEX
+    end
+    return punch_tex_or_idle(EBUC_PUNCH_TEX,ebuc_punch_tex_ok,CLASS_EBUC)
+end
+-- The idle sprite a class shows with the given skin, used by the menu cards.
+public function skin_idle_tex_for(number cls, number skin)
+    if skin_is_active(cls,skin)==1 then
+        if cls==CLASS_EBUC then
+            return elf_idle_tex()
+        end
+        return zombie_idle_tex()
+    end
+    return class_idle_tex(cls)
+end
 public function class_idle_tex(number cls)
     if cls==CLASS_AZUM then
         return azum_idle_tex()

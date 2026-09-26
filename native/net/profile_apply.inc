@@ -73,7 +73,8 @@ static void apply_user_json(const char *resp) {
     else { level=ebuc_level; levels_unlocked=ebuc_levels_unlocked; }
     if (bp_level < 0) bp_level = 0;
     if (bp_level > BP_MAX) bp_level = BP_MAX;
-    azum_skin = azum_skin ? 1 : 0;
+    if (azum_skin < 0) azum_skin = 0;
+    if (azum_skin > SKIN_FLAGS_MAX) azum_skin = SKIN_FLAGS_MAX;
     pg_lock();
     pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.ebuc = ebuc;
     pg.level = level; pg.levels_unlocked = levels_unlocked;
@@ -86,7 +87,7 @@ static void apply_user_json(const char *resp) {
     pg_unlock();
     pending_cls = cls;
     pending_level = level;
-    pending_skin = azum_skin;
+    pending_skin = SKIN_OF_CLASS(azum_skin, cls);
     progress_write(cups, candies, cls, azum, santa, ebuc, level, levels_unlocked,
                    ordinary_level, ordinary_levels_unlocked,
                    azum_level, azum_levels_unlocked,
@@ -227,7 +228,7 @@ static int apply_user_json_keep_local(const char *resp) {
     int bp = pg.bp_level, sk = pg.azum_skin;
     pg_unlock();
     if (restored) {
-        pending_cls = cls; pending_level = lv; pending_skin = sk;
+        pending_cls = cls; pending_level = lv; pending_skin = SKIN_OF_CLASS(sk, cls);
         progress_write(cups, candies, cls, azum, santa, ebuc, lv, lu,
                        ol, ou, al, au, sl, su, el, eul, bp, sk);
         LOG("restored locally bought progress over cloud (azum=%d santa=%d ebuc=%d cls=%d)",
