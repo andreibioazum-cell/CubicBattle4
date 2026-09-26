@@ -4,3 +4,4 @@
 #include "native/graphics/vulkan_backend.inc"
 #include "native/graphics/autoscale.inc"
 #include "native/graphics/lifecycle.inc"
+#include "native/graphics/fallback_screen.inc"

@@ -85,6 +85,14 @@ static VkPresentModeKHR g_present_modes[4] = {
     VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR };
 static uint32_t g_present_mode_count = 4;
 static VkPresentModeKHR g_created_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
+/* Start failure checks: which compositeAlpha the surface lists (older Android
+ * lists only INHERIT), a "free" currentExtent (0xFFFFFFFF: the swapchain picks
+ * the size), a one-shot failing vkCreateSwapchainKHR, and what was created. */
+static VkCompositeAlphaFlagsKHR g_caps_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+static int g_caps_free_extent = 0;
+static VkResult g_swapchain_fail_next = VK_SUCCESS;
+static VkCompositeAlphaFlagBitsKHR g_created_alpha;
+static VkExtent2D g_created_extent;
 static uint32_t g_surface_min_images = 2;
 /* The whole log is kept: its lines cover decisions that are otherwise only
  * visible on a device (present mode, ignored SUBOPTIMAL, the 60 fps request). */
@@ -230,7 +238,15 @@ VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice d, VkSurface
 }
 VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, const VkAllocationCallbacks *ac, VkSwapchainKHR *out) {
     (void)d; (void)ac;
+    if (g_swapchain_fail_next != VK_SUCCESS) { VkResult r = g_swapchain_fail_next; g_swapchain_fail_next = VK_SUCCESS; return r; }
     if (ci->imageExtent.width == 0 || ci->imageExtent.height == 0) { g_violation("swapchain: empty extent"); return VK_ERROR_INITIALIZATION_FAILED; }
+    /* compositeAlpha must be one the surface lists, like any real driver checks. */
+    if (!(ci->compositeAlpha & g_caps_alpha)) {
+        g_violation("swapchain: compositeAlpha %d is not listed by the surface (0x%x)", (int)ci->compositeAlpha, (unsigned)g_caps_alpha);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    g_created_alpha = ci->compositeAlpha;
+    g_created_extent = ci->imageExtent;
     /* On Android the buffer lives in window coordinates and the system
      * compositor rotates the window towards the display, so IDENTITY is the
      * only correct preTransform for a game that draws in window coordinates.
@@ -292,12 +308,17 @@ VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice d, VkSurface
     (void)d; (void)s;
     memset(c, 0, sizeof *c);
     c->currentExtent.width = 720; c->currentExtent.height = 1280;
+    if (g_caps_free_extent) { c->currentExtent.width = UINT32_MAX; c->currentExtent.height = UINT32_MAX; }
+    c->minImageExtent.width = 1; c->minImageExtent.height = 1;
+    c->maxImageExtent.width = 4096; c->maxImageExtent.height = 4096;
+    c->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     c->minImageCount = g_surface_min_images; c->maxImageCount = 0; c->maxImageArrayLayers = 1;
     /* Realistic Android: portrait display, landscape window, so the system
      * rotates the window by 90 degrees (currentTransform = ROTATE_90). */
     c->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
     c->currentTransform = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
-    c->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    c->supportedCompositeAlpha = g_caps_alpha;
     return VK_SUCCESS;
 }
 VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice d, VkSurfaceKHR s, uint32_t *count, VkSurfaceFormatKHR *fmts) {
@@ -571,11 +592,52 @@ int screen_w = 720, screen_h = 1280;
 
 #include "graphics.c"
 
-/* Android stubs: the types come from stub/android/asset_manager.h above. */
-AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) { (void)mgr; (void)name; (void)mode; return NULL; }
-off_t AAsset_getLength(AAsset *a) { (void)a; return 0; }
-int AAsset_read(AAsset *a, void *buf, size_t n) { (void)a; (void)buf; (void)n; return -1; }
-int AAsset_close(AAsset *a) { (void)a; return 0; }
+/* Android stubs: the types come from stub/android/asset_manager.h above. With
+ * a NULL manager (the main test) no asset exists; with g_real_assets the files
+ * come from game/assets, so the failure screen draws with the real font. */
+static int g_real_assets = 0;
+struct AAsset { FILE *f; off_t len; };
+AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) {
+    (void)mgr; (void)mode;
+    if (!g_real_assets || !name) return NULL;
+    char path[512];
+    snprintf(path, sizeof path, "game/assets/%s", name);
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    AAsset *a = (AAsset *)calloc(1, sizeof *a);
+    if (!a) { fclose(f); return NULL; }
+    fseek(f, 0, SEEK_END); a->len = (off_t)ftell(f); fseek(f, 0, SEEK_SET);
+    a->f = f;
+    return a;
+}
+off_t AAsset_getLength(AAsset *a) { return a ? a->len : 0; }
+int AAsset_read(AAsset *a, void *buf, size_t n) { return a ? (int)fread(buf, 1, n, a->f) : -1; }
+int AAsset_close(AAsset *a) { if (a) { fclose(a->f); free(a); } return 0; }
+
+/* The window: its size, and a CPU buffer for ANativeWindow_lock. Locking
+ * while a Vulkan surface is alive is refused, as on a device (the window is
+ * still connected to Vulkan). */
+static int32_t g_win_w = 720, g_win_h = 1280;
+static uint32_t *g_win_pixels;
+static int g_win_locks, g_win_posts, g_win_lock_refused;
+int32_t ANativeWindow_getWidth(ANativeWindow *w) { (void)w; return g_win_w; }
+int32_t ANativeWindow_getHeight(ANativeWindow *w) { (void)w; return g_win_h; }
+int32_t ANativeWindow_setBuffersGeometry(ANativeWindow *w, int32_t width, int32_t height, int32_t format) {
+    (void)w; (void)width; (void)height; (void)format; return 0;
+}
+int ANativeWindow_lock(ANativeWindow *w, ANativeWindow_Buffer *out, void *dirty) {
+    (void)w; (void)dirty;
+    for (int i = 0; i < 8; i++)
+        if (g_live_surfaces[i]) { g_win_lock_refused++; return -22; /* -EINVAL: connected to Vulkan */ }
+    free(g_win_pixels);
+    g_win_pixels = (uint32_t *)calloc((size_t)g_win_w * (size_t)g_win_h, 4);
+    if (!g_win_pixels) return -12;
+    out->bits = g_win_pixels; out->width = g_win_w; out->height = g_win_h; out->stride = g_win_w;
+    out->format = WINDOW_FORMAT_RGBA_8888;
+    g_win_locks++;
+    return 0;
+}
+int ANativeWindow_unlockAndPost(ANativeWindow *w) { (void)w; g_win_posts++; return 0; }
 
 
 
@@ -900,6 +962,78 @@ static void *test_thread(void *arg) {
     return 0;
 }
 
+/* --- start failures: the black screen without a crash ---
+ * A renderer that could not start used to leave the window black forever. The
+ * swapchain now takes a compositeAlpha the surface lists (older Android lists
+ * only INHERIT) and the window size for a "free" currentExtent, and when the
+ * start fails anyway the reason is noted and drawn on the window by the CPU. */
+static int check_start_failures(void) {
+    int fail = 0, ok;
+    static int fb_window, fake_mgr;
+    ANativeWindow *win = (ANativeWindow *)&fb_window;
+    ds_graphics_shutdown();
+
+    g_caps_alpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    ok = ds_graphics_init(NULL, win);
+    if (!ok || g_created_alpha != VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+        fail = 1; printf("FAIL: a surface that lists only INHERIT: start %d, compositeAlpha %d\n", ok, (int)g_created_alpha);
+    }
+    ds_graphics_shutdown();
+    g_caps_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+
+    g_caps_free_extent = 1; g_win_w = 800; g_win_h = 480;
+    ok = ds_graphics_init(NULL, win);
+    if (!ok || g_created_extent.width != 800 || g_created_extent.height != 480) {
+        fail = 1; printf("FAIL: a free currentExtent: start %d, swapchain %ux%u, expected the 800x480 window\n",
+                         ok, g_created_extent.width, g_created_extent.height);
+    }
+    ds_graphics_shutdown();
+    g_caps_free_extent = 0;
+
+    /* The start fails: the reason is kept and drawn with the CPU, after Vulkan
+     * has let go of the window (the lock stub refuses while a surface lives). */
+    g_win_w = 1280; g_win_h = 720; g_real_assets = 1;
+    g_swapchain_fail_next = VK_ERROR_INITIALIZATION_FAILED;
+    ok = ds_graphics_init((AAssetManager *)(void *)&fake_mgr, win);
+    const char *why = ds_graphics_failure();
+    if (ok || strcmp(why, "vkCreateSwapchainKHR") != 0) {
+        fail = 1; printf("FAIL: a failing vkCreateSwapchainKHR: start %d, noted reason '%s'\n", ok, why);
+    }
+    int shown = ds_graphics_show_failure(win, 4);
+    long ink = 0;
+    if (g_win_pixels)
+        for (long i = 0; i < (long)g_win_w * g_win_h; i++) if (g_win_pixels[i] != 0xff100b1cu) ink++;
+    if (!shown || g_win_locks != 1 || g_win_posts != 1 || g_win_lock_refused || ink < 3000) {
+        fail = 1; printf("FAIL: failure screen: shown %d, locks %d, posts %d, refused %d, text pixels %ld\n",
+                         shown, g_win_locks, g_win_posts, g_win_lock_refused, ink);
+    }
+    if (!strstr(g_log, "vulkan start failure screen: Шаг: vkCreateSwapchainKHR")) {
+        fail = 1; printf("FAIL: the failure screen text is not in the log\n");
+    }
+    const char *ppm = getenv("VK_FAILURE_PPM");
+    if (ppm && g_win_pixels) {
+        FILE *f = fopen(ppm, "wb");
+        if (f) {
+            fprintf(f, "P6 %d %d 255\n", g_win_w, g_win_h);
+            for (long i = 0; i < (long)g_win_w * g_win_h; i++) {
+                const uint8_t *px = (const uint8_t *)&g_win_pixels[i];
+                fputc(px[0], f); fputc(px[1], f); fputc(px[2], f);
+            }
+            fclose(f);
+        }
+    }
+    g_real_assets = 0;
+
+    /* The next window tries Vulkan from the start again. */
+    ok = ds_graphics_init(NULL, win);
+    if (!ok || ds_graphics_failure()[0]) {
+        fail = 1; printf("FAIL: after the failure screen a new start: %d, reason '%s'\n", ok, ds_graphics_failure());
+    }
+    ds_graphics_shutdown();
+    g_win_w = 720; g_win_h = 1280;
+    return fail;
+}
+
 int main(void) {
     memset(test_stack, 0xDE, sizeof test_stack);
     pthread_t th;
@@ -910,6 +1044,8 @@ int main(void) {
     pthread_create(&th, &attr, test_thread, NULL);
     pthread_join(th, NULL);
     pthread_attr_destroy(&attr);
+    int start_fail = check_start_failures();
+    fail |= start_fail;
 
     if (!g_res.init_ok) { fail = 1; printf("FAIL: ds_graphics_init returned 0\n"); }
     if (!g_res.frame1_ok) { fail = 1; printf("FAIL: begin_frame of the first frame returned 0\n"); }
@@ -1056,6 +1192,9 @@ int main(void) {
                "pipelines), no frames without a window, a cancelled frame plus a rebuild never "
                "re-acquires into a signalled semaphore, acquire has a finite timeout and a timeout "
                "skips the frame, SURFACE_LOST gets a new surface and DEVICE_LOST a new device\n");
+        printf("PASS: start failures: an INHERIT-only surface and a free currentExtent start, a failed "
+               "start notes its step and draws it on the window with the CPU after Vulkan let go of "
+               "it, and the next window starts Vulkan again\n");
     }
     return fail;
 }

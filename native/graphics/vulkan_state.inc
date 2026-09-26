@@ -16,9 +16,24 @@
 #define DS_VK_DESC_SETS_PER_POOL 96
 
 /* Logs a Vulkan result: 1 on success, 0 on error (with a message in the log). */
+/* The first thing that failed in the current start attempt and the GPU it ran
+ * on. When Vulkan cannot start at all, fallback_screen.inc shows these on the
+ * window so a player can send a screenshot instead of a black screen. */
+static char vk_fail_step[96];
+static int vk_fail_code;
+static char vk_diag_gpu[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+static uint32_t vk_diag_api, vk_diag_driver, vk_diag_vendor;
+
+static void ds_vk_note_failure(const char *what, int code) {
+    if (vk_fail_step[0]) return; /* the first failure is the cause, the rest follow from it */
+    snprintf(vk_fail_step, sizeof(vk_fail_step), "%s", what ? what : "?");
+    vk_fail_code = code;
+}
+
 static int ds_vk_check_result(VkResult r, const char *what) {
     if (r == VK_SUCCESS) return 1;
     ds_log_err("vulkan: %s failed (%d)", what, (int)r);
+    ds_vk_note_failure(what, (int)r);
     return 0;
 }
 

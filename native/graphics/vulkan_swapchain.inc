@@ -81,8 +81,30 @@ typedef struct {
     VkFormat format;
     VkColorSpaceKHR colorspace;
     VkSurfaceTransformFlagBitsKHR transform;
+    VkCompositeAlphaFlagBitsKHR alpha;
     uint32_t images;
 } DsVkSurfaceState;
+
+/* compositeAlpha has to be one the surface lists. OPAQUE used to be hard-coded,
+ * but the Android swapchain of older system versions lists only INHERIT (the
+ * window manager decides about the alpha there), and a driver may refuse a
+ * swapchain with an unlisted value - Vulkan never starts and the screen stays
+ * black. Any listed value looks the same here: the frame is fully opaque. */
+static VkCompositeAlphaFlagBitsKHR ds_vk_choose_alpha(VkCompositeAlphaFlagsKHR supported) {
+    static const VkCompositeAlphaFlagBitsKHR order[] = {
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+        VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+    };
+    for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++)
+        if (supported & order[i]) return order[i];
+    return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; /* nothing listed at all: the spec value */
+}
+
+static uint32_t ds_vk_clamp_u32(uint32_t v, uint32_t lo, uint32_t hi) {
+    if (hi && v > hi) v = hi;
+    if (v < lo) v = lo;
+    return v;
+}
 
 static int ds_vk_query_surface(DsVkSurfaceState *out) {
     if (!out || !vk_surface || !vk_phys) return 0;
@@ -90,8 +112,28 @@ static int ds_vk_query_surface(DsVkSurfaceState *out) {
     VkSurfaceCapabilitiesKHR caps;
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_phys, vk_surface, &caps),
                             "vkGetPhysicalDeviceSurfaceCapabilitiesKHR")) return 0;
-    if (caps.currentExtent.width == UINT32_MAX || caps.currentExtent.width == 0 || caps.currentExtent.height == 0)
+    VkExtent2D extent = caps.currentExtent;
+    if (extent.width == UINT32_MAX || extent.height == UINT32_MAX) {
+        /* "The swapchain decides the size" (allowed by the spec): the window
+         * size is used. This used to be read as a collapsed window and retried
+         * forever - no swapchain, a black screen and no error. */
+        int32_t ww = vk_window ? ANativeWindow_getWidth(vk_window) : 0;
+        int32_t wh = vk_window ? ANativeWindow_getHeight(vk_window) : 0;
+        if (ww <= 0 || wh <= 0) { ds_vk_note_failure("surface size unknown and window size 0", 0); return 0; }
+        extent.width = ds_vk_clamp_u32((uint32_t)ww, caps.minImageExtent.width, caps.maxImageExtent.width);
+        extent.height = ds_vk_clamp_u32((uint32_t)wh, caps.minImageExtent.height, caps.maxImageExtent.height);
+    }
+    if (extent.width == 0 || extent.height == 0) {
+        ds_vk_note_failure("window surface has size 0", 0);
         return 0; /* the window collapsed: retry next frame */
+    }
+    /* The finished frame is blitted (or copied) into the swapchain image. */
+    if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
+        ds_log_err("vulkan: swapchain images cannot be a transfer target (usage 0x%x)",
+                   (unsigned)caps.supportedUsageFlags);
+        ds_vk_note_failure("swapchain images without TRANSFER_DST", (int)caps.supportedUsageFlags);
+        return 0;
+    }
     uint32_t want = caps.minImageCount + 1;
     if (want < 3) want = 3;
     if (caps.maxImageCount && want > caps.maxImageCount) want = caps.maxImageCount;
@@ -101,7 +143,7 @@ static int ds_vk_query_surface(DsVkSurfaceState *out) {
     uint32_t nf = 0;
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_phys, vk_surface, &nf, NULL),
                             "vkGetPhysicalDeviceSurfaceFormatsKHR")) return 0;
-    if (nf == 0) { ds_log_err("vulkan: surface has no formats"); return 0; }
+    if (nf == 0) { ds_log_err("vulkan: surface has no formats"); ds_vk_note_failure("surface has no formats", 0); return 0; }
     VkSurfaceFormatKHR *formats = (VkSurfaceFormatKHR *)malloc(nf * sizeof(*formats));
     if (!formats) return 0;
     if (!ds_vk_check_result(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_phys, vk_surface, &nf, formats),
@@ -115,7 +157,8 @@ static int ds_vk_query_surface(DsVkSurfaceState *out) {
     free(formats);
     out->format = chosen.format == VK_FORMAT_UNDEFINED ? VK_FORMAT_R8G8B8A8_UNORM : chosen.format;
     out->colorspace = chosen.colorSpace;
-    out->extent = caps.currentExtent;
+    out->extent = extent;
+    out->alpha = ds_vk_choose_alpha(caps.supportedCompositeAlpha);
     out->images = want;
     /* preTransform = IDENTITY is required on Android. Swapchain images live in
      * window coordinates (the landscape the player sees), and the rotation of
@@ -210,7 +253,7 @@ static int ds_vk_recreate_swapchain(void) {
     si.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     si.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     si.preTransform = s.transform;
-    si.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    si.compositeAlpha = s.alpha;
     si.presentMode = vk_sw_present_mode;
     si.clipped = VK_TRUE;
     si.oldSwapchain = VK_NULL_HANDLE;
@@ -239,9 +282,9 @@ static int ds_vk_recreate_swapchain(void) {
      * to the previous window and the first frames of a new one are always slow,
      * so the autoscale controller starts counting from scratch. */
     gfx_autoscale_new_window();
-    ds_log("vulkan: swapchain #%u %ux%u, %u images, format %d, present %s (available: %s)",
+    ds_log("vulkan: swapchain #%u %ux%u, %u images, format %d, alpha %d, present %s (available: %s)",
            vk_sw_recreates, vk_sw_extent.width, vk_sw_extent.height, (unsigned)vk_sw_count,
-           (int)vk_sw_format, ds_vk_present_mode_name(vk_sw_present_mode), listed);
+           (int)vk_sw_format, (int)s.alpha, ds_vk_present_mode_name(vk_sw_present_mode), listed);
     return 1;
 }
 

@@ -283,7 +283,9 @@ int text_ink_top(const char *s) {
 
 int ds_graphics_init(AAssetManager *a, ANativeWindow *window) {
     if (amgr != a) { ds_release_assets(); amgr = a; }
-    return ds_vk_init_backend(window);
+    if (ds_vk_init_backend(window)) return 1;
+    ds_vk_note_failure("renderer start (no Vulkan error code)", 0); /* only if nothing more exact was noted */
+    return 0;
 }
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;

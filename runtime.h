@@ -153,6 +153,13 @@ void ds_graphics_cancel_frame(void);
 void ds_graphics_window_lost(void);
 void ds_graphics_shutdown(void);
 void ds_graphics_error_screen(const char *message);
+/* Vulkan could not start: ds_graphics_failure() is the first step that failed
+ * in the latest ds_graphics_init ("" if none), and ds_graphics_show_failure()
+ * draws that reason, the GPU and the phone model into the window with the CPU
+ * so the player sees why instead of a black screen. After it the window stays
+ * with the CPU; the next window tries Vulkan again. Returns 1 when shown. */
+const char *ds_graphics_failure(void);
+int ds_graphics_show_failure(ANativeWindow *window, int attempts);
 void init(AAssetManager *assets);
 void update(void);
 void draw(Buffer *buffer);
