@@ -258,7 +258,17 @@ static int ds_vk_recreate_swapchain(void) {
     si.clipped = VK_TRUE;
     si.oldSwapchain = VK_NULL_HANDLE;
     if (!ds_vk_check_result(vkCreateSwapchainKHR(vk_device, &si, NULL, &vk_swap), "vkCreateSwapchainKHR")) return 0;
-    vk_sw_count = DS_VK_MAX_SW_IMAGES;
+    /* How many images there really are first: the driver may make more than
+     * minImageCount, and a too small array returns VK_INCOMPLETE. */
+    uint32_t have = 0;
+    if (!ds_vk_check_result(vkGetSwapchainImagesKHR(vk_device, vk_swap, &have, NULL),
+                            "vkGetSwapchainImagesKHR(count)")) return 0;
+    if (have == 0 || have > DS_VK_MAX_SW_IMAGES) {
+        ds_log_err("vulkan: the swapchain has %u images, room for %d", (unsigned)have, DS_VK_MAX_SW_IMAGES);
+        ds_vk_note_failure("too many swapchain images", (int)have);
+        return 0;
+    }
+    vk_sw_count = have;
     if (!ds_vk_check_result(vkGetSwapchainImagesKHR(vk_device, vk_swap, &vk_sw_count, vk_sw_images),
                             "vkGetSwapchainImagesKHR")) return 0;
     for (uint32_t i = 0; i < vk_sw_count; i++) {
@@ -282,8 +292,8 @@ static int ds_vk_recreate_swapchain(void) {
      * to the previous window and the first frames of a new one are always slow,
      * so the autoscale controller starts counting from scratch. */
     gfx_autoscale_new_window();
-    ds_log("vulkan: swapchain #%u %ux%u, %u images, format %d, alpha %d, present %s (available: %s)",
-           vk_sw_recreates, vk_sw_extent.width, vk_sw_extent.height, (unsigned)vk_sw_count,
+    ds_log("vulkan: swapchain #%u %ux%u, %u images (asked for %u), format %d, alpha %d, present %s (available: %s)",
+           vk_sw_recreates, vk_sw_extent.width, vk_sw_extent.height, (unsigned)vk_sw_count, (unsigned)s.images,
            (int)vk_sw_format, (int)s.alpha, ds_vk_present_mode_name(vk_sw_present_mode), listed);
     return 1;
 }

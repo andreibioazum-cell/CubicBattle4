@@ -88,6 +88,9 @@ static VkPresentModeKHR g_created_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
 /* Start failure checks: which compositeAlpha the surface lists (older Android
  * lists only INHERIT), a "free" currentExtent (0xFFFFFFFF: the swapchain picks
  * the size), a one-shot failing vkCreateSwapchainKHR, and what was created. */
+static uint32_t g_sw_images = 3;
+static int g_present_index_max = -1; /* highest image index presented */
+static int g_acquire_last_image = 0; /* acquire hands out the last image */
 static VkCompositeAlphaFlagsKHR g_caps_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 static int g_caps_free_extent = 0;
 static VkResult g_swapchain_fail_next = VK_SUCCESS;
@@ -223,6 +226,10 @@ VkResult vkQueuePresentKHR(VkQueue q, const VkPresentInfoKHR *pi) {
     int si = g_surface_live(g_swap_surface);
     if (si >= 0 && g_dead_window && g_surface_window[si] == g_dead_window)
         g_violation("present: the swapchain belongs to a window Android already took away");
+    if (pi && pi->swapchainCount && pi->pImageIndices) {
+        if (pi->pImageIndices[0] >= g_sw_images) g_violation("present: image index %u of %u", pi->pImageIndices[0], g_sw_images);
+        if ((int)pi->pImageIndices[0] > g_present_index_max) g_present_index_max = (int)pi->pImageIndices[0];
+    }
     if (g_present_next != VK_SUCCESS) { VkResult r = g_present_next; g_present_next = VK_SUCCESS; return r; }
     if (g_present_suboptimal_always) return VK_SUBOPTIMAL_KHR;
     if (g_present_suboptimal_once) { g_present_suboptimal_once = 0; return VK_SUBOPTIMAL_KHR; }
@@ -280,12 +287,16 @@ void vkDestroySwapchainKHR(VkDevice d, VkSwapchainKHR s, const VkAllocationCallb
     (void)d; (void)ac;
     if ((uint64_t)(uintptr_t)s == g_swap_handle) { g_swap_handle = 0; g_swap_surface = 0; }
 }
+/* Like a real driver: the swapchain may hold more images than minImageCount
+ * (a Xiaomi with Mali-G52 on Android 14 had more than 8), and an array too
+ * small for all of them is filled partly and answered with VK_INCOMPLETE. */
 VkResult vkGetSwapchainImagesKHR(VkDevice d, VkSwapchainKHR s, uint32_t *count, VkImage *imgs) {
     (void)d; (void)s;
-    if (!imgs) { *count = 3; return VK_SUCCESS; }
-    for (uint32_t i = 0; i < *count && i < 3; i++) imgs[i] = (VkImage)g_next();
-    *count = 3;
-    return VK_SUCCESS;
+    if (!imgs) { *count = g_sw_images; return VK_SUCCESS; }
+    uint32_t n = *count < g_sw_images ? *count : g_sw_images;
+    for (uint32_t i = 0; i < n; i++) imgs[i] = (VkImage)g_next();
+    *count = n;
+    return n < g_sw_images ? VK_INCOMPLETE : VK_SUCCESS;
 }
 VkResult vkAcquireNextImageKHR(VkDevice d, VkSwapchainKHR s, uint64_t t, VkSemaphore sem, VkFence f, uint32_t *idx) {
     (void)d; (void)f;
@@ -301,7 +312,7 @@ VkResult vkAcquireNextImageKHR(VkDevice d, VkSwapchainKHR s, uint64_t t, VkSemap
     if (g_sem_signalled((uint64_t)(uintptr_t)sem) >= 0)
         g_violation("acquire: the semaphore still has a pending signal from an earlier acquire");
     g_sem_set((uint64_t)(uintptr_t)sem, 1);
-    *idx = 0;
+    *idx = g_acquire_last_image ? g_sw_images - 1 : 0;
     return VK_SUCCESS;
 }
 VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice d, VkSurfaceKHR s, VkSurfaceCapabilitiesKHR *c) {
@@ -973,6 +984,24 @@ static int check_start_failures(void) {
     ANativeWindow *win = (ANativeWindow *)&fb_window;
     ds_graphics_shutdown();
 
+    /* Xiaomi 24075RP89G (Mali-G52, Android 14): the swapchain holds 10 images,
+     * more than the old room for 8, and the image query said VK_INCOMPLETE. */
+    g_sw_images = 10; g_acquire_last_image = 1; g_present_index_max = -1;
+    ok = ds_graphics_init(NULL, win);
+    int frame_ok = 0;
+    if (ok) {
+        Buffer fb = { 0 };
+        fb.width = g_win_w; fb.height = g_win_h; fb.stride = g_win_w;
+        frame_ok = ds_graphics_begin_frame(&fb);
+        if (frame_ok) { rect(0, 0, 10, 10, 0xff123456); ds_graphics_end_frame(); }
+    }
+    if (!ok || !frame_ok || g_present_index_max != 9) {
+        fail = 1; printf("FAIL: a swapchain with 10 images: start %d (reason '%s'), frame %d, presented image %d, expected 9\n",
+                         ok, ds_graphics_failure(), frame_ok, g_present_index_max);
+    }
+    ds_graphics_shutdown();
+    g_sw_images = 3; g_acquire_last_image = 0;
+
     g_caps_alpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
     ok = ds_graphics_init(NULL, win);
     if (!ok || g_created_alpha != VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
@@ -1192,7 +1221,7 @@ int main(void) {
                "pipelines), no frames without a window, a cancelled frame plus a rebuild never "
                "re-acquires into a signalled semaphore, acquire has a finite timeout and a timeout "
                "skips the frame, SURFACE_LOST gets a new surface and DEVICE_LOST a new device\n");
-        printf("PASS: start failures: an INHERIT-only surface and a free currentExtent start, a failed "
+        printf("PASS: start failures: a swapchain with 10 images (VK_INCOMPLETE on the Xiaomi), an INHERIT-only surface and a free currentExtent start, a failed "
                "start notes its step and draws it on the window with the CPU after Vulkan let go of "
                "it, and the next window starts Vulkan again\n");
     }

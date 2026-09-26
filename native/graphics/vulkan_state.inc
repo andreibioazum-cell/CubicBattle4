@@ -11,7 +11,11 @@
 #endif
 #include "native/graphics/shaders_spirv.inc"
 
-#define DS_VK_MAX_SW_IMAGES 8
+/* Room for the swapchain images. The Android swapchain may hand out more images
+ * than were asked for (the compositor keeps some of its own): a Xiaomi with a
+ * Mali-G52 on Android 14 gave more than the old limit of 8, the image query
+ * answered VK_INCOMPLETE and Vulkan never started - a black screen. */
+#define DS_VK_MAX_SW_IMAGES 32
 #define DS_VK_FRAMES_IN_FLIGHT 2
 #define DS_VK_DESC_SETS_PER_POOL 96
 
