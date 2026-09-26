@@ -244,22 +244,24 @@ static void test_video_settings(void) {
 }
 
 static void test_class_mottos(void) {
-    /* Class mottos: Azum and buK say their lines, and the long buK motto is
-     * scaled to fit both the card and the stats screen. */
+    /* Class mottos: Azum and ebuC say their lines (ebuC's is "Tr4pp3d"), and a
+     * long motto is scaled to fit both the card and the stats screen. */
     assert(strcmp(ds_fn_tr_class_azum_desc(), "Lived once, buried twice...") == 0);
     const char *ebuc = ds_fn_tr_class_ebuc_desc();
-    assert(strcmp(ebuc, "You thought I was a regular cube, but it was me, buC!") == 0);
+    assert(strcmp(ebuc, "Tr4pp3d") == 0);
+    const char *long_motto = "You thought I was a regular cube, but it was me, buC!";
     double cw = ds_fn_classes_card_w();
     near(ds_fn_fit_text_scale("I was the first", cw - 16, 0.5), 0.5);
-    double sc = ds_fn_fit_text_scale(ebuc, cw - 16, 0.5);
+    near(ds_fn_fit_text_scale(ebuc, cw - 16, 0.5), 0.5);  /* short: full size */
+    double sc = ds_fn_fit_text_scale(long_motto, cw - 16, 0.5);
     assert(sc > 0.1 && sc <= 0.5);
-    near(sc * ink_width(ebuc), cw - 16);          /* exactly the available width */
+    near(sc * ink_width(long_motto), cw - 16);    /* exactly the available width */
     int saved_w = screen_w;
     screen_w = 1600;
-    near(ds_fn_fit_text_scale(ebuc, screen_w - 2 * screen_margin, 0.8), 0.8);
+    near(ds_fn_fit_text_scale(long_motto, screen_w - 2 * screen_margin, 0.8), 0.8);
     screen_w = 400;   /* narrow window: the motto has to shrink into the margins */
-    double ss = ds_fn_fit_text_scale(ebuc, screen_w - 2 * screen_margin, 0.8);
-    assert(ss < 0.8 && ss * ink_width(ebuc) <= screen_w - 2 * screen_margin + 0.001);
+    double ss = ds_fn_fit_text_scale(long_motto, screen_w - 2 * screen_margin, 0.8);
+    assert(ss < 0.8 && ss * ink_width(long_motto) <= screen_w - 2 * screen_margin + 0.001);
     screen_w = saved_w;
 
     /* Class cards: the motto is really drawn and stays inside the card. */
@@ -295,7 +297,7 @@ static void test_class_mottos(void) {
         assert(text_calls[i].x + text_calls[i].scale * ink_width(ebuc) <= screen_w - screen_margin + 0.001);
     }
     assert(seen_stat == 1);
-    puts("class mottos: Azum/buC text and fit-to-width scaling OK");
+    puts("class mottos: Azum text, buC Tr4pp3d and fit-to-width scaling OK");
 }
 
 static void test_render(void) {

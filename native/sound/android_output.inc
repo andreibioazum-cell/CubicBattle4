@@ -115,21 +115,25 @@ static void snd_backend_stop(void) {
     if (!snd_at_track) return;
     int attached = 0;
     JNIEnv *env = snd_jni_env(&attached);
-    /* When the track is paused, after the app lost focus, write() on the audio thread
-     * stays blocked forever, so play() is restored first to drain the buffer and let
-     * the thread notice the stop flag. */
+    snd_at_run = 0;
+    /* The audio thread may be parked inside write(): the track is paused after
+     * the app lost focus, or the system holds the output of an app that went to
+     * the background. stop() interrupts a blocked write() (play() only helped
+     * when the device buffer was actually draining), so the join below cannot
+     * hang - a hang here held the UI thread in onSurfaceDestroyed until the
+     * system killed the game, which the player saw as a crash on return. */
     if (env) {
         jclass atc0 = (*env)->GetObjectClass(env, snd_at_track);
-        (*env)->CallVoidMethod(env, snd_at_track, (*env)->GetMethodID(env, atc0, "play", "()V"));
+        (*env)->CallVoidMethod(env, snd_at_track, (*env)->GetMethodID(env, atc0, "stop", "()V"));
         if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, atc0);
     }
-    snd_at_run = 0;
     if (snd_at_thread_ok) { pthread_join(snd_at_thread, NULL); snd_at_thread_ok = 0; }
     if (env) {
         jclass atc = (*env)->GetObjectClass(env, snd_at_track);
-        (*env)->CallVoidMethod(env, snd_at_track, (*env)->GetMethodID(env, atc, "stop", "()V"));
         (*env)->CallVoidMethod(env, snd_at_track, (*env)->GetMethodID(env, atc, "release", "()V"));
         if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, atc);
         (*env)->DeleteGlobalRef(env, snd_at_track);
         (*env)->DeleteGlobalRef(env, snd_at_buf);
     }
@@ -179,6 +183,10 @@ void ds_sound_shutdown(void) {
     snd_backend_stop();
     snd_release_sounds();
 }
+
+/* Background: the output stops, the decoded sounds and the voices stay, so the
+ * script that keeps running on return still finds its music. */
+void ds_sound_suspend(void) { snd_backend_stop(); }
 
 void ds_sound_pause(void) { snd_backend_pause(); }
 void ds_sound_resume(void) { snd_backend_resume(); }

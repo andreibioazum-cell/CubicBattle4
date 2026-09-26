@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Native promo checks: personal code from nick, streak and promo.dat file.
+"""Native promo checks: random card codes, promo.dat and the cloud sync.
 
 Compiles the REAL net.c (the same translation unit the Android build uses,
 with temporary Android/JNI header stubs — this is not a PC build) and runs it
 against a real temporary data directory:
 
-  write  — the code is deterministic per nick (case-insensitive), unique per
-           nick, in the CB4-XXXX-XXXX-XXXX format; streak/used live in
-           promo.dat;
-  read   — a fresh process ("restart") restores used/streak from promo.dat;
-  cloud  — on a clean device the cloud profile wins: promo_used=1 is adopted,
-           a missing promo is registered (the PATCH itself is a no-op without
-           the JVM, exactly as in other storage tests).
+  write  — every card gets a fresh random code of 3 letters and 1 digit (no I,
+           O, 0 or 1), never the same code twice in a row, spread over many
+           values and digit positions; only the code of the last card redeems;
+  read   — a fresh process ("restart") still knows the code of the last card;
+           taking the reward spends it and sets the one-per-account flag;
+  cloud  — on a clean device a card code found on another phone is adopted,
+           promo_used=1 from the cloud blocks a second reward, and an old
+           profile value that is not a card code is ignored;
+  legacy — a promo.dat of an older version (streak, card_found) still reads.
 
 Requires a host C compiler (CC).
 """
@@ -73,7 +75,7 @@ typedef const struct JNIInvokeInterface *JavaVM;
 """
 
 # The test includes the real net.c, so it also sees the static functions of the
-# module (promo_code_for_nick, promo_sync_with_cloud, the lg session).
+# module (promo_sync_with_cloud, the lg session).
 HARNESS = r'''
 #include <assert.h>
 #include <stdio.h>
@@ -86,71 +88,108 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 }
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 
+static int format_ok(const char *c) {
+    int l = 0, d = 0;
+    if (strlen(c) != 4) return 0;
+    for (int i = 0; i < 4; i++) {
+        if (c[i] >= 'A' && c[i] <= 'Z' && c[i] != 'I' && c[i] != 'O') l++;
+        else if (c[i] >= '2' && c[i] <= '9') d++;
+        else return 0;
+    }
+    return l == 3 && d == 1;
+}
+
 static int run_write(const char *dir) {
-    char code1[24], code2[24], again[24];
     net_set_data_path(dir);
-    promo_code_for_nick("Andrei", code1, sizeof(code1));
-    promo_code_for_nick("andrei", again, sizeof(again));
-    promo_code_for_nick("Boris", code2, sizeof(code2));
-    /* Format: 3 letters plus 1 digit, so 4 characters, for example ABC1. */
-    assert(strlen(code1) == 4);
-    assert(strlen(code2) == 4);
-    int letters1=0, digits1=0;
-    for(int i=0;i<4;i++){ if(code1[i]>='A'&&code1[i]<='Z') letters1++; else if(code1[i]>='0'&&code1[i]<='9') digits1++; }
-    assert(letters1==3 && digits1==1);
-    /* The same nick, case aside, gives the same code; another nick gives another. */
-    assert(strcmp(code1, again) == 0);
-    assert(strcmp(code1, code2) != 0);
-    assert(strcmp(net_promo_code(), "") == 0);  /* no session, no code */
-    /* The streak and the flag live in promo.dat. */
+    assert(strcmp(net_promo_code(), "") == 0);   /* no card yet, no code */
+    assert(net_promo_check("ABC7") == 0);        /* a well-formed guess is wrong */
     assert(net_promo_used() == 0);
-    assert(net_promo_streak() == 0);
-    net_promo_bump_streak();
-    net_promo_bump_streak();
-    assert(net_promo_streak() == 2);
-    net_promo_mark_used();
-    assert(net_promo_used() == 1);
-    net_promo_reset_streak();
-    assert(net_promo_streak() == 0);
-    printf("PROMO_CODE=%s\n", code1);
-    puts("promo write: personal code from nick, streak and used flag in promo.dat");
+    /* Random codes: valid, never repeated back to back, spread out. */
+    char prev[8] = "", seen[400][8];
+    int distinct = 0, pos_seen[4] = {0, 0, 0, 0};
+    for (int n = 0; n < 400; n++) {
+        const char *c = net_promo_new_code();
+        assert(format_ok(c));
+        assert(strcmp(c, prev) != 0);
+        assert(strcmp(net_promo_code(), c) == 0);
+        int dup = 0;
+        for (int k = 0; k < distinct; k++) if (!strcmp(seen[k], c)) { dup = 1; break; }
+        if (!dup) snprintf(seen[distinct++], 8, "%s", c);
+        for (int i = 0; i < 4; i++) if (c[i] >= '2' && c[i] <= '9') pos_seen[i] = 1;
+        snprintf(prev, sizeof(prev), "%s", c);
+    }
+    assert(distinct >= 390);
+    assert(pos_seen[0] && pos_seen[1] && pos_seen[2] && pos_seen[3]);
+    /* Only the code of the last card redeems. */
+    const char *last = net_promo_code();
+    assert(net_promo_check(last) == 1);
+    assert(net_promo_check(seen[0]) == 0 || !strcmp(seen[0], last));
+    char lower[8]; snprintf(lower, sizeof(lower), "%s", last);
+    for (int i = 0; i < 4; i++) if (lower[i] >= 'A' && lower[i] <= 'Z') lower[i] += 32;
+    assert(net_promo_check(lower) == 0);         /* the script upper-cases first */
+    assert(net_promo_check("") == 0);
+    printf("PROMO_CODE=%s\n", last);
+    printf("promo write: %d distinct random codes out of 400, digit in every position\n", distinct);
     return 0;
 }
 
-static int run_read(const char *dir) {
+static int run_read(const char *dir, const char *code) {
     net_set_data_path(dir);
+    assert(strcmp(net_promo_code(), code) == 0); /* the restart keeps the last card */
+    assert(net_promo_check(code) == 1);
+    assert(net_promo_used() == 0);
+    net_promo_mark_used();                       /* the reward is taken */
     assert(net_promo_used() == 1);
-    assert(net_promo_streak() == 0);
-    puts("promo read: a fresh process restores used/streak from promo.dat");
+    assert(net_promo_check(code) == 0);          /* the code is spent */
+    assert(strcmp(net_promo_code(), "") == 0);
+    /* A later card still shows a new random code, the flag stays. */
+    assert(format_ok(net_promo_new_code()));
+    assert(net_promo_used() == 1);
+    puts("promo read: the last card survives a restart, the reward spends it once");
     return 0;
 }
 
-/* Clean device: the cloud decides, so promo_used=1 is taken locally and a missing
- * promo is appended (a PATCH without a JVM is a no-op, as everywhere). */
-static int run_cloud(const char *dir) {
-    net_set_data_path(dir);
+static void login(const char *nick) {
     lg_lock();
     lg.status = NET_LOGIN_OK;
-    snprintf(lg.session_nick, sizeof(lg.session_nick), "tester");
+    snprintf(lg.session_nick, sizeof(lg.session_nick), "%s", nick);
     lg_unlock();
-    assert(promo_sync_with_cloud("{\"nick\":\"tester\",\"promo_used\":1}") == 1);
+}
+
+/* Clean device: the cloud knows the card found on another phone. */
+static int run_cloud(const char *dir) {
+    net_set_data_path(dir);
+    assert(promo_sync_with_cloud("{\"nick\":\"tester\",\"promo\":\"KXM7\"}") == 0); /* no session */
+    login("tester");
+    /* An old profile value that is not a card code is ignored. */
+    assert(promo_sync_with_cloud("{\"nick\":\"tester\",\"promo\":\"CB4-1A2B-3C4D-5E6F\"}") == 0);
+    assert(strcmp(net_promo_code(), "") == 0);
+    assert(promo_sync_with_cloud("{\"nick\":\"tester\",\"promo\":\"KXM7\",\"promo_used\":0}") == 1);
+    assert(strcmp(net_promo_code(), "KXM7") == 0);
+    assert(net_promo_check("KXM7") == 1);
+    /* The reward was taken on the other phone: no second one here. */
+    assert(promo_sync_with_cloud("{\"nick\":\"tester\",\"promo\":\"KXM7\",\"promo_used\":1}") == 1);
     assert(net_promo_used() == 1);
-    assert(strlen(net_promo_code()) == 4); /* the code is not empty: 3L+1D */
-    {
-        const char *c = net_promo_code();
-        int l=0,d=0;
-        for(int i=0;i<4;i++){ if(c[i]>='A'&&c[i]<='Z') l++; else if(c[i]>='0'&&c[i]<='9') d++; }
-        assert(l==3 && d==1);
-    }
-    puts("promo cloud: cloud promo_used adopted, code derived from the session nick");
+    assert(net_promo_check("KXM7") == 0);
+    puts("promo cloud: a card code from another phone is adopted, promo_used blocks a second reward");
+    return 0;
+}
+
+/* promo.dat of an older version: streak and card_found are ignored. */
+static int run_legacy(const char *dir) {
+    net_set_data_path(dir);
+    assert(net_promo_used() == 0);
+    assert(strcmp(net_promo_code(), "") == 0);
+    puts("promo legacy: an old promo.dat still reads");
     return 0;
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) { fprintf(stderr, "usage: test <write|read|cloud> <dir>\n"); return 2; }
+    if (argc < 3) { fprintf(stderr, "usage: test <write|read|cloud|legacy> <dir> [code]\n"); return 2; }
     if (strcmp(argv[1], "write") == 0) return run_write(argv[2]);
-    if (strcmp(argv[1], "read") == 0) return run_read(argv[2]);
+    if (strcmp(argv[1], "read") == 0 && argc > 3) return run_read(argv[2], argv[3]);
     if (strcmp(argv[1], "cloud") == 0) return run_cloud(argv[2]);
+    if (strcmp(argv[1], "legacy") == 0) return run_legacy(argv[2]);
     fprintf(stderr, "unknown mode '%s'\n", argv[1]);
     return 2;
 }
@@ -182,23 +221,25 @@ def main():
         written = subprocess.run(
             [*run, "write", str(data)], check=True,
             capture_output=True, text=True).stdout
-        assert "PROMO_CODE=" in written, written
-        # validate 3L+1D format
-        line = [l for l in written.splitlines() if "PROMO_CODE=" in l][0]
-        code = line.split("=")[1].strip()
+        sys.stdout.write(written)
+        code = [l for l in written.splitlines() if "PROMO_CODE=" in l][0].split("=")[1].strip()
         assert len(code) == 4, code
-        l_cnt = sum(1 for ch in code if 'A' <= ch <= 'Z')
-        d_cnt = sum(1 for ch in code if '0' <= ch <= '9')
-        assert l_cnt == 3 and d_cnt == 1, code
         saved = (data / "promo.dat").read_text(encoding="utf-8")
-        assert "used 1" in saved and "streak 0" in saved, saved
-        subprocess.run([*run, "read", str(data)], check=True)
+        assert f"code {code}" in saved and "used 0" in saved, saved
+        subprocess.run([*run, "read", str(data), code], check=True)
+        spent = (data / "promo.dat").read_text(encoding="utf-8")
+        assert "used 1" in spent and f"code {code}" not in spent, spent
 
         fresh = temp / "fresh-device"
         fresh.mkdir()
         subprocess.run([*run, "cloud", str(fresh)], check=True)
         adopted = (fresh / "promo.dat").read_text(encoding="utf-8")
         assert "used 1" in adopted, adopted
+
+        old = temp / "old-version"
+        old.mkdir()
+        (old / "promo.dat").write_text("used 0\nstreak 7\ncard_found 1\n", encoding="utf-8")
+        subprocess.run([*run, "legacy", str(old)], check=True)
     return 0
 
 

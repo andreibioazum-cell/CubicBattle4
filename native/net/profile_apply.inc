@@ -150,7 +150,7 @@ static void push_pg_to_cloud(void) {
  * (http_patch_async) and a purchase could be lost to a network failure or to
  * old rules that rejected the fields ebuc, ebuc_level, ebuc_levels and cls=3.
  * After a re-entry such a record wiped the class bought locally. The local state
- * is therefore restored for every purchased class, Azum, Santa and the buk with
+ * is therefore restored for every purchased class, Azum, Santa and the ebuC with
  * their levels, together with the selected class: the cloud may add, but never
  * takes away what the device already has. A return of 1 means the cloud needs an
  * update after the login (push_pg_to_cloud in net_auth). */

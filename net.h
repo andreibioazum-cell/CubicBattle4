@@ -36,7 +36,7 @@ const char *net_login_pass(void);
 void net_publish(double x, double y, double angle, double hp, double alive);
 void net_publish_punch(double x, double y, double dx, double dy, double punch);
 void net_publish_snow(double x, double y, double dx, double dy, double snow);
-/* Buk turrets: up to three live turrets, each with its own position and HP.
+/* ebuC turrets: up to three live turrets, each with its own position and HP.
  * count is how many are alive right now (0..3), and station1_ to station3_ hold
  * turrets 1, 2 and 3 in the order they were placed. */
 void net_publish_turrets(double x1, double y1, double hp1,
@@ -47,7 +47,7 @@ void net_publish_turrets(double x1, double y1, double hp1,
  * every dash, which is how receivers spot that one started. */
 void net_publish_dash(double x, double y, double dx, double dy, double dash);
 void net_publish_universe(double x, double y, double counter);
-/* Buk turret counter hit: an event counter for "my turret was hit". A client that
+/* ebuC turret counter hit: an event counter for "my turret was hit". A client that
  * sees a new counter on the remote side takes a little damage on its own fighter,
  * since each client is authoritative over its own fighter (net_player_thud). */
 void net_publish_thud(double counter);
@@ -158,30 +158,22 @@ void net_mark_achievement_flag(double flag);
 double net_load_azum_revives(void);
 void net_save_azum_revives(double revives);
 
-/* Personal promo code, derived from the nick in a deterministic way, so the same
- * nick gives the same code and different players get different ones, known even
- * offline. net_promo_register writes the code into the cloud profile and
- * net_promo_mark_used flags it as activated locally and in the cloud, which keeps
- * the reward to one per account. net_promo_streak, bump and reset maintain the
- * count of cardless matches that raises the drop chance (promo.ds). The
- * implementation is native/net/promo.inc. */
+/* Promo codes of the solo match cards. net_promo_new_code makes a fresh random
+ * code when a card is picked up (3 letters and 1 digit) and keeps it as the code
+ * of the last card, locally and in the cloud profile; net_promo_code returns it.
+ * net_promo_check says whether an entered code is that code, and
+ * net_promo_mark_used takes the reward, one per account, locally and in the
+ * cloud. The implementation is native/net/promo.inc. */
 const char *net_promo_code(void);
-void net_promo_register(void);
+const char *net_promo_new_code(void);
+double net_promo_check(const char *code);
 double net_promo_used(void);
 void net_promo_mark_used(void);
-double net_promo_streak(void);
-void net_promo_bump_streak(void);
-void net_promo_reset_streak(void);
-double net_promo_card_found(void);
-void net_promo_mark_card_found(void);
 double net_load_playtime(void);
 void net_save_playtime(double seconds);
 void net_add_playtime(double delta);
 
-/* Quests: the state survives a restart (native/net/quests.inc), and
- * net_quest_now gives the current epoch so the countdown keeps running while the
- * game is closed. */
-double net_quest_now(void);
+/* Quests: the state survives a restart (native/net/quests.inc). */
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
                           double t2, double p2, double n2, double x2);

@@ -12,6 +12,16 @@ public function start_remote_punch(number s)
     arr_set(remote_punches,rb+4,net_player_punch_dy(s))
     arr_set(remote_punches,rb+5,0)
 end
+-- A number from the room that is NaN or infinite is replaced: a broken angle
+-- stuck forever in the smoothing below (NaN plus anything stays NaN), and the
+-- fighter's idle cube stopped showing while his punch pose, turned by the punch
+-- direction instead, still did.
+public function finite_or(number v, number fb)
+    if v!=v||v>1000000000||v<0-1000000000 then
+        return fb
+    end
+    return v
+end
 public function read_remotes()
     if net_slot()<0 then
         return
@@ -20,7 +30,8 @@ public function read_remotes()
     while s<max_players do
         local number b=s*remote_fields
         if net_player_online(s)==1&&s!=net_slot() then
-            local number x=net_player_x(s)*screen_w, y=net_player_y(s)*screen_h, a=net_player_angle(s)
+            local number x=finite_or(net_player_x(s),0.5)*screen_w, y=finite_or(net_player_y(s),0.5)*screen_h
+            local number a=finite_or(net_player_angle(s),arr_get(remotes,b+9))
             if arr_get(remotes,b)==0 then
                 arr_set(remotes,b,1)
                 arr_set(remotes,b+1,x)
@@ -82,7 +93,7 @@ public function update_remote_punches()
             if arr_get(remotes,s*remote_fields+5)==0 then
                 clear_remote_punch(s)
             else
-                local number target=punch_resolve_target(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),0)
+                local number target=punch_resolve_target(arr_get(remote_punches,rb+1),arr_get(remote_punches,rb+2),arr_get(remote_punches,rb+3),arr_get(remote_punches,rb+4),punch_reach,punch_width)
                 if target==0||(target>=1&&target<=turret_max) then
                     local number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s)
                     if target==0 then
@@ -162,7 +173,7 @@ public function update_remote_snow()
                 arr_set(remote_snow,b+3,x)
                 arr_set(remote_snow,b+4,y)
                 local number hit=0
-                if dist(x,y,player.x,player.y)<player.size*0.65+24 then
+                if circle_hits_player(x,y,snow_ball_r)==1 then
                     hit=1
                 end
                 if t>super_range/super_speed then
@@ -173,7 +184,7 @@ public function update_remote_snow()
                     arr_set(remote_snow,b+5,boom_time)
                     arr_set(remote_snow,b+6,x)
                     arr_set(remote_snow,b+7,y)
-                    if dist(x,y,player.x,player.y)<=super_radius then
+                    if circle_hits_player(x,y,super_radius)==1 then
                         local number rcls=arr_get(remotes,s*remote_fields+10), rlevel=net_player_level(s), freeze_time=super_freeze
                         if rcls==CLASS_SANTA then
                             freeze_time=santa_freeze_time_for(rlevel)
@@ -198,7 +209,8 @@ public function smooth_remotes()
         local number b=s*remote_fields
         if arr_get(remotes,b+5)==1 then
             local number rx=arr_get(remotes,b+1), ry=arr_get(remotes,b+2), ra=arr_get(remotes,b+3)
-            local number nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=arr_get(remotes,b+9)
+            local number nx=arr_get(remotes,b+7), ny=arr_get(remotes,b+8), na=finite_or(arr_get(remotes,b+9),0)
+            ra=finite_or(ra,na)
             if dist(rx,ry,nx,ny)>remote_snap then
                 rx=nx
                 ry=ny

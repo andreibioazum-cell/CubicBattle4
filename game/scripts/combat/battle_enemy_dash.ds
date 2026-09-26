@@ -4,6 +4,7 @@ public function enemy_start_dash()
     enemy_dash_dy=sin(a)
     enemy_dash_x0=enemy.x
     enemy_dash_y0=enemy.y
+    enemy_dash_travel=0
     enemy_dash_active=1
     enemy_dash_t=azum_dash_time
     enemy_dash_hit=0
@@ -66,8 +67,7 @@ public function tick_enemy_dash()
         local number dti=0
         while dti<turret_max do
             if enemy_dash_hit==0&&turret_alive(dti)==1 then
-                local number pad=enemy.size*0.65+turret_zone_half()+14
-                if fabs(enemy.x-arr_get(turret_x,dti))<=pad&&fabs(enemy.y-arr_get(turret_y,dti))<=pad then
+                if strip_hits_turret(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,0,enemy_dash_travel,dash_hit_radius_solo(),arr_get(turret_x,dti),arr_get(turret_y,dti))==1 then
                     enemy_dash_hit=1
                     damage_turret(dti,enemy_dash_damage)
                     enemy_apply_damage(turret_counter_damage)
@@ -77,8 +77,8 @@ public function tick_enemy_dash()
         end
     end
     if enemy_dash_hit==0&&finished==0&&revive_prot<=0 then
-        local number dpr=dash_hit_radius_solo()
-        if dist(enemy.x,enemy.y,player.x,player.y)<=dpr then
+        -- The drawn dash strip (draw_hit_dash) over the travelled path.
+        if strip_hits_player(enemy_dash_x0,enemy_dash_y0,enemy_dash_dx,enemy_dash_dy,0,enemy_dash_travel,dash_hit_radius_solo())==1 then
             enemy_dash_hit=1
             take_damage(enemy_dash_damage)
             stun_player(azum_dash_stun)
@@ -99,8 +99,7 @@ public function tick_dash_solo_hit()
     local number ti=0
     while ti<turret_max do
         if dash_hit==0&&enemy_turret_alive(ti)==1 then
-            local number pad=player.size*0.65+turret_zone_half()+14
-            if fabs(player.x-arr_get(enemy_turret_x,ti))<=pad&&fabs(player.y-arr_get(enemy_turret_y,ti))<=pad then
+            if strip_hits_turret(dash_x0,dash_y0,dash_dx,dash_dy,0,dash_travel,dash_hit_radius_solo(),arr_get(enemy_turret_x,ti),arr_get(enemy_turret_y,ti))==1 then
                 dash_hit=1
                 enemy_damage_turret(ti,azum_dash_damage)
                 if revive_prot<=0 then
@@ -117,8 +116,8 @@ public function tick_dash_solo_hit()
     if enemy_revive_prot>0 then
         return
     end
-    local number pr=dash_hit_radius_solo()
-    if dist(player.x,player.y,enemy.x,enemy.y)<=pr then
+    -- The drawn dash strip (draw_hit_dash) over the travelled path.
+    if strip_hits_enemy(dash_x0,dash_y0,dash_dx,dash_dy,0,dash_travel,dash_hit_radius_solo())==1 then
         dash_hit=1
         stun_enemy(azum_dash_stun)
         ds_log("dash hit enemy, hp %g",enemy.hp)

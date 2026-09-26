@@ -25,17 +25,26 @@ static int ds_vk_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                                void **mapped) {
     VkBufferCreateInfo bi = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bi.size = size; bi.usage = usage; bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (!ds_vk_check_result(vkCreateBuffer(vk_device, &bi, NULL, buf), "vkCreateBuffer")) return 0;
+    *buf = VK_NULL_HANDLE; *mem = VK_NULL_HANDLE;
+    if (!ds_vk_check_result(vkCreateBuffer(vk_device, &bi, NULL, buf), "vkCreateBuffer")) { *buf = VK_NULL_HANDLE; return 0; }
     VkMemoryRequirements mr;
     vkGetBufferMemoryRequirements(vk_device, *buf, &mr);
     VkMemoryAllocateInfo ai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
     ai.allocationSize = mr.size;
     ai.memoryTypeIndex = ds_vk_find_mem_type(mr.memoryTypeBits, props);
-    if (ai.memoryTypeIndex == UINT32_MAX) { ds_log_err("vulkan: no host memory type"); return 0; }
-    if (!ds_vk_check_result(vkAllocateMemory(vk_device, &ai, NULL, mem), "vkAllocateMemory")) return 0;
-    if (!ds_vk_check_result(vkBindBufferMemory(vk_device, *buf, *mem, 0), "vkBindBufferMemory")) return 0;
-    if (mapped && !ds_vk_check_result(vkMapMemory(vk_device, *mem, 0, size, 0, mapped), "vkMapMemory")) return 0;
+    /* A failure frees what was made: the texture upload retries every frame
+     * while memory is tight, and each leaked buffer made the next try likelier
+     * to fail too. */
+    if (ai.memoryTypeIndex == UINT32_MAX) { ds_log_err("vulkan: no host memory type"); goto fail; }
+    if (!ds_vk_check_result(vkAllocateMemory(vk_device, &ai, NULL, mem), "vkAllocateMemory")) { *mem = VK_NULL_HANDLE; goto fail; }
+    if (!ds_vk_check_result(vkBindBufferMemory(vk_device, *buf, *mem, 0), "vkBindBufferMemory")) goto fail;
+    if (mapped && !ds_vk_check_result(vkMapMemory(vk_device, *mem, 0, size, 0, mapped), "vkMapMemory")) goto fail;
     return 1;
+fail:
+    vkDestroyBuffer(vk_device, *buf, NULL);
+    if (*mem != VK_NULL_HANDLE) vkFreeMemory(vk_device, *mem, NULL);
+    *buf = VK_NULL_HANDLE; *mem = VK_NULL_HANDLE;
+    return 0;
 }
 
 static void ds_vk_destroy_buffer(VkBuffer *buf, VkDeviceMemory *mem) {
@@ -69,7 +78,15 @@ static int ds_vk_new_descriptor_set(VkImageView view, VkDescriptorSet *out) {
     ai.descriptorPool = vk_desc_pools[vk_desc_pool_n - 1];
     ai.descriptorSetCount = 1;
     ai.pSetLayouts = &vk_desc_layout;
-    if (!ds_vk_check_result(vkAllocateDescriptorSets(vk_device, &ai, out), "vkAllocateDescriptorSets")) return 0;
+    if (!ds_vk_check_result(vkAllocateDescriptorSets(vk_device, &ai, out), "vkAllocateDescriptorSets")) {
+        /* The pool refused (out of pool memory on some drivers well before
+         * maxSets): the retry of this texture's upload takes a fresh pool.
+         * Asking the same pool again every frame kept that one sprite - the
+         * fighter's idle cube - invisible for the rest of the session. */
+        *out = VK_NULL_HANDLE;
+        vk_desc_pool_used = DS_VK_DESC_SETS_PER_POOL;
+        return 0;
+    }
     VkDescriptorImageInfo di = { vk_sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     VkWriteDescriptorSet wr = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
     wr.dstSet = *out;
@@ -264,9 +281,14 @@ static void ds_vk_process_pending_uploads(void) {
         }
     }
     vk_pending_n = out;
+    /* A font that is loaded but has no atlas on the GPU (the device was
+     * rebuilt after a loss) is queued again, otherwise text stays invisible. */
+    if (font && vk_font_desc == VK_NULL_HANDLE) vk_pending_font = 1;
     if (vk_pending_font) {
+        static unsigned font_failures;
         vk_pending_font = 0;
-        if (!ds_vk_upload_font_atlas())
-            ds_log_err("vulkan: font atlas upload failed");
+        if (ds_vk_upload_font_atlas()) font_failures = 0;
+        else if ((font_failures++ % 300) == 0)
+            ds_log_err("vulkan: font atlas upload failed, retrying");
     }
 }

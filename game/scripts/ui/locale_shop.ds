@@ -1,0 +1,61 @@
+-- Shop and class strings: HP, strength, the shop, candies and the class names
+-- with their mottos, RU/EN like every locale module.
+
+public function tr_hp()
+    if language == 1 then
+        return "Здоровье"
+    end
+    return "HP"
+end
+public function tr_strength()
+    if language == 1 then
+        return "Сила"
+    end
+    return "Power"
+end
+public function tr_shop()
+    if language == 1 then
+        return "Магазин"
+    end
+    return "Shop"
+end
+public function tr_candies()
+    if language == 1 then
+        return "Леденцы"
+    end
+    return "Candies"
+end
+public function tr_class_ordinary()
+    if language == 1 then
+        return "Обычный"
+    end
+    return "Ordinary"
+end
+public function tr_class_azum()
+    if language == 1 then
+        return "Азум"
+    end
+    return "Azum"
+end
+public function tr_class_ordinary_desc()
+    return "I was the first"
+end
+public function tr_class_azum_desc()
+    return "Lived once, buried twice..."
+end
+public function tr_class_santa()
+    if language == 1 then
+        return "Дед Мороз"
+    end
+    return "Santa"
+end
+public function tr_class_santa_desc()
+    return "It's 12:00 AM!"
+end
+-- The class is called ebuC in both languages.
+public function tr_class_ebuc()
+    return "ebuC"
+end
+public function tr_class_ebuc_desc()
+    return "Tr4pp3d"
+end

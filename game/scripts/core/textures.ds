@@ -1,0 +1,101 @@
+-- Sprite loading: the first load at start, the ok-flags that pick the fallback
+-- sprites (battle_rules.ds), the retries of the loads that missed, and the snow
+-- tile of the winter theme. Split out of engine.ds.
+public function load_textures()
+    png_load(GRASS)
+    png_load(ORDINARY_TEX)
+    ordinary_punch_tex_ok = png_load(PUNCH_TEX)
+    azum_tex_ok = png_load(AZUM_TEX)
+    azum_punch_tex_ok = png_load(AZUM_PUNCH_TEX)
+    azum_zombie_tex_ok = png_load(AZUM_ZOMBIE_TEX)
+    azum_zombie_punch_tex_ok = png_load(AZUM_ZOMBIE_PUNCH_TEX)
+    png_load(SANTA_TEX)
+    santa_punch_tex_ok = png_load(SANTA_PUNCH_TEX)
+    png_load(EBUC_TEX)
+    ebuc_punch_tex_ok = png_load(EBUC_PUNCH_TEX)
+    png_load(DESPENSER_TEX)
+    candy_tex_ok = png_load(CANDY_TEX)
+    png_load(SNOWFLAKE_TEX)
+    tex_reload_t = 0
+    tex_reload_left = 60
+end
+-- The first load of a sprite can hiccup on a cold start (the asset store is
+-- still warming up, memory is tight right after boot). The ok-flags latch that
+-- first answer and pick the fallback cubes, and the sprites the fallback never
+-- names are not asked for again: the fighters stayed ordinary cubes for the
+-- whole session. The failed loads are asked again a couple of times per second
+-- for the first half minute, and the right art appears as soon as they land. tex() already retries the plain textures every draw; this
+-- retries the ones only the flags ask for. After the fast half minute a load
+-- that still misses is asked again every tex_reload_slow seconds for the rest
+-- of the session: the retries used to stop for good, and one missed sprite then
+-- stayed missing until the game was restarted.
+public function textures_all_ok()
+    if ordinary_punch_tex_ok==0||azum_tex_ok==0||azum_punch_tex_ok==0 then
+        return 0
+    end
+    if azum_zombie_tex_ok==0||azum_zombie_punch_tex_ok==0 then
+        return 0
+    end
+    if santa_punch_tex_ok==0||ebuc_punch_tex_ok==0||candy_tex_ok==0 then
+        return 0
+    end
+    if winter_theme==1&&snow_tex_ok==0 then
+        return 0
+    end
+    return 1
+end
+public function reload_textures()
+    if tex_reload_left<=0&&textures_all_ok()==1 then
+        return
+    end
+    if tex_reload_t>0 then
+        tex_reload_t=tex_reload_t-dt
+        return
+    end
+    if tex_reload_left>0 then
+        tex_reload_t=0.5
+        tex_reload_left=tex_reload_left-1
+    else
+        tex_reload_t=tex_reload_slow
+    end
+    if ordinary_punch_tex_ok==0 then
+        ordinary_punch_tex_ok=png_load(PUNCH_TEX)
+    end
+    if azum_tex_ok==0 then
+        azum_tex_ok=png_load(AZUM_TEX)
+    end
+    if azum_punch_tex_ok==0 then
+        azum_punch_tex_ok=png_load(AZUM_PUNCH_TEX)
+    end
+    if azum_zombie_tex_ok==0 then
+        azum_zombie_tex_ok=png_load(AZUM_ZOMBIE_TEX)
+    end
+    if azum_zombie_punch_tex_ok==0 then
+        azum_zombie_punch_tex_ok=png_load(AZUM_ZOMBIE_PUNCH_TEX)
+    end
+    if santa_punch_tex_ok==0 then
+        santa_punch_tex_ok=png_load(SANTA_PUNCH_TEX)
+    end
+    if ebuc_punch_tex_ok==0 then
+        ebuc_punch_tex_ok=png_load(EBUC_PUNCH_TEX)
+    end
+    if candy_tex_ok==0 then
+        candy_tex_ok=png_load(CANDY_TEX)
+    end
+    if winter_theme==1&&snow_tex_ok==0 then
+        snow_tex_ok=png_load(SNOW_TEX)
+    end
+    if textures_all_ok()==1 then
+        tex_reload_left=0
+    end
+end
+-- The snow tile is loaded only for the winter theme. The setting is read from
+-- storage after the textures, so the theme is applied as a separate step and
+-- again on every tap of the winter theme row.
+public function apply_winter_theme()
+    if winter_theme == 1 then
+        snow_tex_ok = png_load(SNOW_TEX)
+        return
+    end
+    snow_tex_ok = 0
+end

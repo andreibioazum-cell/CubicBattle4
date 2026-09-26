@@ -541,6 +541,26 @@ int main(int argc, char **argv) {
     printf("%-14s: verts=%zu idx=%zu -> %s\n", "index_sanity", vn, in, idx_ok ? "OK" : "FAIL");
     if (!idx_ok) failures++;
 
+    /* A sprite with a broken angle is drawn unturned, never dropped: that was
+     * the fighter whose idle cube vanished while the punch pose still showed. */
+    {
+        int nan_ok = 1;
+        float bad[3] = { NAN, INFINITY, -INFINITY };
+        for (int k = 0; k < 3; k++) {
+            geo_side_reset();
+            geo_side_tex(10, 20, bad[k], 1.0f, 50, 50, pack_c(0xFFFFFFFF));
+            const GeoVert *v = geo_side_verts();
+            if (geo_side_vert_count() != 4 || geo_side_index_count() != 6) { nan_ok = 0; continue; }
+            /* unturned: exactly the 50x50 box at (10, 20) */
+            if (v[0].x != 10 || v[0].y != 20 || v[2].x != 60 || v[2].y != 70) nan_ok = 0;
+        }
+        geo_side_reset();
+        geo_side_tex(NAN, 20, 0, 1.0f, 50, 50, pack_c(0xFFFFFFFF)); /* no place: skipped */
+        if (geo_side_vert_count() != 0) nan_ok = 0;
+        printf("%-14s: %s\n", "tex_bad_angle", nan_ok ? "OK" : "FAIL");
+        if (!nan_ok) failures++;
+    }
+
     free(legacy_buf.pixels);
     free(gpu_buf.pixels);
     printf(failures ? "RESULT: %d scene(s) failed\n" : "RESULT: every check passed\n", failures);

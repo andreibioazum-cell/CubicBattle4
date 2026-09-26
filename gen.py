@@ -1,57 +1,40 @@
 """Generate C code for a DimScript game project."""
 import os
 import sys
-from ds_compiler import DimScriptCompiler
+from dimscript import DimScriptCompiler
+
+
+MODULES_FILE = 'modules.txt'
+
+
+def read_module_order(directory):
+    """Module order of a game: <scripts>/modules.txt, one path per line.
+
+    The game owns its module list, so adding or splitting a game module never
+    touches the compiler or this driver. Blank lines and text after # are
+    ignored; a missing file means plain alphabetical order.
+    """
+    path = os.path.join(directory, MODULES_FILE)
+    if not os.path.isfile(path):
+        return []
+    order = []
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            rel = line.split('#', 1)[0].strip().replace('\\', '/')
+            if rel and rel not in order:
+                order.append(rel)
+    return order
 
 
 def find_ds_files(directory):
     """Collects every .ds file recursively and sorts it by module.
 
     The order matters for global declarations: objects and their instances must
-    come before the first use. The files inside game/scripts are grouped by
-    module, and the module order is pinned here: configuration and state first,
-    battle and effects after, with the engine, the main loop, closing the list.
+    come before the first use. The game pins it in game/scripts/modules.txt:
+    configuration and state first, battle and effects after, with the engine,
+    the main loop, closing the list.
     """
-    order = [
-        "core/config.ds",          # constants: screens, theme, layout, balance
-        "ui/locale_core.ds",       # main RU/EN strings
-        "ui/locale_progress.ds",   # progress, reward and shop strings
-        "ui/locale_extra.ds",      # quests and the top list
-        "core/entities.ds",        # objects and battle state
-        "core/ui.ds",              # UI kit: buttons, cards, hit tests, text
-        "ui/progress_classes.ds",  # classes, levels and skins
-        "ui/progress_rewards.ds",  # rewards, saving and syncing
-        "ui/promo.ds",             # solo cards and the promo screen
-        "ui/layout.ds",            # screen geometry, draw_* and touch_*
-        "ui/chat.ds",              # online chat
-        "ui/menu_screens.ds",      # menu screen drawing
-        "ui/quests.ds",            # quests
-        "ui/menu_input.ds",        # menu navigation and taps
-        "combat/battle_rules.ds",  # class data: textures, HP, damage, poison
-        "combat/battle_turrets.ds", # the buk dispenser turrets
-        "combat/battle_hitscan.ds", # hit geometry of punches and dashes
-        "combat/battle_damage.ds", # damage, healing, stun, revive
-        "combat/battle_setup.ds",  # battle start, spawning and player movement
-        "combat/battle_movement.ds", # bot aiming and movement
-        "combat/battle_ai.ds",     # bot decisions and attacks
-        "combat/battle_status.ds", # freeze, stun and poison
-        "combat/battle_enemy_class.ds", # the random enemy class and its supers
-        "combat/battle_enemy_dash.ds", # enemy dash and the solo player dash
-        "combat/battle_enemy_turrets.ds", # enemy buk shield turrets
-        "combat/battle_shield.ds", # buk turret shield and snowflake piercing
-        "combat/battle_abilities.ds", # abilities and the main battle update
-        "combat/battle_online.ds", # network snapshots and match finish
-        "combat/battle_actions_fx.ds", # attack start and abilities
-        "combat/battle_super_render.ds", # drawing turrets, the beam and the universe
-        "combat/battle_hitboxes.ds", # damage hitboxes of abilities
-        "combat/battle_hitbox_fades.ds", # smooth alphas of those hitboxes
-        "combat/battle_render.ds", # arena, fighters and battle HUD
-        "combat/battle_event_plates.ds", # the plates and Santa event
-        "combat/battle_events_input.ds", # events, banners and input
-        "fx/weather.ds",           # arena background and the snow effect
-        "fx/dust.ds",              # dust trail
-        "core/engine.ds",          # main loop
-    ]
+    order = read_module_order(directory)
     files = []
     for root, _dirs, names in os.walk(directory):
         for n in names:
@@ -132,9 +115,9 @@ def main():
     if os.path.isdir(input_path):
         src_dir = input_path
         # In this project the scripts live in <game_dir>/scripts, and the module
-        # list in find_ds_files is relative to that folder. A project root such as
+        # list in modules.txt is relative to that folder. A project root such as
         # game is therefore redirected to its scripts subdirectory, otherwise the
-        # module order would not match order in find_ds_files.
+        # module order would not match modules.txt.
         scripts = os.path.join(input_path, 'scripts')
         if os.path.isdir(scripts):
             src_dir = scripts

@@ -11,14 +11,33 @@
 #endif
 #include "native/graphics/shaders_spirv.inc"
 
-#define DS_VK_MAX_SW_IMAGES 8
+/* Room for the swapchain images. The Android swapchain may hand out more images
+ * than were asked for (the compositor keeps some of its own): a Xiaomi with a
+ * Mali-G52 on Android 14 gave more than the old limit of 8, the image query
+ * answered VK_INCOMPLETE and Vulkan never started - a black screen. */
+#define DS_VK_MAX_SW_IMAGES 32
 #define DS_VK_FRAMES_IN_FLIGHT 2
 #define DS_VK_DESC_SETS_PER_POOL 96
 
 /* Logs a Vulkan result: 1 on success, 0 on error (with a message in the log). */
+/* The first thing that failed in the current start attempt and the GPU it ran
+ * on. When Vulkan cannot start at all, fallback_screen.inc shows these on the
+ * window so a player can send a screenshot instead of a black screen. */
+static char vk_fail_step[96];
+static int vk_fail_code;
+static char vk_diag_gpu[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+static uint32_t vk_diag_api, vk_diag_driver, vk_diag_vendor;
+
+static void ds_vk_note_failure(const char *what, int code) {
+    if (vk_fail_step[0]) return; /* the first failure is the cause, the rest follow from it */
+    snprintf(vk_fail_step, sizeof(vk_fail_step), "%s", what ? what : "?");
+    vk_fail_code = code;
+}
+
 static int ds_vk_check_result(VkResult r, const char *what) {
     if (r == VK_SUCCESS) return 1;
     ds_log_err("vulkan: %s failed (%d)", what, (int)r);
+    ds_vk_note_failure(what, (int)r);
     return 0;
 }
 
@@ -162,6 +181,27 @@ static int vk_pending_font;
 typedef struct { int pipeline; const void *desc; uint32_t first; uint32_t count; } GeoBatch;
 static GeoBatch *vk_batches;
 static size_t vk_batch_n, vk_batch_cap;
+
+/* Going to the background (vulkan_window.inc). Only the window half of the
+ * renderer - surface and swapchain - dies with the window; instance, device,
+ * pipelines and textures stay, and the next window gets a new surface on the
+ * same device. vk_surface_lost / vk_device_lost are set by acquire or present
+ * and handled at the start of the next frame; vk_rebuild_window remembers the
+ * window when a rebuild failed, so it is retried instead of a black screen. */
+static int vk_surface_lost;
+static int vk_device_lost;
+static ANativeWindow *vk_rebuild_window;
+static unsigned vk_rebuild_tries;
+static unsigned vk_reattaches; /* windows served by a kept device, for diagnostics */
+/* Image acquire never waits forever: with UINT64_MAX a compositor that stops
+ * handing out buffers while the app goes to the background parks the game
+ * thread inside vkAcquireNextImageKHR, APP_CMD_TERM_WINDOW is never handled,
+ * the UI thread hangs in onSurfaceDestroyed and the system kills the app. */
+#define DS_VK_ACQUIRE_TIMEOUT_NS 250000000ull
+static int ds_vk_attach_window(ANativeWindow *window);
+static void ds_vk_surface_lost(void);
+static int ds_vk_recover(void);
+static int ds_vk_reset_acquire_semaphores(void);
 
 static int ds_vk_create_frame_resources(void);
 static void ds_vk_destroy_frame_resources(void);

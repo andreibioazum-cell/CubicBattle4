@@ -1,4 +1,4 @@
--- Damages the player: the buk shield and the Azum damage reduction are applied
+-- Damages the player: the ebuC shield and the Azum damage reduction are applied
 -- here, then the red flash (player_hurt_a), the HP loss and the death handling,
 -- which is either Azum's revive or a defeat. Returns 1 when the battle ends.
 public function take_damage(number dmg)

@@ -51,6 +51,33 @@ static int g_present_suboptimal_once = 1;
 static int g_present_suboptimal_always = 0;
 static uint64_t g_next_handle = 0x1000;
 
+/* Lifecycle tracking for the background/return test: which surfaces and
+ * windows are alive, which swapchain sits on which surface, and which
+ * semaphores carry a signal from vkAcquireNextImageKHR nobody waited on yet. */
+static int g_instance_creates, g_device_creates, g_surface_creates;
+static uint64_t g_live_surfaces[8];
+static uint64_t g_swap_surface;           /* surface of the live swapchain */
+static uint64_t g_swap_handle;            /* the live swapchain */
+static const void *g_surface_window[8];   /* window of each live surface */
+static const void *g_dead_window;         /* the window Android already took away */
+static uint64_t g_signalled_sems[16];
+static int g_acquires, g_acquire_infinite;
+static VkResult g_acquire_next = VK_SUCCESS; /* one-shot result of the next acquire */
+static VkResult g_present_next = VK_SUCCESS; /* one-shot result of the next present */
+static int g_surface_live(uint64_t s) {
+    for (int i = 0; i < 8; i++) if (g_live_surfaces[i] == s && s) return i;
+    return -1;
+}
+static int g_sem_signalled(uint64_t s) {
+    for (int i = 0; i < 16; i++) if (g_signalled_sems[i] == s && s) return i;
+    return -1;
+}
+static void g_sem_set(uint64_t s, int on) {
+    int i = g_sem_signalled(s);
+    if (on && i < 0) { for (i = 0; i < 16; i++) if (!g_signalled_sems[i]) { g_signalled_sems[i] = s; return; } }
+    if (!on && i >= 0) g_signalled_sems[i] = 0;
+}
+
 /* Present mode list as Mali and Adreno report it on Android. Tests change it to
  * cover the whole preference chain (MAILBOX, FIFO_RELAXED, FIFO). */
 static VkPresentModeKHR g_present_modes[4] = {
@@ -58,6 +85,17 @@ static VkPresentModeKHR g_present_modes[4] = {
     VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR };
 static uint32_t g_present_mode_count = 4;
 static VkPresentModeKHR g_created_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
+/* Start failure checks: which compositeAlpha the surface lists (older Android
+ * lists only INHERIT), a "free" currentExtent (0xFFFFFFFF: the swapchain picks
+ * the size), a one-shot failing vkCreateSwapchainKHR, and what was created. */
+static uint32_t g_sw_images = 3;
+static int g_present_index_max = -1; /* highest image index presented */
+static int g_acquire_last_image = 0; /* acquire hands out the last image */
+static VkCompositeAlphaFlagsKHR g_caps_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+static int g_caps_free_extent = 0;
+static VkResult g_swapchain_fail_next = VK_SUCCESS;
+static VkCompositeAlphaFlagBitsKHR g_created_alpha;
+static VkExtent2D g_created_extent;
 static uint32_t g_surface_min_images = 2;
 /* The whole log is kept: its lines cover decisions that are otherwise only
  * visible on a device (present mode, ignored SUBOPTIMAL, the 60 fps request). */
@@ -135,6 +173,7 @@ VkResult vkCreateInstance(const VkInstanceCreateInfo *ci, const VkAllocationCall
     (void)ac;
     if (ci->pNext) { g_violation("vkCreateInstance: pNext != NULL"); return VK_ERROR_INITIALIZATION_FAILED; }
     *out = (VkInstance)g_next();
+    g_instance_creates++;
     return VK_SUCCESS;
 }
 void vkDestroyInstance(VkInstance i, const VkAllocationCallbacks *ac) { (void)i; (void)ac; }
@@ -166,15 +205,32 @@ VkResult vkCreateDevice(VkPhysicalDevice d, const VkDeviceCreateInfo *ci, const 
     (void)d; (void)ac;
     if (ci->pNext) { g_violation("vkCreateDevice: pNext != NULL"); return VK_ERROR_INITIALIZATION_FAILED; }
     *out = (VkDevice)g_next();
+    g_device_creates++;
     return VK_SUCCESS;
 }
 void vkGetDeviceQueue(VkDevice d, uint32_t fam, uint32_t idx, VkQueue *q) { (void)d; (void)idx; *q = (VkQueue)(uintptr_t)(0x6000 + fam); }
 void vkDestroyDevice(VkDevice d, const VkAllocationCallbacks *ac) { (void)d; (void)ac; }
 VkResult vkDeviceWaitIdle(VkDevice d) { (void)d; return VK_SUCCESS; }
 VkResult vkQueueWaitIdle(VkQueue q) { (void)q; return VK_SUCCESS; }
-VkResult vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo *si, VkFence f) { (void)q; (void)n; (void)si; (void)f; return VK_SUCCESS; }
+VkResult vkQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo *si, VkFence f) {
+    (void)q; (void)f;
+    for (uint32_t i = 0; i < n; i++)
+        for (uint32_t w = 0; w < si[i].waitSemaphoreCount; w++)
+            g_sem_set((uint64_t)(uintptr_t)si[i].pWaitSemaphores[w], 0);
+    return VK_SUCCESS;
+}
 VkResult vkQueuePresentKHR(VkQueue q, const VkPresentInfoKHR *pi) {
-    (void)q; (void)pi;
+    (void)q;
+    if (pi && pi->swapchainCount && (uint64_t)(uintptr_t)pi->pSwapchains[0] != g_swap_handle)
+        g_violation("present: swapchain is not the live one");
+    int si = g_surface_live(g_swap_surface);
+    if (si >= 0 && g_dead_window && g_surface_window[si] == g_dead_window)
+        g_violation("present: the swapchain belongs to a window Android already took away");
+    if (pi && pi->swapchainCount && pi->pImageIndices) {
+        if (pi->pImageIndices[0] >= g_sw_images) g_violation("present: image index %u of %u", pi->pImageIndices[0], g_sw_images);
+        if ((int)pi->pImageIndices[0] > g_present_index_max) g_present_index_max = (int)pi->pImageIndices[0];
+    }
+    if (g_present_next != VK_SUCCESS) { VkResult r = g_present_next; g_present_next = VK_SUCCESS; return r; }
     if (g_present_suboptimal_always) return VK_SUBOPTIMAL_KHR;
     if (g_present_suboptimal_once) { g_present_suboptimal_once = 0; return VK_SUBOPTIMAL_KHR; }
     return VK_SUCCESS;
@@ -189,7 +245,15 @@ VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice d, VkSurface
 }
 VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, const VkAllocationCallbacks *ac, VkSwapchainKHR *out) {
     (void)d; (void)ac;
+    if (g_swapchain_fail_next != VK_SUCCESS) { VkResult r = g_swapchain_fail_next; g_swapchain_fail_next = VK_SUCCESS; return r; }
     if (ci->imageExtent.width == 0 || ci->imageExtent.height == 0) { g_violation("swapchain: empty extent"); return VK_ERROR_INITIALIZATION_FAILED; }
+    /* compositeAlpha must be one the surface lists, like any real driver checks. */
+    if (!(ci->compositeAlpha & g_caps_alpha)) {
+        g_violation("swapchain: compositeAlpha %d is not listed by the surface (0x%x)", (int)ci->compositeAlpha, (unsigned)g_caps_alpha);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    g_created_alpha = ci->compositeAlpha;
+    g_created_extent = ci->imageExtent;
     /* On Android the buffer lives in window coordinates and the system
      * compositor rotates the window towards the display, so IDENTITY is the
      * only correct preTransform for a game that draws in window coordinates.
@@ -207,34 +271,65 @@ VkResult vkCreateSwapchainKHR(VkDevice d, const VkSwapchainCreateInfoKHR *ci, co
         g_violation("swapchain: presentMode %d is not in the driver list", (int)ci->presentMode);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    if (g_surface_live((uint64_t)(uintptr_t)ci->surface) < 0) {
+        g_violation("swapchain: created on a surface that does not exist");
+        return VK_ERROR_SURFACE_LOST_KHR;
+    }
+    if (g_swap_handle) g_violation("swapchain: a second swapchain while the old one is alive");
     g_created_present_mode = ci->presentMode;
     g_swapchain_creates++;
     *out = (VkSwapchainKHR)g_next();
+    g_swap_handle = (uint64_t)(uintptr_t)*out;
+    g_swap_surface = (uint64_t)(uintptr_t)ci->surface;
     return VK_SUCCESS;
 }
-void vkDestroySwapchainKHR(VkDevice d, VkSwapchainKHR s, const VkAllocationCallbacks *ac) { (void)d; (void)s; (void)ac; }
+void vkDestroySwapchainKHR(VkDevice d, VkSwapchainKHR s, const VkAllocationCallbacks *ac) {
+    (void)d; (void)ac;
+    if ((uint64_t)(uintptr_t)s == g_swap_handle) { g_swap_handle = 0; g_swap_surface = 0; }
+}
+/* Like a real driver: the swapchain may hold more images than minImageCount
+ * (a Xiaomi with Mali-G52 on Android 14 had more than 8), and an array too
+ * small for all of them is filled partly and answered with VK_INCOMPLETE. */
 VkResult vkGetSwapchainImagesKHR(VkDevice d, VkSwapchainKHR s, uint32_t *count, VkImage *imgs) {
     (void)d; (void)s;
-    if (!imgs) { *count = 3; return VK_SUCCESS; }
-    for (uint32_t i = 0; i < *count && i < 3; i++) imgs[i] = (VkImage)g_next();
-    *count = 3;
-    return VK_SUCCESS;
+    if (!imgs) { *count = g_sw_images; return VK_SUCCESS; }
+    uint32_t n = *count < g_sw_images ? *count : g_sw_images;
+    for (uint32_t i = 0; i < n; i++) imgs[i] = (VkImage)g_next();
+    *count = n;
+    return n < g_sw_images ? VK_INCOMPLETE : VK_SUCCESS;
 }
 VkResult vkAcquireNextImageKHR(VkDevice d, VkSwapchainKHR s, uint64_t t, VkSemaphore sem, VkFence f, uint32_t *idx) {
-    (void)d; (void)s; (void)t; (void)sem; (void)f;
-    *idx = 0;
+    (void)d; (void)f;
+    g_acquires++;
+    if (t == UINT64_MAX) g_acquire_infinite++;
+    if ((uint64_t)(uintptr_t)s != g_swap_handle) g_violation("acquire: swapchain is not the live one");
+    int si = g_surface_live(g_swap_surface);
+    if (si >= 0 && g_dead_window && g_surface_window[si] == g_dead_window)
+        g_violation("acquire: the swapchain belongs to a window Android already took away");
+    if (g_acquire_next != VK_SUCCESS) { VkResult r = g_acquire_next; g_acquire_next = VK_SUCCESS; return r; }
+    /* The spec forbids acquiring into a semaphore whose earlier signal was
+     * never waited on; Mali loses the device on it. */
+    if (g_sem_signalled((uint64_t)(uintptr_t)sem) >= 0)
+        g_violation("acquire: the semaphore still has a pending signal from an earlier acquire");
+    g_sem_set((uint64_t)(uintptr_t)sem, 1);
+    *idx = g_acquire_last_image ? g_sw_images - 1 : 0;
     return VK_SUCCESS;
 }
 VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice d, VkSurfaceKHR s, VkSurfaceCapabilitiesKHR *c) {
     (void)d; (void)s;
     memset(c, 0, sizeof *c);
     c->currentExtent.width = 720; c->currentExtent.height = 1280;
+    if (g_caps_free_extent) { c->currentExtent.width = UINT32_MAX; c->currentExtent.height = UINT32_MAX; }
+    c->minImageExtent.width = 1; c->minImageExtent.height = 1;
+    c->maxImageExtent.width = 4096; c->maxImageExtent.height = 4096;
+    c->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     c->minImageCount = g_surface_min_images; c->maxImageCount = 0; c->maxImageArrayLayers = 1;
     /* Realistic Android: portrait display, landscape window, so the system
      * rotates the window by 90 degrees (currentTransform = ROTATE_90). */
     c->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
     c->currentTransform = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
-    c->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    c->supportedCompositeAlpha = g_caps_alpha;
     return VK_SUCCESS;
 }
 VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice d, VkSurfaceKHR s, uint32_t *count, VkSurfaceFormatKHR *fmts) {
@@ -258,10 +353,22 @@ void vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice d, VkFormat f, VkForma
 VkResult vkCreateAndroidSurfaceKHR(VkInstance i, const VkAndroidSurfaceCreateInfoKHR *ci, const VkAllocationCallbacks *ac, VkSurfaceKHR *out) {
     (void)i; (void)ac;
     if (!ci->window) { g_violation("android surface: window == NULL"); return VK_ERROR_INITIALIZATION_FAILED; }
+    if (ci->window == g_dead_window) { g_violation("android surface: created on a window that is gone"); return VK_ERROR_NATIVE_WINDOW_IN_USE_KHR; }
     *out = (VkSurfaceKHR)g_next();
+    g_surface_creates++;
+    for (int k = 0; k < 8; k++) if (!g_live_surfaces[k]) {
+        g_live_surfaces[k] = (uint64_t)(uintptr_t)*out; g_surface_window[k] = ci->window; break;
+    }
     return VK_SUCCESS;
 }
-void vkDestroySurfaceKHR(VkInstance i, VkSurfaceKHR s, const VkAllocationCallbacks *ac) { (void)i; (void)s; (void)ac; }
+void vkDestroySurfaceKHR(VkInstance i, VkSurfaceKHR s, const VkAllocationCallbacks *ac) {
+    (void)i; (void)ac;
+    int k = g_surface_live((uint64_t)(uintptr_t)s);
+    if (k < 0) { g_violation("vkDestroySurfaceKHR: unknown or already destroyed surface"); return; }
+    if (g_swap_handle && g_swap_surface == (uint64_t)(uintptr_t)s)
+        g_violation("vkDestroySurfaceKHR: the surface still has a live swapchain");
+    g_live_surfaces[k] = 0; g_surface_window[k] = NULL;
+}
 void vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice d, VkPhysicalDeviceMemoryProperties *mp) {
     (void)d;
     memset(mp, 0, sizeof *mp);
@@ -366,8 +473,16 @@ VkResult vkCreateDescriptorPool(VkDevice d, const VkDescriptorPoolCreateInfo *ci
     return VK_SUCCESS;
 }
 void vkDestroyDescriptorPool(VkDevice d, VkDescriptorPool p, const VkAllocationCallbacks *ac) { (void)d; (void)p; (void)ac; }
+/* A pool that refuses every set, as some drivers do with OUT_OF_POOL_MEMORY
+ * well before maxSets. */
+static VkDescriptorPool g_desc_refuse_pool = VK_NULL_HANDLE;
+static int g_desc_refusals;
 VkResult vkAllocateDescriptorSets(VkDevice d, const VkDescriptorSetAllocateInfo *ai, VkDescriptorSet *sets) {
-    (void)d; (void)ai;
+    (void)d;
+    if (g_desc_refuse_pool != VK_NULL_HANDLE && ai->descriptorPool == g_desc_refuse_pool) {
+        g_desc_refusals++;
+        return VK_ERROR_OUT_OF_POOL_MEMORY;
+    }
     *sets = (VkDescriptorSet)g_next();
     return VK_SUCCESS;
 }
@@ -401,7 +516,7 @@ VkResult vkCreateSemaphore(VkDevice d, const VkSemaphoreCreateInfo *ci, const Vk
     *out = (VkSemaphore)g_next();
     return VK_SUCCESS;
 }
-void vkDestroySemaphore(VkDevice d, VkSemaphore s, const VkAllocationCallbacks *ac) { (void)d; (void)s; (void)ac; }
+void vkDestroySemaphore(VkDevice d, VkSemaphore s, const VkAllocationCallbacks *ac) { (void)d; (void)ac; g_sem_set((uint64_t)(uintptr_t)s, 0); }
 
 /* --- platform frame rate API (ANativeWindow_setFrameRate) ---
  * A host has none of it. The game resolves the functions with dlsym, so the
@@ -488,11 +603,52 @@ int screen_w = 720, screen_h = 1280;
 
 #include "graphics.c"
 
-/* Android stubs: the types come from stub/android/asset_manager.h above. */
-AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) { (void)mgr; (void)name; (void)mode; return NULL; }
-off_t AAsset_getLength(AAsset *a) { (void)a; return 0; }
-int AAsset_read(AAsset *a, void *buf, size_t n) { (void)a; (void)buf; (void)n; return -1; }
-int AAsset_close(AAsset *a) { (void)a; return 0; }
+/* Android stubs: the types come from stub/android/asset_manager.h above. With
+ * a NULL manager (the main test) no asset exists; with g_real_assets the files
+ * come from game/assets, so the failure screen draws with the real font. */
+static int g_real_assets = 0;
+struct AAsset { FILE *f; off_t len; };
+AAsset *AAssetManager_open(AAssetManager *mgr, const char *name, int mode) {
+    (void)mgr; (void)mode;
+    if (!g_real_assets || !name) return NULL;
+    char path[512];
+    snprintf(path, sizeof path, "game/assets/%s", name);
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    AAsset *a = (AAsset *)calloc(1, sizeof *a);
+    if (!a) { fclose(f); return NULL; }
+    fseek(f, 0, SEEK_END); a->len = (off_t)ftell(f); fseek(f, 0, SEEK_SET);
+    a->f = f;
+    return a;
+}
+off_t AAsset_getLength(AAsset *a) { return a ? a->len : 0; }
+int AAsset_read(AAsset *a, void *buf, size_t n) { return a ? (int)fread(buf, 1, n, a->f) : -1; }
+int AAsset_close(AAsset *a) { if (a) { fclose(a->f); free(a); } return 0; }
+
+/* The window: its size, and a CPU buffer for ANativeWindow_lock. Locking
+ * while a Vulkan surface is alive is refused, as on a device (the window is
+ * still connected to Vulkan). */
+static int32_t g_win_w = 720, g_win_h = 1280;
+static uint32_t *g_win_pixels;
+static int g_win_locks, g_win_posts, g_win_lock_refused;
+int32_t ANativeWindow_getWidth(ANativeWindow *w) { (void)w; return g_win_w; }
+int32_t ANativeWindow_getHeight(ANativeWindow *w) { (void)w; return g_win_h; }
+int32_t ANativeWindow_setBuffersGeometry(ANativeWindow *w, int32_t width, int32_t height, int32_t format) {
+    (void)w; (void)width; (void)height; (void)format; return 0;
+}
+int ANativeWindow_lock(ANativeWindow *w, ANativeWindow_Buffer *out, void *dirty) {
+    (void)w; (void)dirty;
+    for (int i = 0; i < 8; i++)
+        if (g_live_surfaces[i]) { g_win_lock_refused++; return -22; /* -EINVAL: connected to Vulkan */ }
+    free(g_win_pixels);
+    g_win_pixels = (uint32_t *)calloc((size_t)g_win_w * (size_t)g_win_h, 4);
+    if (!g_win_pixels) return -12;
+    out->bits = g_win_pixels; out->width = g_win_w; out->height = g_win_h; out->stride = g_win_w;
+    out->format = WINDOW_FORMAT_RGBA_8888;
+    g_win_locks++;
+    return 0;
+}
+int ANativeWindow_unlockAndPost(ANativeWindow *w) { (void)w; g_win_posts++; return 0; }
 
 
 
@@ -511,6 +667,7 @@ static struct { int init_ok; int frame1_ok; int frame2_ok; int frame3_ok; int fr
                 unsigned blit_src_w, blit_src_h, blit_dst_w, blit_dst_h;
                 unsigned blit2_src_w, blit2_src_h, blit2_dst_w, blit2_dst_h;
                 int scale0, scale_miss, scale_probe, scale_rollback, scale_still;
+                int scale_hitch, scale_new_window, pin_new_window, scale_reset, pin_reset;
                 unsigned probe_off_w, probe_off_h;
                 unsigned probe_blit_src_w, probe_blit_src_h, probe_blit_dst_w, probe_blit_dst_h;
                 /* present modes and behaviour on SUBOPTIMAL */
@@ -520,6 +677,146 @@ static struct { int init_ok; int frame1_ok; int frame2_ok; int frame3_ok; int fr
                 int storm_ok, frame5_ok, frame6_ok;
                 /* frame pacing */
                 unsigned paced_ms; } g_res;
+
+/* --- background and return (APP_CMD_TERM_WINDOW / APP_CMD_INIT_WINDOW) ---
+ * The crash on TECNO Spark Go 1 (Android 14 Go, Mali): minimise the game,
+ * open it again from recents, and it dies. The cycle below is what Android
+ * does in that case, checked by the strict driver above. */
+static struct {
+    int fr_strategy_first, fr_plain_first, fr_clear_first;
+    ANativeWindow *fr_window_first;
+    int lost_ok, no_window_frames_ok, acquires_without_window;
+    int attach_ok, frames_after_return_ok;
+    int instance_creates_delta, device_creates_delta, pipeline_creates_delta, surface_creates_delta;
+    int held_recreate_ok;
+    int timeout_skip_ok, timeout_next_ok;
+    int surface_lost_ok, surface_lost_device_delta, surface_lost_surface_delta;
+    int device_lost_ok, device_lost_device_delta;
+    int textures_kept, font_requeued;
+    int infinite_acquires;
+    int pool_refused_first, pool_retry_ok;
+} g_bg;
+
+static int bg_frame(Buffer *b) {
+    int ok = ds_graphics_begin_frame(b);
+    if (ok) { rect(0, 0, 10, 10, 0xff123456); ds_graphics_end_frame(); }
+    return ok;
+}
+
+static void test_background_cycle(Buffer *b) {
+    static int second_window, third_window;
+    ANativeWindow *win2 = (ANativeWindow *)&second_window;
+    g_present_suboptimal_always = 0;
+    g_present_suboptimal_once = 0;
+    g_bg.fr_strategy_first = g_frame_rate_strategy_calls;
+    g_bg.fr_plain_first = g_frame_rate_calls;
+    g_bg.fr_window_first = g_frame_rate_window;
+    /* A texture on the GPU: it has to survive the trip to the background. */
+    static uint32_t px[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+    static Texture tex_kept;
+    memset(&tex_kept, 0, sizeof tex_kept);
+    tex_kept.name = "kept.png"; tex_kept.w = 2; tex_kept.h = 2; tex_kept.pixels = px;
+    ds_vk_pending_texture(&tex_kept);
+    bg_frame(b);
+    int inst0 = g_instance_creates, dev0 = g_device_creates, pipe0 = g_pipeline_creates, surf0 = g_surface_creates;
+
+    /* A frame that acquired an image and was then cancelled (the script was
+     * not active): the acquire semaphore carries a signal nobody waits for. */
+    ds_graphics_begin_frame(b);
+    ds_graphics_cancel_frame();
+
+    /* TERM_WINDOW: the window goes, the device stays. */
+    ds_graphics_window_lost();
+    g_bg.fr_clear_first = g_clear_frame_rate_calls;
+    g_dead_window = g_test_window;
+    g_bg.lost_ok = (vk_surface == VK_NULL_HANDLE && vk_swap == VK_NULL_HANDLE && vk_device != VK_NULL_HANDLE);
+    /* The main loop never draws without a window, but the renderer must refuse
+     * on its own too and must not touch the dead swapchain. */
+    int acq = g_acquires;
+    g_bg.no_window_frames_ok = !ds_graphics_begin_frame(b) && !ds_graphics_begin_frame(b);
+    g_bg.acquires_without_window = g_acquires - acq;
+
+    /* INIT_WINDOW with the new window of the return. */
+    g_bg.attach_ok = ds_graphics_init(NULL, win2);
+    int ok = 1;
+    for (int i = 0; i < 5; i++) ok &= bg_frame(b);
+    g_bg.frames_after_return_ok = ok;
+    g_bg.instance_creates_delta = g_instance_creates - inst0;
+    g_bg.device_creates_delta = g_device_creates - dev0;
+    g_bg.pipeline_creates_delta = g_pipeline_creates - pipe0;
+    g_bg.surface_creates_delta = g_surface_creates - surf0;
+    g_bg.textures_kept = tex_kept.gpu.uploaded;
+
+    /* A cancelled frame followed by a swapchain rebuild (a rotation right
+     * after the return): the rebuilt swapchain must not acquire into the
+     * semaphore that still holds the old signal. */
+    ds_graphics_begin_frame(b);
+    ds_graphics_cancel_frame();
+    vk_need_recreate = 1;
+    g_bg.held_recreate_ok = bg_frame(b) && bg_frame(b);
+
+    /* The compositor hands out no image in time: the frame is skipped, the
+     * loop goes on, the next frame works. */
+    g_acquire_next = VK_TIMEOUT;
+    g_bg.timeout_skip_ok = !ds_graphics_begin_frame(b);
+    g_bg.timeout_next_ok = bg_frame(b);
+
+    /* SURFACE_LOST on present: a new surface on the same device. */
+    int dev1 = g_device_creates, surf1 = g_surface_creates;
+    g_present_next = VK_ERROR_SURFACE_LOST_KHR;
+    bg_frame(b);
+    ok = 1;
+    for (int i = 0; i < 3; i++) ok &= bg_frame(b);
+    g_bg.surface_lost_ok = ok;
+    g_bg.surface_lost_device_delta = g_device_creates - dev1;
+    g_bg.surface_lost_surface_delta = g_surface_creates - surf1;
+
+    /* DEVICE_LOST on acquire: the renderer is rebuilt on the same window and
+     * the texture and the font go up again. */
+    int dev2 = g_device_creates;
+    g_acquire_next = VK_ERROR_DEVICE_LOST;
+    ds_graphics_begin_frame(b);
+    ok = 1;
+    for (int i = 0; i < 3; i++) ok &= bg_frame(b);
+    g_bg.device_lost_ok = ok && vk_ready;
+    g_bg.device_lost_device_delta = g_device_creates - dev2;
+    ds_vk_pending_texture(&tex_kept); /* what the next tex() call does */
+    bg_frame(b);
+    g_bg.textures_kept &= tex_kept.gpu.uploaded;
+    g_bg.infinite_acquires = g_acquire_infinite;
+
+    /* A descriptor pool that refuses sets: the new texture (a fighter's idle
+     * cube) must go up from a fresh pool on the next try instead of asking the
+     * same pool every frame and staying invisible for the whole session. */
+    static uint32_t px2[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+    static Texture tex_new;
+    memset(&tex_new, 0, sizeof tex_new);
+    tex_new.name = "idle.png"; tex_new.w = 2; tex_new.h = 2; tex_new.pixels = px2;
+    static Texture tex_warm; /* makes sure a pool exists to refuse */
+    memset(&tex_warm, 0, sizeof tex_warm);
+    tex_warm.name = "warm.png"; tex_warm.w = 2; tex_warm.h = 2; tex_warm.pixels = px2;
+    ds_vk_pending_texture(&tex_warm);
+    bg_frame(b);
+    size_t pools0 = vk_desc_pool_n;
+    g_desc_refuse_pool = pools0 ? vk_desc_pools[pools0 - 1] : VK_NULL_HANDLE;
+    ds_vk_pending_texture(&tex_new);
+    bg_frame(b);
+    /* One refusal, then the very next try (same frame) takes a fresh pool. */
+    g_bg.pool_refused_first = g_desc_refusals == 1;
+    for (int i = 0; i < 3; i++) { ds_vk_pending_texture(&tex_new); bg_frame(b); }
+    g_bg.pool_refused_first &= g_desc_refusals == 1;
+    g_bg.pool_retry_ok = tex_warm.gpu.uploaded && pools0 >= 1 &&
+                         tex_new.gpu.uploaded && tex_new.gpu.desc && vk_desc_pool_n == pools0 + 1;
+    ds_vk_texture_gpu_release(&tex_warm);
+    g_desc_refuse_pool = VK_NULL_HANDLE;
+    ds_vk_texture_gpu_release(&tex_new);
+
+    /* The activity ends with the game in the background: full teardown. */
+    ds_graphics_window_lost();
+    g_dead_window = win2;
+    (void)third_window;
+    ds_vk_texture_gpu_release(&tex_kept);
+}
 
 static void *test_thread(void *arg) {
     (void)arg;
@@ -569,16 +866,21 @@ static void *test_thread(void *arg) {
     g_res.paced_ms = (unsigned)(test_ms() - pace_t0);
     vk_pace_on = 0;
     vk_pace_next_ns = 0;
-    /* Internal render scale (rules from autoscale.inc): a vsync miss (a frame
-     * longer than 20 ms) moves the scale two steps at once (1, 3, 5, 6), a
+    /* Internal render scale (rules from autoscale.inc): a run of vsync misses
+     * (frames of 20-100 ms) moves the scale one step (1, 2, 3 ... 6), a
      * sharper probe is a single step back and is allowed only after 300 clean
-     * frames, and a miss during a probe rolls back and blocks new probes. There
-     * is no button or setting for any of this. */
+     * frames, and a miss during a probe rolls back and blocks new probes until
+     * the next window. There is no button or setting for any of this. */
     g_res.scale0 = ds_graphics_pixel_scale();
-    /* Every swapchain rebuild drops the controller history and adds a one
-     * second cooldown: the first frames of a new window are always slow. */
-    for (int i = 0; i < 60; i++) ds_graphics_report_frame_interval(0.0167);
-    for (int i = 0; i < 10; i++) ds_graphics_report_frame_interval(0.0333);
+    /* Every new window starts with a warm-up of GFX_WARMUP_FRAMES that are not
+     * judged: the first frames of an entry load and upload textures. */
+    for (int i = 0; i < GFX_WARMUP_FRAMES + 10; i++) ds_graphics_report_frame_interval(0.0167);
+    /* Loading hitches (one long frame each) are not a GPU limit. */
+    for (int i = 0; i < 40; i++) ds_graphics_report_frame_interval(0.150);
+    g_res.scale_hitch = ds_graphics_pixel_scale();
+    /* Two runs of misses: 1 -> 2 -> 3, one step each (4 misses, then the 12
+     * frame cooldown of the change swallows the rest of the run). */
+    for (int i = 0; i < 30; i++) ds_graphics_report_frame_interval(0.0333);
     g_res.scale_miss = ds_graphics_pixel_scale();
     g_res.frame4_ok = ds_graphics_begin_frame(&b);
     rect(0, 0, 10, 10, 0xff123456);
@@ -606,6 +908,18 @@ static void *test_thread(void *arg) {
      * frames (90 cooldown plus 315) still do not allow a new probe. */
     for (int i = 0; i < 405; i++) ds_graphics_report_frame_interval(0.0167);
     g_res.scale_still = ds_graphics_pixel_scale();
+    /* A new window (a return to the app or a second entry) starts sharp again:
+     * the coarse scale and the pin of the failed probe used to outlive it,
+     * which made the game super pixelated after a re-entry. */
+    gfx_autoscale_new_window();
+    g_res.scale_new_window = ds_graphics_pixel_scale();
+    g_res.pin_new_window = gfx_finer_off || gfx_probe_fails;
+    gfx_auto_scale = 5; gfx_finer_off = 1; gfx_probe_fails = 2;
+    gfx_autoscale_reset();
+    g_res.scale_reset = ds_graphics_pixel_scale();
+    g_res.pin_reset = gfx_finer_off || gfx_probe_fails;
+    /* The rest of the test runs at 1/3 as before. */
+    gfx_auto_scale = 3; gfx_finer_off = 1;
 
     /* --- SUBOPTIMAL on every frame with an unchanged surface ---
      * That is what a real Android driver answers with preTransform IDENTITY and
@@ -654,8 +968,99 @@ static void *test_thread(void *arg) {
     g_res.creates_after_storm2 = g_swapchain_creates;
     g_present_suboptimal_always = 0;
 
+    test_background_cycle(&b);
     ds_graphics_shutdown();
     return 0;
+}
+
+/* --- start failures: the black screen without a crash ---
+ * A renderer that could not start used to leave the window black forever. The
+ * swapchain now takes a compositeAlpha the surface lists (older Android lists
+ * only INHERIT) and the window size for a "free" currentExtent, and when the
+ * start fails anyway the reason is noted and drawn on the window by the CPU. */
+static int check_start_failures(void) {
+    int fail = 0, ok;
+    static int fb_window, fake_mgr;
+    ANativeWindow *win = (ANativeWindow *)&fb_window;
+    ds_graphics_shutdown();
+
+    /* Xiaomi 24075RP89G (Mali-G52, Android 14): the swapchain holds 10 images,
+     * more than the old room for 8, and the image query said VK_INCOMPLETE. */
+    g_sw_images = 10; g_acquire_last_image = 1; g_present_index_max = -1;
+    ok = ds_graphics_init(NULL, win);
+    int frame_ok = 0;
+    if (ok) {
+        Buffer fb = { 0 };
+        fb.width = g_win_w; fb.height = g_win_h; fb.stride = g_win_w;
+        frame_ok = ds_graphics_begin_frame(&fb);
+        if (frame_ok) { rect(0, 0, 10, 10, 0xff123456); ds_graphics_end_frame(); }
+    }
+    if (!ok || !frame_ok || g_present_index_max != 9) {
+        fail = 1; printf("FAIL: a swapchain with 10 images: start %d (reason '%s'), frame %d, presented image %d, expected 9\n",
+                         ok, ds_graphics_failure(), frame_ok, g_present_index_max);
+    }
+    ds_graphics_shutdown();
+    g_sw_images = 3; g_acquire_last_image = 0;
+
+    g_caps_alpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    ok = ds_graphics_init(NULL, win);
+    if (!ok || g_created_alpha != VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+        fail = 1; printf("FAIL: a surface that lists only INHERIT: start %d, compositeAlpha %d\n", ok, (int)g_created_alpha);
+    }
+    ds_graphics_shutdown();
+    g_caps_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+
+    g_caps_free_extent = 1; g_win_w = 800; g_win_h = 480;
+    ok = ds_graphics_init(NULL, win);
+    if (!ok || g_created_extent.width != 800 || g_created_extent.height != 480) {
+        fail = 1; printf("FAIL: a free currentExtent: start %d, swapchain %ux%u, expected the 800x480 window\n",
+                         ok, g_created_extent.width, g_created_extent.height);
+    }
+    ds_graphics_shutdown();
+    g_caps_free_extent = 0;
+
+    /* The start fails: the reason is kept and drawn with the CPU, after Vulkan
+     * has let go of the window (the lock stub refuses while a surface lives). */
+    g_win_w = 1280; g_win_h = 720; g_real_assets = 1;
+    g_swapchain_fail_next = VK_ERROR_INITIALIZATION_FAILED;
+    ok = ds_graphics_init((AAssetManager *)(void *)&fake_mgr, win);
+    const char *why = ds_graphics_failure();
+    if (ok || strcmp(why, "vkCreateSwapchainKHR") != 0) {
+        fail = 1; printf("FAIL: a failing vkCreateSwapchainKHR: start %d, noted reason '%s'\n", ok, why);
+    }
+    int shown = ds_graphics_show_failure(win, 4);
+    long ink = 0;
+    if (g_win_pixels)
+        for (long i = 0; i < (long)g_win_w * g_win_h; i++) if (g_win_pixels[i] != 0xff100b1cu) ink++;
+    if (!shown || g_win_locks != 1 || g_win_posts != 1 || g_win_lock_refused || ink < 3000) {
+        fail = 1; printf("FAIL: failure screen: shown %d, locks %d, posts %d, refused %d, text pixels %ld\n",
+                         shown, g_win_locks, g_win_posts, g_win_lock_refused, ink);
+    }
+    if (!strstr(g_log, "vulkan start failure screen: Шаг: vkCreateSwapchainKHR")) {
+        fail = 1; printf("FAIL: the failure screen text is not in the log\n");
+    }
+    const char *ppm = getenv("VK_FAILURE_PPM");
+    if (ppm && g_win_pixels) {
+        FILE *f = fopen(ppm, "wb");
+        if (f) {
+            fprintf(f, "P6 %d %d 255\n", g_win_w, g_win_h);
+            for (long i = 0; i < (long)g_win_w * g_win_h; i++) {
+                const uint8_t *px = (const uint8_t *)&g_win_pixels[i];
+                fputc(px[0], f); fputc(px[1], f); fputc(px[2], f);
+            }
+            fclose(f);
+        }
+    }
+    g_real_assets = 0;
+
+    /* The next window tries Vulkan from the start again. */
+    ok = ds_graphics_init(NULL, win);
+    if (!ok || ds_graphics_failure()[0]) {
+        fail = 1; printf("FAIL: after the failure screen a new start: %d, reason '%s'\n", ok, ds_graphics_failure());
+    }
+    ds_graphics_shutdown();
+    g_win_w = 720; g_win_h = 1280;
+    return fail;
 }
 
 int main(void) {
@@ -668,6 +1073,8 @@ int main(void) {
     pthread_create(&th, &attr, test_thread, NULL);
     pthread_join(th, NULL);
     pthread_attr_destroy(&attr);
+    int start_fail = check_start_failures();
+    fail |= start_fail;
 
     if (!g_res.init_ok) { fail = 1; printf("FAIL: ds_graphics_init returned 0\n"); }
     if (!g_res.frame1_ok) { fail = 1; printf("FAIL: begin_frame of the first frame returned 0\n"); }
@@ -694,7 +1101,10 @@ int main(void) {
     }
     if (!g_res.frame4_ok) { fail = 1; printf("FAIL: begin_frame of the autoscaled frame returned 0\n"); }
     if (g_res.scale0 != 1) { fail = 1; printf("FAIL: initial autoscale is %d, expected 1\n", g_res.scale0); }
-    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: after the vsync misses the autoscale is %d, expected 3 (two steps at once)\n", g_res.scale_miss); }
+    if (g_res.scale_hitch != 1) { fail = 1; printf("FAIL: loading hitches coarsened the autoscale to %d, expected 1\n", g_res.scale_hitch); }
+    if (g_res.scale_miss != 3) { fail = 1; printf("FAIL: after two runs of vsync misses the autoscale is %d, expected 3 (one step per run)\n", g_res.scale_miss); }
+    if (g_res.scale_new_window != 1 || g_res.pin_new_window) { fail = 1; printf("FAIL: a new window kept the autoscale at %d (pin %d), expected 1:1 and no pin\n", g_res.scale_new_window, g_res.pin_new_window); }
+    if (g_res.scale_reset != 1 || g_res.pin_reset) { fail = 1; printf("FAIL: the shutdown reset kept the autoscale at %d (pin %d), expected 1:1 and no pin\n", g_res.scale_reset, g_res.pin_reset); }
     if (g_res.off2_w != 240 || g_res.off2_h != 426) {
         fail = 1; printf("FAIL: autoscale offscreen %ux%u, expected 240x426 (a third of the 720x1280 window)\n", g_res.off2_w, g_res.off2_h);
     }
@@ -719,20 +1129,47 @@ int main(void) {
     /* Frame rate: the game has to ask for 60 fps once per window (FIXED_SOURCE
      * plus CHANGE_FRAME_RATE_ALWAYS) and drop the request when the window closes,
      * otherwise the panel mode stays reserved for a game that is gone. */
-    if (g_frame_rate_strategy_calls != 1 || g_frame_rate_calls != 0) {
+    if (g_bg.fr_strategy_first != 1 || g_bg.fr_plain_first != 0) {
         fail = 1; printf("FAIL: the frame rate request ran %d times with a strategy and %d times without, expected 1 + 0\n",
-                         g_frame_rate_strategy_calls, g_frame_rate_calls);
+                         g_bg.fr_strategy_first, g_bg.fr_plain_first);
     }
     if (g_frame_rate_value != 60.0f || g_frame_rate_compat != 1 || g_frame_rate_strategy != 1) {
         fail = 1; printf("FAIL: the platform is asked for fps=%g, compatibility=%d, strategy=%d; expected 60 / FIXED_SOURCE(1) / ALWAYS(1)\n",
                          g_frame_rate_value, (int)g_frame_rate_compat, (int)g_frame_rate_strategy);
     }
-    if (g_frame_rate_window != g_test_window) {
+    if (g_bg.fr_window_first != g_test_window) {
         fail = 1; printf("FAIL: the frame rate request went to the wrong window\n");
     }
-    if (g_clear_frame_rate_calls != 1) {
-        fail = 1; printf("FAIL: the frame rate request was not cleared on window close (%d)\n", g_clear_frame_rate_calls);
+    if (g_bg.fr_clear_first != 1) {
+        fail = 1; printf("FAIL: the frame rate request was not cleared on window close (%d)\n", g_bg.fr_clear_first);
     }
+    /* Background and return. */
+    if (!g_bg.lost_ok) { fail = 1; printf("FAIL: after TERM_WINDOW the surface/swapchain are still alive or the device is gone\n"); }
+    if (!g_bg.no_window_frames_ok || g_bg.acquires_without_window) {
+        fail = 1; printf("FAIL: frames ran without a window (%d acquires)\n", g_bg.acquires_without_window);
+    }
+    if (!g_bg.attach_ok || !g_bg.frames_after_return_ok) { fail = 1; printf("FAIL: no frames after the return from the background\n"); }
+    if (g_bg.instance_creates_delta || g_bg.device_creates_delta || g_bg.pipeline_creates_delta) {
+        fail = 1; printf("FAIL: the return rebuilt the renderer (%d instances, %d devices, %d pipelines), only a surface is expected\n",
+                         g_bg.instance_creates_delta, g_bg.device_creates_delta, g_bg.pipeline_creates_delta);
+    }
+    if (g_bg.surface_creates_delta != 1) { fail = 1; printf("FAIL: the return made %d surfaces, expected 1\n", g_bg.surface_creates_delta); }
+    if (!g_bg.held_recreate_ok) { fail = 1; printf("FAIL: frames failed after a cancelled frame and a swapchain rebuild\n"); }
+    if (!g_bg.timeout_skip_ok || !g_bg.timeout_next_ok) { fail = 1; printf("FAIL: an acquire timeout was not skipped cleanly\n"); }
+    if (!g_bg.pool_refused_first || !g_bg.pool_retry_ok) {
+        fail = 1; printf("FAIL: a texture whose descriptor pool refused did not go up from a fresh pool (refused %d, retried %d)\n",
+                         g_bg.pool_refused_first, g_bg.pool_retry_ok);
+    }
+    if (g_bg.infinite_acquires) { fail = 1; printf("FAIL: %d acquires waited forever (UINT64_MAX)\n", g_bg.infinite_acquires); }
+    if (!g_bg.surface_lost_ok || g_bg.surface_lost_device_delta || g_bg.surface_lost_surface_delta != 1) {
+        fail = 1; printf("FAIL: SURFACE_LOST recovery (frames %d, devices +%d, surfaces +%d; expected frames, +0, +1)\n",
+                         g_bg.surface_lost_ok, g_bg.surface_lost_device_delta, g_bg.surface_lost_surface_delta);
+    }
+    if (!g_bg.device_lost_ok || g_bg.device_lost_device_delta != 1) {
+        fail = 1; printf("FAIL: DEVICE_LOST recovery (frames %d, devices +%d; expected frames and +1)\n",
+                         g_bg.device_lost_ok, g_bg.device_lost_device_delta);
+    }
+    if (!g_bg.textures_kept) { fail = 1; printf("FAIL: a texture did not survive the background / device rebuild\n"); }
     /* Present mode: MAILBOX when the driver offers it, FIFO_RELAXED instead of
      * FIFO where MAILBOX is missing, and FIFO when nothing else is there. */
     if (g_res.mode_init != (int)VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -773,12 +1210,20 @@ int main(void) {
     }
     if (g_violations) { fail = 1; printf("FAIL: the strict driver caught an invalid create-info: %s\n", g_violation_msg); }
     if (!fail) {
-        printf("PASS: init, frames and autoscale (vsync misses coarsen to 1/3, the finer probe "
-               "goes to 1/2, a miss on the probe rolls back and holds) plus a swapchain format "
+        printf("PASS: init, frames and autoscale (hitches do not count, vsync misses coarsen one "
+               "step at a time to 1/3, the finer probe goes to 1/2, a miss on the probe rolls back "
+               "and holds, a new window and a shutdown start sharp again) plus a swapchain format "
                "change; frame steps: SUBOPTIMAL with an unchanged surface does not rebuild the "
                "swapchain, the present mode goes MAILBOX -> FIFO_RELAXED -> FIFO, and the platform "
                "is asked for 60 fps once per window; pNext and flags are clean, %d pipelines "
                "created\n", g_pipeline_creates);
+        printf("PASS: background and return keep the device (one new surface, no new instance/device/"
+               "pipelines), no frames without a window, a cancelled frame plus a rebuild never "
+               "re-acquires into a signalled semaphore, acquire has a finite timeout and a timeout "
+               "skips the frame, SURFACE_LOST gets a new surface and DEVICE_LOST a new device\n");
+        printf("PASS: start failures: a swapchain with 10 images (VK_INCOMPLETE on the Xiaomi), an INHERIT-only surface and a free currentExtent start, a failed "
+               "start notes its step and draws it on the window with the CPU after Vulkan let go of "
+               "it, and the next window starts Vulkan again\n");
     }
     return fail;
 }

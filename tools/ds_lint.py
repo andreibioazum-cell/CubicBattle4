@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ds_compiler import (  # noqa: E402
+from dimscript import (  # noqa: E402
     BUILTINS, ENGINE_VARS, NATIVE_MATH, STR_BUILTINS, interp_holes, open_parens,
     split_top, strip_comment,
 )

@@ -1,0 +1,59 @@
+# Game modules in compile order. gen.py reads this list; the paths are relative
+# to game/scripts. Order matters for global declarations: objects and their
+# instances must come before the first use, so configuration and state go
+# first, battle and effects after, and the engine, the main loop, closes it.
+# A .ds file missing from the list still compiles, after every listed module,
+# in alphabetical order. Text after # is a comment.
+
+# core: constants and strings
+core/config.ds                    # constants: screens, theme, layout, balance
+ui/locale_core.ds                 # main RU/EN strings: menu, chat, login, legal
+ui/locale_shop.ds                 # HP, strength, shop and class names
+ui/locale_settings.ds             # settings toggles: music, hitboxes, winter, FPS
+ui/locale_progress.ds             # progress, reward and shop strings
+ui/locale_extra.ds                # quests and the top list
+core/entities.ds                  # objects and battle state
+core/ui.ds                        # UI kit: buttons, cards, hit tests, text
+
+# ui: menus, progress and chat
+ui/progress_classes.ds            # classes, levels and skins
+ui/progress_rewards.ds            # rewards, saving and syncing
+ui/promo.ds                       # solo cards and the promo screen
+ui/layout.ds                      # screen geometry, draw_* and touch_*
+ui/chat.ds                        # online chat
+ui/menu_screens.ds                # menu screen drawing
+ui/quests.ds                      # quests
+ui/menu_input.ds                  # menu navigation and taps
+
+# combat: rules, bots, abilities, network and drawing
+combat/battle_rules.ds            # class data: textures, HP, damage, poison
+combat/hit_geometry.ds            # exact hitboxes: bodies, zones, overlap tests
+combat/battle_turrets.ds          # the ebuC dispenser turrets
+combat/battle_hitscan.ds          # hit geometry of punches and dashes
+combat/battle_damage.ds           # damage, healing, stun, revive
+combat/battle_setup.ds            # battle start, spawning and player movement
+combat/battle_movement.ds         # bot aiming and movement
+combat/battle_ai.ds               # bot decisions and attacks
+combat/battle_status.ds           # freeze, stun and poison
+combat/battle_enemy_class.ds      # the random enemy class and its supers
+combat/battle_enemy_dash.ds       # enemy dash and the solo player dash
+combat/battle_enemy_turrets.ds    # enemy ebuC shield turrets
+combat/battle_shield.ds           # ebuC turret shield and snowflake piercing
+combat/battle_abilities.ds        # abilities and the main battle update
+combat/battle_online.ds           # network snapshots and match finish
+combat/battle_actions_fx.ds       # attack start and abilities
+combat/battle_super_render.ds     # drawing turrets, the beam and the universe
+combat/battle_hitboxes.ds         # damage hitboxes of abilities
+combat/battle_hitbox_fades.ds     # smooth alphas of those hitboxes
+combat/battle_render.ds           # arena, fighters and battle HUD
+combat/battle_event_plates.ds     # the plates and Santa event
+combat/battle_events_input.ds     # events, banners and input
+
+# fx and the engine
+fx/weather.ds                     # arena background and the snow effect
+fx/dust.ds                        # dust trail
+core/textures.ds                  # sprite loading, ok-flags and load retries
+core/engine.ds                    # main loop
+
+# always compiled last, after the engine; the position is kept as it was
+ui/chat_bubbles.ds                # online chat message bubbles

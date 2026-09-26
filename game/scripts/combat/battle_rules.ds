@@ -7,17 +7,29 @@ public function punch_tex_or_idle(string punch_tex, number ok, number cls)
     end
     return class_idle_tex(cls)
 end
+-- The Azum idle and swing load as a pair or not at all, like the zombie pair
+-- below. They used to fall back one by one: when only azum.png missed its load
+-- (a second start of the game on a budget phone), the idle became the black
+-- ordinary cube while azum_punch.png had landed, so the fighter looked ordinary
+-- and turned blue Azum on every punch. A broken pair shows the whole ordinary
+-- pair until reload_textures (engine.ds) brings the missing half back.
+public function azum_tex_pair_ok()
+    if azum_tex_ok==1&&azum_punch_tex_ok==1 then
+        return 1
+    end
+    return 0
+end
 public function azum_idle_tex()
-    if azum_tex_ok==1 then
+    if azum_tex_pair_ok()==1 then
         return AZUM_TEX
     end
     return ORDINARY_TEX
 end
 public function azum_punch_tex()
-    if azum_punch_tex_ok==1 then
+    if azum_tex_pair_ok()==1 then
         return AZUM_PUNCH_TEX
     end
-    return punch_tex_or_idle(PUNCH_TEX,ordinary_punch_tex_ok,CLASS_AZUM)
+    return punch_tex_or_idle(PUNCH_TEX,ordinary_punch_tex_ok,CLASS_ORDINARY)
 end
 public function zombie_tex_ok()
     if azum_zombie_tex_ok==1&&azum_zombie_punch_tex_ok==1 then

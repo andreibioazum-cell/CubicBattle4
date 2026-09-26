@@ -1,9 +1,10 @@
--- Cards and promo codes. A card drops in a solo match with a chance of 6 in 100
--- (plus 1 per cent per cardless match, up to 20; the streak lives in promo.dat).
--- The card carries a personal code of 3 letters and 1 digit derived from the nick
--- (net_promo_code). The code is entered on ST_PROMO for a one-off reward, and both
--- the code and the activation flag are mirrored to Firebase. The code is only
--- shown after the card was collected.
+-- Cards and promo codes. A card drops in a solo match with a flat chance of
+-- card_chance in 100 (5), right at the start of the battle, and waits on the
+-- arena until the player walks over it. Every card carries a fresh random code
+-- of 3 letters and 1 digit (net_promo_new_code): the card is the only place it is
+-- ever shown, the promo screen never prints it. The code of the last card is
+-- entered on ST_PROMO for the reward, one per account; the code and the flag are
+-- mirrored to Firebase (native/net/promo.inc).
 public number promo_focus=0
 public string promo_input=""
 public number promo_msg_t=0
@@ -11,21 +12,16 @@ public string promo_msg_text=""
 public number promo_msg_kind=0
 public number card_active=0
 public number card_x=0, card_y=0, card_t=0
-public number card_drop_in=0
 public number card_open=0
 public number card_open_t=0
+public string card_code=""
+-- Rolled once per solo battle, after the fighters are placed, so the card is on
+-- the arena from the very first frame and never lands on top of them.
 public function card_roll()
-    local number chance=card_chance_base+net_promo_streak()*card_chance_step
-    if chance>card_chance_cap then
-        chance=card_chance_cap
-    end
-    if rand()%100>=chance then
-        card_drop_in=0
-        net_promo_bump_streak()
+    if rand()%100>=card_chance then
         return
     end
-    card_drop_in=card_drop_min+rand()%(int)(card_drop_max-card_drop_min+1)
-    net_promo_reset_streak()
+    card_spawn()
 end
 public function card_spawn()
     local number m=candy_margin, k=0
@@ -52,9 +48,8 @@ public function card_collect()
     card_active=0
     card_open=1
     card_open_t=0
-    net_promo_mark_card_found()
-    net_promo_register()
-    ds_log("card collected: %s",net_promo_code())
+    card_code=net_promo_new_code()
+    ds_log("card collected")
 end
 public function card_close()
     card_open=0
@@ -68,13 +63,6 @@ public function card_update()
     end
     if finished!=0 then
         return
-    end
-    if card_drop_in>0 then
-        card_drop_in=card_drop_in-dt
-        if card_drop_in<=0 then
-            card_drop_in=0
-            card_spawn()
-        end
     end
     if card_active==1 then
         if dist(card_x,card_y,player.x,player.y)<player.size*0.65+26 then
@@ -108,18 +96,18 @@ public function draw_card_open()
     roundrect(x,y,w,h,30,card_bg)
     ctext_scaled(tr_card_title(),y+36,0xFFB388FF,1.05)
     ctext_scaled(tr_card_sub(),y+88,text_color,0.55)
-    local string code=net_promo_code()
-    if str_len(code)>0 then
-        local number sc=0.85
-        if text_ink_width(code)*sc>w-56 then
-            sc=(w-56)/text_ink_width(code)
-        end
-        ctext_scaled(code,y+150,0xFF4FC3F7,sc)
-    else
-        ctext_scaled(tr_card_need_login(),y+150,text_color,0.55)
+    local number sc=0.85
+    if text_ink_width(card_code)*sc>w-56 then
+        sc=(w-56)/text_ink_width(card_code)
     end
-    ctext_scaled(tr_card_hint1(),y+216,text_color,0.5)
-    ctext_scaled(tr_card_hint2(),y+240,text_color,0.5)
+    ctext_scaled(card_code,y+150,0xFF4FC3F7,sc)
+    if net_promo_used()==1 then
+        ctext_scaled(tr_card_used1(),y+216,text_color,0.5)
+        ctext_scaled(tr_card_used2(),y+240,text_color,0.5)
+    else
+        ctext_scaled(tr_card_hint1(),y+216,text_color,0.5)
+        ctext_scaled(tr_card_hint2(),y+240,text_color,0.5)
+    end
     ctext_scaled(tr_tap_to_return(),y+h-42,text_color,0.55)
 end
 public function promo_field_y()
@@ -189,11 +177,17 @@ public function promo_submit()
         promo_set_msg(tr_promo_used_msg(),0)
         return
     end
+    -- Only the code of the last card counts: a well-formed code that no card
+    -- gave is still wrong.
+    if net_promo_check(code)==0 then
+        promo_set_msg(tr_promo_bad(),0)
+        return
+    end
     cups=cups+promo_reward_cups
     candies=candies+promo_reward_candies
     net_promo_mark_used()
     save_progress()
-    ds_log("promo %s redeemed: +%g cups +%g candies",code,promo_reward_cups,promo_reward_candies)
+    ds_log("promo redeemed: +%g cups +%g candies",promo_reward_cups,promo_reward_candies)
     promo_leave()
     promo_set_msg(tr_promo_success(),1)
 end
@@ -215,20 +209,15 @@ public function draw_promo()
     local number w=fit_w(560)
     local number x=center_x(w)
     local number top=content_top()+8
-    panel(x,top,w,116,0)
-    local string code=net_promo_code()
-    local number has_card=net_promo_card_found()
-    if str_len(code)>0&&has_card==1 then
-        centered_text(tr_promo_your_code(),x,w,top+16,text_color,0.5)
-        centered_text(code,x,w,top+50,0xFF4FC3F7,0.85)
-        centered_text(promo_used_state(),x,w,top+84,0xFFC9B6FF,0.45)
-    else if has_card==0 then
-        centered_text(tr_promo_need_card(),x,w,top+52,text_color,0.55)
+    panel(x,top,w,76,0)
+    -- The code itself is never printed here: it is shown on the card only.
+    if net_promo_used()==1 then
+        centered_text(tr_promo_used_msg(),x,w,top+32,0xFFC9B6FF,0.55)
     else
-        centered_text(tr_promo_need_login(),x,w,top+52,text_color,0.55)
+        centered_text(tr_promo_need_card(),x,w,top+32,text_color,0.55)
     end
-    ctext_scaled(tr_promo_how1(),top+126,text_color,0.48)
-    ctext_scaled(tr_promo_how2(),top+150,text_color,0.48)
+    ctext_scaled(tr_promo_how1(),top+88,text_color,0.48)
+    ctext_scaled(tr_promo_how2(),top+114,text_color,0.48)
     local number fy=promo_field_y()
     roundrect(x,fy,w,56,field_radius,card_bg)
     local number caret=0

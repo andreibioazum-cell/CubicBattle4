@@ -28,7 +28,7 @@ public function nearest_turret(array xs, array ys, array hps, number x, number y
     end
     return best
 end
--- Buk shield: the turrets of that side absorb the damage one by one, starting
+-- ebuC shield: the turrets of that side absorb the damage one by one, starting
 -- with the one closest to the fighter, and the rest reaches the HP. mine = 1
 -- means the player's turrets, 0 the enemy's.
 public function shield_absorb_turrets(array xs, array ys, array hps, number x, number y, number mine, number dmg)
@@ -70,7 +70,7 @@ end
 -- bit stays in the pierce mask). mine = 1 is gift hitting the enemy turrets and
 -- 0 is enemy_gift hitting the player's.
 public function snow_chip_turrets(array xs, array ys, array hps, number mine, number x, number y)
-    local number zone=turret_zone_half()+20, i=0
+    local number i=0
     while i<turret_max do
         if arr_get(hps,i)>0 then
             local number bit=turret_pierce_bit(i)
@@ -79,7 +79,7 @@ public function snow_chip_turrets(array xs, array ys, array hps, number mine, nu
                 pierce=gift.pierce
             end
             if pierce_has(pierce,bit)==0 then
-                if fabs(x-arr_get(xs,i))<zone&&fabs(y-arr_get(ys,i))<zone then
+                if circle_hits_turret(x,y,snow_ball_r,arr_get(xs,i),arr_get(ys,i))==1 then
                     if mine==1 then
                         gift.pierce=gift.pierce+bit
                         enemy_damage_turret(i,santa_super_damage)

@@ -283,7 +283,9 @@ int text_ink_top(const char *s) {
 
 int ds_graphics_init(AAssetManager *a, ANativeWindow *window) {
     if (amgr != a) { ds_release_assets(); amgr = a; }
-    return ds_vk_init_backend(window);
+    if (ds_vk_init_backend(window)) return 1;
+    ds_vk_note_failure("renderer start (no Vulkan error code)", 0); /* only if nothing more exact was noted */
+    return 0;
 }
 int ds_graphics_begin_frame(Buffer *b) {
     if (!b || b->width <= 0 || b->height <= 0 || b->stride < b->width) return 0;
@@ -338,9 +340,21 @@ void ds_graphics_error_screen(const char *m) {
         if (y > (cur_buf ? cur_buf->height : screen_h) - 8) break;
     }
 }
+/* APP_CMD_TERM_WINDOW: the app goes to the background. Only the window half of
+ * the renderer is dropped; the device, the pipelines and the textures (CPU and
+ * GPU) stay, so the return needs nothing but a new surface. */
+void ds_graphics_window_lost(void) {
+    ds_graphics_cancel_frame();
+    vk_rebuild_window = NULL; /* that window is going away, never rebuild on it */
+    vk_rebuild_tries = 0;
+    ds_vk_surface_lost();
+}
 void ds_graphics_shutdown(void) {
+    vk_rebuild_window = NULL;
+    vk_rebuild_tries = 0;
     ds_graphics_cancel_frame();
     ds_vk_shutdown_backend(); /* the GPU goes first, CPU pixels stay */
+    gfx_autoscale_reset();    /* the next entry starts sharp (autoscale.inc) */
     ds_release_assets();
     free(cmds); cmds = NULL; cmd_cap = 0; cmd_n = 0;
     free(geo_verts); geo_verts = NULL; geo_vcap = geo_vn = 0;

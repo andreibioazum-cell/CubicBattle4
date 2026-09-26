@@ -22,9 +22,14 @@
         android:hasCode="true"
         android:extractNativeLibs="true">
 
+        <!-- configChanges: the game handles every change itself. Coming back
+             from the portrait launcher (or with the dark theme or font size
+             switched meanwhile) changed more than orientation|screenSize, and
+             Android 14 then destroyed and re-created the NativeActivity right
+             in the middle of the return. -->
         <activity
             android:name="com.cb4.GameActivity"
-            android:configChanges="orientation|keyboard|keyboardHidden|screenSize"
+            android:configChanges="orientation|keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|navigation|uiMode|density|fontScale|layoutDirection|locale"
             android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">

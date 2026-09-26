@@ -114,6 +114,9 @@ void snd_volume(const char *name, double volume);
 void snd_stop_all(void);
 int ds_sound_init(AAssetManager *assets);
 void ds_sound_shutdown(void);
+/* Stops the audio output while the app has no window, keeping the loaded
+ * sounds and the playing voices; ds_sound_init starts the output again. */
+void ds_sound_suspend(void);
 void ds_sound_pause(void);
 void ds_sound_resume(void);
 void ds_sound_set_java_vm(void *vm);
@@ -144,8 +147,19 @@ int ds_graphics_init(AAssetManager *assets, ANativeWindow *window);
 int ds_graphics_begin_frame(Buffer *buffer);
 void ds_graphics_end_frame(void);
 void ds_graphics_cancel_frame(void);
+/* The window went away (the app is in the background): keeps the device and
+ * the textures, the next ds_graphics_init only makes a surface for the new
+ * window. ds_graphics_shutdown tears everything down (the activity ends). */
+void ds_graphics_window_lost(void);
 void ds_graphics_shutdown(void);
 void ds_graphics_error_screen(const char *message);
+/* Vulkan could not start: ds_graphics_failure() is the first step that failed
+ * in the latest ds_graphics_init ("" if none), and ds_graphics_show_failure()
+ * draws that reason, the GPU and the phone model into the window with the CPU
+ * so the player sees why instead of a black screen. After it the window stays
+ * with the CPU; the next window tries Vulkan again. Returns 1 when shown. */
+const char *ds_graphics_failure(void);
+int ds_graphics_show_failure(ANativeWindow *window, int attempts);
 void init(AAssetManager *assets);
 void update(void);
 void draw(Buffer *buffer);

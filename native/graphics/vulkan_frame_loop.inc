@@ -4,72 +4,6 @@
 
 /* --- init and shutdown --- */
 
-/* --- asking the system for a frame rhythm ---
- * See the DS_VK_TARGET_FPS comment in vulkan_state.inc for why 60 fps is asked
- * for. ANativeWindow_setFrameRate arrived in API 30 and is not always present
- * in libandroid, so it is resolved dynamically and simply skipped if missing. */
-static void ds_vk_lookup_frame_rate_api(void) {
-#ifdef __ANDROID__
-    if (!vk_set_frame_rate)
-        vk_set_frame_rate = (DsVkSetFrameRateFn)dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate");
-    if (!vk_set_frame_rate_strategy)
-        vk_set_frame_rate_strategy = (DsVkSetFrameRateStrategyFn)dlsym(RTLD_DEFAULT,
-                                        "ANativeWindow_setFrameRateWithChangeStrategy");
-    if (!vk_clear_frame_rate)
-        vk_clear_frame_rate = (DsVkClearFrameRateFn)dlsym(RTLD_DEFAULT, "ANativeWindow_clearFrameRate");
-#endif
-}
-
-static int ds_vk_request_frame_rate(ANativeWindow *window) {
-    if (!window) return 0;
-    ds_vk_lookup_frame_rate_api();
-    /* ALWAYS instead of ONLY_IF_SEAMLESS: a 120 to 60 Hz switch usually has no
-     * black frame, but a system that calls it not seamless would silently
-     * ignore the seamless-only variant and leave the fps steps in place. */
-    int32_t rc = -1;
-    if (vk_set_frame_rate_strategy)
-        rc = vk_set_frame_rate_strategy(window, (float)DS_VK_TARGET_FPS,
-                                        (int8_t)DS_VK_FRAME_RATE_FIXED_SOURCE,
-                                        (int8_t)DS_VK_FRAME_RATE_ALWAYS);
-    if (rc != 0 && vk_set_frame_rate)
-        rc = vk_set_frame_rate(window, (float)DS_VK_TARGET_FPS, (int8_t)DS_VK_FRAME_RATE_FIXED_SOURCE);
-    if (rc == 0)
-        ds_log("vulkan: asked the platform for %d fps (panel mode vsync interval 16.7 ms)", DS_VK_TARGET_FPS);
-    else if (vk_set_frame_rate || vk_set_frame_rate_strategy)
-        ds_log_err("vulkan: ANativeWindow_setFrameRate(%d) failed (%d)", DS_VK_TARGET_FPS, (int)rc);
-    else
-        ds_log("vulkan: ANativeWindow_setFrameRate unavailable (API < 30), panel mode left to the system");
-    return rc == 0;
-}
-
-/* Drop the request when the window closes, otherwise the system would keep the
- * panel mode for a game that is gone. */
-static void ds_vk_release_frame_rate(void) {
-    if (vk_window && vk_clear_frame_rate) vk_clear_frame_rate(vk_window);
-}
-
-/* --- keeping the frame rate at DS_VK_TARGET_FPS ---
- * A present mode without vsync wait (MAILBOX) lets the loop run as fast as the
- * device allows: the frame counter showed 350+ fps, which wastes battery and
- * makes the speed of the game depend on the device. The remaining time of the
- * 60 fps budget is therefore slept out at the end of the frame. A frame that
- * took longer than the budget goes out at once. */
-static void ds_vk_pace_frame(void) {
-    if (!vk_pace_on) return;
-    struct timespec now;
-    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return;
-    uint64_t now_ns = (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
-    uint64_t period = 1000000000ull / DS_VK_TARGET_FPS;
-    /* Resync after a long frame (loading, a hitch) instead of catching up. */
-    if (vk_pace_next_ns == 0 || now_ns > vk_pace_next_ns + period) vk_pace_next_ns = now_ns;
-    vk_pace_next_ns += period;
-    if (vk_pace_next_ns <= now_ns) return;
-    struct timespec left;
-    left.tv_sec = (time_t)((vk_pace_next_ns - now_ns) / 1000000000ull);
-    left.tv_nsec = (long)((vk_pace_next_ns - now_ns) % 1000000000ull);
-    nanosleep(&left, NULL);
-}
-
 static void ds_vk_shutdown_backend(void);
 
 static int ds_vk_init_backend(ANativeWindow *window) {
@@ -77,10 +11,22 @@ static int ds_vk_init_backend(ANativeWindow *window) {
      * old window is fully gone. Drawing through a swapchain made for another
      * ANativeWindow used to crash inside vkAcquireNextImageKHR when the app was
      * reopened. */
-    if (vk_ready && vk_window == window) return 1;
-    if (vk_ready) ds_vk_shutdown_backend();
+    if (vk_ready && vk_window == window && vk_surface != VK_NULL_HANDLE) return 1;
+    /* Coming back from the background: the device survived the lost window,
+     * so only a surface for the new window is made. Recreating the instance,
+     * the device and every texture on each return was what the re-entry did
+     * before, and it is the path budget Mali drivers crash in. */
+    if (vk_ready && vk_device != VK_NULL_HANDLE && window) {
+        if (vk_surface != VK_NULL_HANDLE) ds_vk_surface_lost();
+        if (ds_vk_attach_window(window)) return 1;
+        ds_log_err("vulkan: the kept device cannot present to the new window, rebuilding");
+    }
+    if (vk_ready || vk_device != VK_NULL_HANDLE || vk_instance != VK_NULL_HANDLE) ds_vk_shutdown_backend();
     vk_window = window;
-    if (!window) { ds_log_err("vulkan: no window"); return 0; }
+    /* A new attempt: the reason shown when Vulkan cannot start is the first
+     * failure of the latest attempt. */
+    vk_fail_step[0] = '\0'; vk_fail_code = 0;
+    if (!window) { ds_log_err("vulkan: no window"); ds_vk_note_failure("no window", 0); return 0; }
 
     VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
     app.pApplicationName = "Cubic Battle";
@@ -108,6 +54,7 @@ static int ds_vk_init_backend(ANativeWindow *window) {
     if (!ds_vk_check_result(vkEnumeratePhysicalDevices(vk_instance, &ndev, NULL),
                             "vkEnumeratePhysicalDevices") || ndev == 0) {
         ds_log_err("vulkan: no physical devices");
+        ds_vk_note_failure("no Vulkan GPU (vkEnumeratePhysicalDevices = 0)", 0);
         ds_vk_shutdown_backend(); return 0;
     }
     VkPhysicalDevice *devs = (VkPhysicalDevice *)malloc(ndev * sizeof(*devs));
@@ -137,10 +84,13 @@ static int ds_vk_init_backend(ANativeWindow *window) {
     free(devs);
     if (vk_phys == VK_NULL_HANDLE) {
         ds_log_err("vulkan: no graphics+present queue family");
+        ds_vk_note_failure("no queue that can draw and present to the window", 0);
         ds_vk_shutdown_backend(); return 0;
     }
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(vk_phys, &props);
+    snprintf(vk_diag_gpu, sizeof(vk_diag_gpu), "%s", props.deviceName);
+    vk_diag_api = props.apiVersion; vk_diag_driver = props.driverVersion; vk_diag_vendor = props.vendorID;
     ds_log("vulkan: device '%s' (api %u.%u)", props.deviceName,
            VK_API_VERSION_MAJOR(props.apiVersion), VK_API_VERSION_MINOR(props.apiVersion));
 
@@ -282,6 +232,8 @@ static void ds_vk_shutdown_backend(void) {
     vk_need_recreate = 0;
     vk_image_held = 0;
     vk_begun = 0;
+    vk_surface_lost = 0;
+    vk_device_lost = 0;
     free(vk_batches);
     vk_batches = NULL; vk_batch_n = vk_batch_cap = 0;
 }
@@ -290,19 +242,28 @@ static void ds_vk_shutdown_backend(void) {
 
 static int ds_vk_acquire_image(void) {
     DsVkFrame *f = &vk_frames[vk_frame_cur];
-    VkResult r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
+    if (vk_swap == VK_NULL_HANDLE) return 0;
+    VkResult r = vkAcquireNextImageKHR(vk_device, vk_swap, DS_VK_ACQUIRE_TIMEOUT_NS, f->image_available,
                                        VK_NULL_HANDLE, &vk_sw_index);
-    if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_NOT_READY || r == VK_TIMEOUT) {
-        /* OUT_OF_DATE means the surface really is out of date, rebuild at once;
-         * anything else can be a stale swapchain after the window was recreated,
-         * so try one rebuild as well. */
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) {
+        /* The surface really is out of date: rebuild at once and try again. */
         if (!ds_vk_recreate_swapchain()) return 0;
-        r = vkAcquireNextImageKHR(vk_device, vk_swap, UINT64_MAX, f->image_available,
+        f = &vk_frames[vk_frame_cur];
+        r = vkAcquireNextImageKHR(vk_device, vk_swap, DS_VK_ACQUIRE_TIMEOUT_NS, f->image_available,
                                   VK_NULL_HANDLE, &vk_sw_index);
     }
+    if (r == VK_TIMEOUT || r == VK_NOT_READY) {
+        /* No image this time (the window is on its way out, or the compositor
+         * holds every buffer). Nothing was signalled, so the frame is simply
+         * skipped: the main loop gets to handle its lifecycle events and the
+         * next frame asks again. */
+        return 0;
+    }
+    if (r == VK_ERROR_SURFACE_LOST_KHR) { vk_surface_lost = 1; ds_log_err("vulkan: surface lost on acquire"); return 0; }
+    if (r == VK_ERROR_DEVICE_LOST) { vk_device_lost = 1; ds_log_err("vulkan: device lost on acquire"); return 0; }
     if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
-        if (r != VK_ERROR_OUT_OF_DATE_KHR)
-            ds_log_err("vulkan: vkAcquireNextImageKHR failed (%d)", (int)r);
+        if (r == VK_ERROR_OUT_OF_DATE_KHR) vk_need_recreate = 1;
+        else ds_log_err("vulkan: vkAcquireNextImageKHR failed (%d)", (int)r);
         return 0;
     }
     /* SUBOPTIMAL only asks to check the surface: ds_vk_swapchain_stale()
@@ -313,7 +274,10 @@ static int ds_vk_acquire_image(void) {
 }
 
 static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh) {
-    if (!vk_ready) return 0;
+    /* A lost surface or device (or a rebuild that failed before) is repaired
+     * here, on the game thread, before anything touches the swapchain. */
+    if ((vk_surface_lost || vk_device_lost || (!vk_ready && vk_rebuild_window)) && !ds_vk_recover()) return 0;
+    if (!vk_ready || vk_surface == VK_NULL_HANDLE) return 0;
     if (w == 0 || h == 0 || ow == 0 || oh == 0) return 0;
     vk_log_w = w; vk_log_h = h;
     /* Capabilities are not queried every frame: on some Android Vulkan drivers
@@ -342,8 +306,9 @@ static int ds_vk_begin_frame_backend(uint32_t w, uint32_t h, uint32_t ow, uint32
     }
     DsVkFrame *f = &vk_frames[vk_frame_cur];
     if (f->submitted) {
-        if (!ds_vk_check_result(vkWaitForFences(vk_device, 1, &f->fence, VK_TRUE, UINT64_MAX),
-                                "vkWaitForFences(frame)")) return 0;
+        VkResult wr = vkWaitForFences(vk_device, 1, &f->fence, VK_TRUE, UINT64_MAX);
+        if (wr == VK_ERROR_DEVICE_LOST) vk_device_lost = 1;
+        if (!ds_vk_check_result(wr, "vkWaitForFences(frame)")) return 0;
         f->submitted = 0;
     }
     if (!ds_vk_check_result(vkResetCommandBuffer(f->cmd, 0), "vkResetCommandBuffer(frame)")) return 0;
@@ -403,7 +368,9 @@ static void ds_vk_end_frame_backend(void) {
      * already waited for in begin_frame (see the submitted flag). */
     if (!ds_vk_check_result(vkResetFences(vk_device, 1, &f->fence), "vkResetFences(frame)"))
         return;
-    if (!ds_vk_check_result(vkQueueSubmit(vk_queue, 1, &si, f->fence), "vkQueueSubmit(frame)"))
+    VkResult sr = vkQueueSubmit(vk_queue, 1, &si, f->fence);
+    if (sr == VK_ERROR_DEVICE_LOST) vk_device_lost = 1;
+    if (!ds_vk_check_result(sr, "vkQueueSubmit(frame)"))
         return; /* the fence stays reset and submitted=0, so nothing waits for it */
     f->submitted = 1;
     VkPresentInfoKHR pi = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
@@ -415,6 +382,8 @@ static void ds_vk_end_frame_backend(void) {
     VkResult pr = vkQueuePresentKHR(vk_queue, &pi);
     if (pr == VK_ERROR_OUT_OF_DATE_KHR) vk_need_recreate = 1;
     else if (pr == VK_SUBOPTIMAL_KHR) vk_sw_stale = 1;
+    else if (pr == VK_ERROR_SURFACE_LOST_KHR) { vk_surface_lost = 1; ds_log_err("vulkan: surface lost on present"); }
+    else if (pr == VK_ERROR_DEVICE_LOST) { vk_device_lost = 1; ds_log_err("vulkan: device lost on present"); }
     else if (pr != VK_SUCCESS) ds_log_err("vulkan: vkQueuePresentKHR failed (%d)", (int)pr);
     vk_image_held = 0;
     vk_begun = 0;

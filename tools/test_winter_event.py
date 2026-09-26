@@ -40,7 +40,6 @@ void arr_set(DSArray *a, double i, double v) {
 }
 double arr_len(DSArray *a) { return a ? a->len : 0; }
 /* Quests: this test needs no native state, only safe stubs. */
-double net_quest_now(void) { return 0; }
 void net_save_quest_state(double t0, double p0, double n0, double x0,
                           double t1, double p1, double n1, double x1,
                           double t2, double p2, double n2, double x2) {
@@ -55,6 +54,9 @@ void ds_log(const char *format, ...) { (void)format; }
 void ds_runtime_error(const char *format, ...) { fputs(format, stderr); abort(); }
 double net_slot(void) { return 0; }
 double net_event(void) { event_reads++; return cloud_event; }
+/* In the room and playing (net_st_playing); a reconnect reads other values. */
+static double cloud_status = 3;
+double net_status(void) { return cloud_status; }
 void net_set_class(double v) { (void)v; progress_updates++; }
 void net_set_level(double v) { (void)v; }
 void net_set_skin(double v) { (void)v; }
@@ -392,6 +394,36 @@ static void test_plates(void) {
     call_count = 0;
     ds_fn_draw_event_santa(); ds_fn_draw_event_candies();
     assert(call_count == 0);
+    /* The finished round is over for good: the event coming back (a reconnect
+     * reads 0 for a moment, a new battle resets the event) brings no plates,
+     * no Santa and no candies. */
+    assert(plates_finished == 1);
+    cloud_event = 3;
+    for (int k = 0; k < 20; k++) ds_fn_update_event();
+    assert(plates_phase == 4 && plates_lock_me == 0 && plates_finished == 1);
+    call_count = 0; plate_rects = 0;
+    ds_fn_draw_event_plates(); ds_fn_draw_event_santa(); ds_fn_draw_event_candies();
+    assert(call_count == 0 && plate_rects == 0);
+    ds_fn_plates_event_reset();            /* what reset_battle() does */
+    ds_fn_update_event();
+    assert(plates_phase == 4 && plates_finished == 1);
+    cloud_status = 1; cloud_event = 0;     /* reconnecting: the event reads 0 */
+    for (int k = 0; k < 400; k++) ds_fn_update_event();
+    cloud_status = 3;
+    for (int k = 0; k < 5; k++) ds_fn_update_event();   /* half a second of 0 in the room */
+    cloud_event = 3;
+    ds_fn_update_event();
+    assert(plates_phase == 4 && plates_finished == 1);
+    /* Only the admin really switching the event off re-arms the next one. */
+    cloud_event = 0;
+    for (int k = 0; k * dt < plates_rearm_time + 1; k++) ds_fn_update_event();
+    assert(plates_finished == 0);
+    cloud_event = 3;
+    ds_fn_update_event();
+    assert(plates_phase == 0);
+    call_count = 0; plate_rects = 0;
+    ds_fn_draw_event_plates();
+    assert(plate_rects == 4);
     cloud_event = 3; candy_enabled = 0;
     ds_fn_update_event();
     assert(event_mode == 0);
@@ -400,7 +432,7 @@ static void test_plates(void) {
     ds_fn_reset_battle();
     assert(snow_t == 0 && event_mode == 0 && event_t == 0 && disco_t == 0);
     assert(plates_prev_mode == 0 && plates_phase == 0);
-    puts("plates: two-player trigger, Santa sprite/size/shadow, candies and resets OK");
+    puts("plates: two-player trigger, Santa sprite/size/shadow, candies, resets and a finished round staying over OK");
 }
 
 int main(void) {
@@ -467,7 +499,7 @@ def main():
             "Santa must not shrink away on exit"
         santa_tick = "".join(compiler.functions["tick_event_santa"][2])
         assert "plates_santa_fly_acc" in santa_tick and "plates_santa_up" in santa_tick
-        # The buk beam: no hard cut by distance and no flickering alpha.
+        # The ebuC beam: no hard cut by distance and no flickering alpha.
         station_beam = "".join(compiler.functions["draw_station_beam"][2])
         assert "d<40" not in station_beam and "station_beam_min" in station_beam
         assert "station_beam_alpha" in station_beam and "floor(250)" not in station_beam

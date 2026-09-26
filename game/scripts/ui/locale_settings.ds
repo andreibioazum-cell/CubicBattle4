@@ -1,0 +1,69 @@
+-- Settings toggles: music volume, hitboxes, the winter theme and the FPS
+-- counter, RU/EN like every locale module.
+
+-- Music button label: it cycles off, on and 50 per cent. A value outside those
+-- three, such as 70 from an old save, is shown as an honest percentage and the
+-- first tap brings it back to the cycle.
+public function tr_music_state()
+    if language == 1 then
+        if music_volume <= 0 then
+            return "Музыка: выкл"
+        end
+        if music_volume >= 100 then
+            return "Музыка: вкл"
+        end
+        if music_volume == 50 then
+            return "Музыка: 50%"
+        end
+        return "Музыка: " + music_volume + "%"
+    end
+    if music_volume <= 0 then
+        return "Music: off"
+    end
+    if music_volume >= 100 then
+        return "Music: on"
+    end
+    if music_volume == 50 then
+        return "Music: 50%"
+    end
+    return "Music: " + music_volume + "%"
+end
+
+public function tr_hitboxes_toggle()
+    if language == 1 then
+        if show_hitboxes == 1 then
+            return "Хитбоксы: ВКЛ"
+        end
+        return "Хитбоксы: ВЫКЛ"
+    end
+    if show_hitboxes == 1 then
+        return "Hitboxes: ON"
+    end
+    return "Hitboxes: OFF"
+end
+-- The winter theme turns the snowy arena and the snowfall on or off in one tap.
+public function tr_winter_toggle()
+    if language == 1 then
+        if winter_theme == 1 then
+            return "Зимняя тема: ВКЛ"
+        end
+        return "Зимняя тема: ВЫКЛ"
+    end
+    if winter_theme == 1 then
+        return "Winter theme: ON"
+    end
+    return "Winter theme: OFF"
+end
+-- The frame counter shows in battle only, solo, online and events alike.
+public function tr_fps_meter_toggle()
+    if language == 1 then
+        if show_fps == 1 then
+            return "FPS в бою: ВКЛ"
+        end
+        return "FPS в бою: ВЫКЛ"
+    end
+    if show_fps == 1 then
+        return "Battle FPS: ON"
+    end
+    return "Battle FPS: OFF"
+end

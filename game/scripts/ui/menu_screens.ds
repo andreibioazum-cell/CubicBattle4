@@ -117,8 +117,8 @@ public function draw_class_card(number vi)
         tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)
     end
     centered_text(class_name_of(cls), x, w, class_title_y(), text_color, class_title_scale())
-    -- The buK motto is long ("You thought I was a regular cube..."), so its
-    -- scale follows the card width and the label always stays inside.
+    -- A motto of any length fits: its scale follows the card width, so the
+    -- label always stays inside the card.
     local string motto = class_desc_of(cls)
     centered_text(motto, x, w, class_desc_y(), text_color, fit_text_scale(motto, w - 16, 0.5))
     centered_text(tr_level() + " " + class_level_of(cls), x, w, class_level_y(), text_color, 0.45)

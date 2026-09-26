@@ -36,22 +36,19 @@ public number ACH_TOAST_DURATION=1.96
 public number cups=0, candies=0, cup_win=5, candy_win=3
 public number cup_lose=1
 public number candy_enabled=1
-public number card_chance_base=6, card_chance_step=1, card_chance_cap=20
-public number card_drop_min=6, card_drop_max=24
+-- A solo battle starts with a promo card on the arena card_chance times in 100.
+public number card_chance=5
 public number promo_reward_cups=50, promo_reward_candies=20
 public number money_scale=0.5, money_gap=24, money_line_h=16
 public number alert_hold=0.5, finish_t=0
 public number cups_awarded=0
 public number quest_count=3, quest_msg_t=0
 public array quest_type=arr_new(), quest_prog=arr_new(), quest_need=arr_new()
--- quest_next[i]: epoch stamp when the next quest appears, 0 while the slot is
--- still in use.
+-- quest_next[i]: the spare stamp of the save format. The five minute cooldown
+-- is gone (a finished quest is replaced at once), so it is always 0.
 public array quest_next=arr_new()
--- A finished quest respawns after quest_respawn seconds of real time, counting
--- even while the game is closed.
-public number quest_respawn=300
--- Rewards per quest (cut down): cups and candies.
-public number quest_cups=5, quest_candies=2
+-- Rewards per quest, cut down again: cups and candies.
+public number quest_cups=2, quest_candies=1
 public number plates_finished=0
 public number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 -- A fight is not declared won from a broken connection: when the room stops
@@ -64,7 +61,8 @@ public number match_seen_foe=0, foes_seen_t=0, foes_seen_min=1.0
 public number foes_gone_t=0, foes_dead_min=0.5, foes_gone_min=3.0, net_st_playing=3
 public number CLASS_ORDINARY=0, CLASS_AZUM=1, CLASS_SANTA=2, CLASS_EBUC=3
 public number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
-public number azum_cost=65, santa_candy_cost=100, ebuc_candy_cost=150
+-- Azum and ebuC are bought with cups, Santa with candies.
+public number azum_cost=65, santa_candy_cost=100, ebuc_cost=120
 public number player_level=0, levels_unlocked=0
 public number max_level=3, level_base_cost=30, level_cost_step=10
 public number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2
@@ -79,6 +77,8 @@ public number santa_punch_tex_ok=0, ebuc_punch_tex_ok=0
 -- retries ask the failed ones again a couple of times per second until they
 -- land and the right art appears instead of the fallback cubes.
 public number tex_reload_t=0, tex_reload_left=0
+-- After the fast retries a still missing sprite is asked again this often (s).
+public number tex_reload_slow=3
 public number azum_skin=SKIN_NORMAL
 public number arena_tile_size=256, snow_tex_ok=0, snow_t=0, candy_tex_ok=0
 -- Winter theme, a menu setting: one tap turns the snowy arena and the snowfall
@@ -93,12 +93,19 @@ public number show_hitboxes=1
 -- opaque.
 public number hitbox_rgb=0x00000000
 public number hitbox_zone_alpha=96
-public number hitbox_fade_in=0.16, hitbox_fade_out=0.26
-public number dash_hit_radius_scale=0.9
+-- A zone shows at full strength from its first damaging frame (fade in 0),
+-- then fades out frozen in place where it hit.
+public number hitbox_fade_in=0, hitbox_fade_out=0.26
+-- Exact hitboxes (combat/hit_geometry.ds): a fighter's body is the cube of his
+-- sprite, pixels 9..40 of 50 (half 16 sprite px), a turret's body the square of
+-- the dispenser, pixels 10..40 (half 15). snow_ball_r is the drawn and the real
+-- radius of a flying snowball. The zone drawn in the hitbox mode is exactly the
+-- zone that deals damage.
+public number body_px_half=16, turret_body_px_half=15, snow_ball_r=24
 public number punch_time=0.2, punch_cooldown=0.3, punch_reach=104, punch_width=104, punch_damage=1
 public number joy_speed=192, player_scale=1.8, enemy_scale=1.8
 public number cube_scale=1.4
-public number aim_fade_in=0.09, aim_fade_out=0.1
+public number aim_fade_in=0, aim_fade_out=0.1
 public number online_ready=0, max_players=4, pi=3.1415926535
 public number azum_second_life_damage_reduction=0.10, azum_speed_bonus=0.03, azum_attack_heal=0.10
 public number ordinary_damage_bonus=0.05, ordinary_speed_bonus=0.02, ordinary_attack_heal=0.05
@@ -144,7 +151,7 @@ public number ebuc_universe_damage=20, ebuc_universe_damage_bonus=3
 public number ebuc_universe_particles=140, ebuc_place_heal=0.5, ebuc_beam_heal=0.1
 public number universe_fade_in=0.18, universe_fade_out=0.45
 public number station_boom_time=0.5
-public number turret_max=3, turret_hit_r=30, station_scale=1.6, station_spawn_time=0.2
+public number turret_max=3, station_scale=1.6, station_spawn_time=0.2
 public number station_beam_w=15, station_beam_core_w=6, station_beam_pull=32, station_beam_min=2
 public number station_beam_alpha=255, station_beam_core_alpha=255
 public number station_beam_rgb=0x00E676, station_beam_core_rgb=0x00C8FAD6
@@ -155,7 +162,7 @@ public number turret_counter_damage=0.5
 -- of a 1.275 s glide at 300 px/s, where the dash felt like walking with a
 -- hitbox strip. The distance is unchanged, so the balance stays as it is.
 public number azum_dash_cd=5.5, azum_dash_time=0.45, azum_dash_speed=850
-public number azum_dash_damage=3, azum_dash_stun=1.8, dash_hit_r=34
+public number azum_dash_damage=3, azum_dash_stun=1.8
 public number azum_hp=8
 public number shadow_off=10, shadow_alpha=0x30
 public number candy_count=5, candy_margin=46, candy_scale=0.8, candy_give=1
@@ -199,7 +206,7 @@ public number plates_candy_pop_time=0.4, plates_candy_pick_time=0.3
 public number plates_santa_out_time=2.5
 public number plates_charge_time=2.0
 public number plates_santa_turn_time=0.35, plates_santa_fly_acc=2600, plates_santa_fly_speed=1600
-public number plates_lock_me=0, plates_save_interval=4
+public number plates_lock_me=0, plates_save_interval=4, plates_off_t=0, plates_rearm_time=20
 -- Epilepsy warning: it no longer hides on a timer. The screen stays until the
 -- player presses the consent button (legal_accept), so the warning cannot be
 -- missed: entering the game means accepting the risk. The button is at full

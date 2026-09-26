@@ -1,0 +1,113 @@
+-- Exact hit geometry shared by every attack. The rule: the damage zone is the
+-- zone drawn in the hitbox mode, and it deals damage exactly when it touches
+-- the body of a target - no hidden margins, no centre-point checks.
+--
+-- A fighter's body is the cube of his sprite without the ears and the hands:
+-- pixels 9..40 of the 50 px sprite, a square of half body_px_half around the
+-- sprite centre, turned with the sprite. The sprite turns by angle+pi/2
+-- (sprite_a), and a square turned by a quarter turn is the same square, so its
+-- axes are simply (cos angle, sin angle) and the perpendicular. A turret's
+-- body is the square of its dispenser sprite (turret_body_px_half), not turned.
+--
+-- Zones: a strip (punch, dash) is a rectangle along a unit direction (dx, dy)
+-- from offset off0 to off1 and 2*half_w wide, drawn by draw_hit_strip with the
+-- same numbers; a circle (snowball, snow burst) is drawn by draw_hit_circle.
+public function fighter_half(number scale)
+    return body_px_half*cube_scale*scale
+end
+public function player_half()
+    return fighter_half(player_scale)
+end
+public function enemy_half()
+    return fighter_half(enemy_scale)
+end
+public function turret_half()
+    return turret_body_px_half*station_scale
+end
+-- Separating axis test of two rectangles. Rectangle A: centre (ax, ay), unit
+-- axis (aux, auy), half extents ae0 along it and ae1 across. Rectangle B the
+-- same with (bux, buy), be0, be1. They overlap unless one of the four axes
+-- separates them; touching counts as a hit.
+public function sat_axis_ok(number nx, number ny, number tx, number ty, number aux, number auy, number ae0, number ae1, number bux, number buy, number be0, number be1)
+    local number ra=ae0*fabs(aux*nx+auy*ny)+ae1*fabs(auy*nx-aux*ny)
+    local number rb=be0*fabs(bux*nx+buy*ny)+be1*fabs(buy*nx-bux*ny)
+    if fabs(tx*nx+ty*ny)>ra+rb then
+        return 0
+    end
+    return 1
+end
+public function rects_overlap(number ax, number ay, number aux, number auy, number ae0, number ae1, number bx, number by, number bux, number buy, number be0, number be1)
+    local number tx=bx-ax, ty=by-ay
+    if sat_axis_ok(aux,auy,tx,ty,aux,auy,ae0,ae1,bux,buy,be0,be1)==0 then
+        return 0
+    end
+    if sat_axis_ok(0-auy,aux,tx,ty,aux,auy,ae0,ae1,bux,buy,be0,be1)==0 then
+        return 0
+    end
+    if sat_axis_ok(bux,buy,tx,ty,aux,auy,ae0,ae1,bux,buy,be0,be1)==0 then
+        return 0
+    end
+    if sat_axis_ok(0-buy,bux,tx,ty,aux,auy,ae0,ae1,bux,buy,be0,be1)==0 then
+        return 0
+    end
+    return 1
+end
+-- A strip against a square body of half bh turned by bang around (bx, by).
+public function strip_hits_box(number sx, number sy, number dx, number dy, number off0, number off1, number half_w, number bx, number by, number bang, number bh)
+    local number len=off1-off0
+    if len<=0||half_w<=0||bh<=0 then
+        return 0
+    end
+    local number mid=(off0+off1)/2
+    return rects_overlap(sx+dx*mid,sy+dy*mid,dx,dy,len/2,half_w,bx,by,cos(bang),sin(bang),bh,bh)
+end
+-- A circle against a square body: the circle centre in the square's own axes,
+-- clamped to the square, is the nearest body point.
+public function circle_hits_box(number cx, number cy, number r, number bx, number by, number bang, number bh)
+    if r<=0||bh<=0 then
+        return 0
+    end
+    local number ux=cos(bang), uy=sin(bang)
+    local number rx=cx-bx, ry=cy-by
+    local number lu=clamp(rx*ux+ry*uy,0-bh,bh)
+    local number lv=clamp(ry*ux-rx*uy,0-bh,bh)
+    local number px=bx+ux*lu-uy*lv, py=by+uy*lu+ux*lv
+    local number ex=cx-px, ey=cy-py
+    if ex*ex+ey*ey<=r*r then
+        return 1
+    end
+    return 0
+end
+public function strip_hits_player(number sx, number sy, number dx, number dy, number off0, number off1, number half_w)
+    return strip_hits_box(sx,sy,dx,dy,off0,off1,half_w,player.x,player.y,player.angle,player_half())
+end
+public function strip_hits_enemy(number sx, number sy, number dx, number dy, number off0, number off1, number half_w)
+    return strip_hits_box(sx,sy,dx,dy,off0,off1,half_w,enemy.x,enemy.y,enemy.angle,enemy_half())
+end
+public function strip_hits_turret(number sx, number sy, number dx, number dy, number off0, number off1, number half_w, number tx, number ty)
+    return strip_hits_box(sx,sy,dx,dy,off0,off1,half_w,tx,ty,0,turret_half())
+end
+public function circle_hits_player(number cx, number cy, number r)
+    return circle_hits_box(cx,cy,r,player.x,player.y,player.angle,player_half())
+end
+public function circle_hits_enemy(number cx, number cy, number r)
+    return circle_hits_box(cx,cy,r,enemy.x,enemy.y,enemy.angle,enemy_half())
+end
+public function circle_hits_turret(number cx, number cy, number r, number tx, number ty)
+    return circle_hits_box(cx,cy,r,tx,ty,0,turret_half())
+end
+-- The punch zone, the same strip draw_punch_box draws.
+public function punch_hits_player(number px, number py, number pdx, number pdy, number reach, number width)
+    return strip_hits_player(px,py,pdx,pdy,0,reach,width/2)
+end
+public function punch_hits_enemy(number px, number py, number pdx, number pdy, number reach, number width)
+    return strip_hits_enemy(px,py,pdx,pdy,0,reach,width/2)
+end
+public function punch_hits_turret(number px, number py, number pdx, number pdy, number reach, number width, number tx, number ty)
+    return strip_hits_turret(px,py,pdx,pdy,0,reach,width/2,tx,ty)
+end
+-- How far along the punch the turret body starts: picks the nearer target when
+-- a punch touches both a turret and a fighter.
+public function along(number px, number py, number pdx, number pdy, number tx, number ty)
+    return (tx-px)*pdx+(ty-py)*pdy
+end
