@@ -208,6 +208,18 @@ public function tr_skin_zombie()
     end
     return "Zombie"
 end
+public function tr_skin_elf()
+    if language == 1 then
+        return "Эльф"
+    end
+    return "Elf"
+end
+public function tr_skin_elf_hint()
+    if language == 1 then
+        return "Подарок ебуКа"
+    end
+    return "ebuC's gift"
+end
 public function tr_skin_legends_hint()
     if language == 1 then
         return "Легенды не умирают..."

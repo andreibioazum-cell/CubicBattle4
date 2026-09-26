@@ -13,6 +13,8 @@ public function load_textures()
     santa_punch_tex_ok = png_load(SANTA_PUNCH_TEX)
     png_load(EBUC_TEX)
     ebuc_punch_tex_ok = png_load(EBUC_PUNCH_TEX)
+    ebuc_elf_tex_ok = png_load(EBUC_ELF_TEX)
+    ebuc_elf_punch_tex_ok = png_load(EBUC_ELF_PUNCH_TEX)
     png_load(DESPENSER_TEX)
     candy_tex_ok = png_load(CANDY_TEX)
     png_load(SNOWFLAKE_TEX)
@@ -78,6 +80,12 @@ public function reload_textures()
     end
     if ebuc_punch_tex_ok==0 then
         ebuc_punch_tex_ok=png_load(EBUC_PUNCH_TEX)
+    end
+    if ebuc_elf_tex_ok==0 then
+        ebuc_elf_tex_ok=png_load(EBUC_ELF_TEX)
+    end
+    if ebuc_elf_punch_tex_ok==0 then
+        ebuc_elf_punch_tex_ok=png_load(EBUC_ELF_PUNCH_TEX)
     end
     if candy_tex_ok==0 then
         candy_tex_ok=png_load(CANDY_TEX)

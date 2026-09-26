@@ -108,11 +108,7 @@ public function draw_class_card(number vi)
     local number sprite = 50 * scale
     local number sx = x + (w - sprite) / 2
     if class_skin_active(cls) == 1 then
-        if zombie_tex_ok() == 1 then
-            tex(sx, class_sprite_y(), AZUM_ZOMBIE_TEX, 0, scale)
-        else
-            tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)
-        end
+        tex(sx, class_sprite_y(), skin_idle_tex_for(cls, SKIN_SPECIAL), 0, scale)
     else
         tex(sx, class_sprite_y(), class_idle_tex(cls), 0, scale)
     end
@@ -184,20 +180,16 @@ public function draw_skin_card(number skin)
     local number w = skin_card_w
     local number locked = 1 - skin_unlocked(skin)
     local number selected = 0
-    if azum_skin == skin then
+    if current_skin() == skin then
         selected = 1
     end
     card_state(x, skins_top(), w, skin_card_h, selected, locked)
     local number scale = skin_preview_scale()
     local number sprite = 50 * scale
     local number sx = x + (w - sprite) / 2
-    if skin == SKIN_ZOMBIE then
-        tex(sx, skin_preview_y(), zombie_idle_tex(), 0, scale)
-    else
-        tex(sx, skin_preview_y(), azum_idle_tex(), 0, scale)
-    end
+    tex(sx, skin_preview_y(), skin_idle_tex_for(player_class, skin), 0, scale)
     local color c = panel_text(locked)
-    local string status = tr_skin_legends_hint()
+    local string status = skin_hint_for(player_class)
     if locked == 0 then
         status = tr_class_pick()
         if selected == 1 then

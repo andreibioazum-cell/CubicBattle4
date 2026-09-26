@@ -123,7 +123,9 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     int al = (int)azum_level, au = (int)azum_levels_unlocked;
     int sl = (int)santa_level, su = (int)santa_levels_unlocked;
     int el = (int)ebuc_level, eul = (int)ebuc_levels_unlocked;
-    int bp = (int)bp_level, sk = azum_skin ? 1 : 0;
+    int bp = (int)bp_level, sk = (int)azum_skin;
+    if (sk < 0) sk = 0;
+    if (sk > SKIN_FLAGS_MAX) sk = SKIN_FLAGS_MAX;
     if (c < 0) c = 0;
     if (cd < 0) cd = 0;
     if (k != 1 && k != 2 && k != 3) k = 0;
@@ -173,7 +175,7 @@ void net_save_progress_all(double cups, double candies, double cls, double azum,
     pg_unlock();
     pending_cls = k;
     pending_level = lv;
-    pending_skin = sk;
+    pending_skin = SKIN_OF_CLASS(sk, k);
     progress_write(c, cd, k, a, sn, eu, lv, lu, ol, ou, al, au, sl, su, el, eul, bp, sk);
 
     char nick[LOGIN_NICK_MAX + 1] = "";

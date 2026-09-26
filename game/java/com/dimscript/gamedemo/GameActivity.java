@@ -13,7 +13,9 @@
  */
 package com.cb4;
 
+import android.app.AlertDialog;
 import android.app.NativeActivity;
+import android.content.DialogInterface;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Rect;
@@ -59,6 +61,10 @@ public final class GameActivity extends NativeActivity {
             nativeReady = false;
         }
     }
+
+    /* The alpha notice is shown once per launch, not after every rotation or
+     * return from the recents screen. */
+    private boolean alphaNoticeShown;
 
     private EditText chatEditor;
     private boolean syncingFromNative;
@@ -114,6 +120,8 @@ public final class GameActivity extends NativeActivity {
          * locked to 30 Hz, the game really swings between 30 and 40 fps, and asking
          * for exactly 60 only gets in the way of Android picking a panel mode. */
         enterImmersiveMode();
+
+        if (state != null) alphaNoticeShown = state.getBoolean("alphaNoticeShown", false);
 
         chatEditor = new EditText(this);
         chatEditor.setSingleLine(true);
@@ -259,6 +267,38 @@ public final class GameActivity extends NativeActivity {
                 });
     }
 
+    /**
+     * The "the game is in alpha" window. Called from native code (the game asks
+     * for it a moment after the epilepsy warning is accepted, not at startup,
+     * so the dialog does not cover the warning). A plain AlertDialog: one OK
+     * button, no cancel outside it, and the immersive flags are set again when
+     * it closes, because the system bars come back with the dialog.
+     */
+    public void showAlphaNotice() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() { openAlphaNotice(); }
+        });
+    }
+
+    private void openAlphaNotice() {
+        if (alphaNoticeShown || isFinishing()) return;
+        alphaNoticeShown = true;
+        new AlertDialog.Builder(this)
+                .setTitle("Cubic Battle 4 — альфа")
+                .setMessage("Игра находится в альфа-версии.\n\n"
+                        + "Здесь есть баги, часть контента ещё не готова, а баланс и "
+                        + "прогресс могут меняться между обновлениями. Спасибо, что "
+                        + "играете и помогаете её делать лучше!")
+                .setCancelable(false)
+                .setPositiveButton("ОК", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        enterImmersiveMode();
+                    }
+                })
+                .show();
+    }
+
     private void claimEditorFocus() {
         if (chatEditor == null || !wantKeyboard) return;
         if (chatEditor.getVisibility() != View.VISIBLE) chatEditor.setVisibility(View.VISIBLE);
@@ -394,6 +434,12 @@ public final class GameActivity extends NativeActivity {
                 requestShowWhenReady();
             }
         }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putBoolean("alphaNoticeShown", alphaNoticeShown);
     }
 
     @Override

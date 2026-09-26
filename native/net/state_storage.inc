@@ -158,6 +158,14 @@ static Progress pg = { .lock = DS_MUTEX_INIT };
 #define LEVEL_MAX 3
 #define BP_MAX 5
 #define SKIN_MAX 1
+/* The saved "azum_skin" field is a bitmask of the picked skins: bit 0 is the
+ * Azum zombie, bit 1 is the ebuC elf. Old saves hold only 0 or 1, which still
+ * reads as "zombie on/off". */
+#define SKIN_FLAGS_MAX 3
+/* Only the skin of the class being played is broadcast to the other players:
+ * the room protocol carries one 0/1 flag, and the class decides which skin it
+ * means (zombie for Azum, elf for ebuC). */
+#define SKIN_OF_CLASS(flags, cls) (((cls) == 3) ? (((flags) >> 1) & 1) : ((flags) & 1))
 static int pending_cls = 0;
 static int pending_level = 0;
 /* Our own fighter's skin travels in the network snapshot with the class and the

@@ -104,6 +104,7 @@ double arr_len(DSArray *a) { return a->len; }
 /* ---------- keyboard mock ---------- */
 static int keyboard_up;
 static char keyboard_buf[64] = "";
+void alpha_notice_show(void) {}
 void keyboard_show(void) { keyboard_up = 1; }
 void keyboard_hide(void) { keyboard_up = 0; }
 const char *keyboard_get_text(void) { return keyboard_buf; }

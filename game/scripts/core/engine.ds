@@ -159,6 +159,24 @@ public function update_studio()
         studio_open = 0
     end
 end
+-- The alpha window waits for the legal screens: while the warning or the studio
+-- splash is on screen the timer stays at zero, then it counts the 0.1 s pause
+-- and asks Java for the dialog exactly once.
+public function update_alpha_notice()
+    if alpha_notice_done == 1 then
+        return
+    end
+    if warn_open == 1 || studio_open == 1 then
+        alpha_notice_t = 0
+        return
+    end
+    alpha_notice_t = alpha_notice_t + dt
+    if alpha_notice_t < alpha_notice_delay then
+        return
+    end
+    alpha_notice_done = 1
+    alpha_notice_show()
+end
 public function tick_achievement_toast()
     ach_toast_t = tick_down(ach_toast_t)
 end
@@ -225,6 +243,7 @@ end
 public function update()
     update_warning()
     update_studio()
+    update_alpha_notice()
     update_transition()
     update_music()
     reload_textures()

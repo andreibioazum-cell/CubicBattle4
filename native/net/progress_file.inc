@@ -97,7 +97,8 @@ static void progress_read(void) {
     else { level=ebuc_level; levels_unlocked=ebuc_levels_unlocked; }
     if (bp_level < 0) bp_level = 0;
     if (bp_level > BP_MAX) bp_level = BP_MAX;
-    azum_skin = azum_skin ? 1 : 0;
+    if (azum_skin < 0) azum_skin = 0;
+    if (azum_skin > SKIN_FLAGS_MAX) azum_skin = SKIN_FLAGS_MAX;
     pg_lock();
     pg.cups = cups; pg.candies = candies; pg.cls = cls; pg.azum = azum; pg.santa = santa; pg.ebuc = ebuc;
     pg.level = level; pg.levels_unlocked = levels_unlocked;

@@ -90,31 +90,67 @@ public function class_msg_text()
     end
     return tr_class_need_cups()
 end
+-- Skins are per class: Azum has the zombie, ebuC has the elf. The stored value
+-- is the same 0/1 for both ("plain cube" or "the skin of that class"), so a
+-- remote fighter is drawn from his class plus this one flag.
 public function skin_is_active(number cls, number skin)
-    if cls == CLASS_AZUM && skin == SKIN_ZOMBIE then
+    if skin != SKIN_SPECIAL then
+        return 0
+    end
+    if cls == CLASS_AZUM || cls == CLASS_EBUC then
         return 1
     end
     return 0
 end
-public function class_skin_active(number cls)
-    return skin_is_active(cls, azum_skin)
+public function class_skin_of(number cls)
+    if cls == CLASS_EBUC then
+        return ebuc_skin
+    end
+    if cls == CLASS_AZUM then
+        return azum_skin
+    end
+    return SKIN_NORMAL
 end
-public function skin_unlocked(number skin)
+public function current_skin()
+    return class_skin_of(player_class)
+end
+public function class_skin_active(number cls)
+    return skin_is_active(cls, class_skin_of(cls))
+end
+-- The zombie is the reward of the "Legends never die..." achievement; the elf
+-- comes with ebuC himself, so it is open to everyone who owns the class.
+public function skin_unlocked_for(number cls, number skin)
     if skin == SKIN_NORMAL then
         return 1
     end
-    if skin == SKIN_ZOMBIE then
-        if has_achievement(ACH_LEGENDS) == 1 then
-            return 1
-        end
+    if cls == CLASS_EBUC then
+        return 1
+    end
+    if cls == CLASS_AZUM && has_achievement(ACH_LEGENDS) == 1 then
+        return 1
     end
     return 0
 end
-public function skin_name_of(number skin)
-    if skin == SKIN_ZOMBIE then
-        return tr_skin_zombie()
+public function skin_unlocked(number skin)
+    return skin_unlocked_for(player_class, skin)
+end
+public function skin_name_for(number cls, number skin)
+    if skin != SKIN_SPECIAL then
+        return tr_skin_normal()
     end
-    return tr_skin_normal()
+    if cls == CLASS_EBUC then
+        return tr_skin_elf()
+    end
+    return tr_skin_zombie()
+end
+public function skin_name_of(number skin)
+    return skin_name_for(player_class, skin)
+end
+public function skin_hint_for(number cls)
+    if cls == CLASS_EBUC then
+        return tr_skin_elf_hint()
+    end
+    return tr_skin_legends_hint()
 end
 public function pick_skin(number skin)
     if skin < 0 || skin >= SKIN_COUNT then
@@ -127,7 +163,11 @@ public function pick_skin(number skin)
         skin_msg_t = msg_time
         return
     end
-    azum_skin = skin
+    if player_class == CLASS_EBUC then
+        ebuc_skin = skin
+    else
+        azum_skin = skin
+    end
     save_progress()
 end
 public function class_visible(number cls)

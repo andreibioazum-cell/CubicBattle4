@@ -74,6 +74,8 @@ const char *str_trim(const char *s);
 const char *str_lower(const char *s);
 const char *str_upper(const char *s);
 void ds_set_activity(void *activity);
+/* Opens the Android "the game is in alpha" dialog. Does nothing off Android. */
+void alpha_notice_show(void);
 void keyboard_show(void);
 void keyboard_hide(void);
 const char* keyboard_get_text(void);

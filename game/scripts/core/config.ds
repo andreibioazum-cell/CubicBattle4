@@ -65,13 +65,17 @@ public number player_class=CLASS_ORDINARY, azum_revived=0, revive_prot=0
 public number azum_cost=65, santa_candy_cost=100, ebuc_cost=120
 public number player_level=0, levels_unlocked=0
 public number max_level=3, level_base_cost=30, level_cost_step=10
-public number SKIN_NORMAL=0, SKIN_ZOMBIE=1, SKIN_COUNT=2
+-- A skin is stored per class and only as "the plain cube" or "the one extra
+-- skin of that class": SKIN_SPECIAL is zombie for Azum and elf for ebuC. The
+-- names SKIN_ZOMBIE and SKIN_ELF are the same value read from either side.
+public number SKIN_NORMAL=0, SKIN_SPECIAL=1, SKIN_ZOMBIE=1, SKIN_ELF=1, SKIN_COUNT=2
 public number azum_tex_ok=0, azum_zombie_tex_ok=0, azum_zombie_punch_tex_ok=0
 -- Whether the swing sprite of each class loaded. tex() draws nothing for a
 -- missing texture, so without the fallback in class_punch_tex()
 -- (battle_rules.ds) a fighter vanished while punching.
 public number ordinary_punch_tex_ok=0, azum_punch_tex_ok=0
 public number santa_punch_tex_ok=0, ebuc_punch_tex_ok=0
+public number ebuc_elf_tex_ok=0, ebuc_elf_punch_tex_ok=0
 -- Retry of the failed sprite loads (engine.ds reload_textures): the first load
 -- can hiccup on a cold start and the ok-flags latch that answer for good. The
 -- retries ask the failed ones again a couple of times per second until they
@@ -79,7 +83,8 @@ public number santa_punch_tex_ok=0, ebuc_punch_tex_ok=0
 public number tex_reload_t=0, tex_reload_left=0
 -- After the fast retries a still missing sprite is asked again this often (s).
 public number tex_reload_slow=3
-public number azum_skin=SKIN_NORMAL
+-- The picked skin of each class with skins (Azum, ebuC).
+public number azum_skin=SKIN_NORMAL, ebuc_skin=SKIN_NORMAL
 public number arena_tile_size=256, snow_tex_ok=0, snow_t=0, candy_tex_ok=0
 -- Winter theme, a menu setting: one tap turns the snowy arena and the snowfall
 -- on or off. It is on by default; when it is off the arena is grass.png again.
@@ -161,8 +166,12 @@ public number turret_counter_damage=0.5
 -- the start and the whole 382.5 px path is flown in 0.45 s (850 px/s) instead
 -- of a 1.275 s glide at 300 px/s, where the dash felt like walking with a
 -- hitbox strip. The distance is unchanged, so the balance stays as it is.
-public number azum_dash_cd=5.5, azum_dash_time=0.45, azum_dash_speed=850
-public number azum_dash_damage=3, azum_dash_stun=1.8
+-- The dash was too strong: a single burst took 3 hp away and locked the target
+-- in a 1.8 s stun, which was most of a fight for one button. The flight itself
+-- (0.45 s, 850 px/s, the same 382.5 px path) is untouched, only the payoff is
+-- smaller and the wait between dashes is longer.
+public number azum_dash_cd=7.5, azum_dash_time=0.45, azum_dash_speed=850
+public number azum_dash_damage=1.5, azum_dash_stun=0.8
 public number azum_hp=8
 public number shadow_off=10, shadow_alpha=0x30
 public number candy_count=5, candy_margin=46, candy_scale=0.8, candy_give=1
@@ -221,6 +230,11 @@ public number warn_closing=0, warn_close_t=0, warn_fade=1.25
 -- (roundrect_outline in core/ui.ds), so the button looks the same as it did
 -- with the old white rectangle slightly larger than the fill.
 public number warn_frame_th=2
+-- The alpha notice (a real Android dialog, GameActivity.showAlphaNotice) is
+-- asked for once per launch and only after the epilepsy warning and the studio
+-- splash are gone, plus a short pause so the dialog does not pop up in the same
+-- frame the warning disappears.
+public number alpha_notice_done=0, alpha_notice_t=0, alpha_notice_delay=0.1
 public number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 public number studio_in=0.5, studio_hold=1.6, studio_fade=0.7
 public string STUDIO_NAME="CUBIC CORPORATION"
@@ -267,3 +281,4 @@ public string SANTA_PUNCH_TEX="santa_punch.png", CANDY_TEX="candy.png", SNOWFLAK
 public string EBUC_TEX="ebuc.png", EBUC_PUNCH_TEX="ebuc_punch.png", DESPENSER_TEX="despenser.png"
 public string SNOW_TEX="snow.png"
 public string AZUM_ZOMBIE_TEX="zombie_azum.png", AZUM_ZOMBIE_PUNCH_TEX="zombie_azum_punch.png"
+public string EBUC_ELF_TEX="ebuc_elf.png", EBUC_ELF_PUNCH_TEX="ebuc_elf_punch.png"
