@@ -126,6 +126,11 @@ static void kb_sync_editor(void) {
 /* 1 while the system EditText owns the text and receives the keys. */
 int keyboard_uses_editor(void) { return kb_call_bool_method("gameKeyboardActive"); }
 
+/* The alpha notice is a real Android dialog, so it is opened from Java. The
+ * game asks for it only after the epilepsy warning is gone, which is why it is
+ * not shown from onCreate. */
+void alpha_notice_show(void) { (void)kb_call_void_method("showAlphaNotice"); }
+
 void keyboard_show(void) {
     char current[KB_BUF];
     pthread_mutex_lock(&kb_mutex);

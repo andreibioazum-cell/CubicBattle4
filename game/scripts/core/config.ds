@@ -230,6 +230,11 @@ public number warn_closing=0, warn_close_t=0, warn_fade=1.25
 -- (roundrect_outline in core/ui.ds), so the button looks the same as it did
 -- with the old white rectangle slightly larger than the fill.
 public number warn_frame_th=2
+-- The alpha notice (a real Android dialog, GameActivity.showAlphaNotice) is
+-- asked for once per launch and only after the epilepsy warning and the studio
+-- splash are gone, plus a short pause so the dialog does not pop up in the same
+-- frame the warning disappears.
+public number alpha_notice_done=0, alpha_notice_t=0, alpha_notice_delay=0.1
 public number studio_open=0, studio_t=0, studio_a=0, studio_bg_a=1
 public number studio_in=0.5, studio_hold=1.6, studio_fade=0.7
 public string STUDIO_NAME="CUBIC CORPORATION"

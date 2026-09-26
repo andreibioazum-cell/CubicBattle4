@@ -39,6 +39,7 @@ void ds_log_err(const char *format, ...) { (void)format; }
 void ds_console_log(int is_error, const char *format, ...) { (void)is_error; (void)format; }
 void ds_runtime_error(const char *format, ...) { fputs(format, stderr); abort(); }
 void keyboard_hide(void) {}
+void alpha_notice_show(void) {}
 void net_disconnect(void) {}
 
 /* Runtime string helpers: mods come from an input field, so str_trim is the real

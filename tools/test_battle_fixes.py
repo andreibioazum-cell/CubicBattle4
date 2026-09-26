@@ -192,6 +192,7 @@ void net_open(double v) { (void)v; }
 void net_connect(const char *a, const char *b) { (void)a; (void)b; }
 double net_login_status(void) { return 0; }
 void keyboard_hide(void) {}
+void alpha_notice_show(void) {}
 void keyboard_show(void) {}
 const char *keyboard_get_text(void) { return ""; }
 int keyboard_visible(void) { return 0; }

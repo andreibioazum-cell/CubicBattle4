@@ -122,7 +122,6 @@ public final class GameActivity extends NativeActivity {
         enterImmersiveMode();
 
         if (state != null) alphaNoticeShown = state.getBoolean("alphaNoticeShown", false);
-        showAlphaNotice();
 
         chatEditor = new EditText(this);
         chatEditor.setSingleLine(true);
@@ -269,12 +268,20 @@ public final class GameActivity extends NativeActivity {
     }
 
     /**
-     * The "the game is in alpha" window at startup. A plain AlertDialog: one
-     * OK button, no cancel outside it, and the immersive flags are set again
-     * when it closes, because the system bars come back with the dialog.
+     * The "the game is in alpha" window. Called from native code (the game asks
+     * for it a moment after the epilepsy warning is accepted, not at startup,
+     * so the dialog does not cover the warning). A plain AlertDialog: one OK
+     * button, no cancel outside it, and the immersive flags are set again when
+     * it closes, because the system bars come back with the dialog.
      */
-    private void showAlphaNotice() {
-        if (alphaNoticeShown) return;
+    public void showAlphaNotice() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() { openAlphaNotice(); }
+        });
+    }
+
+    private void openAlphaNotice() {
+        if (alphaNoticeShown || isFinishing()) return;
         alphaNoticeShown = true;
         new AlertDialog.Builder(this)
                 .setTitle("Cubic Battle 4 — альфа")
